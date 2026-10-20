@@ -202,8 +202,12 @@ textarea {
 
 .hero h1 {
   margin: 0;
-  max-width: 12ch;
-  font-size: clamp(40px, 8vw, 68px);
+  font-size: clamp(36px, 8vw, 68px);
+}
+
+.hero h1 span {
+  display: block;
+  white-space: nowrap;
 }
 
 .lede {
@@ -348,13 +352,21 @@ a.button.ghost {
 }
 
 .deal {
-  display: inline-flex;
+  display: grid;
+  gap: 2px;
+  width: fit-content;
+  max-width: 100%;
   margin: 8px 0 0;
   padding: 6px 8px;
   background: #f8ecec;
   color: var(--sale);
   font-size: 13px;
   font-weight: 700;
+}
+
+.deal .meta {
+  color: inherit;
+  font-weight: 400;
 }
 
 .stack {

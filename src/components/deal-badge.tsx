@@ -6,8 +6,10 @@ export function DealBadge({ deal }: { deal: Deal | null }) {
   const prefix = deal.basedOnSample ? "샘플 기준 · " : "";
   return (
     <p className="deal">
-      {prefix}평소보다 {deal.percentOff}% 저렴
-      <span className="meta" style={{ display: "block", color: "inherit", fontWeight: 400 }}>
+      <span>
+        {prefix}평소보다 {deal.percentOff}% 저렴
+      </span>
+      <span className="meta">
         공식가 중앙값 {formatKrw(deal.baselineKrw)} · 최근 비교가 {formatKrw(deal.currentKrw)}
       </span>
     </p>

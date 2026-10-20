@@ -19,9 +19,8 @@ export default async function HomePage() {
       <section className="wrap hero">
         <p className="kicker">STOKKE · BUGABOO · BABYBJÖRN · CYBEX · NUNA</p>
         <h1>
-          오래 쓰는 기어의
-          <br />
-          가격과 공구.
+          <span>오래 쓰는 기어의</span>
+          <span>가격과 공구.</span>
         </h1>
         <p className="lede">
           기저귀와 분유는 다루지 않습니다. 트립트랩, 폭스, 블리스처럼 이름이 남은 모델만 모아, 공구가·공식가·병행수입가·해외가·중고
