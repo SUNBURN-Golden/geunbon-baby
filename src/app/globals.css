@@ -420,6 +420,37 @@ a.button.ghost {
   color: #e4ddd0;
 }
 
+.band label.field span {
+  color: #e4ddd0;
+}
+
+.band input,
+.band textarea,
+.band select {
+  color: var(--ink);
+  background: #fff;
+}
+
+.band .button {
+  background: #f6f1e7;
+  color: var(--forest);
+  border-color: #f6f1e7;
+}
+
+.band .button.ghost {
+  background: transparent;
+  color: #f6f1e7;
+  border-color: #d9d0c2;
+}
+
+.band .form-success {
+  color: #f3e2b3;
+}
+
+.band .form-error {
+  color: #ffc9c4;
+}
+
 .form {
   display: grid;
   gap: 12px;
