@@ -50,10 +50,10 @@ export async function main() {
       flush: flushHealth,
       log: health,
       isFatal: error => error instanceof HaltError || error instanceof IngestError,
-      onFatal: async (error, session) => {
+      onFatal: async (error, session, signal) => {
         if (error instanceof HaltError) {
           process.exitCode = 75;
-          await captureHalt(crawlerDir, error.reason, session?.diagnosticPage);
+          await captureHalt(crawlerDir, error.reason, session?.diagnosticPage, signal);
         }
       },
       cycle: async ({ page }, check) => {

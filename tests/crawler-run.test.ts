@@ -57,7 +57,7 @@ test.each(['login', 'cycle'])('the orchestrator captures a %s halt before closin
     throw new Error('diagnostics failed');
   });
   await expect(main()).rejects.toBe(halt);
-  expect(captureHalt).toHaveBeenLastCalledWith(expect.stringMatching(/\/crawler$/), 'login', diagnosticPage);
+  expect(captureHalt).toHaveBeenLastCalledWith(expect.stringMatching(/\/crawler$/), 'login', diagnosticPage, expect.any(AbortSignal));
   expect(closeContext).toHaveBeenCalledTimes(1);
   expect(closeBrowser).toHaveBeenCalledTimes(1);
   expect(save).toHaveBeenCalledTimes(1);

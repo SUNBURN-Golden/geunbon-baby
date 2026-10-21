@@ -24,9 +24,10 @@ afterEach(async () => {
 function diagnosticPage(text: string) {
   const evaluate = vi.fn(async () => {});
   const screenshot = vi.fn(async () => Buffer.from('offline-png-fixture'));
+  const innerText = vi.fn(async () => text);
   const page = {
     url: () => 'https://www.instagram.com/accounts/login/?access_token=url-private&next=%2F',
-    locator: vi.fn(() => ({ innerText: vi.fn(async () => text) })),
+    locator: vi.fn(() => ({ innerText })),
     frames: () => [{ evaluate }],
     screenshot,
   };
@@ -79,6 +80,40 @@ test('a failed DOM redaction never writes an unredacted screenshot', async () =>
   expect((await readdir(join(dir, 'logs'))).filter(file => file.endsWith('.png'))).toEqual([]);
 });
 
+test('full innerText redaction covers credentials assembled across DOM nodes in files and previews', async () => {
+  const nodes = ['Visible: ', 'p@ss+', 'word$[]', ' ', 'ingest-', 'private', ' end'];
+  const { page } = diagnosticPage(nodes.join(''));
+  await captureHalt(dir, 'login', page);
+  expect(page.locator).toHaveBeenCalledWith('body');
+  const file = (await readdir(join(dir, 'logs'))).find(file => file.endsWith('.txt'))!;
+  const text = await readFile(join(dir, 'logs', file), 'utf8');
+  expect(text).toContain('Visible: [redacted] [redacted] end');
+  expect((await events())[0].preview).toBe('Visible: [redacted] [redacted] end');
+  for (const secret of ['p@ss+word$[]', 'ingest-private']) expect(text).not.toContain(secret);
+});
+
+test.each(['text', 'mask', 'screenshot'] as const)('aborting during %s stops subsequent diagnostic work and PNG writes', async phase => {
+  const controller = new AbortController();
+  const { page, evaluate, screenshot } = diagnosticPage('safe text');
+  if (phase === 'text') vi.mocked(page.locator('body').innerText).mockImplementation(async () => { controller.abort(); return 'safe'; });
+  if (phase === 'mask') evaluate.mockImplementation(async () => { controller.abort(); });
+  if (phase === 'screenshot') screenshot.mockImplementation(async () => { controller.abort(); return Buffer.from('must-not-save'); });
+  await captureHalt(dir, 'blocked', page, controller.signal);
+  if (phase === 'text') expect(evaluate).not.toHaveBeenCalled();
+  if (phase !== 'screenshot') expect(screenshot).not.toHaveBeenCalled();
+  expect((await readdir(join(dir, 'logs'))).filter(file => file.endsWith('.png'))).toEqual([]);
+  expect((await events())[0]).toMatchObject({ event: 'halt', reason: 'blocked' });
+});
+
+test('already aborted diagnostics log the halt without accessing the browser', async () => {
+  const { page, evaluate, screenshot } = diagnosticPage('private text');
+  await captureHalt(dir, 'challenge', page, AbortSignal.abort());
+  expect(page.locator).not.toHaveBeenCalled();
+  expect(evaluate).not.toHaveBeenCalled();
+  expect(screenshot).not.toHaveBeenCalled();
+  expect((await events())[0]).toMatchObject({ event: 'halt', reason: 'challenge' });
+});
+
 test('closed/missing pages and unwritable diagnostic paths still log the halt', async () => {
   await captureHalt(dir, 'login');
   const logged = await events();
@@ -104,7 +139,7 @@ test('screenshot DOM redaction removes secrets from text, attributes, controls a
     value = 'never-persist-this-input';
     style = { setProperty: vi.fn() };
     shadowRoot = null;
-    attrs = new Map([['placeholder', 'other-private'], ['aria-label', 'token=aria-private']]);
+    attrs = new Map([['type', 'password'], ['placeholder', 'other-private'], ['aria-label', 'token=aria-private']]);
     getAttribute(name: string) { return this.attrs.get(name) ?? null; }
     setAttribute(name: string, value: string) { this.attrs.set(name, value); }
   }
@@ -133,4 +168,49 @@ test('screenshot DOM redaction removes secrets from text, attributes, controls a
   expect(input.attrs.get('placeholder')).toBe('[redacted]');
   expect(input.attrs.get('aria-label')).toBe('token=[redacted]');
   expect(input.style.setProperty).toHaveBeenCalledWith('visibility', 'hidden', 'important');
+  expect(input.style.setProperty).toHaveBeenCalledWith('opacity', '0', 'important');
+});
+
+test.each([
+  ['p@ss+word$[]', false], ['ingest-private', false],
+  ['p@ss+word$[]', true], ['ingest-private', true],
+] as const)('screenshot masks containers with split secret %s (shadow=%s) before leaf redaction', (secret, inShadow) => {
+  const node = (text: string) => ({ textContent: text, parentElement: { closest: () => null } });
+  const nodes = [node(secret.slice(0, 4)), node(secret.slice(4, 7)), node(secret.slice(7))];
+  const nested = {
+    get textContent() { return nodes.slice(1).map(node => node.textContent).join(''); },
+    style: { setProperty: vi.fn() }, getAttribute: () => null,
+  };
+  const container = {
+    get textContent() { return nodes[0].textContent + nested.textContent; },
+    style: { setProperty: vi.fn() }, getAttribute: () => null,
+  };
+  // Also include an intact secret to catch mutations before the container pass.
+  const intact = node(secret);
+  const intactContainer = {
+    get textContent() { return intact.textContent; },
+    style: { setProperty: vi.fn() }, getAttribute: () => null,
+  };
+  const root = { nodes: [...nodes, intact], querySelectorAll: () => [container, nested, intactContainer] };
+  const shadow = inShadow ? root : null;
+  const host = { textContent: '', getAttribute: () => null, shadowRoot: shadow };
+  const document = {
+    nodes: inShadow ? [] : root.nodes,
+    querySelectorAll: () => inShadow ? [host] : root.querySelectorAll(),
+    createTreeWalker: (root: { nodes: typeof nodes }) => {
+      let index = -1;
+      return { nextNode: () => ++index < root.nodes.length, get currentNode() { return root.nodes[index]; } };
+    },
+  };
+  runInNewContext(`(${redactDiagnosticPage.toString()})(rules)`, {
+    document, NodeFilter: { SHOW_TEXT: 4 }, HTMLInputElement: class {},
+    HTMLTextAreaElement: class {}, rules: redactionRules(),
+  });
+  expect(nodes.every(node => !node.textContent.includes(secret))).toBe(true);
+  expect(intact.textContent).toBe('[redacted]');
+  for (const element of [intactContainer, container]) {
+    expect(element.style.setProperty).toHaveBeenCalledWith('visibility', 'hidden', 'important');
+    expect(element.style.setProperty).toHaveBeenCalledWith('opacity', '0', 'important');
+  }
+  expect(nested.style.setProperty).not.toHaveBeenCalled();
 });

@@ -17,7 +17,7 @@ type LoopDependencies<Session> = {
   flush: () => Promise<void>;
   log: typeof health;
   isFatal: (error: unknown) => boolean;
-  onFatal?: (error: unknown, session: Session | undefined) => Promise<void>;
+  onFatal?: (error: unknown, session: Session | undefined, signal: AbortSignal) => Promise<void>;
 };
 class LoopStopped extends Error {}
 
@@ -30,12 +30,14 @@ export async function runMainLoop<Session>(
   let cancelTimer = () => {};
   let resumeAt: number | undefined;
   let failed = false;
+  let diagnostics: AbortController | undefined;
 
   const enterQuiet = () => {
     const quiet = quietWindowAt(options.quietWindow, deps.now());
     if (quiet.endAt === null || resumeAt !== undefined) return;
     const [min, max] = options.quietWindow.jitter_ms;
     resumeAt = quiet.endAt + min + deps.random() * (max - min);
+    diagnostics?.abort();
     deps.log('quiet_window_enter', {
       timezone: options.quietWindow.timezone,
       end_at: new Date(quiet.endAt).toISOString(),
@@ -122,10 +124,25 @@ export async function runMainLoop<Session>(
     }
   } catch (error) {
     failed = true;
-    cancelTimer();
     if (deps.isFatal(error) && deps.onFatal) {
-      try { await deps.onFatal(error, session); }
-      catch { deps.log('warn', { scope: 'halt_diagnostics' }); }
+      // Keep the boundary timer armed during diagnostics, including stalled
+      // page/filesystem calls. Quiet hours abort capture and close the session.
+      diagnostics = new AbortController();
+      enterQuiet();
+      if (resumeAt !== undefined) {
+        diagnostics.abort();
+        void closeSession();
+      }
+      let onAbort = () => {};
+      const aborted = new Promise<void>(resolve => { onAbort = resolve; });
+      diagnostics.signal.addEventListener('abort', onAbort, { once: true });
+      try {
+        await Promise.race([
+          deps.onFatal(error, session, diagnostics.signal),
+          diagnostics.signal.aborted ? Promise.resolve() : aborted,
+        ]);
+      } catch { deps.log('warn', { scope: 'halt_diagnostics' }); }
+      finally { diagnostics.signal.removeEventListener('abort', onAbort); }
     }
     throw error;
   } finally {

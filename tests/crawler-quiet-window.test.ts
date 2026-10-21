@@ -174,7 +174,9 @@ test('quiet interruption during browser creation never calls login and cleans up
 test('security halts are never retried as quiet interruptions', async () => {
   const { deps, options } = harness('2026-10-21T06:44:59');
   deps.cycle.mockImplementation(async () => { vi.setSystemTime(at('2026-10-21T06:45:00')); throw new HaltError('challenge'); });
-  await expect(runMainLoop(options, deps)).rejects.toBeInstanceOf(HaltError);
+  const onFatal = vi.fn(async () => {});
+  await expect(runMainLoop(options, { ...deps, onFatal })).rejects.toBeInstanceOf(HaltError);
+  expect(onFatal).toHaveBeenCalledExactlyOnceWith(expect.any(HaltError), undefined, expect.objectContaining({ aborted: true }));
   expect(deps.login).toHaveBeenCalledTimes(1);
   expect(deps.close).toHaveBeenCalledTimes(1);
 });
@@ -188,11 +190,11 @@ test.each(['challenge', 'blocked', 'login'] as const)('halt %s is diagnosed befo
   deps.flush.mockRejectedValue(new Error('flush failed'));
   const onFatal = vi.fn(async () => {
     expect(deps.close).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
     throw new Error('diagnostics failed');
   });
   await expect(runMainLoop(options, { ...deps, onFatal })).rejects.toBe(error);
-  expect(onFatal).toHaveBeenCalledWith(error, { id: 1 });
+  expect(onFatal).toHaveBeenCalledWith(error, { id: 1 }, expect.any(AbortSignal));
   expect(deps.open).toHaveBeenCalledTimes(1);
   expect(deps.login).toHaveBeenCalledTimes(1);
   expect(deps.cycle).not.toHaveBeenCalled();
@@ -207,9 +209,37 @@ test('cycle halts are diagnosed while the session is still open', async () => {
   deps.cycle.mockRejectedValue(error);
   const onFatal = vi.fn(async () => { expect(deps.close).not.toHaveBeenCalled(); });
   await expect(runMainLoop(options, { ...deps, onFatal })).rejects.toBe(error);
-  expect(onFatal).toHaveBeenCalledWith(error, { id: 1 });
+  expect(onFatal).toHaveBeenCalledWith(error, { id: 1 }, expect.any(AbortSignal));
   expect(deps.cycle).toHaveBeenCalledTimes(1);
   expect(deps.close).toHaveBeenCalledTimes(1);
+});
+
+test.each(['login', 'cycle'] as const)('quiet start aborts stalled %s halt diagnostics and closes without retrying', async phase => {
+  const { deps, options } = harness('2026-10-21T06:44:59');
+  const error = new HaltError('challenge');
+  deps[phase].mockRejectedValue(error);
+  let signal: AbortSignal | undefined;
+  const onFatal = vi.fn(async (_error: unknown, _session: unknown, abortSignal: AbortSignal) => {
+    signal = abortSignal;
+    // Even diagnostics that fail to settle on browser close cannot stall exit.
+    await new Promise<void>(() => {});
+  });
+  const running = runMainLoop(options, { ...deps, onFatal });
+  const rejected = expect(running).rejects.toBe(error);
+  await vi.advanceTimersByTimeAsync(999);
+  expect(onFatal).toHaveBeenCalledTimes(1);
+  expect(signal?.aborted).toBe(false);
+  expect(deps.close).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(signal?.aborted).toBe(true);
+  expect(deps.close).toHaveBeenCalledTimes(1);
+  await rejected;
+  expect(deps.open).toHaveBeenCalledTimes(1);
+  expect(deps.login).toHaveBeenCalledTimes(1);
+  expect(deps.log.mock.calls.map(call => call[0])).toEqual(['quiet_window_enter']);
+  expect(deps.save).toHaveBeenCalledTimes(1);
+  expect(deps.flush).toHaveBeenCalledTimes(1);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 test('cached and chained page locators gate navigation, login, follow, story and scan methods at the boundary', async () => {
