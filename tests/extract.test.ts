@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { extract, extractDates, extractLinks, extractModels, extractPrices, toSuggestions } from '../crawler/lib/extract';
 
@@ -144,4 +144,23 @@ test('toSuggestions 는 검수 API 스키마로 좁힌다', () => {
 test('같은 입력에는 항상 같은 결과(순수 함수)', () => {
   const caption = '스토케 트립트랩 너도밤나무 390,000원 10/26~10/28 https://example.com/buy';
   assert.deepEqual(extract(caption, { now: NOW }), extract(caption, { now: NOW }));
+});
+
+test('invalid calendar dates do not become review hints', () => {
+  assert.equal(extractDates('2026/2/30 공구', NOW), null);
+  assert.equal(extractDates('2026/2/29 공구', NOW), null);
+  assert.equal(extractDates('2028/2/29 공구', NOW)?.starts_at, '2028-02-29T00:00:00+09:00');
+});
+test('December-January ranges share the correct year boundary', () => {
+  const dates = extractDates('기간 2026/12/30~1/2', new Date('2026-10-21T00:00:00Z'));
+  assert.equal(dates?.starts_at, '2026-12-30T00:00:00+09:00');
+  assert.equal(dates?.ends_at, '2027-01-02T23:59:59+09:00');
+});
+test('extracted hints always fit the review schema, even with many long links', async () => {
+  const { parseSuggestions } = await import('../lib/api');
+  const links = Array.from({ length: 10 }, (_, i) => `https://example.test/${i}/${'a'.repeat(1800)}`).join('\n');
+  const hints = toSuggestions(extract(`스토케 트립트랩 공구가 999999999999999999원\n${links}\n프로필 링크`, { now: NOW }));
+  assert.equal(hints.price, null);
+  assert.ok(JSON.stringify(hints).length <= 8000);
+  assert.ok(parseSuggestions(hints));
 });

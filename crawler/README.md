@@ -1,66 +1,80 @@
 # 아가마중 Instagram 수집 worker v2
 
-Cloudflare가 아닌 **별도 Linux 머신**에서 Node.js 22 이상 + Playwright로 실행합니다. 이 문서의 검증은 단위 테스트(추출·API)로만 수행했으며 **실제 Instagram 접속·로그인·수집은 실행하지 않았습니다**. 본인 계정으로 접근이 허용되고 수집 동의를 받은 콘텐츠에만 사용하세요. 비공개 접근 우회·CAPTCHA 우회·자동 2FA 처리는 없습니다.
+별도 Linux 머신에서 **Node.js 22 이상 + Playwright**로 실행합니다. 실제 Instagram 접속·로그인·수집은 이번 작업에서 실행하지 않았습니다. 본인 계정으로 접근이 허용된 콘텐츠를 수집해 `/api/v1/ingest` 검수 대기열로 보내며, 게시에는 관리자 승인이 필요합니다.
 
-v2 변경점: 검수 가능한 시드 계정 설정 파일, 사람 속도 자동 팔로우(일일 상한·지터), 알림·스토리 트레이 기반 준실시간 폴링(신호 있는 계정 우선), 스토리 OCR 기본 켜짐, 캡션·OCR 텍스트에서 모델·가격·공구 일정·링크를 뽑아 검수 대기열에 '제안'으로 함께 전송, 공구 셀러·팔이피플 해시태그 발견(후보 기록만), 다중 후보 셀렉터, JSONL 상태 로그, systemd/pm2 실행 파일.
+## 설치와 환경변수
 
-## 준비
+저장소 루트에서 `npm ci`, `npx playwright install chromium`을 실행합니다. OCR은 **기본 켜짐**이므로 tesseract와 한국어·영어 언어팩을 설치하고 `tesseract --list-langs`로 확인하세요. OCR을 끄려면 `AGAMAJUNG_OCR=0`을 설정합니다.
 
-저장소 루트에서 `npm ci`, `npx playwright install chromium`을 실행합니다. Linux 시스템 라이브러리가 필요하면 운영자가 Playwright 공식 설치 안내에 따라 설치합니다. 스토리 OCR은 **기본 켜짐**이므로 tesseract와 kor/eng 언어팩을 준비하세요(`tesseract --list-langs`로 확인). 끄려면 `AGAMAJUNG_OCR=0`.
-
-환경변수는 `.env.example`을 참고해 별도 비밀 저장소 또는 쉘의 안전한 주입 기능으로 설정합니다. 비밀번호를 명령행 인수·로그·문서·git에 넣지 마세요. 루트 `.env.crawler`를 쓴다면 `node --env-file=.env.crawler`로 로드하고 이 파일은 gitignore 대상입니다.
+`.env.example`을 참고해 비밀 저장소나 gitignore 대상인 루트 `.env.crawler`로 환경변수를 주입합니다. 비밀번호는 **`AGAMAJUNG_IG_PASSWORD` 환경변수에서만** 읽습니다. 명령행 인수·로그·git에 넣지 마세요.
 
 | 변수 | 설명 |
 | --- | --- |
-| `AGAMAJUNG_IG_USER` | 로그인 아이디(기본값은 v1과 동일) |
-| `AGAMAJUNG_IG_PASSWORD` | 로그인 비밀번호. 환경변수로만 사용 |
-| `AGAMAJUNG_API_URL` | 아가마중 서버 origin. 로컬 외에는 HTTPS 필수 |
-| `INGEST_TOKEN` | 수집 전용 토큰. ADMIN_TOKEN과 분리 |
-| `AGAMAJUNG_OCR` | 기본 켜짐. `0`이면 스토리 수집 생략 |
+| `AGAMAJUNG_IG_USER` | 로그인 아이디. 기본값 `jaytparkitrighthere@gmail.com` |
+| `AGAMAJUNG_IG_PASSWORD` | 로그인 비밀번호. 저장된 세션이 유효하면 생략 가능 |
+| `AGAMAJUNG_API_URL` | API origin. localhost 외에는 HTTPS 필수 |
+| `INGEST_TOKEN` | 수집 전용 Bearer 토큰. ADMIN_TOKEN과 분리 |
+| `AGAMAJUNG_OCR` | 기본 켜짐. `0`이면 스토리 OCR·수집 생략, `1`이면 켜짐 |
 | `AGAMAJUNG_OCR_LANG` | 기본 `kor+eng` |
-| `AGAMAJUNG_HEADLESS=0` | 최초 수동 확인용 브라우저 표시 |
-| `AGAMAJUNG_ONCE=1` | 한 틱만 실행하고 종료 |
-
-## 설정 파일(config/, git에 함께 관리)
-
-- **`config/accounts.json`** — 시드 계정 목록. Stokke·BabyBjorn·Bugaboo·Cybex·Nuna·Joie·egg·D.THRONE의 글로벌/한국 계정 후보를 싣는다. **`verified: false`는 핸들 실재 여부를 확인하지 못했다는 뜻**이다. 기본 설정에서는 verified 계정만 정기 방문·자동 팔로우 대상이 된다. 운영자가 Instagram에서 직접 핸들을 확인한 뒤 `verified`를 바꿔 활성화한다. 해시태그 목록(#공구 #육아공구 #트립트랩공구 + 브랜드 태그)도 여기서 관리한다.
-- **`config/settings.json`** — 속도·한도. 폴링 간격(기본 3~7분 무작위), 틱당 계정 수, 시간당 행동 상한(프로필 방문 30·게시물 40·스토리 20·팔로우 8·해시태그 페이지 2), 팔로우 일일 상한(기본 20), 팔로우 최소 간격(120~420초), 지연 범위, OCR 설정, 재확인 주기. 값을 올리기 전 행동 제한 위험을 다시 검토한다.
-
-## 실행
+| `AGAMAJUNG_HEADLESS=0` | 브라우저 표시. 최초 로그인·보안 확인용 |
+| `AGAMAJUNG_ONCE=1` | 한 사이클 후 종료 |
 
 ```sh
-node --env-file=.env.crawler --import tsx crawler/index.ts   # 직접 실행(AGAMAJUNG_ONCE=1 권장)
-pm2 start crawler/ecosystem.config.cjs                      # pm2(비밀은 --update-env로 주입)
-sudo systemctl enable --now agamajung-crawler               # systemd(단위 파일 주석의 설치 절차 참조)
+node --env-file=.env.crawler --import tsx crawler/index.ts
 ```
 
-systemd 단위(`crawler/agamajung-crawler.service`)는 전용 사용자·`UMask=0077`·쓰기 경로 제한을 포함하고, 챌린지·차단으로 종료코드 75가 나오면 10분 간격 최대 3회만 재시작한다. 차단 원인은 사람이 확인한 뒤 재개한다.
+`crawler/.session/state.json`에 Playwright storageState를 저장하고 재사용합니다. 세션 디렉터리는 0700, 파일은 0600이며 gitignore 대상입니다. 챌린지·2FA·CAPTCHA는 사람이 처리해야 하며 자동 우회하지 않습니다.
 
-## 동작
+## 설정과 주기
 
-1. **준실시간 폴링** — 매 틱(3~7분 무작위)마다 홈 스토리 트레이와 알림(활동) 화면을 확인해 "방금 올라온" 신호를 만든다. 새 게시물·스토리 링·활동 신호가 있는 계정을 먼저 방문하고, 나머지는 가장 오래 확인한 계정 순으로 최대 `per_tick.max_accounts`(기본 5)개만 본다. 고정 3계정 순환이 아니다. 모든 방문·게시물 열람·스토리 오픈은 settings.json의 전역 시간당 상한 안에서만 일어난다.
-2. **수집** — 프로필 그리드에서 이전에 본 게시물과 다른 URL만 열어 캡션을 읽고, 스토리 링이 있는 계정만 스토리를 열어 OCR(kor+eng) 텍스트를 얻는다. 원문과 함께 추출 제안을 `POST /api/v1/ingest`로 보낸다. 중복은 정규화 URL + 로컬 이력(`.cache/state.json`)으로 막는다.
-3. **자동 추출 제안** — `crawler/lib/extract.ts`(순수 함수, `tests/extract.test.ts`로 검증)가 모델(시드 모델 목록 대조), 가격(`390,000원`·`39만원`·`39.9만`·`62만 8천원`·범위/할인 화살표), 공구 일정(`10/26`·`11월 2일`·`~` 범위·`부터/까지/오픈/마감` 힌트·오전/오후 시각, KST ISO 변환, 연말 연도 넘김), 링크(URL·프로필 링크 안내)를 뽑아 신뢰도와 함께 붙인다. **제안은 `/admin` 검수 화면에 힌트로만 표시되며 사람이 승인하기 전까지 게시되지 않는다.**
-4. **자동 팔로우** — accounts.json에서 `follow: true`이고 아직 팔로우하지 않은 verified 계정을 한 틱에 최대 1개, 일 20개·시간 8개 상한, 120~420초 무작위 간격으로 팔로우한다. 팔로우 버튼이 보이지 않으면 건너뛰고 기록한다.
-5. **공구 셀러·팔이피플 발견** — 최소 6시간 간격으로 해시태그 태그 페이지를 시간당 2개까지만 훑고, 공구 키워드나 시드 모델이 보이는 게시물의 계정을 **후보로만 기록**한다(`.cache/state.json`의 `candidates`). 발견 계정을 절대 자동 팔로우하지 않는다. 운영자가 후보와 원문을 검수한 뒤 accounts.json에 옮겨 적으면 다음 실행부터 팔로우 후보가 된다.
+- `config/accounts.json`: Stokke, BabyBjorn, Bugaboo, Nuna, Joie, Cybex, egg, D.THRONE 시드와 `#공구`, `#육아템공구`, `#스토케공구`, `#팔이피플` 등의 발견 태그. 기존 설정의 `verified: true` 계정만 기본 방문·팔로우 대상입니다. 미확인 한국 계정은 운영자가 핸들을 확인한 뒤 활성화합니다. 이번 작업에서 핸들을 실시간 검증하지 않았습니다.
+- `config/settings.json`: 속도·한도·OCR·재확인 주기를 관리합니다. 상한은 0으로 설정해 해당 행동을 끌 수 있습니다. 지연 범위는 양수이며 최솟값 ≤ 최댓값이어야 합니다.
+- 알림·홈 스토리 트레이는 기본 **1~2분 지터 주기**로 확인합니다. 사이클 시작 시각을 기준으로 다음 확인을 예약하며, 작업 시간이 길면 완료 즉시 다음 사이클로 넘어갑니다. 실제 간격에는 탐색·OCR 시간이 포함됩니다.
+- 전체 프로필·게시물 스캔은 계정별 기본 **90분** 간격입니다. 같은 알림·스토리 신호가 계속 보여도 프로필을 매번 재스캔하지 않습니다. 스토리는 별도로 기본 **30분** 간격, 신호가 있는 계정을 직접 열어 확인합니다. 신호 없는 계정은 가장 오래 확인하지 않은 순서로 처리합니다.
+- 사이클당 기본 1계정·게시물 2개·스토리 5개를 처리합니다. 시간당 상한은 프로필 방문 30·게시물 40·스토리 20·팔로우 8·태그 페이지 2입니다. 알림·트레이 탐색은 이 프로필 상한과 별도입니다.
 
-## 중단 조건
+## 수집·팔로우·발견
 
-챌린지/체크포인트 화면, 로그인 이탈, "Action Blocked/일시적 제한" 안내, 수집 API 실패가 감지되면 즉시 중단하고 종료코드 75(또는 1)로 빠진다. **프로세스 안에서 자동 재시도하지 않는다.** 최초 2FA·보안 확인은 운영자가 직접 브라우저에서 처리한 뒤 다시 실행한다(`AGAMAJUNG_HEADLESS=0` 활용). 개별 계정 수집 중의 셀렉터 미스·렌더 오류는 그 계정만 건너뛰고 계속 진행하며 `selector_miss`/`error`로 상태 로그에 남는다.
+1. 캡션과 스토리 이미지·영상 프레임 OCR에서 시드 모델/브랜드, 원화 가격, KST 공구 기간, URL·프로필 링크 안내를 추출합니다. 원문과 `suggestions`를 Bearer 인증 POST로 전송합니다. 추정값은 `/admin`에서만 표시하며 승인 전에 공개하지 않습니다. tesseract 실패·빈 캡션은 전송 완료로 기록하지 않습니다.
+2. 게시물 URL은 추적 쿼리를 제거하고 정규화해 중복을 막습니다. 사이클 상한 때문에 처리하지 못한 게시물은 다음 스캔에서 다시 대상이 됩니다. API도 URL별 중복을 막으므로 응답 유실 후 재전송해도 큐 항목이 늘지 않습니다.
+3. 자동 팔로우는 설정의 `follow: true` 계정 중 기본 verified 계정만 한 사이클에 최대 1개 처리합니다. 기본 **일 20회·시간 8회**, **120~420초 무작위 최소 간격**입니다. 요청 전에 시도 횟수와 다음 허용 시각을 저장하므로 실패·재시작으로 한도가 초기화되지 않습니다. 요청됨(Requested)도 팔로우 상태로 취급하며, 버튼 미발견 계정은 90분 뒤 다시 확인합니다. `allow_unverified`로 미확인 시드의 팔로우를 명시적으로 허용할 수 있습니다.
+4. 발견 탐색은 기본 최소 6시간 간격으로 태그 1개·게시물 최대 2개를 확인합니다. 태그 커서를 저장해 재시작 후에도 전체 목록을 순환합니다. 공구 문구나 모델이 있는 작성자를 `candidates`에 기록합니다. 발견 이력과 전송 이력은 별도여서 발견한 게시물도 이후 수집할 수 있습니다. 후보는 자동 팔로우하지 않으며, 운영자가 검수 후 accounts.json에 등록합니다.
 
-Instagram UI·언어·A/B 테스트에 따라 화면 구조는 바뀐다. 셀렉터는 aria role·버튼/링크 이름(한국어+영어) 정규식 우선, CSS 폴백 다중 후보(`crawler/lib/selectors.ts`)로 구성했지만, 신호가 비면 `crawler/logs/`의 `selector_miss` 이벤트로 위치를 찾아 수동 점검해야 한다. **실서비스 동작 검증은 아직 없다.**
+## 상태·건강 로그
 
-## 상태·로그·보안
+- `crawler/.cache/state.json`: KST 날짜·시간별 행동 카운터, 다음 팔로우 허용 시각, 계정 확인 시각, 전송/발견 URL 이력(각 최근 1만 개), 후보와 태그 커서. 임시 파일을 rename해 원자적으로 저장하며 0600입니다. 파일이 손상되면 한도를 초기화하는 대신 실행을 중단합니다. 이틀 전 카운터는 정리합니다.
+- `crawler/logs/health-YYYY-MM-DD.jsonl`: UTC 일자별 순서 있는 이벤트 기록. 비밀번호·토큰·쿠키·수집 원문은 기록하지 않습니다.
+- `crawler/logs/summary.json`: 현재 실행의 이벤트별 횟수, 마지막 이벤트, 로그 쓰기 실패 여부. 사이클과 종료 시 갱신합니다.
+- OCR 화면 캡처는 `.cache/story.png`에 잠시 저장하고 성공·실패 모두 삭제합니다. 세션·캐시·로그는 모두 gitignore 대상입니다.
 
-- `crawler/logs/health-YYYY-MM-DD.jsonl` — 사건 단위 상태 로그(폴링, 전송, 팔로우, 후보 발견, 셀렉터 미스, 차단). 스칼라 값만 기록하고 **비밀번호·토큰·수집 원문은 절대 남기지 않는다**. gitignore 대상.
-- `crawler/.cache/state.json` — 중복 URL 이력(최근 1만), 계정별 팔로잉·마지막 확인 시점, 시간대별 행동 카운터(이틀 후 자동 정리), 발견 후보 목록. 0600.
-- `crawler/.session/state.json` — 쿠키/인증 포함. 폴더 0700·파일 0600. gitignore. 외부 공유·커밋 금지. OCR 스크린샷은 즉시 삭제한다.
-- 전용 OS 사용자로 실행하고, 운영 보존 정책에 맞춰 로그·캐시를 정리한다. Playwright tracing·HAR·화면 녹화는 사용하지 않는다.
+동일 상태 디렉터리를 쓰는 worker는 **한 개만** 실행하세요. pm2와 systemd를 동시에 실행하지 마세요. 운영 보존 정책에 맞춰 로그·캐시를 정리합니다.
+
+챌린지·체크포인트·로그인 이탈·행동 차단은 종료코드 **75**로 중단합니다. API 실패는 **1**로 중단합니다. 프로세스 내에서 자동 재시도하지 않습니다. 개별 계정/발견 화면의 렌더 오류는 건너뛰고 기록합니다. aria/text와 여러 CSS 폴백을 쓰지만 실제 UI 변경은 `selector_miss` 로그를 보고 수동 점검해야 합니다.
+
+## 운영
+
+`agamajung-crawler.service` 주석대로 전용 사용자·비밀 환경파일·Node 22·브라우저를 준비한 뒤 단위 파일을 설치합니다. systemd는 ProtectHome을 사용하므로 주석에 지정한 `PLAYWRIGHT_BROWSERS_PATH`에 브라우저를 설치해야 합니다. 쓰기 경로는 crawler 아래로 제한합니다.
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now agamajung-crawler
+```
+
+pm2를 사용할 때도 같은 환경변수를 비밀 저장소에서 주입하고 실행합니다. pm2는 `.env.crawler`를 자동으로 읽지 않습니다. 환경변수 변경 후 `pm2 restart agamajung-crawler --update-env`를 실행하세요.
+
+```sh
+pm2 start crawler/ecosystem.config.cjs
+```
+
+두 운영 예시 모두 종료코드 75는 자동 재시작하지 않습니다. 다른 실패는 10분 간격으로 제한된 횟수만 재시작합니다. 사람이 차단 원인을 확인한 뒤 수동 재개하세요.
 
 ## 검증
 
 ```sh
-npm run lint && npm run typecheck && npm test   # tests/extract.test.ts 가 추출 로직을 검증
+npm run lint
+npm run typecheck
+npm test
+npm run build
 ```
 
-Instagram 접속 없이 검증한다. 새 캡션 형태를 지원할 때는 `tests/extract.test.ts`에 실제 문구에 가까운 사례를 먼저 추가한다.
+Vitest로 추출, KST 상한·지터·재시작, 발견 파싱·태그 순환, 셀렉터 폴백, 신호별 스캔 일정, OCR/전송/중복/실패 복구, 건강 로그와 API 검수 격리를 확인합니다. API 테스트는 메모리 SQLite를 사용합니다. 테스트 설정에서 모든 소켓·실제 fetch·브라우저 실행을 차단하며, 필요한 응답은 mock으로 제공합니다. **테스트에는 네트워크 접속이 없습니다.**

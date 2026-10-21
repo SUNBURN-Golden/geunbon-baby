@@ -1,19 +1,18 @@
-import { test, before, after } from 'node:test';
+import { test, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
-import { Miniflare, convertV4MiniflareOptions, type V4MiniflareOptions } from 'miniflare';
+import { memoryD1 } from './helpers/sqlite';
 import { handleApi } from '../lib/api';
 import type { Env } from '../lib/db';
-const options: V4MiniflareOptions = { modules: true, script: 'export default { fetch() { return new Response("ok"); } }', compatibilityDate: '2026-10-01', d1Databases: ['DB'], r2Buckets: ['IMAGES'] };
-const mf = new Miniflare(convertV4MiniflareOptions(options));
+const memory = memoryD1();
 let env: Env;
 type ItemResponse = { data: { id: string; status: string } };
 type ListResponse = { data: { id: string; price: number | null; advertisement: boolean; notice: string }[] };
 type QueueResponse = { data: { id: string; account: string; suggestions: string | null }[] };
 const ingest = { source_url: 'https://www.instagram.com/p/test-local/', account: 'local-test', text: '검증용 원문. 실제 상품·가격 데이터 아님.', kind: 'post', captured_at: '2026-10-21T00:00:00Z' };
 const call = (path: string, method = 'GET', body?: unknown, token?: string) => handleApi(new Request(`http://localhost/api/v1/${path}`, { method, headers: token ? { authorization: `Bearer ${token}` } : {}, body: body === undefined ? undefined : JSON.stringify(body) }), path.split('?')[0].split('/'), env);
-before(async () => {
-  env = { DB: await mf.getD1Database('DB') as unknown as D1Database, IMAGES: await mf.getR2Bucket('IMAGES') as unknown as R2Bucket, ADMIN_TOKEN: 'local-admin-test-only', INGEST_TOKEN: 'local-ingest-test-only' };
+beforeAll(async () => {
+  env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'local-admin-test-only', INGEST_TOKEN: 'local-ingest-test-only' };
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
     const migration = await readFile(new URL(file, dir), 'utf8');
@@ -22,7 +21,7 @@ before(async () => {
   await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','test','https://www.stokke.com/')").run();
 });
-after(async () => { await mf.dispose(); });
+afterAll(() => { memory.close(); });
 test('tokens fail closed and do not cross privilege boundaries', async () => {
   assert.equal((await call('ingest', 'POST', ingest)).status, 401);
   assert.equal((await call('admin/queue', 'GET', undefined, env.INGEST_TOKEN)).status, 401);
@@ -75,4 +74,15 @@ test('crawler suggestions ride along, stay private, and never auto-publish', asy
   assert.equal((await call('ingest', 'POST', { ...ingest, source_url: 'https://www.instagram.com/p/bad-suggestions-4/', suggestions: { ...suggestions, links: [{ url: 'javascript:alert(1)', kind: 'url', confidence: 0.9 }] } }, env.INGEST_TOKEN)).status, 400);
   // 공개 deals 응답에는 제안이 노출되지 않는다.
   assert.ok(!(await (await call('deals')).text()).includes('suggestions'));
+});
+
+test('malformed hint entries return 400 and stored JSON parses for admin display', async () => {
+  const { parseStoredSuggestions } = await import('../lib/api');
+  const hints = { models: [], price: null, dates: null, links: [], confidence: 0 };
+  assert.deepEqual(parseStoredSuggestions(JSON.stringify(hints)), hints);
+  assert.equal(parseStoredSuggestions('{'), null);
+  assert.equal(parseStoredSuggestions(null), null);
+  for (const suggestions of [{ ...hints, models: [null] }, { ...hints, links: [null] }, { ...hints, price: [] }, { ...hints, dates: 'nope' }]) {
+    assert.equal((await call('ingest', 'POST', { ...ingest, source_url: 'https://www.instagram.com/p/malformed-hints/', suggestions }, env.INGEST_TOKEN)).status, 400);
+  }
 });
