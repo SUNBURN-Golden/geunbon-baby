@@ -555,3 +555,5 @@ form { max-width: 100%; }
   .model-card:hover .product-mark, .button:active, button:active { transform: none; }
   .active-deal-row { scroll-snap-type: none; }
 }
+
+.keep-line { white-space: nowrap; }

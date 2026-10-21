@@ -184,7 +184,8 @@ describe('server rendered deals UI', () => {
   test('ended deals retain one last-checked line on cards and full context on detail, without recommendations', () => {
     const patch = { ends_at: '2026-10-21T02:00:00Z' };
     for (const html of [card(patch), detail(patch)]) {
-      expect(html).toContain(`${dealsCopy.archived} · <time dateTime="${fixture.checked}">2026.10.21</time>`);
+      expect(html.replace(/<span class="keep-line">|<\/span>/g, '')).toContain(`${dealsCopy.archived} · <time dateTime="${fixture.checked}">2026.10.21</time>`);
+      expect(html).toMatch(/<span class="keep-line">\S+ · <time /);
       expect(html).not.toContain('class="deal-tone');
       expect(html).not.toContain(dealsCopy.remaining.replace('{n}', '0'));
     }
