@@ -1,0 +1,11 @@
+{
+  "models": {
+    "fable": { "provider": "claude", "id": "fable", "note": "Alias advertised by local claude --help; uses .claude-fable profile." },
+    "astra6": { "provider": "codex", "id": "gpt-6-astra", "note": "Found in /home/box/.codex/models_cache.json; no inference probe used." },
+    "opus55": { "provider": "claude", "id": "opus", "note": "Opus 5.5 slot: local CLI advertises opus alias. Alias version is provider-controlled; pin here if needed." },
+    "sol61": { "provider": "codex", "id": "gpt-6.1-sol", "note": "User verified working; also present in local model cache." },
+    "sonnet": { "provider": "claude", "id": "sonnet", "note": "Alias advertised by local claude --help." },
+    "glm": { "provider": "glm", "id": "default", "note": "Default Z.ai model from the normal Claude profile; CLAUDE_CONFIG_DIR is removed, no --model override." },
+    "swe2": { "provider": "devin", "id": "swe-2", "note": "Devin CLI; --respect-workspace-trust false supported by local --help." }
+  }
+}
