@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { sleep } from './util';
 import { firstVisible, hasText } from './selectors';
 import type { Settings } from './config';
+import { health } from './health';
 
 export class HaltError extends Error {
   constructor(public reason: 'challenge' | 'blocked' | 'login') { super(`halt:${reason}`); }
@@ -18,7 +19,7 @@ export async function assertHuman(page: Page) {
   if (await hasText(page, /Action Blocked|We restrict|temporarily blocked|일시적으로 (사용|차단|제한)|행동이 제한|활동이 제한|게시물에 대한 활동이 마음에 들지 않는지|잠시 차단/i)) throw new HaltError('blocked');
 }
 
-export async function launchBrowser(crawlerDir: string, check: () => void = () => {}): Promise<{ browser: Browser; context: BrowserContext; page: Page; sessionFile: string }> {
+export async function launchBrowser(crawlerDir: string, check: () => void = () => {}): Promise<{ browser: Browser; context: BrowserContext; page: Page; diagnosticPage: Page; sessionFile: string }> {
   check();
   const sessionDir = resolve(crawlerDir, '.session');
   const cacheDir = resolve(crawlerDir, '.cache');
@@ -39,7 +40,8 @@ export async function launchBrowser(crawlerDir: string, check: () => void = () =
     const page = await context.newPage();
     check();
     page.setDefaultTimeout(15000);
-    return { browser, context, page: guardPage(page, check), sessionFile };
+    // Keep the original page available for diagnostics after stop/quiet guards trip.
+    return { browser, context, page: guardPage(page, check), diagnosticPage: page, sessionFile };
   } catch (error) {
     await browser.close();
     throw error;
@@ -56,12 +58,14 @@ export async function ensureLogin(context: BrowserContext, page: Page, settings:
     const passwordField = await firstVisible([page.getByLabel(/^(Password|비밀번호)$/i), page.locator('input[name="password"]'), page.locator('input[type="password"]')]);
     const submit = await firstVisible([page.getByRole('button', { name: /^(Log in|로그인)$/i }), page.locator('button[type="submit"]')]);
     if (!passwordField || !submit) throw new HaltError('login');
+    health('login_attempt');
     await login.fill(username);
     await passwordField.fill(password);
     await submit.click();
     await sleep(...settings.delays_ms.login);
   }
   await assertHuman(page);
+  health(login ? 'login_ok' : 'session_reused');
   await context.storageState({ path: sessionFile });
   await chmod(sessionFile, 0o600);
 }

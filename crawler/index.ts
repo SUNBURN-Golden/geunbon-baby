@@ -16,8 +16,10 @@ import { sleep } from './lib/util';
 import { planScans } from './lib/schedule';
 import { runMainLoop } from './lib/main-loop';
 import { QuietWindowError } from './lib/quiet-window';
+import { captureHalt } from './lib/halt';
+import { pathToFileURL } from 'node:url';
 
-async function main() {
+export async function main() {
   const endpoint = process.env.AGAMAJUNG_API_URL;
   const token = process.env.INGEST_TOKEN;
   if (!endpoint || !token) throw new Error('AGAMAJUNG_API_URL과 INGEST_TOKEN이 필요합니다.');
@@ -48,6 +50,12 @@ async function main() {
       flush: flushHealth,
       log: health,
       isFatal: error => error instanceof HaltError || error instanceof IngestError,
+      onFatal: async (error, session, signal) => {
+        if (error instanceof HaltError) {
+          process.exitCode = 75;
+          await captureHalt(crawlerDir, error.reason, session?.diagnosticPage, signal);
+        }
+      },
       cycle: async ({ page }, check) => {
         check();
         await syncFollowing(page, { state, settings }, check);
@@ -91,10 +99,23 @@ async function main() {
   }
 }
 
-main().catch(async (error: unknown) => {
+export async function handleFailure(error: unknown) {
+  // Set this before logging/flush: diagnostic failures must not allow a retry.
+  const code = error instanceof HaltError ? 75 : 1;
+  process.exitCode = code;
   const reason = error instanceof HaltError ? error.reason : error instanceof IngestError ? 'api' : 'unknown';
-  health(reason === 'challenge' || reason === 'blocked' ? reason : 'error', { scope: reason });
-  await flushHealth();
-  console.error(`크롤러 중단(${reason}): 인증·차단·환경변수·화면 구조를 수동 점검하세요. 상세는 crawler/logs 상태 로그 확인. 비밀번호·토큰·원문은 기록하지 않습니다.`);
-  process.exitCode = error instanceof HaltError ? 75 : 1;
-});
+  try {
+    health(reason === 'challenge' || reason === 'blocked' ? reason : 'error', { scope: reason });
+    await flushHealth();
+    console.error(`크롤러 중단(${reason}): 인증·차단·환경변수·화면 구조를 수동 점검하세요. 상세는 crawler/logs 상태 로그와 비밀값을 가린 halt 진단 파일 확인.`);
+  } finally {
+    // A failed browser close can leave live handles. Exit after the diagnostics
+    // and flush have finished rather than depending on an empty event loop.
+    process.exit(code);
+  }
+}
+
+// Preserve direct CLI/systemd usage; importing from run.mjs or tests is inert.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main().catch(handleFailure);
+}
