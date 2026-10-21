@@ -1,3 +1,5 @@
+import { POST_MEDIA, STORY_MEDIA } from '../crawler/lib/media';
+import { mediaDOM, MediaElement, asElement } from './helpers/media-dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,6 +22,7 @@ let dir: string;
 let ctx: CollectContext;
 beforeEach(async () => {
   vi.clearAllMocks();
+  mediaDOM();
   dir = await mkdtemp(join(tmpdir(), 'crawler-collect-'));
   ctx = { account: 'stokke', crawlerDir: dir, state: await CrawlerState.open(join(dir, '.cache', 'state.json')), settings: parseSettings(settingsJson), api: new URL('https://ingest.invalid/api/v1/ingest'), token: 'test-ingest-token', scanPosts: true, scanStories: false };
   vi.mocked(promisify(execFile)).mockResolvedValue({ stdout: '스토케 트립트랩 공구 39만원', stderr: '' });
@@ -58,7 +61,7 @@ test('story-only jobs run OCR, ingest once, remove screenshots, and never open a
   ctx.settings.hourly_caps.story_opens = 1;
   let nextClicks = 0;
   const mock = mockPage(selector => {
-    if (selector === 'video:visible') return [{ screenshot: async path => { await writeFile(path, 'mock-frame'); } }];
+    if (selector === STORY_MEDIA) return [{ dom: asElement(new MediaElement('VIDEO')), screenshot: async path => { await writeFile(path, 'mock-frame'); } }];
     if (selector === 'role:button') return [{ name: 'Pause' }, { name: 'Next', click: () => { nextClicks++; } }];
     return [];
   });
@@ -74,7 +77,7 @@ test('OCR failures leave stories retryable and clean the screenshot', async () =
   ctx.scanPosts = false; ctx.scanStories = true;
   ctx.settings.per_tick.max_stories_per_account = 1;
   vi.mocked(promisify(execFile)).mockRejectedValueOnce(new Error('tesseract missing'));
-  const mock = mockPage(selector => selector === 'video:visible' ? [{ screenshot: async path => { await writeFile(path, 'mock-frame'); } }] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
+  const mock = mockPage(selector => selector === STORY_MEDIA ? [{ dom: asElement(new MediaElement('VIDEO')), screenshot: async path => { await writeFile(path, 'mock-frame'); } }] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
   mock.goto.mockImplementation(async () => { mock.setUrl('https://www.instagram.com/stories/stokke/123/'); });
   expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 0 });
   expect(ctx.state.isSeen('https://www.instagram.com/stories/stokke/123/')).toBe(false);
@@ -91,7 +94,7 @@ test.each([true, false])('autoplay cannot skip stories during pacing or OCR (Nex
   const captured: number[] = [];
   const pauses: number[] = [];
   const mock = mockPage(selector => {
-    if (selector === 'video:visible') return [{ screenshot: async path => {
+    if (selector === STORY_MEDIA) return [{ dom: asElement(new MediaElement('VIDEO')), screenshot: async path => {
       expect(paused).toBe(true);
       captured.push(id);
       await writeFile(path, 'mock-frame');
@@ -126,4 +129,79 @@ test('stories with no pause control are left retryable without OCR or pacing', a
   expect(promisify(execFile)).not.toHaveBeenCalled();
   expect(sleep).not.toHaveBeenCalled();
   expect(ctx.state.isSeen('https://www.instagram.com/stories/stokke/123/')).toBe(false);
+});
+
+test('post image payload preserves the signed query; failed deliveries remain retryable and logs exclude media', async () => {
+  const article = new MediaElement('ARTICLE'); mediaDOM([article]);
+  const image = new MediaElement('IMG', article);
+  image.currentSrc = 'https://scontent.cdninstagram.com/product.jpg?sig=synthetic%2B%2F&x=1&x=2';
+  const logs = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  const { page } = mockPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/image/' }] : selector === 'article' ? [{ text: '트립트랩 공구' }] : selector === POST_MEDIA ? [{ dom: asElement(image) }] : []);
+  vi.mocked(fetch).mockRejectedValueOnce(new Error(`raw media failure ${image.currentSrc}`));
+  await expect(collectAccount(page, ctx)).rejects.toBeInstanceOf(IngestError);
+  expect(ctx.state.isSeen('https://www.instagram.com/p/image/')).toBe(false);
+  expect(await collectAccount(page, ctx)).toEqual({ posts: 1, stories: 0 });
+  for (const [, request] of vi.mocked(fetch).mock.calls) {
+    expect(JSON.parse(request!.body as string).image_url).toBe(image.currentSrc);
+  }
+  const output = logs.mock.calls.map(([s]) => String(s)).join('');
+  expect(output).not.toContain(image.currentSrc);
+  expect(output).not.toContain(ctx.token);
+  expect(output).not.toContain('raw media failure');
+});
+
+test.each(['image', 'poster', 'no-poster', 'unavailable'])('story %s uses the selected OCR element and sends optional media', async kind => {
+  ctx.scanPosts = false; ctx.scanStories = true; ctx.settings.per_tick.max_stories_per_account = 1;
+  const element = new MediaElement(kind === 'image' || kind === 'unavailable' ? 'IMG' : 'VIDEO');
+  if (kind === 'poster') element.poster = 'https://video.fbcdn.net/poster.jpg?sig=synthetic%2B';
+  if (kind === 'unavailable') element.currentSrc = 'blob:unavailable';
+  const avatar = new MediaElement('IMG'); avatar.attrs.alt = 'profile';
+  const screenshot = vi.fn(async (path: string) => { await writeFile(path, 'fixture'); });
+  const mock = mockPage(selector => selector === STORY_MEDIA ? [
+    { dom: asElement(avatar), screenshot: async () => { throw new Error('Avatar must not be captured'); } },
+    { dom: asElement(element), screenshot },
+  ] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
+  mock.goto.mockImplementation(async () => { mock.setUrl('https://www.instagram.com/stories/stokke/123/'); });
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 1 });
+  expect(screenshot).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).image_url).toBe(
+    kind === 'image' ? element.src : kind === 'poster' ? element.poster : undefined,
+  );
+});
+
+test.each(['selection', 'ocr'])('story identity change during %s never delivers mixed text/image', async stage => {
+  ctx.scanPosts = false; ctx.scanStories = true; ctx.settings.per_tick.max_stories_per_account = 1;
+  const element = new MediaElement('IMG');
+  const mock = mockPage(selector => {
+    if (selector === STORY_MEDIA) {
+      if (stage === 'selection') mock.setUrl('https://www.instagram.com/stories/stokke/124/');
+      return [{ dom: asElement(element), screenshot: async path => { await writeFile(path, 'fixture'); } }];
+    }
+    return selector === 'role:button' ? [{ name: 'Pause' }] : [];
+  });
+  if (stage === 'ocr') vi.mocked(promisify(execFile)).mockResolvedValueOnce({
+    get stdout() { mock.setUrl('https://www.instagram.com/stories/stokke/124/'); return '트립트랩 공구'; }, stderr: '',
+  });
+  mock.goto.mockImplementation(async () => { mock.setUrl('https://www.instagram.com/stories/stokke/123/'); });
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 0 });
+  expect(fetch).not.toHaveBeenCalled();
+  expect(ctx.state.isSeen('https://www.instagram.com/stories/stokke/123/')).toBe(false);
+});
+
+test('story URL reading and OCR use a pinned node even when the live locator changes', async () => {
+  ctx.scanPosts = false; ctx.scanStories = true; ctx.settings.per_tick.max_stories_per_account = 1;
+  const original = new MediaElement('IMG');
+  const replacement = new MediaElement('IMG'); replacement.src = 'https://fbcdn.net/unrelated.jpg';
+  let reads = 0, swapped = false;
+  Object.defineProperty(original, 'currentSrc', { get: () => { if (++reads === 2) swapped = true; return original.src; } });
+  const captured: string[] = [];
+  const mock = mockPage(selector => selector === STORY_MEDIA ? [{
+    dom: asElement(swapped ? replacement : original),
+    screenshot: async path => { captured.push(swapped ? 'pinned-original' : 'original'); await writeFile(path, 'fixture'); },
+  }] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
+  mock.goto.mockImplementation(async () => { mock.setUrl('https://www.instagram.com/stories/stokke/123/'); });
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 1 });
+  expect(swapped).toBe(true);
+  expect(captured).toEqual(['pinned-original']);
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).image_url).toBe(original.src);
 });

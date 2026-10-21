@@ -446,3 +446,8 @@ form { max-width: 100%; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .model-card:hover .product-mark, .button:active, button:active { transform: none; }
 }
+
+.deal-image { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: contain; border-radius: 1rem; margin: 0 0 1.25rem; background: var(--surface-2); }
+.seller .deal-image { max-width: 40rem; }
+.image-choice { display: flex; align-items: center; gap: .6rem; }
+.image-choice input { width: auto; }

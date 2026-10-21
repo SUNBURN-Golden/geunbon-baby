@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import type { Locator, Page } from 'playwright';
-export type Node = { name?: string; text?: string; href?: string; visible?: boolean; click?: () => Promise<void> | void; fill?: (value: string) => Promise<void> | void; children?: (selector: string) => Node[]; evaluate?: () => unknown; screenshot?: (path: string) => Promise<void>; throws?: boolean };
+export type Node = { dom?: Element; name?: string; text?: string; href?: string; visible?: boolean; click?: () => Promise<void> | void; fill?: (value: string) => Promise<void> | void; children?: (selector: string) => Node[]; evaluate?: () => unknown; screenshot?: (path: string) => Promise<void>; throws?: boolean };
 export function mockLocator(nodes: () => Node[]): Locator {
   const view = {
     count: vi.fn(async () => nodes().length),
@@ -11,8 +11,16 @@ export function mockLocator(nodes: () => Node[]): Locator {
     click: vi.fn(async () => { if (nodes()[0]?.throws) throw new Error('detached'); await nodes()[0]?.click?.(); }),
     innerText: vi.fn(async () => nodes()[0]?.text ?? ''),
     getAttribute: vi.fn(async () => nodes()[0]?.href ?? null),
+    elementHandle: vi.fn(async () => {
+      const pinned = nodes()[0];
+      return pinned ? {
+        evaluate: vi.fn(async (fn: (element: Element) => unknown) => fn(pinned.dom!)),
+        screenshot: vi.fn(async (options: { path: string }) => { await pinned.screenshot?.(options.path); }),
+        dispose: vi.fn(async () => {}),
+      } : null;
+    }),
     screenshot: vi.fn(async (options: { path: string }) => { await nodes()[0]?.screenshot?.(options.path); }),
-    evaluateAll: vi.fn(async (fn: (elements: { getAttribute: () => string }[]) => unknown) => fn(nodes().map(node => ({ getAttribute: () => node.href ?? '' })))),
+    evaluateAll: vi.fn(async (fn: (elements: Element[], arg?: unknown) => unknown, arg?: unknown) => fn(nodes().map(node => node.dom ?? ({ getAttribute: () => node.href ?? '' } as unknown as Element)), arg)),
     evaluate: vi.fn(async () => nodes()[0]?.evaluate?.()),
     locator: () => mockLocator(nodes),
     getByRole: (role: string, options?: { name?: RegExp }) => mockLocator(() => nodes().flatMap(node => node.children?.(`role:${role}`) ?? []).filter(node => !options?.name || options.name.test(node.name ?? ''))),
