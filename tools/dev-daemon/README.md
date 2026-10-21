@@ -48,10 +48,10 @@ IDs live in [models.json](models.json). `gpt-6-astra` and `gpt-6.1-sol` were fou
 | --- | --- |
 | Design | Fable medium → Astra 6 high → GLM → swe-2 |
 | Design review | Opus 5.5 slot medium → Astra 6 high → GLM → swe-2 |
-| Build | Sol 6.1 high → Sonnet high → GLM → swe-2 |
-| Build review | Opus 5.5 slot medium → Sol 6.1 high → GLM → swe-2 |
-| Review fix | Sol 6.1 high → Sonnet high → GLM → swe-2 |
-| Re-review | Sonnet medium → Sol 6.1 high → GLM → swe-2 |
+| Build | Sol 6.1 medium → Sonnet high → GLM → swe-2 |
+| Build review | Opus 5.5 slot medium → Sol 6.1 medium → GLM → swe-2 |
+| Review fix | Sol 6.1 medium → Sonnet high → GLM → swe-2 |
+| Re-review | Sonnet medium → Sol 6.1 medium → GLM → swe-2 |
 | Blueprint audit | Fable medium → Astra 6 high → GLM → swe-2 |
 
 Designs are text saved in status. Design `CHANGES` triggers exactly one revision using the design chain. Build review is a separate read-only session. Reviews must return an unambiguous standalone `VERDICT: APPROVE` or `VERDICT: CHANGES`. Build `CHANGES` triggers at most two fix/re-review pairs; a missing/ambiguous verdict or remaining changes fails the task.
