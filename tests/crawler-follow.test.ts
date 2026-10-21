@@ -7,7 +7,7 @@ import { parseSettings, type SeedAccount } from '../crawler/lib/config';
 import { maybeFollow } from '../crawler/lib/follow';
 import { CrawlerState } from '../crawler/lib/state';
 import { guardPage, HaltError } from '../crawler/lib/browser';
-import { QuietWindowError, quietWindowAt } from '../crawler/lib/quiet-window';
+import { QuietWindowError, quietWindowsAt } from '../crawler/lib/quiet-window';
 import { mockPage } from './helpers/page';
 vi.mock('../crawler/lib/util', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/util')>(), sleep: vi.fn(async () => {}) }));
 let dir: string;
@@ -75,7 +75,7 @@ test('quiet start during persisted follow reservation prevents the cached button
   const click = vi.fn();
   const { page } = mockPage(selector => selector === 'role:button' ? [{ name: 'Follow', click }] : []);
   const config = settings();
-  const check = () => { if (quietWindowAt(config.quiet_window, Date.now()).active) throw new QuietWindowError(); };
+  const check = () => { if (quietWindowsAt(config.quiet_windows, Date.now()).active) throw new QuietWindowError(); };
   await expect(maybeFollow(guardPage(page, check), { accounts: [seed()], settings: config, state })).rejects.toBeInstanceOf(QuietWindowError);
   expect(click).not.toHaveBeenCalled();
   // Reservations stay conservative: interruption cannot reset the shared account's cap.

@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import settingsJson from '../crawler/config/settings.json';
 import { parseSettings } from '../crawler/lib/config';
-import { DEFAULT_QUIET_WINDOW, parseQuietWindow, QuietWindowError, quietWindowAt } from '../crawler/lib/quiet-window';
+import { DEFAULT_QUIET_WINDOW, DEFAULT_QUIET_WINDOWS, parseQuietWindow, QuietWindowError, quietWindowAt, quietWindowsAt } from '../crawler/lib/quiet-window';
 import { runMainLoop } from '../crawler/lib/main-loop';
 import { ensureLogin, guardPage, HaltError, launchBrowser } from '../crawler/lib/browser';
 import { mockPage } from './helpers/page';
@@ -41,15 +41,94 @@ test('next start advances by KST calendar day at the inclusive boundary', () => 
   expect(quietWindowAt(window, at('2026-12-31T06:45:00')).nextStartAt).toBe(at('2027-01-01T06:45:00'));
 });
 
-test('settings default, configured window and env override are validated without reading process env', () => {
-  const { quiet_window: omitted, ...legacy } = settingsJson;
-  expect(omitted.start).toBe('06:45');
-  expect(parseSettings(legacy).quiet_window).toEqual(window);
-  const raw = { ...settingsJson, quiet_window: { ...window, start: '22:00', end: '01:00', jitter_ms: [0, 5000] } };
-  expect(parseSettings(raw).quiet_window).toMatchObject({ start: '22:00', end: '01:00', jitter_ms: [0, 5000] });
-  expect(parseSettings(raw, { AGAMAJUNG_QUIET_WINDOW: '23:30-02:15' }).quiet_window).toEqual({ ...raw.quiet_window, start: '23:30', end: '02:15' });
-  expect(() => parseSettings(raw, { AGAMAJUNG_QUIET_WINDOW: '' })).toThrow('AGAMAJUNG_QUIET_WINDOW');
-  expect(() => parseSettings(raw, { AGAMAJUNG_QUIET_WINDOW: '24:00-08:00' })).toThrow('quiet_window');
+test.each([
+  ['2026-10-21T06:44:59.999', null, '2026-10-21T06:45:00'],
+  ['2026-10-21T06:45:00', '2026-10-21T08:00:00', '2026-10-21T13:00:00'],
+  ['2026-10-21T08:00:00', null, '2026-10-21T13:00:00'],
+  ['2026-10-21T12:59:59.999', null, '2026-10-21T13:00:00'],
+  ['2026-10-21T13:00:00', '2026-10-21T14:00:00', '2026-10-22T06:45:00'],
+  ['2026-10-21T13:59:59.999', '2026-10-21T14:00:00', '2026-10-22T06:45:00'],
+  ['2026-10-21T14:00:00', null, '2026-10-22T06:45:00'],
+  ['2026-12-31T23:59:59', null, '2027-01-01T06:45:00'],
+])('both default windows select the active end and next start at %s', (local, end, next) => {
+  expect(quietWindowsAt(DEFAULT_QUIET_WINDOWS, at(local))).toMatchObject({
+    active: end !== null, endAt: end ? at(end) : null, nextStartAt: at(next),
+  });
+});
+
+const windowsFor = (...ranges: string[]) => ranges.map(range => {
+  const [start, end] = range.split('-');
+  return { ...window, start, end };
+});
+
+test('unsorted overlapping, contained, duplicate and adjacent windows form one continuous window', () => {
+  const windows = windowsFor('09:00-10:00', '07:00-08:30', '08:30-09:00', '06:45-08:00', '07:15-07:30', '06:45-08:00', '13:00-14:00');
+  for (const local of ['06:45:00', '07:30:00', '08:00:00', '08:30:00', '09:00:00', '09:59:59.999']) {
+    expect(quietWindowsAt(windows, at(`2026-10-21T${local}`))).toMatchObject({
+      active: true, endAt: at('2026-10-21T10:00:00'), nextStartAt: at('2026-10-21T13:00:00'),
+    });
+  }
+  expect(quietWindowsAt(windows, at('2026-10-21T10:00:00')).active).toBe(false);
+});
+
+test.each(['23:00-00:00', '23:00-01:00'])('overlap or adjacency across midnight merges %s with the early window', range => {
+  const windows = windowsFor('00:00-02:00', range, '01:30-03:00', '13:00-14:00');
+  for (const local of ['2026-12-31T23:00:00', '2027-01-01T00:00:00', '2027-01-01T02:59:59.999']) {
+    expect(quietWindowsAt(windows, at(local))).toMatchObject({
+      active: true, endAt: at('2027-01-01T03:00:00'), nextStartAt: at('2027-01-01T13:00:00'),
+    });
+  }
+  expect(quietWindowsAt(windows, at('2027-01-01T03:00:00')).active).toBe(false);
+});
+
+test('empty schedules disable quiet hours; full-day unions stay quiet without a false daily boundary', () => {
+  expect(parseSettings({ ...settingsJson, quiet_windows: [] }).quiet_windows).toEqual([]);
+  expect(quietWindowsAt([], at('2026-10-21T07:00:00'))).toMatchObject({ active: false, endAt: null, nextStartAt: Infinity });
+  for (const local of ['00:00:00', '07:00:00', '12:00:00', '23:59:59.999']) {
+    expect(quietWindowsAt(windowsFor('00:00-12:00', '12:00-00:00'), at(`2026-10-21T${local}`)))
+      .toMatchObject({ active: true, endAt: Infinity, nextStartAt: Infinity });
+  }
+});
+
+test('settings default to both windows and read the legacy key when the plural key is absent', () => {
+  const { quiet_windows: omitted, ...legacy } = settingsJson;
+  expect(omitted).toEqual(DEFAULT_QUIET_WINDOWS);
+  expect(parseSettings(legacy).quiet_windows).toEqual(DEFAULT_QUIET_WINDOWS);
+  const oldWindow = { ...window, start: '22:00', end: '01:00', jitter_ms: [0, 5000] };
+  expect(parseSettings({ ...legacy, quiet_window: oldWindow }).quiet_windows).toEqual([oldWindow]);
+  expect(parseSettings({ ...settingsJson, quiet_window: oldWindow }).quiet_windows).toEqual(DEFAULT_QUIET_WINDOWS);
+});
+
+test('plural and legacy env overrides replace the schedule and preserve configured jitter', () => {
+  const configured = [{ ...window, jitter_ms: [0, 5000] }, { ...window, jitter_ms: [2000, 9000] }];
+  const raw = { ...settingsJson, quiet_windows: configured };
+  const env = { AGAMAJUNG_QUIET_WINDOWS: '23:30-02:15, 12:00-13:00,15:00-16:00', AGAMAJUNG_QUIET_WINDOW: 'bad' };
+  expect(parseSettings(raw, env).quiet_windows).toEqual([
+    { ...configured[0], start: '23:30', end: '02:15' },
+    { ...configured[1], start: '12:00', end: '13:00' },
+    { ...configured[0], start: '15:00', end: '16:00' },
+  ]);
+  expect(parseSettings(raw, { AGAMAJUNG_QUIET_WINDOW: '23:30-02:15' }).quiet_windows).toEqual([
+    { ...configured[0], start: '23:30', end: '02:15' },
+  ]);
+  const { quiet_windows: oldWindows, ...legacy } = raw;
+  expect(parseSettings({ ...legacy, quiet_window: oldWindows[0] }, { AGAMAJUNG_QUIET_WINDOWS: '10:00-11:00,12:00-13:00' }).quiet_windows)
+    .toEqual(['10:00', '12:00'].map((start, i) => ({ ...configured[0], start, end: i ? '13:00' : '11:00' })));
+});
+
+test.each(['', '06:45-08:00,', ',13:00-14:00', '06:45-08:00,,13:00-14:00', '6:45-08:00', '06:45/08:00'])('malformed env lists fail closed: %j', override => {
+  expect(() => parseSettings(settingsJson, { AGAMAJUNG_QUIET_WINDOWS: override })).toThrow('AGAMAJUNG_QUIET_WINDOWS');
+});
+
+test('invalid plural settings and times fail closed, including when a legacy value exists', () => {
+  for (const quiet_windows of [null, {}, '06:45-08:00', [null], [{ ...window, timezone: 'UTC' }]]) {
+    expect(() => parseSettings({ ...settingsJson, quiet_windows, quiet_window: window })).toThrow('quiet_window');
+  }
+  for (const key of ['AGAMAJUNG_QUIET_WINDOW', 'AGAMAJUNG_QUIET_WINDOWS']) {
+    expect(() => parseSettings(settingsJson, { [key]: '' })).toThrow(key);
+    expect(() => parseSettings(settingsJson, { [key]: '24:00-08:00' })).toThrow('quiet_window');
+    expect(() => parseSettings(settingsJson, { [key]: '08:00-08:00' })).toThrow('quiet_window');
+  }
 });
 
 test.each([
@@ -59,7 +138,7 @@ test.each([
   expect(() => parseQuietWindow({ ...window, ...invalid })).toThrow('quiet_window');
 });
 
-function harness(local: string, quietWindow = window) {
+function harness(local: string, quietWindows = DEFAULT_QUIET_WINDOWS) {
   vi.useFakeTimers();
   vi.setSystemTime(at(local));
   let stopped = false;
@@ -79,7 +158,7 @@ function harness(local: string, quietWindow = window) {
     log: vi.fn(),
     isFatal: (error: unknown) => error instanceof HaltError,
   };
-  return { deps, options: { quietWindow, pollMinutes: [1, 1] as [number, number], once: true }, stop: () => { stopped = true; } };
+  return { deps, options: { quietWindows, pollMinutes: [1, 1] as [number, number], once: true }, stop: () => { stopped = true; } };
 }
 
 test('main loop skips browser, login, follow and scans until quiet end plus sampled jitter, even in once mode', async () => {
@@ -110,8 +189,10 @@ test('main loop starts immediately outside the window, including the exact end',
   expect(deps.log).not.toHaveBeenCalled();
 });
 
-test('a running cycle closes the browser at quiet start and blocks the next action after a delay', async () => {
-  const { deps, options } = harness('2026-10-21T06:44:59');
+test.each([
+  ['2026-10-21T06:44:59', 75], ['2026-10-21T12:59:59', 60],
+])('a running cycle closes at the next quiet start from %s and blocks the next action', async (local, minutes) => {
+  const { deps, options } = harness(local);
   const igAction = vi.fn();
   let attempts = 0;
   deps.cycle.mockImplementation(async (_session, check) => {
@@ -129,11 +210,75 @@ test('a running cycle closes the browser at quiet start and blocks the next acti
   await vi.advanceTimersByTimeAsync(1000);
   expect(igAction).not.toHaveBeenCalled();
   expect(deps.login).toHaveBeenCalledTimes(1);
-  await vi.advanceTimersByTimeAsync(75 * 60_000 + 14_500);
+  await vi.advanceTimersByTimeAsync(minutes * 60_000 + 14_500);
   await running;
   expect(deps.login).toHaveBeenCalledTimes(2);
   expect(igAction).toHaveBeenCalledTimes(1);
   expect(deps.close).toHaveBeenCalledTimes(2);
+});
+
+test('startup during the afternoon window skips login until its end plus jitter', async () => {
+  const { deps, options } = harness('2026-10-21T13:59:59');
+  const running = runMainLoop(options, deps);
+  await vi.advanceTimersByTimeAsync(16_499);
+  expect(deps.open).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  await running;
+  expect(deps.login).toHaveBeenCalledTimes(1);
+  expect(deps.log).toHaveBeenCalledWith('quiet_window_enter', expect.objectContaining({ end_at: new Date(at('2026-10-21T14:00:00')).toISOString() }));
+});
+
+test('merged windows sleep through intermediate ends and sample the largest jitter bounds once', async () => {
+  const windows = windowsFor('07:00-08:00', '08:00-09:00', '08:30-10:00');
+  windows[0].jitter_ms = [1000, 2000];
+  windows[1].jitter_ms = [2000, 4000];
+  windows[2].jitter_ms = [0, 1000];
+  const { deps, options } = harness('2026-10-21T07:59:59', windows);
+  const random = vi.fn(() => 0.5);
+  const running = runMainLoop(options, { ...deps, random });
+  await vi.advanceTimersByTimeAsync(2 * 3_600_000 + 3999);
+  expect(deps.open).not.toHaveBeenCalled();
+  expect(random).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1);
+  await running;
+  expect(deps.login).toHaveBeenCalledTimes(1);
+  expect(deps.log.mock.calls.map(call => call[0])).toEqual(['quiet_window_enter', 'quiet_window_exit']);
+  expect(deps.log).toHaveBeenCalledWith('quiet_window_enter', expect.objectContaining({ end_at: new Date(at('2026-10-21T10:00:00')).toISOString() }));
+});
+
+test('resuming arms the boundary timer for the following window', async () => {
+  const windows = windowsFor('07:00-07:01', '07:02-07:03').map(w => ({ ...w, jitter_ms: [0, 0] as [number, number] }));
+  const { deps, options, stop } = harness('2026-10-21T07:00:59', windows);
+  const running = runMainLoop({ ...options, once: false, pollMinutes: [10, 10] }, deps);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(deps.login).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(deps.close).toHaveBeenCalledTimes(1);
+  expect(deps.log.mock.calls.map(call => call[0])).toEqual(['quiet_window_enter', 'quiet_window_exit', 'quiet_window_enter']);
+  stop();
+  await vi.advanceTimersByTimeAsync(1000);
+  await running;
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test('empty schedules run without a boundary timer', async () => {
+  const { deps, options } = harness('2026-10-21T07:00:00', []);
+  await runMainLoop(options, deps);
+  expect(deps.cycle).toHaveBeenCalledTimes(1);
+  expect(deps.log).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test('a full-day merged window keeps shutdown responsive and never opens a browser', async () => {
+  const { deps, options, stop } = harness('2026-10-21T23:59:59', windowsFor('00:00-12:00', '12:00-00:00'));
+  const running = runMainLoop(options, deps);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(deps.open).not.toHaveBeenCalled();
+  expect(deps.log).toHaveBeenCalledWith('quiet_window_enter', { timezone: 'Asia/Seoul', end_at: null, resume_at: null });
+  stop();
+  await vi.advanceTimersByTimeAsync(1000);
+  await running;
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 test('polling idle time also closes at the boundary and shutdown interrupts quiet sleep', async () => {
@@ -150,7 +295,7 @@ test('polling idle time also closes at the boundary and shutdown interrupts quie
 });
 
 test('main loop waits across midnight before opening a session', async () => {
-  const { deps, options } = harness('2026-12-31T23:59:59', { ...window, start: '23:00', end: '00:00', jitter_ms: [1000, 1000] });
+  const { deps, options } = harness('2026-12-31T23:59:59', [{ ...window, start: '23:00', end: '00:00', jitter_ms: [1000, 1000] }]);
   const running = runMainLoop(options, deps);
   await vi.advanceTimersByTimeAsync(1999);
   expect(deps.login).not.toHaveBeenCalled();
