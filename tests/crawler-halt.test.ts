@@ -17,12 +17,13 @@ beforeEach(async () => {
   await initHealth(dir);
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await flushHealth();
   await rm(dir, { recursive: true, force: true });
 });
 
 function diagnosticPage(text: string) {
-  const evaluate = vi.fn(async () => {});
+  const evaluate = vi.fn<(...args: unknown[]) => Promise<{ root_masked: boolean } | undefined>>(async () => undefined);
   const screenshot = vi.fn(async () => Buffer.from('offline-png-fixture'));
   const innerText = vi.fn(async () => text);
   const page = {
@@ -55,7 +56,7 @@ test('halt saves matching private diagnostics, redacts URL/text and logs a bound
   expect(await readFile(join(dir, 'logs', files[0]))).toEqual(Buffer.from('offline-png-fixture'));
   for (const file of files) expect((await stat(join(dir, 'logs', file))).mode & 0o777).toBe(0o600);
   expect((await stat(join(dir, 'logs'))).mode & 0o777).toBe(0o700);
-  expect(evaluate).toHaveBeenCalledWith(redactDiagnosticPage, redactionRules());
+  expect(evaluate).toHaveBeenCalledWith(redactDiagnosticPage, expect.arrayContaining(redactionRules()));
   expect(evaluate.mock.invocationCallOrder[0]).toBeLessThan(screenshot.mock.invocationCallOrder[0]);
   const [event] = await events();
   expect(event).toMatchObject({ event: 'halt', reason: 'login', path: '/accounts/login/' });
@@ -96,7 +97,7 @@ test.each(['text', 'mask', 'screenshot'] as const)('aborting during %s stops sub
   const controller = new AbortController();
   const { page, evaluate, screenshot } = diagnosticPage('safe text');
   if (phase === 'text') vi.mocked(page.locator('body').innerText).mockImplementation(async () => { controller.abort(); return 'safe'; });
-  if (phase === 'mask') evaluate.mockImplementation(async () => { controller.abort(); });
+  if (phase === 'mask') evaluate.mockImplementation(async () => { controller.abort(); return undefined; });
   if (phase === 'screenshot') screenshot.mockImplementation(async () => { controller.abort(); return Buffer.from('must-not-save'); });
   await captureHalt(dir, 'blocked', page, controller.signal);
   if (phase === 'text') expect(evaluate).not.toHaveBeenCalled();
@@ -213,4 +214,130 @@ test.each([
     expect(element.style.setProperty).toHaveBeenCalledWith('opacity', '0', 'important');
   }
   expect(nested.style.setProperty).not.toHaveBeenCalled();
+});
+
+test('halt distinguishes a masked white screenshot from an empty body using safe metadata', async () => {
+  const original = 'Check your email offline-user@example.invalid sessionid=offline-cookie-value';
+  vi.stubEnv('AGAMAJUNG_IG_USER', 'offline-user');
+  const { page, evaluate } = diagnosticPage(original);
+  evaluate.mockResolvedValue({ root_masked: true });
+  await captureHalt(dir, 'challenge', page);
+  const [event] = await events();
+  expect(event).toMatchObject({ state: 'challenge', body_length: original.length, root_masked: true });
+  const files = (await readdir(join(dir, 'logs'))).filter(name => name.endsWith('.txt') || name.endsWith('.json'));
+  for (const file of files) {
+    const content = await readFile(join(dir, 'logs', file), 'utf8');
+    for (const secret of ['offline-user', 'example.invalid', 'offline-cookie-value']) expect(content).not.toContain(secret);
+  }
+  const summary = JSON.parse(await readFile(join(dir, 'logs', 'summary.json'), 'utf8'));
+  expect(summary.last_halt).toMatchObject({ state: 'challenge', body_length: original.length, root_masked: true });
+
+});
+
+test('redaction reports root masking while preserving the existing masking of nested secrets', () => {
+  const body = { textContent: 'p@ss+word$[]', style: { setProperty: vi.fn() }, getAttribute: () => null };
+  const document = {
+    body,
+    documentElement: body,
+    querySelectorAll: () => [body],
+    createTreeWalker: () => ({ nextNode: () => false }),
+  };
+  const result = runInNewContext(`(${redactDiagnosticPage.toString()})(rules)`, {
+    document, NodeFilter: { SHOW_TEXT: 4 }, HTMLInputElement: class {}, HTMLTextAreaElement: class {}, rules: redactionRules(),
+  });
+  expect(result).toEqual({ root_masked: true });
+  expect(body.style.setProperty).toHaveBeenCalledWith('opacity', '0', 'important');
+});
+
+test('aborting a pending frame scrub still reports the halt exactly once before the browser returns', async () => {
+  const controller = new AbortController();
+  const { page, evaluate, screenshot } = diagnosticPage('safe visible text');
+  let release!: () => void;
+  let entered!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  evaluate.mockImplementation(async () => { entered(); await pending; return undefined; });
+  const running = captureHalt(dir, 'challenge', page, controller.signal);
+  await ready;
+  controller.abort();
+  await running; // Abort also releases captureHalt without waiting for the frame.
+  expect(await events()).toEqual([expect.objectContaining({ event: 'halt', reason: 'challenge', root_masked: null })]);
+  release();
+  await running;
+  expect(await events()).toHaveLength(1);
+  expect(screenshot).not.toHaveBeenCalled();
+});
+
+test.each(['resolve', 'reject'] as const)('a stalled DOM scrub times out and saves the halt and TXT before a late %s', async late => {
+  vi.useFakeTimers();
+  const { page, evaluate, screenshot } = diagnosticPage('safe text p@ss+word$[]');
+  const nextFrame = diagnosticPage('unused');
+  const frames = [...page.frames(), ...nextFrame.page.frames()];
+  vi.spyOn(page, 'frames').mockReturnValue(frames);
+  let release!: (value: { root_masked: boolean }) => void;
+  let reject!: (error: Error) => void;
+  let entered!: () => void;
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  evaluate.mockImplementation(() => {
+    entered();
+    return new Promise((resolve, fail) => { release = resolve; reject = fail; });
+  });
+  const running = captureHalt(dir, 'login', page);
+  await ready;
+  await vi.advanceTimersByTimeAsync(5000);
+  await running;
+  const logged = await events();
+  expect(logged).toEqual([
+    expect.objectContaining({ event: 'halt', reason: 'login', root_masked: null }),
+    expect.objectContaining({ event: 'warn', scope: 'halt_screenshot' }),
+  ]);
+  const files = (await readdir(join(dir, 'logs'))).filter(name => name.startsWith('halt-'));
+  expect(files).toHaveLength(1);
+  expect(files[0]).toMatch(/\.txt$/);
+  const text = await readFile(join(dir, 'logs', files[0]), 'utf8');
+  expect(text).toContain('Root masked: unknown');
+  expect(text).toContain('safe text [redacted]');
+  expect(text).not.toContain('p@ss+word$[]');
+  expect((await stat(join(dir, 'logs', files[0]))).mode & 0o777).toBe(0o600);
+  const summary = JSON.parse(await readFile(join(dir, 'logs', 'summary.json'), 'utf8'));
+  expect(summary.last_halt).toMatchObject({ reason: 'login', root_masked: null });
+  if (late === 'resolve') release({ root_masked: true });
+  else reject(new Error('late failure p@ss+word$[]'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(screenshot).not.toHaveBeenCalled();
+  expect(nextFrame.evaluate).not.toHaveBeenCalled();
+  expect(await events()).toEqual(logged);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test('all diagnostic frames share one masking timeout budget', async () => {
+  vi.useFakeTimers();
+  const { page, evaluate, screenshot } = diagnosticPage('safe text');
+  const nextFrame = diagnosticPage('unused');
+  const frames = [...page.frames(), ...nextFrame.page.frames()];
+  vi.spyOn(page, 'frames').mockReturnValue(frames);
+  let entered!: () => void;
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  evaluate.mockImplementation(async () => {
+    entered();
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    return { root_masked: true };
+  });
+  nextFrame.evaluate.mockImplementation(async () => {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    return { root_masked: false };
+  });
+  const began = Date.now();
+  const running = captureHalt(dir, 'challenge', page);
+  await ready;
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(nextFrame.evaluate).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(2000);
+  await running;
+  expect(Date.now() - began).toBe(5000);
+  expect((await events())[0]).toMatchObject({ event: 'halt', reason: 'challenge', root_masked: null });
+  expect((await readdir(join(dir, 'logs'))).filter(name => name.endsWith('.txt'))).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(screenshot).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
 });

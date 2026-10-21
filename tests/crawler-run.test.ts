@@ -34,7 +34,7 @@ afterEach(() => {
   }
 });
 
-test.each(['login', 'cycle'])('the orchestrator captures a %s halt before closing, using the unguarded diagnostic page', async phase => {
+test.each(['login', 'challenge', 'cycle'])('the orchestrator captures a %s halt before closing, using the unguarded diagnostic page', async phase => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-10-21T12:00:00+09:00'));
   vi.stubEnv('AGAMAJUNG_API_URL', 'https://ingest.invalid/');
@@ -54,8 +54,9 @@ test.each(['login', 'cycle'])('the orchestrator captures a %s halt before closin
     context: { close: closeContext } as unknown as BrowserContext,
     browser: { close: closeBrowser } as unknown as Browser,
   });
-  const halt = new HaltError('login');
-  if (phase === 'login') vi.mocked(ensureLogin).mockRejectedValue(halt);
+  const reason = phase === 'challenge' ? 'challenge' : 'login';
+  const halt = new HaltError(reason);
+  if (phase !== 'cycle') vi.mocked(ensureLogin).mockRejectedValue(halt);
   else {
     vi.mocked(ensureLogin).mockResolvedValue(undefined);
     vi.mocked(syncFollowing).mockRejectedValue(halt);
@@ -67,7 +68,7 @@ test.each(['login', 'cycle'])('the orchestrator captures a %s halt before closin
     throw new Error('diagnostics failed');
   });
   await expect(main()).rejects.toBe(halt);
-  expect(captureHalt).toHaveBeenLastCalledWith(expect.stringMatching(/\/crawler$/), 'login', diagnosticPage, expect.any(AbortSignal));
+  expect(captureHalt).toHaveBeenLastCalledWith(expect.stringMatching(/\/crawler$/), reason, diagnosticPage, expect.any(AbortSignal));
   expect(closeContext).toHaveBeenCalledTimes(1);
   expect(closeBrowser).toHaveBeenCalledTimes(1);
   expect(save).toHaveBeenCalledTimes(1);

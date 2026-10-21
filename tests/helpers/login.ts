@@ -16,7 +16,7 @@ export const loginSettings = () => {
   settings.delays_ms.action = [5, 5];
   return settings;
 };
-type Stage = 'login' | 'settling' | 'save' | 'notifications' | 'home' | 'activity' | 'challenge' | 'blocked' | 'unknown';
+type Stage = 'login' | 'settling' | 'save' | 'notifications' | 'home' | 'activity' | 'challenge' | 'blocked' | 'unknown' | 'blank' | 'email-ko' | 'email-en';
 export function loginFixture(options: {
   restored?: boolean; language?: 'en' | 'ko'; fullPage?: boolean; panel?: boolean;
   prompts?: boolean; submitDelay?: number; afterSubmit?: Stage; stuckPrompt?: boolean;
@@ -42,6 +42,7 @@ export function loginFixture(options: {
     }, options.submitDelay ?? 40);
   });
   const fill = vi.fn();
+  const surface = vi.fn(() => stage === 'blank' || stage === 'settling');
   const promptNode = (): Node[] => stage === 'save' || stage === 'notifications' ? [{
     text: titles[stage],
     children: selector => selector === 'role:button' ? [{ name: options.language === 'ko' ? '나중에 하기' : 'Not Now', click: dismiss }] : [],
@@ -50,8 +51,9 @@ export function loginFixture(options: {
     if (selector === 'input[name="username"]') return stage === 'login' ? [{ fill }] : [];
     if (selector === 'input[name="password"]') return stage === 'login' ? [{ fill }] : [];
     if (selector === 'button[type="submit"]') return stage === 'login' ? [{ click: submit }] : [];
+    if (selector === 'input[name="code"], input[name="email_code"], input[name="confirmationCode"], input[name="confirmation_code"], input[name="emailCode"], input[inputmode="numeric"]') return stage.startsWith('email-') ? [{}] : [];
     if (selector === 'text') return stage === 'save' || stage === 'notifications' ? [{ text: titles[stage] }]
-      : stage === 'blocked' ? [{ text: 'Action Blocked' }] : stage === 'challenge' ? [{ text: 'Enter the security code' }] : [];
+      : stage === 'email-ko' ? [{ text: '이메일을 확인하세요' }] : stage === 'email-en' ? [{ text: 'Check your email' }] : stage === 'blocked' ? [{ text: 'Action Blocked' }] : stage === 'challenge' ? [{ text: 'Enter the security code' }] : [];
     if (selector === 'role:dialog') return options.fullPage ? [] : stage === 'activity' ? [{ href: '/fresh_seller/' }] : promptNode();
     if (selector === 'main, [role="main"]') return options.fullPage ? promptNode() : [];
     if (selector === 'role:link' && (stage === 'home' || stage === 'activity')) return [
@@ -59,7 +61,8 @@ export function loginFixture(options: {
       ...(options.panel ? [{ name: 'Notifications', click: () => { stage = 'activity'; } }] : []),
     ];
     if (selector === 'role:button') return [{ name: 'Not Now', click: decoy }];
-    if (selector === '[role="main"], main' || selector === 'body') return stage === 'activity' ? [{ href: '/fresh_seller/' }] : [];
+    if (selector === 'body') return [{ evaluate: surface }];
+    if (selector === '[role="main"], main') return stage === 'activity' ? [{ href: '/fresh_seller/' }] : [];
     if (selector === 'a[href*="/stories/"]') return stage === 'home' ? [{ href: '/stories/story_seller/123/' }] : [];
     return [];
   });
@@ -76,7 +79,7 @@ export function loginFixture(options: {
   });
   const storageState = vi.fn(async () => ({ ...sessionState(), cookies }));
   const context = { cookies: vi.fn(async () => cookies), storageState } as unknown as BrowserContext;
-  return { ...mock, context, storageState, submit, dismiss, decoy, fill,
+  return { ...mock, context, storageState, submit, dismiss, decoy, fill, surface,
     setStage: (next: Stage) => { stage = next; },
     setCookies: (next: SessionState['cookies']) => { cookies = next; },
     stage: () => stage,
