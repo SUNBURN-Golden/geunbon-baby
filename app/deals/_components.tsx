@@ -1,3 +1,4 @@
+import { DealImage } from './_image';
 import Link from 'next/link';
 import { dealTiming, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
 import { dealsCopy } from '../../lib/deals-copy';
@@ -76,6 +77,7 @@ export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number
   const gap = priceGap(deal.price, deal.model_joined_id ? deal.model_official_price : null);
   return (
     <article className="deal-card">
+      <DealImage src={deal.image_url} alt={`${deal.title} 상품 이미지`} />
       <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} /></div>
       <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link></h2>
       <DealPrice deal={deal} timing={timing} />
@@ -134,6 +136,7 @@ export function DealDetail({ deal, nowMs }: { deal: DealWithContext; nowMs: numb
       <Link className="deal-back" href="/deals">{dealsCopy.back}</Link>
       <article className="deal-detail">
         <DealHeader deal={deal} timing={timing} />
+        <DealImage src={deal.image_url} alt={`${deal.title} 상품 이미지`} />
         <DealPrice deal={deal} timing={timing} />
         <PriceGap deal={deal} gap={gap} />
         <PriceToneBadge gap={gap} timing={timing} />

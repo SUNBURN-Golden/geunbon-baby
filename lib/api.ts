@@ -1,3 +1,4 @@
+import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
 import { comparison, type Model, type Deal } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
@@ -104,6 +105,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     if (!b || typeof b !== 'object') return json({ error: '잘못된 입력' }, 400);
     if (path === 'ingest') {
       if (!safeUrl(b.source_url) || !text(b.account, 100) || !text(b.text, 20000) || !['post', 'story'].includes(b.kind) || !date(b.captured_at)) return json({ error: 'source_url, account, text, kind, captured_at 확인 필요' }, 400);
+      if (b.image_url != null && !isImageUrl(b.image_url)) return json({ error: '잘못된 입력' }, 400);
       let suggestions: string | null = null;
       if (b.suggestions != null) {
         const parsed = parseSuggestions(b.suggestions);
@@ -114,11 +116,12 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       if (!['www.instagram.com', 'instagram.com'].includes(u.hostname) || u.protocol !== 'https:' || u.search || u.hash || !/^\/(p|reel)\/[A-Za-z0-9_-]+\/?$|^\/stories\/[A-Za-z0-9._]+\/[0-9]+\/?$/.test(u.pathname)) return json({ error: 'Instagram 원문 URL 필요' }, 400);
       const canonical = `https://www.instagram.com${u.pathname.replace(/\/$/, '')}/`;
       const id = crypto.randomUUID();
-      await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,suggestions) VALUES (?,?,?,?,?,?,?) ON CONFLICT(source_url) DO NOTHING').bind(id, canonical, b.account, b.text, b.kind, new Date(b.captured_at).toISOString(), suggestions).run();
+      await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,suggestions,image_url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(source_url) DO NOTHING').bind(id, canonical, b.account, b.text, b.kind, new Date(b.captured_at).toISOString(), suggestions, b.image_url ?? null).run();
       const item = await env.DB.prepare('SELECT id,status FROM ingested_items WHERE source_url = ?').bind(canonical).first();
       return json({ data: item }, 202);
     }
     if (!['approve', 'reject'].includes(b.action)) return json({ error: 'approve 또는 reject 필요' }, 400);
+    if ((b.include_image !== undefined && typeof b.include_image !== 'boolean') || 'image_url' in b) return json({ error: '잘못된 입력' }, 400);
     const item = await env.DB.prepare('SELECT * FROM ingested_items WHERE id = ?').bind(parts[2]).first<{ status: string; source_url: string }>();
     if (!item) return json({ error: '항목 없음' }, 404);
     if (item.status !== 'pending') return json({ error: '이미 검수된 항목' }, 409);
@@ -132,7 +135,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     const seller = await env.DB.prepare('SELECT id FROM sellers WHERE id = ?').bind(b.seller_id).first();
     if (!model || !seller) return json({ error: '등록된 모델·판매자만 게시할 수 있습니다' }, 400);
     const results = await env.DB.batch([
-      env.DB.prepare("INSERT INTO deals SELECT id, ?, ?, ?, ?, source_url, 'manual', ?, ?, ? FROM ingested_items WHERE id = ? AND status = 'pending' ON CONFLICT(id) DO NOTHING").bind(b.model_id, b.seller_id, b.title, b.price, now, b.starts_at, b.ends_at, parts[2]),
+      env.DB.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) SELECT id, ?, ?, ?, ?, source_url, 'manual', ?, ?, ?, CASE WHEN ? THEN image_url ELSE NULL END FROM ingested_items WHERE id = ? AND status = 'pending' ON CONFLICT(id) DO NOTHING").bind(b.model_id, b.seller_id, b.title, b.price, now, b.starts_at, b.ends_at, b.include_image === false ? 0 : 1, parts[2]),
       env.DB.prepare("UPDATE ingested_items SET status = 'approved', reviewed_at = ? WHERE id = ? AND status = 'pending'").bind(now, parts[2]),
     ]);
     return results[0].meta.changes ? json({ data: { status: 'approved' } }) : json({ error: '이미 검수된 항목' }, 409);
