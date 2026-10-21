@@ -32,7 +32,7 @@ npm run dev
 - `/models/:id`: 공구가 / 공식가 / 해외가 / 당근 중고 시세, 출처·확인일·검증 수준
 - `/deals`, `/calendar`: 검수 완료 공구 및 일정 (전부 **광고** 표시)
 - `/sellers`: 통신판매업 신고·청약철회 7일·정식수입 증빙. 시드에 증빙이 없으므로 미확인으로 표시
-- `/admin`: ADMIN_TOKEN 로그인 후 검수 대기 원문 승인/반려. httpOnly·SameSite strict 1시간 쿠키, Next.js Server Actions의 동일 origin 검증 사용. 공개 화면에는 대기 원문을 전달하지 않음
+- `/admin`: ADMIN_TOKEN 로그인 후 검수 대기 원문 승인/반려. 크롤러가 보낸 자동 추출 제안(모델·가격·일정·링크 후보와 근거)은 참고용으로만 함께 표시. httpOnly·SameSite strict 1시간 쿠키, Next.js Server Actions의 동일 origin 검증 사용. 공개 화면에는 대기 원문을 전달하지 않음
 
 로컬 HTTP의 localhost는 브라우저 secure cookie 예외가 적용됩니다. 관리자 접속은 localhost를 사용하세요. 공유/운영 환경은 HTTPS가 필수입니다. 토큰을 URL에 넣지 마세요. 운영 공개 전 관리자 경로와 ingest에 Cloudflare Access/WAF 등의 접근통제·레이트리밋을 별도로 설정하는 것을 권장합니다.
 
@@ -60,11 +60,18 @@ npm run dev
   "account": "실제_팔로잉_계정",
   "kind": "post",
   "text": "수집한 실제 원문",
-  "captured_at": "2026-10-21T09:00:00+09:00"
+  "captured_at": "2026-10-21T09:00:00+09:00",
+  "suggestions": {
+    "models": [{ "model_id": "model-1", "brand": "Stokke", "name": "트립트랩 하이체어(너도밤나무)", "matched": ["스토케", "트립트랩"], "confidence": 0.95 }],
+    "price": { "value": 390000, "raw": "390,000원", "confidence": 0.9 },
+    "dates": { "starts_at": "2026-10-26T00:00:00+09:00", "ends_at": "2026-10-28T23:59:59+09:00", "raw": "10/26~10/28", "confidence": 0.95 },
+    "links": [{ "url": "", "kind": "link_in_bio", "confidence": 0.85 }],
+    "confidence": 0.93
+  }
 }
 ```
 
-위 예시는 프로토콜 설명용이며 시드/게시 데이터가 아닙니다. `kind`는 post/story, Instagram HTTPS 원문 URL만 허용합니다. URL 중복은 기존 id/status를 반환합니다(202). 수집 즉시 pending, 공개 API/화면에는 미노출입니다.
+위 예시는 프로토콜 설명용이며 시드/게시 데이터가 아닙니다. `kind`는 post/story, Instagram HTTPS 원문 URL만 허용합니다. `suggestions`는 선택(생략·null 가능)이고 크롤러 v2의 자동 추출 결과입니다. 형식이 어긋나면 400으로 거부됩니다. URL 중복은 기존 id/status를 반환합니다(202). 수집 즉시 pending, 공개 API/화면에는 미노출입니다. **제안은 `/admin` 검수 화면에 힌트로만 표시되며 사람이 승인하기 전까지 게시 데이터에 어떤 값도 반영되지 않습니다.**
 
 승인 JSON은 `action: "approve"`, 등록된 `model_id`, `seller_id`, `title`, `price`(정수 원 또는 null), `starts_at`, `ends_at`(시간대 포함 ISO)을 받습니다. 반려는 `{ "action": "reject" }`입니다. 승인 후 가격은 manual 검증 수준이며 원문 URL을 유지합니다. 이미 검수된 건은 409, 잘못된 입력은 400입니다. 게시와 검수 상태 변경은 D1 batch 트랜잭션으로 처리합니다. 판매자 신규 등록·배지 증빙은 현재 관리자 UI 범위에 없으며 운영자가 검증한 근거를 D1 마이그레이션으로 추가해야 합니다.
 
@@ -80,7 +87,7 @@ npm run dev
 
 ## 크롤러
 
-별도 Linux Node+Playwright worker의 설치·보안·제약은 [crawler/README.md](crawler/README.md)를 참고하세요. Workers Cron에서 Instagram에 접속하지 않습니다. 크롤러는 자동 가격 파싱/게시 없이 검수 원문만 전달합니다.
+별도 Linux Node+Playwright worker의 설치·보안·제약은 [crawler/README.md](crawler/README.md)를 참고하세요. Workers Cron에서 Instagram에 접속하지 않습니다. v2 크롤러는 검수 가능한 설정 파일(`crawler/config/`)로 시드 계정·속도 한도를 관리하고, 알림·스토리 트레이 신호로 수집 우선순위를 정하며, 캡션·스토리 OCR에서 모델·가격·공구 일정·링크를 자동 추출해 **제안**으로만 검수 대기열에 함께 전송합니다. 사람 승인 전까지 게시되지 않습니다. 자동 팔로우는 일일 상한·무작위 간격을 지키고 차단·챌린지 감지 시 즉시 중단합니다.
 
 ## 검증
 

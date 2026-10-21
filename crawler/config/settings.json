@@ -1,0 +1,11 @@
+{
+  "$comment": "아가마중 크롤러 v2 속도·한도 기본값. 모두 보수적으로 잡았다. 최소/최대 쌍은 매번 무작위 지터 범위(밀리초 또는 분). 환경변수로는 AGAMAJUNG_OCR=0 (OCR 끔), AGAMAJUNG_OCR_LANG, AGAMAJUNG_HEADLESS=0, AGAMAJUNG_ONCE=1 만 덮어쓴다. 값을 올리기 전에 Instagram 행동 제한과 수집 최소화 원칙을 다시 검토한다.",
+  "poll_interval_minutes": [3, 7],
+  "per_tick": { "max_accounts": 5, "max_posts_per_account": 3, "max_stories_per_account": 5 },
+  "hourly_caps": { "profile_visits": 30, "post_views": 40, "story_opens": 20, "follows": 8, "hashtag_pages": 2 },
+  "follow": { "daily_cap": 20, "allow_unverified": false, "gap_seconds": [120, 420] },
+  "delays_ms": { "navigation": [15000, 45000], "action": [8000, 22000], "login": [20000, 30000] },
+  "discovery": { "enabled": true, "posts_per_tag": 2, "min_interval_hours": 6 },
+  "ocr": { "enabled": true, "langs": "kor+eng", "timeout_ms": 30000 },
+  "staleness": { "account_recheck_minutes": 90, "story_recheck_minutes": 30 }
+}
