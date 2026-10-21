@@ -6,7 +6,8 @@ import settingsJson from '../crawler/config/settings.json';
 import { parseSettings, type SeedAccount } from '../crawler/lib/config';
 import { maybeFollow } from '../crawler/lib/follow';
 import { CrawlerState } from '../crawler/lib/state';
-import { HaltError } from '../crawler/lib/browser';
+import { guardPage, HaltError } from '../crawler/lib/browser';
+import { QuietWindowError, quietWindowAt } from '../crawler/lib/quiet-window';
 import { mockPage } from './helpers/page';
 vi.mock('../crawler/lib/util', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/util')>(), sleep: vi.fn(async () => {}) }));
 let dir: string;
@@ -60,4 +61,23 @@ test('a challenge immediately halts before any follow click', async () => {
   const { page } = mockPage(selector => selector === 'text' ? [{ text: '보안 코드' }] : []);
   await expect(maybeFollow(page, { accounts: [seed()], settings: settings(), state })).rejects.toBeInstanceOf(HaltError);
   expect(state.countDay('follow')).toBe(0);
+});
+
+test('quiet start during persisted follow reservation prevents the cached button click', async () => {
+  vi.setSystemTime(new Date('2026-10-20T21:44:59.999Z')); // 06:44:59.999 KST
+  const state = await CrawlerState.open(join(dir, 'state.json'));
+  const reserve = state.reserve.bind(state);
+  vi.spyOn(state, 'reserve').mockImplementation(async (kind, caps) => {
+    const allowed = await reserve(kind, caps);
+    if (kind === 'follow') vi.setSystemTime(new Date('2026-10-20T21:45:00Z'));
+    return allowed;
+  });
+  const click = vi.fn();
+  const { page } = mockPage(selector => selector === 'role:button' ? [{ name: 'Follow', click }] : []);
+  const config = settings();
+  const check = () => { if (quietWindowAt(config.quiet_window, Date.now()).active) throw new QuietWindowError(); };
+  await expect(maybeFollow(guardPage(page, check), { accounts: [seed()], settings: config, state })).rejects.toBeInstanceOf(QuietWindowError);
+  expect(click).not.toHaveBeenCalled();
+  // Reservations stay conservative: interruption cannot reset the shared account's cap.
+  expect(state.countDay('follow')).toBe(1);
 });

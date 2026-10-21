@@ -7,6 +7,7 @@ export function mockLocator(nodes: () => Node[]): Locator {
     nth: (i: number) => mockLocator(() => nodes().slice(i, i + 1)),
     first: () => mockLocator(() => nodes().slice(0, 1)),
     isVisible: vi.fn(async () => { if (nodes()[0]?.throws) throw new Error('detached'); return nodes()[0]?.visible !== false; }),
+    fill: vi.fn(async () => {}),
     click: vi.fn(async () => { if (nodes()[0]?.throws) throw new Error('detached'); await nodes()[0]?.click?.(); }),
     innerText: vi.fn(async () => nodes()[0]?.text ?? ''),
     getAttribute: vi.fn(async () => nodes()[0]?.href ?? null),

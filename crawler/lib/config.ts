@@ -1,11 +1,13 @@
 // config/settings.json · config/accounts.json 로더. 형식이 어긋나면 실행을 중단한다(잘못된 속도로 동작하지 않게).
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { parseQuietWindow, type QuietWindow } from './quiet-window';
 
 export type SeedAccount = { handle: string; brand: string; scope: 'global' | 'kr'; verified: boolean; follow: boolean; note: string };
 export type DiscoveryConfig = { hashtags: { base: string[]; brand: string[]; extra: string[] } };
 export type AccountsFile = { seed_accounts: SeedAccount[]; discovery: DiscoveryConfig };
 export type Settings = {
+  quiet_window: QuietWindow;
   poll_interval_minutes: [number, number];
   per_tick: { max_accounts: number; max_posts_per_account: number; max_stories_per_account: number };
   hourly_caps: { profile_visits: number; post_views: number; story_opens: number; follows: number; hashtag_pages: number };
@@ -27,7 +29,7 @@ const pair = (v: unknown, what: string): [number, number] => {
 const limit = (v: unknown, what: string) => { if (!Number.isSafeInteger(v) || (v as number) < 0) throw new Error(`${what} 값이 잘못되었습니다.`); return v as number; };
 const positive = (v: unknown, what: string) => { if (!Number.isFinite(v) || (v as number) <= 0) throw new Error(`${what} 값이 잘못되었습니다.`); return v as number; };
 
-export function parseSettings(raw: unknown): Settings {
+export function parseSettings(raw: unknown, env: Record<string, string | undefined> = {}): Settings {
   if (!raw || typeof raw !== 'object') throw new Error('settings.json 형식 오류');
   const v = raw as Record<string, unknown>;
   for (const key of ['per_tick', 'hourly_caps', 'follow', 'delays_ms', 'discovery', 'ocr', 'staleness']) {
@@ -41,6 +43,7 @@ export function parseSettings(raw: unknown): Settings {
   const ocr = v.ocr as Record<string, unknown>;
   const staleness = v.staleness as Record<string, unknown>;
   return {
+    quiet_window: parseQuietWindow(v.quiet_window, env.AGAMAJUNG_QUIET_WINDOW),
     poll_interval_minutes: pair(v.poll_interval_minutes, 'poll_interval_minutes'),
     per_tick: { max_accounts: limit(perTick.max_accounts, 'per_tick.max_accounts'), max_posts_per_account: limit(perTick.max_posts_per_account, 'per_tick.max_posts_per_account'), max_stories_per_account: limit(perTick.max_stories_per_account, 'per_tick.max_stories_per_account') },
     hourly_caps: { profile_visits: limit(caps.profile_visits, 'hourly_caps.profile_visits'), post_views: limit(caps.post_views, 'hourly_caps.post_views'), story_opens: limit(caps.story_opens, 'hourly_caps.story_opens'), follows: limit(caps.follows, 'hourly_caps.follows'), hashtag_pages: limit(caps.hashtag_pages, 'hourly_caps.hashtag_pages') },
@@ -68,9 +71,9 @@ function parseAccounts(raw: unknown): AccountsFile {
 }
 
 export async function loadConfig(crawlerDir: string): Promise<{ settings: Settings; accounts: AccountsFile }> {
-  const settings = parseSettings(await readJson(resolve(crawlerDir, 'config', 'settings.json')));
+  const settings = parseSettings(await readJson(resolve(crawlerDir, 'config', 'settings.json')), process.env);
   const accounts = parseAccounts(await readJson(resolve(crawlerDir, 'config', 'accounts.json')));
-  // 환경변수는 OCR 스위치만 덮어쓴다(기본 켜짐, 0이면 끔).
+  // OCR 환경변수 덮어쓰기(기본 켜짐, 0이면 끔).
   if (process.env.AGAMAJUNG_OCR === '0') settings.ocr.enabled = false;
   if (process.env.AGAMAJUNG_OCR === '1') settings.ocr.enabled = true;
   if (process.env.AGAMAJUNG_OCR_LANG) settings.ocr.langs = process.env.AGAMAJUNG_OCR_LANG;

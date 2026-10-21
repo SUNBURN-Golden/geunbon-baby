@@ -18,7 +18,8 @@ export async function assertHuman(page: Page) {
   if (await hasText(page, /Action Blocked|We restrict|temporarily blocked|일시적으로 (사용|차단|제한)|행동이 제한|활동이 제한|게시물에 대한 활동이 마음에 들지 않는지|잠시 차단/i)) throw new HaltError('blocked');
 }
 
-export async function launchBrowser(crawlerDir: string): Promise<{ browser: Browser; context: BrowserContext; page: Page; sessionFile: string }> {
+export async function launchBrowser(crawlerDir: string, check: () => void = () => {}): Promise<{ browser: Browser; context: BrowserContext; page: Page; sessionFile: string }> {
+  check();
   const sessionDir = resolve(crawlerDir, '.session');
   const cacheDir = resolve(crawlerDir, '.cache');
   await mkdir(sessionDir, { recursive: true, mode: 0o700 });
@@ -28,14 +29,21 @@ export async function launchBrowser(crawlerDir: string): Promise<{ browser: Brow
   const sessionFile = resolve(sessionDir, 'state.json');
   let storageState: string | undefined;
   try { await readFile(sessionFile); storageState = sessionFile; } catch { /* 최초 실행이면 세션 없이 시작 */ }
+  check();
   const browser = await chromium.launch({ headless: process.env.AGAMAJUNG_HEADLESS !== '0' });
   // 한국어 UI·KST 시각을 고정한다(셀렉터의 한글 버튼명·날짜 해석 전제).
   try {
+    check();
     const context = await browser.newContext({ storageState, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
+    check();
     const page = await context.newPage();
+    check();
     page.setDefaultTimeout(15000);
-    return { browser, context, page, sessionFile };
-  } catch { await browser.close(); throw new Error('브라우저 세션을 열 수 없습니다. 세션 파일을 점검하세요.'); }
+    return { browser, context, page: guardPage(page, check), sessionFile };
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
 }
 
 export async function ensureLogin(context: BrowserContext, page: Page, settings: Settings, username: string, sessionFile: string) {
@@ -56,4 +64,22 @@ export async function ensureLogin(context: BrowserContext, page: Page, settings:
   await assertHuman(page);
   await context.storageState({ path: sessionFile });
   await chmod(sessionFile, 0o600);
+}
+
+// Guard reads as well as writes: a scan, cached locator click, or login fill must
+// recheck the clock immediately before calling Playwright, including after delays.
+export function guardPage(page: Page, check: () => void): Page {
+  const locatorMethods = new Set(['locator', 'getByRole', 'getByText', 'getByLabel', 'getByPlaceholder', 'getByAltText', 'getByTitle', 'getByTestId', 'frameLocator', 'nth', 'first', 'last', 'filter', 'and', 'or']);
+  const wrap = <T extends object>(target: T): T => new Proxy(target, {
+    get(object, key) {
+      const value = Reflect.get(object, key, object);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        check();
+        const result = Reflect.apply(value, object, args);
+        return locatorMethods.has(String(key)) ? wrap(result) : result;
+      };
+    },
+  });
+  return wrap(page);
 }

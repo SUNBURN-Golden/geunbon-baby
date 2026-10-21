@@ -13,6 +13,8 @@ import { discoverSellers } from './lib/discover';
 import { IngestError } from './lib/ingest';
 import { sleep } from './lib/util';
 import { planScans } from './lib/schedule';
+import { runMainLoop } from './lib/main-loop';
+import { QuietWindowError } from './lib/quiet-window';
 
 async function main() {
   const endpoint = process.env.AGAMAJUNG_API_URL;
@@ -27,61 +29,62 @@ async function main() {
   const state = await CrawlerState.open(statePath(crawlerDir));
   const username = process.env.AGAMAJUNG_IG_USER ?? 'jaytparkitrighthere@gmail.com';
 
-  const { browser, context, page, sessionFile } = await launchBrowser(crawlerDir);
   let stopped = false;
   process.once('SIGINT', () => { stopped = true; });
   process.once('SIGTERM', () => { stopped = true; });
   health('run_start', { seeds: accounts.seed_accounts.length, ocr: settings.ocr.enabled, follow_daily_cap: settings.follow.daily_cap, poll: settings.poll_interval_minutes.join('-') });
   try {
-    await ensureLogin(context, page, settings, username, sessionFile);
-    while (!stopped) {
-      const cycleStarted = Date.now();
-      const signals = await readSignals(page, settings);
-      const queue = planScans(signals, state, accounts.seed_accounts, settings);
-      health('queue', { size: queue.length, accounts: queue.map(job => job.account).join(',') });
-      let posts = 0;
-      let stories = 0;
-      for (const job of queue) {
-        if (stopped) break;
-        const { account } = job;
-        try {
-          const collected = await collectAccount(page, { account, crawlerDir, state, settings, api, token, scanPosts: job.posts, scanStories: job.stories });
-          posts += collected.posts;
-          stories += collected.stories;
-        } catch (error) {
-          if (error instanceof HaltError || error instanceof IngestError) throw error;
-          // 셀렉터 미스·일시적 렌더 오류는 해당 계정만 건너뛰고 계속 진행한다.
-          health('error', { scope: 'collect', account });
+    await runMainLoop({ quietWindow: settings.quiet_window, pollMinutes: settings.poll_interval_minutes, once: process.env.AGAMAJUNG_ONCE === '1' }, {
+      now: Date.now,
+      random: Math.random,
+      sleep,
+      schedule: (callback, ms) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
+      stopped: () => stopped,
+      open: check => launchBrowser(crawlerDir, check),
+      login: ({ context, page, sessionFile }) => ensureLogin(context, page, settings, username, sessionFile),
+      close: async ({ context, browser }) => { try { await context.close(); } finally { await browser.close(); } },
+      save: () => state.save(),
+      flush: flushHealth,
+      log: health,
+      isFatal: error => error instanceof HaltError || error instanceof IngestError,
+      cycle: async ({ page }, check) => {
+        check();
+        const signals = await readSignals(page, settings);
+        check();
+        const queue = planScans(signals, state, accounts.seed_accounts, settings);
+        health('queue', { size: queue.length, accounts: queue.map(job => job.account).join(',') });
+        let posts = 0;
+        let stories = 0;
+        for (const job of queue) {
+          if (stopped) break;
+          check();
+          const { account } = job;
+          try {
+            const collected = await collectAccount(page, { account, crawlerDir, state, settings, api, token, scanPosts: job.posts, scanStories: job.stories });
+            posts += collected.posts;
+            stories += collected.stories;
+          } catch (error) {
+            if (error instanceof QuietWindowError || error instanceof HaltError || error instanceof IngestError) throw error;
+            health('error', { scope: 'collect', account });
+          }
         }
-      }
-      if (stopped) break;
-      const follow = await maybeFollow(page, { accounts: accounts.seed_accounts, state, settings });
-      if (!stopped) {
-        try { await discoverSellers(page, { accounts, state, settings }); }
-        catch (error) {
-          if (error instanceof HaltError || error instanceof IngestError) throw error;
-          health('error', { scope: 'discovery' });
+        if (stopped) return;
+        check();
+        const follow = await maybeFollow(page, { accounts: accounts.seed_accounts, state, settings });
+        if (!stopped) {
+          check();
+          try { await discoverSellers(page, { accounts, state, settings }); }
+          catch (error) {
+            if (error instanceof QuietWindowError || error instanceof HaltError || error instanceof IngestError) throw error;
+            health('error', { scope: 'discovery' });
+          }
         }
-      }
-      await state.save();
-      health('poll', { posts, stories, follow, followed_today: state.countDay('follow') });
-      await flushHealth();
-      if (process.env.AGAMAJUNG_ONCE === '1') break;
-      const [minMinutes, maxMinutes] = settings.poll_interval_minutes;
-      // Wake promptly on systemd/pm2 stop instead of waiting out a long timer.
-      const until = cycleStarted + (minMinutes + Math.random() * (maxMinutes - minMinutes)) * 60_000;
-      while (!stopped && Date.now() < until) await sleep(Math.min(1000, until - Date.now()));
-    }
+        health('poll', { posts, stories, follow, followed_today: state.countDay('follow') });
+      },
+    });
   } finally {
-    try { await state.save(); }
-    finally {
-      try { await context.close(); }
-      finally {
-        await browser.close();
-        health('run_stop', {});
-        await flushHealth();
-      }
-    }
+    health('run_stop', {});
+    await flushHealth();
   }
 }
 

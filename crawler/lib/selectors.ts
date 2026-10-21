@@ -3,6 +3,7 @@
 // 후보가 하나도 잡히지 않으면 selector_miss 상태 로그를 남기고 진행하거나(soft) 상위에서 중단한다.
 import type { Locator, Page } from 'playwright';
 import { canonicalPost } from './util';
+import { QuietWindowError } from './quiet-window';
 
 export async function firstVisible(candidates: Locator[]): Promise<Locator | null> {
   for (const candidate of candidates) {
@@ -11,7 +12,10 @@ export async function firstVisible(candidates: Locator[]): Promise<Locator | nul
         const match = candidate.nth(i);
         if (await match.isVisible()) return match;
       }
-    } catch { /* 렌더링 교체 중 사라진 후보는 건너뛴다 */ }
+    } catch (error) {
+      if (error instanceof QuietWindowError) throw error;
+      /* 렌더링 교체 중 사라진 후보는 건너뛴다 */
+    }
   }
   return null;
 }
@@ -21,7 +25,10 @@ export async function clickFirst(candidates: Locator[]): Promise<boolean> {
     const target = await firstVisible([candidate]);
     if (!target) continue;
     try { await target.click({ timeout: 5000 }); return true; }
-    catch { /* Detached or covered: try the next selector. */ }
+    catch (error) {
+      if (error instanceof QuietWindowError) throw error;
+      /* Detached or covered: try the next selector. */
+    }
   }
   return false;
 }
@@ -30,7 +37,10 @@ export async function hasText(page: Page, pattern: RegExp): Promise<boolean> {
   try {
     const hit = page.getByText(pattern).first();
     return (await hit.count()) > 0 && await hit.isVisible();
-  } catch { return false; }
+  } catch (error) {
+    if (error instanceof QuietWindowError) throw error;
+    return false;
+  }
 }
 
 export const followButton = (page: Page) => [

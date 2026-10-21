@@ -11,6 +11,7 @@ import { sleep } from './util';
 import { health } from './health';
 import { sendItem } from './ingest';
 import { extract, toSuggestions } from './extract';
+import { QuietWindowError } from './quiet-window';
 
 const exec = promisify(execFile);
 export async function readCaption(page: Page): Promise<string> {
@@ -42,7 +43,8 @@ async function ocrStory(page: Page, crawlerDir: string, settings: Settings): Pro
     await chmod(file, 0o600);
     const { stdout } = await exec('tesseract', [file, 'stdout', '-l', settings.ocr.langs], { timeout: settings.ocr.timeout_ms, maxBuffer: 32768 });
     return stdout.trim().slice(0, 6000);
-  } catch {
+  } catch (error) {
+    if (error instanceof QuietWindowError) throw error;
     health('warn', { scope: 'ocr', detail: 'tesseract·화면 캡처 실패(설치·언어팩 확인)' });
     return '';
   } finally { await unlink(file).catch(() => {}); }
