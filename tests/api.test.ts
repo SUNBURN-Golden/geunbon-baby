@@ -1,10 +1,11 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { Miniflare } from 'miniflare';
+import { Miniflare, convertV4MiniflareOptions, type V4MiniflareOptions } from 'miniflare';
 import { handleApi } from '../lib/api';
 import type { Env } from '../lib/db';
-const mf = new Miniflare({ modules: true, script: 'export default { fetch() { return new Response("ok"); } }', compatibilityDate: '2026-10-01', d1Databases: ['DB'], r2Buckets: ['IMAGES'] });
+const options: V4MiniflareOptions = { modules: true, script: 'export default { fetch() { return new Response("ok"); } }', compatibilityDate: '2026-10-01', d1Databases: ['DB'], r2Buckets: ['IMAGES'] };
+const mf = new Miniflare(convertV4MiniflareOptions(options));
 let env: Env;
 type ItemResponse = { data: { id: string; status: string } };
 type ListResponse = { data: { id: string; price: number | null; advertisement: boolean; notice: string }[] };
