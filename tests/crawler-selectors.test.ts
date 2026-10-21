@@ -58,3 +58,48 @@ test('legacy full-page save prompt is scoped to the onetap route', async () => {
   mock.setUrl('https://www.instagram.com/accounts/onetap/?next=/');
   expect((await loginPrompt(mock.page))?.dismiss).not.toBeNull();
 });
+
+test.each([
+  ['이메일을 확인하세요', 'code', true],
+  ['Check your email', 'numeric', true],
+  ['Enter the code sent to your email', 'named', true],
+  ['이메일로 보낸 코드를 입력하세요', 'named-ko', true],
+  ['Check your email', 'none', false],
+  ['할인 코드 / Promotional code', 'numeric', false],
+  ['Email preferences', 'code', false],
+] as const)('email challenge requires instructions and a control: %s / %s', async (text, control, expected) => {
+  const { emailCodeChallenge } = await import('../crawler/lib/selectors');
+  const { page } = mockPage(selector => {
+    if (selector === 'text') return [{ text }];
+    if (selector === 'role:textbox') return control === 'named' ? [{ name: 'Email code' }] : control === 'named-ko' ? [{ name: '이메일 코드' }] : [];
+    if (selector.startsWith('input[name="code"]')) return control === 'code' || control === 'numeric' ? [{}] : [];
+    return [];
+  });
+  expect(await emailCodeChallenge(page)).toBe(expected);
+});
+
+test.each([
+  ['', [], true],
+  ['Loading...', [], false],
+  ['', [{ hidden: true }], true],
+  ['', [{ hidden: false }], false],
+] as const)('blank observation checks visible text and controls without returning their values', async (text, controls, expected) => {
+  const { blankLoginSurface } = await import('../crawler/lib/selectors');
+  const { runInNewContext } = await import('node:vm');
+  const body = { innerText: text, querySelectorAll: () => controls.map(control => ({ ...control, getClientRects: () => control.hidden ? [] : [{}] })) };
+  const { page } = mockPage();
+  page.locator = () => ({ evaluate: async (fn: (body: unknown) => boolean) => runInNewContext(`(${fn.toString()})(body)`, {
+    body, getComputedStyle: (control: { hidden: boolean }) => ({ visibility: control.hidden ? 'hidden' : 'visible', display: 'block' }),
+  }) }) as unknown as import('playwright').Locator;
+  expect(await blankLoginSurface(page)).toBe(expected);
+});
+
+test('DOM read failures never qualify for blank recovery and interruption still propagates', async () => {
+  const { blankLoginSurface } = await import('../crawler/lib/selectors');
+  const { QuietWindowError } = await import('../crawler/lib/quiet-window');
+  let error: Error = new Error('detached private detail');
+  const { page } = mockPage(() => [{ evaluate: () => { throw error; } }]);
+  expect(await blankLoginSurface(page)).toBe(false);
+  error = new QuietWindowError();
+  await expect(blankLoginSurface(page)).rejects.toBe(error);
+});

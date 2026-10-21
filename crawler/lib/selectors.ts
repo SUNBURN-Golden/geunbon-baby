@@ -43,6 +43,33 @@ export async function hasText(page: Page, pattern: RegExp): Promise<boolean> {
   }
 }
 
+// Require an email verification instruction together with a code-entry control.
+// A generic mention of a code (for example a promotion) is not a challenge.
+export async function emailCodeChallenge(page: Page): Promise<boolean> {
+  return await hasText(page, /이메일을? 확인(?:하세요|해)|이메일(?: 주소)?로 (?:보낸|전송된|받은).{0,40}코드|Check your (?:e-?mail|inbox)|(?:code.{0,40}(?:sent|send).{0,40}e-?mail)|(?:enter.{0,20}code.{0,40}e-?mail)/i) &&
+    !!await firstVisible([
+      page.getByRole('textbox', { name: /^(?:코드|확인 코드|이메일 코드|Code|Confirmation code|Email code)$/i }),
+      page.locator('input[name="code"], input[name="email_code"], input[name="confirmationCode"], input[name="confirmation_code"], input[name="emailCode"], input[inputmode="numeric"]'),
+    ]);
+}
+
+// The result contains no page text or input values. Failed reads are unknown,
+// never evidence of a blank page. Keep this callback self-contained for Playwright.
+export async function blankLoginSurface(page: Page): Promise<boolean> {
+  try {
+    return await page.locator('body').evaluate(body => {
+      const controls = body.querySelectorAll('input:not([type="hidden"]), button, a[href], select, textarea, [role="button"], [role="link"], [role="textbox"], [role="dialog"], [role="alertdialog"], [contenteditable="true"]');
+      return !(body as HTMLElement).innerText.trim() && !Array.from(controls).some(element => {
+        const style = getComputedStyle(element);
+        return style.visibility !== 'hidden' && style.display !== 'none' && element.getClientRects().length > 0;
+      });
+    }, undefined, { timeout: 1000 }) === true;
+  } catch (error) {
+    if (error instanceof QuietWindowError) throw error;
+    return false;
+  }
+}
+
 export const loginInputs = (page: Page) => [
   page.getByRole('textbox', { name: /전화번호.*사용자|Phone number.*username|사용자 이름/i }),
   page.locator('input[name="username"]'),
