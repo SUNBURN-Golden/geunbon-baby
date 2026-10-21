@@ -5,7 +5,8 @@
 import { loadConfig } from './lib/config';
 import { CrawlerState, statePath } from './lib/state';
 import { health, initHealth, flushHealth } from './lib/health';
-import { launchBrowser, ensureLogin, HaltError } from './lib/browser';
+import { launchBrowser, ensureLogin, HaltError, assertHuman } from './lib/browser';
+import { saveSession, SessionError } from './lib/session';
 import { readSignals } from './lib/activity';
 import { collectAccount } from './lib/collect';
 import { maybeFollow } from './lib/follow';
@@ -44,19 +45,19 @@ export async function main() {
       schedule: (callback, ms) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
       stopped: () => stopped,
       open: check => launchBrowser(crawlerDir, check),
-      login: ({ context, page, sessionFile }) => ensureLogin(context, page, settings, username, sessionFile),
+      login: ({ context, page, sessionFile }, check) => ensureLogin(context, page, settings, username, sessionFile, check),
       close: async ({ context, browser }) => { try { await context.close(); } finally { await browser.close(); } },
       save: () => state.save(),
       flush: flushHealth,
       log: health,
-      isFatal: error => error instanceof HaltError || error instanceof IngestError,
+      isFatal: error => error instanceof HaltError || error instanceof IngestError || error instanceof SessionError,
       onFatal: async (error, session, signal) => {
         if (error instanceof HaltError) {
           process.exitCode = 75;
           await captureHalt(crawlerDir, error.reason, session?.diagnosticPage, signal);
         }
       },
-      cycle: async ({ page }, check) => {
+      cycle: async ({ context, page, sessionFile }, check) => {
         check();
         await syncFollowing(page, { state, settings }, check);
         check();
@@ -90,6 +91,10 @@ export async function main() {
             health('error', { scope: 'discovery' });
           }
         }
+        check();
+        await assertHuman(page);
+        await saveSession(context, sessionFile, check, () => assertHuman(page));
+        check();
         health('poll', { posts, stories, follow, followed_today: state.countDay('follow') });
       },
     });

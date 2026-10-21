@@ -43,6 +43,48 @@ export async function hasText(page: Page, pattern: RegExp): Promise<boolean> {
   }
 }
 
+export const loginInputs = (page: Page) => [
+  page.getByRole('textbox', { name: /전화번호.*사용자|Phone number.*username|사용자 이름/i }),
+  page.locator('input[name="username"]'),
+  page.locator('input[autocomplete="username"]'),
+  page.locator('input[name="password"]'),
+  page.locator('input[type="password"]'),
+];
+
+export const authenticatedNavigation = (page: Page) => [
+  page.getByRole('link', { name: /^(프로필|Profile)$/i }),
+  page.getByRole('link', { name: /^(메시지|Messages|Direct)$/i }),
+  page.locator('a[href^="/direct/inbox"]'),
+  page.getByRole('link', { name: /^(알림|Notifications)$/i }),
+  page.getByRole('button', { name: /^(알림|Notifications)$/i }),
+];
+
+const loginPrompts = [
+  { kind: 'save', title: /Save (?:your )?login info(?:rmation)?|로그인 정보를? 저장|로그인 정보 저장/i },
+  { kind: 'notifications', title: /Turn on notifications|알림 (?:설정|켜기)|알림을 (?:설정|켜)/i },
+] as const;
+
+export async function loginPrompt(page: Page) {
+  for (const prompt of loginPrompts) {
+    if (!await hasText(page, prompt.title)) continue;
+    // Scope an exact dismissal to the recognized dialog/full-page prompt.
+    const scope = await firstVisible([
+      page.getByRole('dialog').filter({ hasText: prompt.title }),
+      page.locator('main, [role="main"]').filter({ hasText: prompt.title }),
+      // Older save-info pages have no semantic container. Only allow the
+      // whole page on the known interstitial route, never on an ordinary feed.
+      ...(/\/accounts\/onetap\/?(?:\?|$)/i.test(page.url()) && prompt.kind === 'save'
+        ? [page.locator('body').filter({ hasText: prompt.title })] : []),
+    ]);
+    const dismiss = scope && await firstVisible([
+      scope.getByRole('button', { name: /^(Not now|나중에 하기|나중에)$/i }),
+      scope.getByRole('link', { name: /^(Not now|나중에 하기|나중에)$/i }),
+    ]);
+    return { kind: prompt.kind, dismiss };
+  }
+  return null;
+}
+
 export const followButton = (page: Page) => [
   page.getByRole('button', { name: /^(Follow|팔로우)$/ }),
   page.getByRole('button', { name: /팔로우 하기/ }),
