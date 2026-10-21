@@ -11,7 +11,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <html lang="ko">
       <body>
         <header className="header">
-          <Link className="logo" href="/" aria-label="아가마중 홈">
+          <Link className="logo" href="/" aria-label="아가마중 첫화면">
             아가마중<span>AGAMAJUNG</span>
           </Link>
           <Suspense fallback={<NavLinks />}>
@@ -21,8 +21,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {children}
         <footer>
           <section id="letter" className="letter" aria-labelledby="letter-title">
-            <h2 id="letter-title">레터</h2>
-            <p>주 1회, 확인한 공구와 가격만 보내 드려요. 곧 열어요.</p>
+            <h2 id="letter-title">가격 소식지</h2>
+            <p>주 1회, 검증된 혜택과 시세만 전해요. 곧 만나요.</p>
           </section>
           <div className="logo">아가마중</div>
           <p>너는 건강하게만 와 주렴. 좋은 것은 우리가 골라 둘게.</p>
