@@ -1,13 +1,6 @@
 {
  "product": "Stokke Tripp Trapp",
  "checked": "2026-10-20",
- "fx": {
-  "USD": 1332.1,
-  "JPY_per100": 840.18,
-  "EUR": 1493.48,
-  "source": "https://www.duoduo-info.com/finance/koreaexim/exchange",
-  "basis": "한국수출입은행 매매기준율 2026-10-20 (검색 요약)"
- },
  "kr_official": [
   {
    "config": "하이체어 단품(너도밤나무)",
@@ -19,7 +12,7 @@
    "config": "하이체어 오크",
    "price_krw": 470000,
    "source": "https://www.stokke.com/KOR/ko-kr/%ED%95%98%EC%9D%B4%EC%B2%B4%EC%96%B4/%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9/4952.html",
-   "note": "검색 요약. SSG 신세계백화점은 510,000원 표시 - 불일치"
+   "note": "검색 요약"
   },
   {
    "config": "하이체어+베이비세트",
@@ -45,318 +38,19 @@
  "kr_retailers": [
   {
    "retailer": "롯데백화점(롯데ON)",
-   "config": "하이체어 단품",
-   "price_krw": 430000,
-   "source": "https://www.lotteon.com/csearch/search/search?mallId=3&platform=pc&q=%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9&render=search",
-   "note": "롯데카드 7% 할인 별도, 예약판매"
-  },
-  {
-   "retailer": "롯데백화점(롯데ON)",
-   "config": "하이체어+베이비세트+트레이",
-   "price_krw": 680000,
    "source": "https://www.lotteon.com/csearch/search/search?mallId=3&platform=pc&q=%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9&render=search"
   },
   {
    "retailer": "SSG 신세계백화점",
-   "config": "하이체어 단품",
-   "price_krw": 430000,
-   "source": "https://department.ssg.com/disp/brandShop.ssg?brandId=2000008905",
-   "note": "검색 요약"
+   "source": "https://department.ssg.com/disp/brandShop.ssg?brandId=2000008905"
   },
   {
    "retailer": "쿠팡",
-   "config": "하이체어 단품(과거 핫딜)",
-   "price_krw": 395000,
-   "source": "https://rxtip.kr/hotdeal/206289",
-   "note": "2025-02 시점 가격, 현재가 아님"
+   "source": "https://rxtip.kr/hotdeal/206289"
   }
  ],
  "gonggu": {
   "found": [],
   "note": "인스타 공구 게시물은 확인되나 공구가가 공개 웹에 노출된 사례 0건(댓글·DM 안내). 수동 수집 필요."
- },
- "parallel_import_and_direct": [
-  {
-   "channel": "미국 직구(알비베이비)",
-   "config": "하이체어",
-   "price": "$186.15 (미국 내 무배)",
-   "price_krw_note": "게시글 기준 배대지 포함 약 32만원대",
-   "date": "2025-02",
-   "source": "https://m.ppomppu.co.kr/new/bbs_view.php?id=ppomppu4&no=126495"
-  },
-  {
-   "channel": "국내 온라인 해외공급품",
-   "config": "미확인",
-   "price_krw_note": "20만원대 노출 사례(기사)",
-   "date": "2026-09",
-   "source": "https://economist.co.kr/article/view/ecn202609170042"
-  },
-  {
-   "channel": "네이버쇼핑 해외직구 상품",
-   "config": "세트(구성 미확인)",
-   "price_krw": 745480,
-   "note": "관부가세 포함, 검색 요약",
-   "source": "https://emart.ssg.com/search.ssg?query=%EC%8A%A4%ED%86%A0%EC%BC%80%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9"
-  }
- ],
- "overseas_official": [
-  {
-   "market": "JP",
-   "config": "하이체어 너도밤나무",
-   "local": "¥37,730(세금 포함)",
-   "krw": 317000,
-   "source": "https://www.stokke.com/JPN/ja-jp/%E3%83%8F%E3%82%A4%E3%83%81%E3%82%A7%E3%82%A2/%E3%83%88%E3%83%AA%E3%83%83%E3%83%97-%E3%83%88%E3%83%A9%E3%83%83%E3%83%97/1001.html"
-  },
-  {
-   "market": "JP",
-   "config": "하이체어 오크",
-   "local": "¥48,730",
-   "krw": 409420,
-   "source": "https://www.stokke.com/JPN/ja-jp/%E3%83%8F%E3%82%A4%E3%83%81%E3%82%A7%E3%82%A2/%E3%83%88%E3%83%AA%E3%83%83%E3%83%97-%E3%83%88%E3%83%A9%E3%83%83%E3%83%97/1001.html"
-  },
-  {
-   "market": "JP",
-   "config": "하이체어+베이비세트",
-   "local": "¥48,290",
-   "krw": 405723,
-   "source": "https://www.stokke.com/JPN/ja-jp/%E3%83%8F%E3%82%A4%E3%83%81%E3%82%A7%E3%82%A2/%E3%83%88%E3%83%AA%E3%83%83%E3%83%97-%E3%83%88%E3%83%A9%E3%83%83%E3%83%97/tripp-trapp-highchair.html"
-  },
-  {
-   "market": "JP",
-   "config": "하이체어+베이비세트+트레이",
-   "local": "¥53,350",
-   "krw": 448236,
-   "source": "https://economist.co.kr/article/view/ecn202609170042"
-  },
-  {
-   "market": "US",
-   "config": "하이체어(기본 색상)",
-   "local": "$249.00(판매세 별도)",
-   "krw": 331693,
-   "source": "https://www.stokke.com/USA/en-us/high-chairs/tripp-trapp/TT03.html"
-  },
-  {
-   "market": "US",
-   "config": "하이체어+베이비세트",
-   "local": "$296.65",
-   "krw": 395167,
-   "source": "https://www.stokke.com/USA/en-us/high-chairs/tripp-trapp/stokke-tripp-trapp-highchair.html",
-   "note": "할인가일 가능성"
-  },
-  {
-   "market": "DE",
-   "config": "하이체어 너도밤나무",
-   "local": "€215.00(UVP €239, 부가세 포함)",
-   "krw": 321098,
-   "krw_uvp": 356942,
-   "source": "https://www.stokke.com/DEU/de-de/hochstuehle/tripp-trapp/1001.html"
-  }
- ],
- "used_market": {
-  "source": "https://www.daangn.com/kr/buy-sell/?search=%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9",
-  "platform": "당근(서울 서초4동 기준 검색 결과 페이지)",
-  "checked": "2026-10-20",
-  "chair_used": {
-   "n": 16,
-   "min": 200000,
-   "max": 600000,
-   "median": 350000
-  },
-  "chair_new_unopened": {
-   "n": 7,
-   "min": 360000,
-   "max": 400000,
-   "median": 385000
-  },
-  "set_used": {
-   "n": 4,
-   "min": 380000,
-   "max": 500000,
-   "median": 500000
-  },
-  "set_new_unopened": {
-   "n": 6,
-   "min": 530000,
-   "max": 900000,
-   "median": 750000
-  },
-  "note": "호가 기준(거래가 아님). 번개장터는 페이지 조회 실패(HTTP 500).",
-  "listings": [
-   {
-    "title": "트립트랩 내추럴색상 베이비세트",
-    "price_krw": 400000,
-    "kind": "used"
-   },
-   {
-    "title": "하이체어 화이트워시",
-    "price_krw": 370000,
-    "kind": "used"
-   },
-   {
-    "title": "하이체어 서린핑크",
-    "price_krw": 225000,
-    "kind": "used"
-   },
-   {
-    "title": "새상품 하이체어(현대백화점)",
-    "price_krw": 360000,
-    "kind": "new"
-   },
-   {
-    "title": "새제품 하이체어 판교 현대백화점",
-    "price_krw": 360000,
-    "kind": "new"
-   },
-   {
-    "title": "새상품 하이체어 내추럴",
-    "price_krw": 400000,
-    "kind": "new"
-   },
-   {
-    "title": "새상품 하이체어 내추럴",
-    "price_krw": 385000,
-    "kind": "new"
-   },
-   {
-    "title": "아기의자 내추럴",
-    "price_krw": 320000,
-    "kind": "used"
-   },
-   {
-    "title": "하이체어 내츄럴 미개봉",
-    "price_krw": 365000,
-    "kind": "new"
-   },
-   {
-    "title": "새상품 하이체어 화이트워시",
-    "price_krw": 390000,
-    "kind": "new"
-   },
-   {
-    "title": "미개봉 화이트워시+베이비세트+트레이",
-    "price_krw": 650000,
-    "kind": "new_set"
-   },
-   {
-    "title": "세트 미개봉 영수증 포함",
-    "price_krw": 530000,
-    "kind": "new_set"
-   },
-   {
-    "title": "하이체어",
-    "price_krw": 300000,
-    "kind": "used"
-   },
-   {
-    "title": "하이체어 핑크",
-    "price_krw": 240000,
-    "kind": "used"
-   },
-   {
-    "title": "유아의자 그레이(의자만)",
-    "price_krw": 360000,
-    "kind": "used"
-   },
-   {
-    "title": "미개봉 하이체어+베이비세트+트레이",
-    "price_krw": 900000,
-    "kind": "new_set"
-   },
-   {
-    "title": "하이체어+베이비세트+트레이",
-    "price_krw": 380000,
-    "kind": "used_set"
-   },
-   {
-    "title": "하이체어 화이트워시",
-    "price_krw": 350000,
-    "kind": "used"
-   },
-   {
-    "title": "하이체어 민트",
-    "price_krw": 350000,
-    "kind": "used"
-   },
-   {
-    "title": "내추럴(베이비세트+쿠션)",
-    "price_krw": 500000,
-    "kind": "used_set"
-   },
-   {
-    "title": "하이체어+베이비세트+트레이+하네스+글라이더+어댑터",
-    "price_krw": 400000,
-    "kind": "used_set"
-   },
-   {
-    "title": "하이체어 서린핑크",
-    "price_krw": 200000,
-    "kind": "used"
-   },
-   {
-    "title": "스톰그레이",
-    "price_krw": 400000,
-    "kind": "used"
-   },
-   {
-    "title": "헤이즈그레이+글라이더",
-    "price_krw": 300000,
-    "kind": "used"
-   },
-   {
-    "title": "화이트워시(베이비세트+트레이+글라이더+쿠션)",
-    "price_krw": 500000,
-    "kind": "used_set"
-   },
-   {
-    "title": "레몬옐로우",
-    "price_krw": 400000,
-    "kind": "used"
-   },
-   {
-    "title": "오크 내추럴",
-    "price_krw": 500000,
-    "kind": "used"
-   },
-   {
-    "title": "미개봉 풀세트(뉴본 포함) 국내정품",
-    "price_krw": 840000,
-    "kind": "new_set"
-   },
-   {
-    "title": "미개봉 화이트워시",
-    "price_krw": 390000,
-    "kind": "new"
-   },
-   {
-    "title": "이유식 세트 새상품",
-    "price_krw": 580000,
-    "kind": "new_set"
-   },
-   {
-    "title": "유아의자(개당)",
-    "price_krw": 280000,
-    "kind": "used"
-   },
-   {
-    "title": "체어+베이비세트+트레이+뉴본 새제품",
-    "price_krw": 750000,
-    "kind": "new_set"
-   },
-   {
-    "title": "뉴본패키지 2세트",
-    "price_krw": 205000,
-    "kind": "accessory"
-   },
-   {
-    "title": "뉴본세트",
-    "price_krw": 145000,
-    "kind": "accessory"
-   },
-   {
-    "title": "화이트워시 풀박스 실사용3개월",
-    "price_krw": 600000,
-    "kind": "used"
-   }
-  ]
  }
 }

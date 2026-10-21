@@ -20,7 +20,7 @@
    "source_url": "https://www.stokke.com/KOR/ko-kr/%ED%95%98%EC%9D%B4%EC%B2%B4%EC%96%B4/%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9/4952.html",
    "checked": "2026-10-20",
    "verify_level": "search_summary",
-   "note": "SSG 신세계백화점에는 510,000원으로 표시돼 확인 필요"
+   "note": ""
   },
   {
    "brand": "Stokke",
@@ -64,7 +64,7 @@
    "source_url": "https://www.stokke.com/KOR/ko-kr/571502.html",
    "checked": "2026-10-20",
    "verify_level": "page_text",
-   "note": "공식몰 할인가 1,390,000원 표시(재고 소진 임박)"
+   "note": ""
   },
   {
    "brand": "Stokke",
@@ -108,7 +108,7 @@
    "source_url": "https://mobile.galleria.co.kr/dispctg/initShopLowCtg.action?disp_ctg_no=2406103398",
    "checked": "2026-10-20",
    "verify_level": "page_text",
-   "note": "갤러리아 5% 할인 2,223,000원"
+   "note": ""
   },
   {
    "brand": "Bugaboo",
@@ -438,7 +438,7 @@
    "source_url": "http://www.elandmall.co.kr/i/item?itemNo=2311738425&lowerVendNo=LV23004866",
    "checked": "2026-10-20",
    "verify_level": "search_summary",
-   "note": "검색 요약상 259,000~300,000원 범위, 단일 공식가 미확인"
+   "note": "단일 공식가 미확인"
   },
   {
    "brand": "Doona",
@@ -449,7 +449,7 @@
    "source_url": "https://funiz.com/goods/85946208",
    "checked": "2026-10-20",
    "verify_level": "search_summary",
-   "note": "국내 공식 수입사·공식가 미확인. 비공식 판매가 701,400원(옥션, 2026-07-24 기준)"
+   "note": "국내 공식 수입사·공식가 미확인."
   }
  ]
 }
