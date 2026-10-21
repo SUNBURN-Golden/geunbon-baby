@@ -1,0 +1,320 @@
+import { readFile } from 'node:fs/promises';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import { DEAL_SELECT, dealTiming, formatDealDate, formatGap, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
+import { dealsCopy } from '../lib/deals-copy';
+import { DealCard, DealDetail, DealList, DealStateChip } from '../app/deals/_components';
+import DealNotFound from '../app/deals/[id]/not-found';
+import DealsPage, { dynamic as listDynamic } from '../app/deals/page';
+import DealDetailPage, { dynamic as detailDynamic } from '../app/deals/[id]/page';
+import { all } from '../lib/db';
+import { memoryD1 } from './helpers/sqlite';
+
+const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined }));
+vi.mock('../lib/db', async importOriginal => ({
+  ...await importOriginal<typeof import('../lib/db')>(),
+  environment: () => ({ DB: context.db }),
+}));
+vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NEXT_NOT_FOUND'); } }));
+
+const nowMs = Date.parse('2026-10-21T03:00:00Z');
+const fixture: DealWithContext = {
+  id: 'deal-1', model_id: 'model-1', seller_id: 'seller-1', title: 'A carefully checked deal',
+  price: 390000, source_url: 'https://www.instagram.com/p/example/',
+  verify_level: 'manual', checked: '2026-10-20T16:00:00Z',
+  starts_at: '2026-10-20T00:00:00Z', ends_at: '2026-10-22T14:59:59Z',
+  model_joined_id: 'model-1', model_name: 'Example model', model_official_price: 430000,
+  model_checked: '2026-10-18', model_verify_level: 'search_summary', model_note: 'Configuration needs confirmation.',
+  seller_joined_id: 'seller-1', seller_name: 'Example seller',
+};
+const card = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealCard, { deal: { ...fixture, ...patch }, nowMs }));
+const detail = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealDetail, { deal: { ...fixture, ...patch }, nowMs }));
+
+describe('price comparisons', () => {
+  test.each([
+    [null, 100], [100, null], [0, 0], [100, -1], [-1, 100],
+    [NaN, 100], [100, NaN], [Infinity, 100], [100, Infinity],
+  ])('rejects missing or invalid prices (%s, %s)', (price, official) => {
+    expect(priceGap(price, official)).toBeNull();
+  });
+
+  test('preserves zero, direction and signed arithmetic', () => {
+    expect(priceGap(0, 100)).toEqual({ relation: 'below', won: 100, percent: 100 });
+    expect(priceGap(80, 100)).toEqual({ relation: 'below', won: 20, percent: 20 });
+    expect(priceGap(100, 100)).toEqual({ relation: 'equal', won: 0, percent: 0 });
+    expect(priceGap(120, 100)).toEqual({ relation: 'above', won: -20, percent: -20 });
+  });
+
+  test('formats absolute differences, one decimal and tiny nonzero percentages', () => {
+    expect(formatGap(priceGap(87654, 100000)!)).toBe(dealsCopy.below.replace('{percent}', '12.3').replace('{won}', '12,346'));
+    expect(formatGap(priceGap(123456, 100000)!)).toBe(dealsCopy.above.replace('{percent}', '23.5').replace('{won}', '23,456'));
+    expect(formatGap(priceGap(100, 100)!)).toBe(dealsCopy.equal);
+    for (const price of [99999, 100001]) {
+      expect(formatGap(priceGap(price, 100000)!)).toContain('<0.1%');
+      expect(formatGap(priceGap(price, 100000)!)).not.toContain('-');
+    }
+    expect(formatGap(priceGap(99900, 100000)!)).toContain('0.1%');
+    expect(formatGap(priceGap(0, 100000)!)).toContain('100.0%');
+  });
+});
+
+describe('schedule and ordering', () => {
+  const start = '2026-10-21T00:00:00+09:00';
+  const end = '2026-10-22T00:00:00+09:00';
+
+  test('retains inclusive start/end boundaries', () => {
+    expect(dealTiming(start, end, Date.parse(start) - 1)).toEqual({ state: 'upcoming', days: 1 });
+    expect(dealTiming(start, end, Date.parse(start))).toEqual({ state: 'active', days: 1 });
+    expect(dealTiming(start, end, Date.parse(end))).toEqual({ state: 'active', days: 0 });
+    expect(dealTiming(start, end, Date.parse(end) + 1)).toEqual({ state: 'ended', days: null });
+    expect(dealTiming(start, start, Date.parse(start))).toEqual({ state: 'active', days: 0 });
+  });
+
+  test('counts KST calendar days across midnight, even one millisecond apart', () => {
+    const midnight = Date.parse('2026-10-21T15:00:00Z');
+    expect(dealTiming(start, end, midnight - 1)).toEqual({ state: 'active', days: 1 });
+    expect(dealTiming(start, end, midnight)).toEqual({ state: 'active', days: 0 });
+    expect(dealTiming('2026-10-22T12:00:00+09:00', '2026-10-23T12:00:00+09:00', midnight)).toEqual({ state: 'upcoming', days: 0 });
+    expect(dealTiming('2026-10-21', '2026-10-22', nowMs)).toEqual({ state: 'active', days: 1 });
+  });
+
+  test.each(['', 'not a date', '2026-13-01', '2026-02-30', '2026-02-29T00:00:00Z',
+    '2026-10-21T24:00:00Z', '2026-10-21T00:60:00Z', '2026-10-21T00:00:00+25:00', '2026-10-21T00:00:00',
+  ])('rejects malformed, normalized or ambiguous dates: %s', invalid => {
+    expect(dealTiming(invalid, end, nowMs)).toEqual({ state: 'unknown', days: null });
+    expect(dealTiming(start, invalid, nowMs)).toEqual({ state: 'unknown', days: null });
+  });
+
+  test('rejects reversed dates and invalid clocks; accepts leap days', () => {
+    expect(dealTiming(end, start, nowMs)).toEqual({ state: 'unknown', days: null });
+    expect(dealTiming(start, end, NaN)).toEqual({ state: 'unknown', days: null });
+    expect(dealTiming(start, end, Infinity)).toEqual({ state: 'unknown', days: null });
+    expect(dealTiming('2024-02-29', '2024-03-01', nowMs).state).toBe('ended');
+  });
+
+  test('sorts every group by its own time, breaks ties by ID and never mutates input', () => {
+    const deal = (id: string, starts_at: string, ends_at: string) => Object.freeze({ ...fixture, id, starts_at, ends_at, extra: id });
+    const input = Object.freeze([
+      deal('unknown-z', 'bad', end), deal('ended-old', '2026-10-01', '2026-10-02'),
+      deal('upcoming-late', '2026-10-25', '2026-10-26'), deal('active-late', start, '2026-10-24'),
+      deal('active-b', start, end), deal('upcoming-b', '2026-10-23', '2026-10-24'),
+      deal('ended-b', '2026-10-19', '2026-10-20'), deal('active-a', start, end),
+      deal('upcoming-a', '2026-10-23', '2026-10-25'), deal('ended-a', '2026-10-18', '2026-10-20'),
+      deal('unknown-a', end, start),
+    ]);
+    const before = [...input];
+    const sorted = sortDeals(input, nowMs);
+    expect(sorted.map(d => d.id)).toEqual(['active-a', 'active-b', 'active-late', 'upcoming-a', 'upcoming-b', 'upcoming-late', 'ended-a', 'ended-b', 'ended-old', 'unknown-a', 'unknown-z']);
+    expect(input).toEqual(before);
+    expect(sorted).not.toBe(input);
+    expect(sorted[0]).toBe(input[7]);
+    expect(sorted[0].extra).toBe('active-a');
+    expect(sortDeals([...input].reverse(), nowMs)).toEqual(sorted);
+    expect(sortDeals([], nowMs)).toEqual([]);
+  });
+
+  test('formats KST periods and independent confirmation dates', () => {
+    expect(formatDealDate('2026-10-20T16:00:00Z', true)).toBe('2026.10.21 01:00');
+    expect(formatDealDate('2026-10-18')).toBe('2026.10.18');
+    expect(formatDealDate(null)).toBeNull();
+    expect(formatDealDate('2026-02-30')).toBeNull();
+  });
+});
+
+describe('server rendered deals UI', () => {
+  test('list articles advertise and link their h2 to detail without purchase CTAs', () => {
+    const html = card();
+    expect(html).toContain('<article class="deal-card">');
+    expect(html).toMatch(/<h2><a[^>]+href="\/deals\/deal-1"/);
+    expect(html).toContain(dealsCopy.ad);
+    expect(html).toContain(dealsCopy.active);
+    expect(html).toContain(fixture.title);
+    expect(html).toContain('390,000');
+    expect(html).toContain(formatGap(priceGap(fixture.price, fixture.model_official_price)!));
+    expect(html).toContain(dealsCopy.good);
+    expect(html).not.toContain(dealsCopy.disclaimer);
+    expect(html).not.toContain(fixture.source_url);
+    expect(html).not.toContain('/models/');
+  });
+
+  test('list cards omit qualification, verification, model notes and confirmation dates', () => {
+    const html = card();
+    for (const copy of [dealsCopy.qualification, dealsCopy.dealChecked, dealsCopy.officialChecked,
+      dealsCopy.searchSummary, dealsCopy.manual, fixture.model_note!, '2026.10.21', '2026.10.18']) {
+      expect(html).not.toContain(copy);
+    }
+    expect(html).not.toContain('<time');
+  });
+
+  test('detail preserves qualification, verification, model notes, both dates and disclaimer', () => {
+    const html = detail();
+    expect(html).toContain(dealsCopy.qualification);
+    expect(html).toContain(dealsCopy.dealChecked);
+    expect(html).toContain(dealsCopy.officialChecked);
+    expect(html).toContain(dealsCopy.searchSummary);
+    expect(html).toContain(dealsCopy.manual);
+    expect(html).toContain(fixture.model_note);
+    expect(html).toContain('2026.10.21');
+    expect(html).toContain('2026.10.18');
+    expect(html.indexOf(dealsCopy.qualification)).toBeLessThan(html.indexOf(dealsCopy.good));
+    expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
+    expect(html).toContain(dealsCopy.disclaimer);
+  });
+
+  test('detail header advertises and one source action describes its new tab', () => {
+    const html = detail();
+    expect(html).toMatch(new RegExp(`<header class="deal-header">.*${dealsCopy.ad}.*<h1>`));
+    expect(html).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer" aria-describedby="deal-new-tab"`);
+    expect(html).toContain(`id="deal-new-tab">${dealsCopy.newTab}`);
+    expect(html.match(/class="deal-actions"/g)).toHaveLength(1);
+    expect(html.match(/class="deal-primary"/g)).toHaveLength(1);
+    expect(html).toContain(dealsCopy.primary);
+    expect(html).toContain('href="/models/model-1"');
+    expect(html).toContain(fixture.seller_name);
+    expect(html).toContain('2026.10.20 09:00');
+    expect(html).toContain('2026.10.22 23:59');
+  });
+
+  test('ended deals retain one last-checked line on cards and full context on detail, without recommendations', () => {
+    const patch = { ends_at: '2026-10-21T02:00:00Z' };
+    for (const html of [card(patch), detail(patch)]) {
+      expect(html).toContain(`${dealsCopy.archived} · <time dateTime="${fixture.checked}">2026.10.21</time>`);
+      expect(html).not.toContain('class="deal-tone');
+      expect(html).not.toContain(dealsCopy.remaining.replace('{n}', '0'));
+    }
+    const endedCard = card(patch);
+    expect(endedCard.match(/<time /g)).toHaveLength(1);
+    expect(endedCard).not.toContain(dealsCopy.qualification);
+    expect(endedCard).not.toContain(dealsCopy.dealChecked);
+    expect(endedCard).not.toContain(dealsCopy.officialChecked);
+    expect(endedCard).not.toContain('2026.10.18');
+    expect(endedCard).not.toContain(dealsCopy.disclaimer);
+    expect(detail(patch)).toContain(dealsCopy.officialChecked);
+    expect(detail(patch)).toContain('2026.10.18');
+    expect(detail(patch)).toContain(fixture.source_url);
+    expect(detail({ ...patch, price: 500000 })).not.toContain(dealsCopy.wait);
+  });
+
+  test('equal/above prices get a waiting badge, unknown comparisons get neither gap nor badge', () => {
+    expect(card({ price: 430000 })).toContain(dealsCopy.equal);
+    expect(card({ price: 430000 })).toContain(dealsCopy.wait);
+    expect(card({ price: 500000 })).toContain(dealsCopy.wait);
+    for (const patch of [{ price: null }, { model_official_price: null }, { model_official_price: 0 }, { model_joined_id: null }]) {
+      const html = card(patch);
+      expect(html).not.toContain('class="deal-gap"');
+      expect(html).not.toContain('class="deal-tone');
+    }
+    expect(card({ price: 0 })).toContain(`>0<span>${dealsCopy.won}</span>`);
+    expect(card({ price: null })).toContain(dealsCopy.unknownPrice);
+    expect(card({ model_official_price: null })).toContain('390,000');
+    expect(card({ model_official_price: null })).toContain(dealsCopy.unknownOfficial);
+  });
+
+  test('missing joined rows retain the deal, hide the model action and provide a seller fallback', () => {
+    const html = detail({ model_joined_id: null, model_name: null, seller_joined_id: null, seller_name: null });
+    expect(html).toContain(dealsCopy.unknownSeller);
+    expect(html).toContain('390,000');
+    expect(html).toContain(fixture.source_url);
+    expect(html).not.toContain('/models/');
+    expect(html).not.toContain(dealsCopy.secondary);
+    expect(html).not.toContain('class="deal-gap"');
+  });
+
+  test('today and unknown schedules are explicit; empty and not-found states are concise', () => {
+    expect(renderToStaticMarkup(createElement(DealStateChip, { timing: { state: 'active', days: 0 } }))).toContain(dealsCopy.endsToday);
+    expect(renderToStaticMarkup(createElement(DealStateChip, { timing: { state: 'upcoming', days: 0 } }))).toContain(dealsCopy.startsToday);
+    expect(detail({ starts_at: 'invalid' })).toContain(dealsCopy.unknownSchedule);
+    expect(detail({ starts_at: 'invalid' })).not.toContain(dealsCopy.good);
+    expect(renderToStaticMarkup(createElement(DealList, { deals: [], nowMs }))).toBe(`<p class="deal-empty">${dealsCopy.empty}</p>`);
+    const missing = renderToStaticMarkup(createElement(DealNotFound));
+    expect(missing).toContain(dealsCopy.missing);
+    expect(missing).toContain('href="/deals"');
+  });
+});
+
+describe('theme contrast', () => {
+  // Validate the actual design tokens without launching a browser or server.
+  const luminance = (hex: string) => {
+    const expanded = hex.length === 4 ? hex.slice(1).split('').map(c => c + c).join('') : hex.slice(1);
+    const [r, g, b] = expanded.match(/.{2}/g)!.map(c => parseInt(c, 16) / 255)
+      .map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return r * 0.2126 + g * 0.7152 + b * 0.0722;
+  };
+  const contrast = (foreground: string, background: string) => {
+    const a = luminance(foreground);
+    const b = luminance(background);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  };
+
+  test.each(['light', 'dark'])('%s advertising labels, recommendations, context and actions meet AA', async theme => {
+    const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
+    const tokens = Object.fromEntries([...css.matchAll(/(--[\w-]+):\s*(#[\da-f]{3,6})\s*;/gi)].map(match => [match[1], match[2]]));
+    const prefix = theme === 'dark' ? '--dark-' : '--';
+    for (const [foreground, background] of [
+      ['text', 'surface'], ['text', 'surface-2'], ['text', 'clay'],
+      ['muted', 'surface'], ['on-accent', 'accent'],
+    ]) {
+      expect(contrast(tokens[prefix + foreground], tokens[prefix + background])).toBeGreaterThanOrEqual(4.5);
+    }
+    // Focus rings sit outside controls, against the page/card surfaces.
+    for (const background of ['bg', 'surface']) {
+      expect(contrast(tokens[prefix + 'accent'], tokens[prefix + background])).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
+
+describe('dynamic routes and LEFT JOIN projection', () => {
+  const memory = memoryD1();
+  beforeAll(async () => {
+    context.db = memory.db;
+    const schema = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
+    for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+    // Model/seller deletion and old incomplete records must not hide a deal.
+    await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
+    await memory.db.prepare("INSERT INTO models VALUES ('model-1', 'Brand', 'Model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'search_summary', 'Check configuration')").run();
+    await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
+    for (const d of [fixture, { ...fixture, id: 'missing-joins', model_id: 'absent-model', seller_id: 'absent-seller' }]) {
+      await memory.db.prepare('INSERT INTO deals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.verify_level, d.checked, d.starts_at, d.ends_at).run();
+    }
+  });
+  afterAll(() => memory.close());
+
+  test('aliased columns preserve deal identity and confirmation metadata, even for missing joins', async () => {
+    const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+    expect(rows).toHaveLength(2);
+    expect(rows.find(d => d.id === fixture.id)).toMatchObject({
+      id: 'deal-1', checked: fixture.checked, verify_level: 'manual', source_url: fixture.source_url,
+      model_joined_id: 'model-1', model_checked: '2026-10-18', model_verify_level: 'search_summary', seller_name: 'Seller',
+    });
+    expect(rows.find(d => d.id === 'missing-joins')).toMatchObject({ model_joined_id: null, seller_name: null });
+  });
+
+  test('both routes are dynamic and capture time only once per render', async () => {
+    expect(listDynamic).toBe('force-dynamic');
+    expect(detailDynamic).toBe('force-dynamic');
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(nowMs);
+    expect(renderToStaticMarkup(await DealsPage())).toContain('/deals/deal-1');
+    expect(clock).toHaveBeenCalledTimes(1);
+    clock.mockClear();
+    const html = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) }));
+    expect(html).toContain(fixture.title);
+    expect(clock).toHaveBeenCalledTimes(1);
+  });
+
+  test('list page renders its disclaimer once at the bottom, outside all cards', async () => {
+    const html = renderToStaticMarkup(await DealsPage());
+    expect(html.match(/class="deal-card"/g)).toHaveLength(2);
+    expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
+    expect(html.endsWith(`</article></div><p class="deal-disclaimer">${dealsCopy.disclaimer}</p></main>`)).toBe(true);
+  });
+
+  test('awaits params, binds IDs literally, and calls notFound for missing records', async () => {
+    const html = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: 'missing-joins' }) }));
+    expect(html).toContain(dealsCopy.unknownSeller);
+    for (const id of ['absent', "' OR 1=1 --"]) {
+      await expect(DealDetailPage({ params: Promise.resolve({ id }) })).rejects.toThrow('NEXT_NOT_FOUND');
+    }
+  });
+});
