@@ -179,6 +179,39 @@ test('security halts are never retried as quiet interruptions', async () => {
   expect(deps.close).toHaveBeenCalledTimes(1);
 });
 
+test.each(['challenge', 'blocked', 'login'] as const)('halt %s is diagnosed before close and survives every cleanup failure', async reason => {
+  const { deps, options } = harness('2026-10-21T12:00:00');
+  const error = new HaltError(reason);
+  deps.login.mockRejectedValue(error);
+  deps.close.mockRejectedValue(new Error('close failed'));
+  deps.save.mockRejectedValue(new Error('save failed'));
+  deps.flush.mockRejectedValue(new Error('flush failed'));
+  const onFatal = vi.fn(async () => {
+    expect(deps.close).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    throw new Error('diagnostics failed');
+  });
+  await expect(runMainLoop(options, { ...deps, onFatal })).rejects.toBe(error);
+  expect(onFatal).toHaveBeenCalledWith(error, { id: 1 });
+  expect(deps.open).toHaveBeenCalledTimes(1);
+  expect(deps.login).toHaveBeenCalledTimes(1);
+  expect(deps.cycle).not.toHaveBeenCalled();
+  expect(deps.close).toHaveBeenCalledTimes(1);
+  expect(deps.save).toHaveBeenCalledTimes(1);
+  expect(deps.flush).toHaveBeenCalledTimes(1);
+});
+
+test('cycle halts are diagnosed while the session is still open', async () => {
+  const { deps, options } = harness('2026-10-21T12:00:00');
+  const error = new HaltError('login');
+  deps.cycle.mockRejectedValue(error);
+  const onFatal = vi.fn(async () => { expect(deps.close).not.toHaveBeenCalled(); });
+  await expect(runMainLoop(options, { ...deps, onFatal })).rejects.toBe(error);
+  expect(onFatal).toHaveBeenCalledWith(error, { id: 1 });
+  expect(deps.cycle).toHaveBeenCalledTimes(1);
+  expect(deps.close).toHaveBeenCalledTimes(1);
+});
+
 test('cached and chained page locators gate navigation, login, follow, story and scan methods at the boundary', async () => {
   let now = at('2026-10-21T06:44:59.999');
   const check = () => { if (quietWindowAt(window, now).active) throw new QuietWindowError(); };

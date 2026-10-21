@@ -17,6 +17,7 @@ type LoopDependencies<Session> = {
   flush: () => Promise<void>;
   log: typeof health;
   isFatal: (error: unknown) => boolean;
+  onFatal?: (error: unknown, session: Session | undefined) => Promise<void>;
 };
 class LoopStopped extends Error {}
 
@@ -28,6 +29,7 @@ export async function runMainLoop<Session>(
   let closing: Promise<void> | undefined;
   let cancelTimer = () => {};
   let resumeAt: number | undefined;
+  let failed = false;
 
   const enterQuiet = () => {
     const quiet = quietWindowAt(options.quietWindow, deps.now());
@@ -118,9 +120,26 @@ export async function runMainLoop<Session>(
         throw error;
       }
     }
+  } catch (error) {
+    failed = true;
+    cancelTimer();
+    if (deps.isFatal(error) && deps.onFatal) {
+      try { await deps.onFatal(error, session); }
+      catch { deps.log('warn', { scope: 'halt_diagnostics' }); }
+    }
+    throw error;
   } finally {
     // Close before disk work; no browser remains open during a quiet window.
-    try { await closeSession(); }
-    finally { await deps.save(); await deps.flush(); }
+    try {
+      try { await closeSession(); }
+      finally {
+        try { await deps.save(); }
+        finally { await deps.flush(); }
+      }
+    } catch (error) {
+      // A cleanup failure must never turn a HaltError into a restartable error.
+      if (!failed) throw error;
+      deps.log('warn', { scope: 'cleanup' });
+    }
   }
 }

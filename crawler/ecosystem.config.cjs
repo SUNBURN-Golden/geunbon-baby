@@ -6,7 +6,8 @@ module.exports = {
   apps: [{
     name: 'agamajung-crawler',
     cwd: `${__dirname}/..`,
-    script: 'crawler/index.ts',
+    // A JS entrypoint avoids pm2's automatic TypeScript interpreter detection.
+    script: 'crawler/run.mjs',
     interpreter: 'node',
     node_args: '--import tsx',
     exec_mode: 'fork',
