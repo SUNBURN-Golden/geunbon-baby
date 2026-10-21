@@ -1,6 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "agamajung",
+  "account_id": "aa6bf084982ee841c3ea39b45895a15e",
+  "routes": [{ "pattern": "agamajoong.soulbound.co.kr", "custom_domain": true, "zone_id": "8f78031eed59646e7573c8d9c88de216" }],
   "main": "worker.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
