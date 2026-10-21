@@ -9,9 +9,10 @@ import type { ModelsConfig, Result } from '../tools/dev-daemon/types';
 const models = config as ModelsConfig;
 const now = Date.parse('2026-10-21T00:00:00Z');
 const result = (output: string, code = 0): Result => ({ code, output, answer: output });
-function run(results: Result[]) {
+const diagnostic = (output: string, code = 1): Result => ({ code, output, answer: '', stdout: output, stderr: '' });
+function run(results: Result[], prompt = 'task') {
   const execute = vi.fn(async () => results.shift()!);
-  return { execute, promise: fallback({ config: models, choices: chains.design!, prompt: 'task', cwd: '/repo',
+  return { execute, promise: fallback({ config: models, choices: chains.design!, prompt, cwd: '/repo',
     readOnly: true, logPath: (_, index) => `/logs/${index}.log`, execute, now: () => now }) };
 }
 
@@ -27,7 +28,7 @@ describe('daemon fallback', () => {
     expect(chains.audit).toEqual(chains.design);
   });
   it('falls back on nonzero exit and zero-exit quota output, stopping at success', async () => {
-    const { promise, execute } = run([result('CLI failed', 1), result('quota exceeded'), result('completed')]);
+    const { promise, execute } = run([result('CLI failed', 1), diagnostic('quota exceeded', 0), result('completed')]);
     expect(await promise).toEqual({ kind: 'success', answer: 'completed' });
     expect(execute).toHaveBeenCalledTimes(3);
   });
@@ -36,17 +37,52 @@ describe('daemon fallback', () => {
     expect((await promise).kind).toBe('success');
   });
   it('pauses only when every fallback was restricted, at the earliest reset', async () => {
-    const { promise } = run([result('Usage limit; resets 12pm (Asia/Seoul)'), result('429 retry after 7200'),
-      result('Quota exceeded; resets at 2026-10-21 09:00'), result('limit resets in 4 hours')]);
+    const { promise } = run([diagnostic('Usage limit; resets 12pm (Asia/Seoul)'), diagnostic('429 retry after 7200'),
+      diagnostic('Quota exceeded; resets at 2026-10-21 09:00'), diagnostic('limit resets in 4 hours')]);
     expect(await promise).toMatchObject({ kind: 'pause', wakeAt: '2026-10-21T01:00:00.000Z' });
   });
   it('uses a bounded retry delay when no reset was printed', async () => {
-    expect(await run(Array.from({ length: 4 }, () => result('quota'))).promise)
+    expect(await run(Array.from({ length: 4 }, () => diagnostic('quota'))).promise)
       .toMatchObject({ kind: 'pause', wakeAt: '2026-10-21T00:15:00.000Z' });
   });
   it('fails exhausted ordinary or mixed failures instead of pretending all were restricted', async () => {
-    expect(await run([result('quota'), result('bad config', 1), result('429'), result('quota')]).promise)
+    expect(await run([diagnostic('quota'), result('bad config', 1), diagnostic('429'), diagnostic('quota')]).promise)
       .toMatchObject({ kind: 'failed' });
+  });
+  it('accepts a successful final answer despite limit words in the prompt, transcript, answer and stderr', async () => {
+    const prompt = 'Fix quota handling, HTTP 429, usage limit and resets detection.';
+    const answer = "You've hit your quota is now handled. VERDICT: APPROVE";
+    const { promise, execute } = run([{ code: 0, output: `${prompt}\n${answer}`, answer,
+      stdout: `user\n${prompt}`, stderr: 'Usage limit warning' }], prompt);
+    expect(await promise).toEqual({ kind: 'success', answer });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+  it.each([0, 1])('excludes echoed diagnostic-like prompt lines with exit %s and no final answer', async code => {
+    const prompt = "Quota exceeded\nYou've hit your usage limit\n429 retry after 60\nresets in 1 hour";
+    const echoed = `user\n${prompt}\n`;
+    expect(await run(Array.from({ length: 4 }, () => ({ code, output: echoed, answer: '',
+      stdout: echoed, stderr: `prompt: ${prompt}\n` })), prompt).promise).toMatchObject({ kind: 'failed' });
+  });
+  it.each(["You've hit your cap", 'HTTP 429 Too Many Requests', 'API Error: usage_limit_reached',
+    'Quota exceeded', 'resets in 1 hour'])('recognizes stdout diagnostics without a final answer: %s', async output => {
+    expect(await run(Array.from({ length: 4 }, () => diagnostic(output, 0))).promise).toMatchObject({ kind: 'pause' });
+  });
+  it('uses stderr diagnostics on a failed run even when a partial answer exists', async () => {
+    expect(await run(Array.from({ length: 4 }, () => ({ code: 1, output: 'partial answer\naccount limited',
+      answer: 'partial answer', stdout: 'partial answer', stderr: 'account limited' }))).promise)
+      .toMatchObject({ kind: 'pause' });
+  });
+  it('does not scan ordinary transcript text or a failed final answer for limits', async () => {
+    expect(await run(Array.from({ length: 4 }, () => ({ code: 1,
+      output: 'Implement a usage limit\n--- final answer ---\nQuota exceeded',
+      stdout: 'Implement a usage limit\nThe test resets a counter\nlimit', stderr: '', answer: 'Quota exceeded' }))).promise)
+      .toMatchObject({ kind: 'failed' });
+  });
+  it('parses reset times only from diagnostics, excluding echoed task dates', async () => {
+    const prompt = 'resets at 2026-10-21T00:01:00Z';
+    expect(await run(Array.from({ length: 4 }, () => ({ code: 1, output: `${prompt}\nquota resets in 2 hours`,
+      answer: '', stdout: `user\n${prompt}\nTask resets at 2026-10-21T00:02:00Z`, stderr: 'quota resets in 2 hours' })), prompt).promise)
+      .toMatchObject({ kind: 'pause', wakeAt: '2026-10-21T02:00:00.000Z' });
   });
 });
 

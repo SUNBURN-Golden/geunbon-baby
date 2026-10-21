@@ -2,7 +2,7 @@ import type { Provider } from './types';
 
 const clean = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 export function isLimited(output: string): boolean {
-  return /(?:^|[^a-z0-9])(?:usage[- _]?limit|rate[- _]?limit|quota|429|limits?|limited|resets?)(?=$|[^a-z0-9])/i.test(clean(output));
+  return /you['’]ve hit your\b|(?:^|[^a-z0-9])(?:usage[- _]?limit|rate[- _]?limit|quota|429|limits?|limited|resets?)(?=$|[^a-z0-9])/i.test(clean(output));
 }
 
 // A timestamp without a zone belongs to the CLI provider, never the box's TZ.

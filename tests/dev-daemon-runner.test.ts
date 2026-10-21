@@ -33,6 +33,8 @@ describe('process runner with mocked subprocesses', () => {
     const result = await runner.execute({ bin: 'codex', args: ['exec', 'prompt'], cwd: '/tmp', log });
     expect(vi.mocked(spawn).mock.calls.at(-1)?.[2]).toMatchObject({ stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     expect(result.output).not.toContain('test-supersecret-value');
+    expect(result.stdout).toBe('[REDACTED]\n');
+    expect(result.stderr).toBe('[REDACTED AUTH]\n');
     expect(await readFile(log, 'utf8')).toBe('[REDACTED]\n[REDACTED AUTH]\n');
   });
   it('uses the Codex final-answer file rather than echoed prompt/transcript verdicts', async () => {
@@ -45,12 +47,27 @@ describe('process runner with mocked subprocesses', () => {
     const result = await new ProcessRunner().execute({ bin: 'codex', args: [], cwd: '/tmp', log, answerFile });
     expect(result.answer).toBe('Reviewed code.\nVERDICT: APPROVE');
     expect(result.output).toContain('CHANGES');
+    expect(result.stdout).toBe('Prompt asks VERDICT: CHANGES\n');
+    expect(result.stderr).toBe('');
     await expect(readFile(answerFile)).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('returns an empty final answer when Codex produced no final-answer file', async () => {
     const log = await logPath();
     mockProcess(async child => { child.stdout.write('VERDICT: APPROVE\n'); });
     const result = await new ProcessRunner().execute({ bin: 'codex', args: [], cwd: '/tmp', log, answerFile: `${log}.answer` });
+    expect(result.answer).toBe('');
+  });
+  it('keeps stdout and stderr separate when chunks and trailing lines are interleaved', async () => {
+    const log = await logPath();
+    mockProcess(async child => {
+      child.stdout.write('user\nQuota task');
+      child.stderr.write('Usage li');
+      child.stdout.write(' prompt\ntranscript');
+      child.stderr.write('mit; resets in 1 hour');
+    });
+    const result = await new ProcessRunner().execute({ bin: 'codex', args: [], cwd: '/tmp', log, answerFile: `${log}.answer` });
+    expect(result.stdout).toBe('user\nQuota task prompt\ntranscript');
+    expect(result.stderr).toBe('Usage limit; resets in 1 hour');
     expect(result.answer).toBe('');
   });
 });

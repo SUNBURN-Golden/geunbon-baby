@@ -42,5 +42,5 @@ export interface Command {
   log: string;
   answerFile?: string;
 }
-export interface Result { code: number; output: string; answer: string }
+export interface Result { code: number; output: string; answer: string; stdout?: string; stderr?: string }
 export type Execute = (command: Command) => Promise<Result>;

@@ -10,7 +10,7 @@ import type { Command, Execute, ModelsConfig, Result, Stage } from '../tools/dev
 const temps: string[] = [];
 afterEach(async () => { await Promise.all(temps.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
 const ok = (answer = ''): Result => ({ code: 0, output: answer, answer });
-async function fixture(options: { answers?: Partial<Record<Stage, string[]>>; failCheck?: string } = {}) {
+async function fixture(options: { answers?: Partial<Record<Stage, (string | Result)[]>>; failCheck?: string } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dev-daemon-test-')); temps.push(root);
   const queue = new Queue(join(root, 'queue'));
   await queue.init();
@@ -58,7 +58,7 @@ async function fixture(options: { answers?: Partial<Record<Stage, string[]>>; fa
     if (!stage) throw new Error(`Unexpected mocked command: ${command.bin}`);
     const answer = answers[stage]?.shift() ?? (stage.includes('review') ? 'No issues.\nVERDICT: APPROVE' :
       stage === 'audit' ? '# Audit\n\n```json\n{"fixes":[]}\n```' : 'Task completed.');
-    return ok(answer);
+    return typeof answer === 'string' ? ok(answer) : answer;
   });
   const daemonOptions = { repo, queue, config: config as ModelsConfig, execute, blueprint, now: () => Date.parse('2026-10-21T00:00:00Z') };
   const daemon = new Daemon(daemonOptions);
@@ -132,6 +132,15 @@ describe('task queue', () => {
 });
 
 describe('daemon state machine with offline runners', () => {
+  it('includes development dependencies when preparing a task under NODE_ENV=production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const { queue, daemon, calls } = await fixture();
+    await enqueue(queue);
+    await until(daemon, () => daemon.state.active?.stage === 'design');
+    const install = calls.find(command => command.bin === 'npm' && command.args[0] === 'ci');
+    expect(install?.args).toEqual(['ci', '--include=dev', '--no-audit', '--no-fund']);
+    expect(install?.cwd).toBe(daemon.state.active?.worktree);
+  });
   it('revises the design once, fixes/re-reviews, validates, then publishes and counts a confirmed merge', async () => {
     const { queue, daemon, calls } = await fixture({ answers: {
       'design-review': ['Needs detail.\nVERDICT: CHANGES'], 'build-review': ['Bug.\nVERDICT: CHANGES'],
@@ -177,7 +186,9 @@ describe('daemon state machine with offline runners', () => {
     expect(daemon.state.mergedPrs).toBe(0);
   });
   it('persists a quota pause and resumes the same stage after restart, leaving the next task in inbox', async () => {
-    const { queue, daemon, daemonOptions, calls } = await fixture({ answers: { design: Array.from({ length: 4 }, () => 'quota resets 2026-10-21T01:00:00Z') } });
+    const { queue, daemon, daemonOptions, calls } = await fixture({ answers: { design: Array.from({ length: 4 }, () => ({
+      code: 0, output: 'quota resets 2026-10-21T01:00:00Z', answer: '', stderr: 'quota resets 2026-10-21T01:00:00Z',
+    })) } });
     await enqueue(queue); await enqueue(queue, '# Second\nbody', '002.md');
     await until(daemon, () => Boolean(daemon.state.active?.wakeAt));
     const saved = JSON.parse(await readFile(join(queue.root, 'status.json'), 'utf8'));

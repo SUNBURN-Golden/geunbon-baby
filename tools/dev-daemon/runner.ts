@@ -74,12 +74,16 @@ export class ProcessRunner {
     const log = createWriteStream(command.log, { flags: 'a', mode: 0o600 });
     let logError: Error | undefined;
     log.on('error', error => { logError = error; this.kill('SIGTERM'); });
-    let output = '', bytes = 0, exceeded = false;
+    let output = '', stdout = '', stderr = '', bytes = 0, exceeded = false;
     const pending = ['', ''];
-    const record = (text: string) => {
+    const record = (text: string, stream?: number) => {
       const safe = this.scrub(text);
       log.write(safe);
-      if (bytes < 16 * 1024 * 1024) output += safe;
+      if (bytes < 16 * 1024 * 1024) {
+        output += safe;
+        if (stream === 0) stdout += safe;
+        if (stream === 1) stderr += safe;
+      }
       bytes += Buffer.byteLength(safe);
       if (bytes > 16 * 1024 * 1024 && !exceeded) { exceeded = true; this.kill('SIGTERM'); }
     };
@@ -87,7 +91,7 @@ export class ProcessRunner {
     const consume = (chunk: string, stream: number) => {
       pending[stream] += chunk;
       const last = pending[stream].lastIndexOf('\n');
-      if (last >= 0) { record(pending[stream].slice(0, last + 1)); pending[stream] = pending[stream].slice(last + 1); }
+      if (last >= 0) { record(pending[stream].slice(0, last + 1), stream); pending[stream] = pending[stream].slice(last + 1); }
       if (pending[stream].length > 16 * 1024 * 1024) { exceeded = true; this.kill('SIGTERM'); }
     };
     let timedOut = false;
@@ -105,7 +109,7 @@ export class ProcessRunner {
       child.on('error', error => record(`Runner error: ${error.message}\n`));
       child.on('close', exit => { clearTimeout(timer); this.child = undefined; resolve(exit ?? 1); });
     });
-    pending.forEach(record);
+    pending.forEach((text, stream) => record(text, stream));
     if (timedOut) record('\nRunner timed out.\n');
     if (exceeded) record('\nRunner output exceeded 16 MiB.\n');
     let answer = output;
@@ -119,6 +123,6 @@ export class ProcessRunner {
     await new Promise<void>(resolve => { if (log.destroyed) resolve(); else log.end(resolve); });
     if (logError) throw new Error('Cannot write process log');
     if (this.stopped) throw new Error('Daemon stopping');
-    return { code: timedOut ? 124 : exceeded ? 1 : code, output, answer } satisfies Result;
+    return { code: timedOut ? 124 : exceeded ? 1 : code, output, answer, stdout, stderr } satisfies Result;
   };
 }

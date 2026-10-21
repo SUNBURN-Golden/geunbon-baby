@@ -112,7 +112,7 @@ export class Daemon {
       if (await realpath(common.answer.trim()) !== await realpath(this.commonDir)) throw new Error('Existing worktree belongs to another repository');
     }
     await this.checkBranch(task);
-    if (task.kind === 'task') await this.command('npm', ['ci', '--no-audit', '--no-fund'], task.worktree, 'npm-ci');
+    if (task.kind === 'task') await this.command('npm', ['ci', '--include=dev', '--no-audit', '--no-fund'], task.worktree, 'npm-ci');
     await this.advance(task.kind === 'audit' ? 'audit' : 'design');
   }
   private async checkBranch(task: Task): Promise<void> {
