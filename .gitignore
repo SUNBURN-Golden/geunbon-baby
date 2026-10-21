@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.open-next/
+.wrangler/
+.local/
+.dev.vars*
+.env*
+!.env.example
+crawler/.session/
+crawler/.cache/
+*.tsbuildinfo
