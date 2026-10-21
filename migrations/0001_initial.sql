@@ -1,0 +1,6 @@
+CREATE TABLE models (id TEXT PRIMARY KEY, brand TEXT NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, importer TEXT NOT NULL, official_price INTEGER CHECK(official_price >= 0), source_url TEXT NOT NULL, checked TEXT NOT NULL, verify_level TEXT NOT NULL, note TEXT NOT NULL);
+CREATE TABLE sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, source_url TEXT NOT NULL, registration_source TEXT, withdrawal_source TEXT, official_import_source TEXT);
+CREATE TABLE ingested_items (id TEXT PRIMARY KEY, source_url TEXT NOT NULL UNIQUE, account TEXT NOT NULL, text TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('post','story')), captured_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), reviewed_at TEXT);
+CREATE TABLE deals (id TEXT PRIMARY KEY REFERENCES ingested_items(id), model_id TEXT NOT NULL REFERENCES models(id), seller_id TEXT NOT NULL REFERENCES sellers(id), title TEXT NOT NULL, price INTEGER CHECK(price >= 0), source_url TEXT NOT NULL, verify_level TEXT NOT NULL, checked TEXT NOT NULL, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, CHECK(ends_at > starts_at));
+CREATE INDEX deals_calendar ON deals(starts_at, ends_at);
+CREATE INDEX review_status ON ingested_items(status, captured_at);
