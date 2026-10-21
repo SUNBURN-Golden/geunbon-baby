@@ -35,6 +35,7 @@ export function DealPrice({ deal, timing }: { deal: DealWithContext; timing: Tim
   const validPrice = deal.price !== null && Number.isFinite(deal.price) && deal.price >= 0;
   return (
     <div className="deal-price-block">
+      <p className="deal-context">{dealsCopy.groupBuyPrice}</p>
       <p className={validPrice ? 'deal-price' : 'deal-price-unknown'}>
         {validPrice ? <>{deal.price!.toLocaleString('ko-KR')}<span>{dealsCopy.won}</span></> : dealsCopy.unknownPrice}
       </p>
@@ -48,6 +49,7 @@ export function PriceGap({ deal, gap, showContext = true }: { deal: DealWithCont
   if (!gap) return deal.model_official_price === null ? <p className="deal-context">{dealsCopy.unknownOfficial}</p> : null;
   return (
     <div className="deal-comparison">
+      <p className="deal-context">{dealsCopy.officialPrice} · {deal.model_official_price!.toLocaleString('ko-KR')}{dealsCopy.won}</p>
       <p className="deal-gap">{gapChunks(formatGap(gap)).map((chunk, i) => <span className="deal-gap-chunk" key={i}>{i > 0 ? ` · ${chunk}` : chunk}</span>)}</p>
       {showContext && <>
         <p className="deal-context">{dealsCopy.qualification}</p>
@@ -56,7 +58,6 @@ export function PriceGap({ deal, gap, showContext = true }: { deal: DealWithCont
           <br />
           {dealsCopy.officialChecked} · <CheckedDate value={deal.model_checked} /> · {verificationCopy(deal.model_verify_level)}
         </p>
-        {deal.model_note && <p className="deal-context">{deal.model_note}</p>}
       </>}
     </div>
   );

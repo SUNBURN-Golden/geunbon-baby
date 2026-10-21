@@ -19,13 +19,14 @@ vi.mock('../lib/db', async importOriginal => ({
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NEXT_NOT_FOUND'); } }));
 
 const nowMs = Date.parse('2026-10-21T03:00:00Z');
-const fixture: DealWithContext = {
+// Extra legacy fields must never reach the UI, even if supplied by a caller.
+const fixture: DealWithContext & { model_note: string } = {
   id: 'deal-1', model_id: 'model-1', seller_id: 'seller-1', title: 'A carefully checked deal',
   price: 390000, source_url: 'https://www.instagram.com/p/example/',
   verify_level: 'manual', checked: '2026-10-20T16:00:00Z',
   starts_at: '2026-10-20T00:00:00Z', ends_at: '2026-10-22T14:59:59Z',
   model_joined_id: 'model-1', model_name: 'Example model', model_official_price: 430000,
-  model_checked: '2026-10-18', model_verify_level: 'search_summary', model_note: 'Configuration needs confirmation.',
+  model_checked: '2026-10-18', model_verify_level: 'search_summary', model_note: 'Other retailer: 123,456 KRW; used: 98,765 KRW.',
   seller_joined_id: 'seller-1', seller_name: 'Example seller',
 };
 const card = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealCard, { deal: { ...fixture, ...patch }, nowMs }));
@@ -131,6 +132,9 @@ describe('server rendered deals UI', () => {
     expect(html).toContain(dealsCopy.active);
     expect(html).toContain(fixture.title);
     expect(html).toContain('390,000');
+    expect(html).toContain(dealsCopy.groupBuyPrice);
+    expect(html).toContain(dealsCopy.officialPrice);
+    expect(html).toContain('430,000');
     expect(html.replace(/<[^>]+>/g, "")).toContain(formatGap(priceGap(fixture.price, fixture.model_official_price)!));
     expect(html).toMatch(/<span class="deal-gap-chunk"> · [^<]*(낮아요|높아요)<\/span>/);
     expect(html).toContain(dealsCopy.good);
@@ -148,14 +152,14 @@ describe('server rendered deals UI', () => {
     expect(html).not.toContain('<time');
   });
 
-  test('detail preserves qualification, verification, model notes, both dates and disclaimer', () => {
+  test('detail preserves qualification, verification, both dates and disclaimer while hiding price-bearing notes', () => {
     const html = detail();
     expect(html).toContain(dealsCopy.qualification);
     expect(html).toContain(dealsCopy.dealChecked);
     expect(html).toContain(dealsCopy.officialChecked);
     expect(html).toContain(dealsCopy.searchSummary);
     expect(html).toContain(dealsCopy.manual);
-    expect(html).toContain(fixture.model_note);
+    expect(html).not.toContain(fixture.model_note);
     expect(html).toContain('2026.10.21');
     expect(html).toContain('2026.10.18');
     expect(html.indexOf(dealsCopy.qualification)).toBeLessThan(html.indexOf(dealsCopy.good));
@@ -255,6 +259,7 @@ describe('theme contrast', () => {
     for (const [foreground, background] of [
       ['text', 'surface'], ['text', 'surface-2'], ['text', 'clay'],
       ['muted', 'surface'], ['on-accent', 'accent'],
+      ['accent', 'surface'], ['accent', 'surface-2'], ['muted', 'bg'],
     ]) {
       expect(contrast(tokens[prefix + foreground], tokens[prefix + background])).toBeGreaterThanOrEqual(4.5);
     }
@@ -273,7 +278,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
     // Model/seller deletion and old incomplete records must not hide a deal.
     await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
-    await memory.db.prepare("INSERT INTO models VALUES ('model-1', 'Brand', 'Model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'search_summary', 'Check configuration')").run();
+    await memory.db.prepare("INSERT INTO models VALUES ('model-1', 'Brand', 'Model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'search_summary', 'Retailer 123,456원; overseas $799; used 234,567원')").run();
     await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
     for (const d of [fixture, { ...fixture, id: 'missing-joins', model_id: 'absent-model', seller_id: 'absent-seller' }]) {
       await memory.db.prepare('INSERT INTO deals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -285,6 +290,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
   test('aliased columns preserve deal identity and confirmation metadata, even for missing joins', async () => {
     const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
     expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row).not.toHaveProperty('model_note');
     expect(rows.find(d => d.id === fixture.id)).toMatchObject({
       id: 'deal-1', checked: fixture.checked, verify_level: 'manual', source_url: fixture.source_url,
       model_joined_id: 'model-1', model_checked: '2026-10-18', model_verify_level: 'search_summary', seller_name: 'Seller',
@@ -301,6 +307,9 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     clock.mockClear();
     const html = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) }));
     expect(html).toContain(fixture.title);
+    expect(html).not.toContain('123,456');
+    expect(html).not.toContain('234,567');
+    expect(html).not.toContain('$799');
     expect(clock).toHaveBeenCalledTimes(1);
   });
 
