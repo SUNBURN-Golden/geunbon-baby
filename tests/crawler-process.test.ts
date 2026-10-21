@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
@@ -22,7 +23,7 @@ test.each(['login', 'challenge', 'blocked'])('halt %s exits the actual Node proc
 
 test.each([app.script, 'crawler/index.ts'])('entrypoint %s with missing config exits before any browser/network work', script => {
   expect(extname(app.script)).toBe('.mjs');
-  expect(app.interpreter).toBe('node');
+  expect(realpathSync(app.interpreter)).toBe(realpathSync(resolve(root, 'node_modules/node/bin/node')));
   expect(app.node_args).toBe('--import tsx');
   const env = { ...process.env };
   delete env.AGAMAJUNG_API_URL;
@@ -34,4 +35,15 @@ test.each([app.script, 'crawler/index.ts'])('entrypoint %s with missing config e
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('크롤러 중단(unknown)');
   expect(result.stderr).not.toContain('TypeScript support unavailable');
+});
+
+test('pm2 runs exactly twice daily in KST, once per launch, without other restart triggers', () => {
+  expect(app.cron_restart).toBe('30 9,20 * * *');
+  expect(app.env.TZ).toBe('Asia/Seoul');
+  expect(app.env.AGAMAJUNG_ONCE).toBe('1');
+  expect(app.env.AGAMAJUNG_QUIET_WINDOWS).toBe('06:45-08:00,13:00-14:00');
+  expect(app.autorestart).toBe(false);
+  expect(app.watch).toBe(false);
+  expect(app.max_memory_restart).toBeUndefined();
+  expect(app.restart_delay).toBeUndefined();
 });

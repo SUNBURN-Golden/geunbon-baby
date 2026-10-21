@@ -1,5 +1,5 @@
 {
-  "$comment": "아가마중 크롤러 v2 속도·한도 기본값. 알림·트레이는 짧은 주기, 프로필은 별도 staleness 주기로 확인한다. 최소/최대 쌍은 매번 무작위 지터 범위(밀리초 또는 분). 환경변수로는 AGAMAJUNG_QUIET_WINDOW=06:45-08:00 (KST 휴식), AGAMAJUNG_OCR=0 (OCR 끔), AGAMAJUNG_OCR_LANG, AGAMAJUNG_HEADLESS=0, AGAMAJUNG_ONCE=1 만 덮어쓴다. 값을 올리기 전에 Instagram 행동 제한과 수집 최소화 원칙을 다시 검토한다.",
+  "$comment": "아가마중 크롤러 v2 속도·한도 기본값. 알림·트레이는 짧은 주기, 프로필은 별도 staleness 주기로 확인한다. 최소/최대 쌍은 매번 무작위 지터 범위(밀리초 또는 분). 환경변수로는 AGAMAJUNG_QUIET_WINDOWS=06:45-08:00,13:00-14:00 (KST 휴식, 이전 AGAMAJUNG_QUIET_WINDOW도 지원), AGAMAJUNG_OCR=0 (OCR 끔), AGAMAJUNG_OCR_LANG, AGAMAJUNG_HEADLESS=0, AGAMAJUNG_ONCE=1 만 덮어쓴다. 값을 올리기 전에 Instagram 행동 제한과 수집 최소화 원칙을 다시 검토한다.",
   "poll_interval_minutes": [
     1,
     2
@@ -52,13 +52,18 @@
     "account_recheck_minutes": 90,
     "story_recheck_minutes": 30
   },
-  "quiet_window": {
-    "start": "06:45",
-    "end": "08:00",
-    "timezone": "Asia/Seoul",
-    "jitter_ms": [
-      1000,
-      30000
-    ]
-  }
+  "quiet_windows": [
+    {
+      "start": "06:45",
+      "end": "08:00",
+      "timezone": "Asia/Seoul",
+      "jitter_ms": [1000, 30000]
+    },
+    {
+      "start": "13:00",
+      "end": "14:00",
+      "timezone": "Asia/Seoul",
+      "jitter_ms": [1000, 30000]
+    }
+  ]
 }

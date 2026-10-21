@@ -1,13 +1,13 @@
 // config/settings.json · config/accounts.json 로더. 형식이 어긋나면 실행을 중단한다(잘못된 속도로 동작하지 않게).
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { parseQuietWindow, type QuietWindow } from './quiet-window';
+import { parseQuietWindows, type QuietWindow } from './quiet-window';
 
 export type SeedAccount = { handle: string; brand: string; scope: 'global' | 'kr'; verified: boolean; follow: boolean; note: string };
 export type DiscoveryConfig = { hashtags: { base: string[]; brand: string[]; extra: string[] } };
 export type AccountsFile = { seed_accounts: SeedAccount[]; discovery: DiscoveryConfig };
 export type Settings = {
-  quiet_window: QuietWindow;
+  quiet_windows: QuietWindow[];
   poll_interval_minutes: [number, number];
   per_tick: { max_accounts: number; max_posts_per_account: number; max_stories_per_account: number };
   hourly_caps: { profile_visits: number; post_views: number; story_opens: number; follows: number; hashtag_pages: number };
@@ -43,7 +43,11 @@ export function parseSettings(raw: unknown, env: Record<string, string | undefin
   const ocr = v.ocr as Record<string, unknown>;
   const staleness = v.staleness as Record<string, unknown>;
   return {
-    quiet_window: parseQuietWindow(v.quiet_window, env.AGAMAJUNG_QUIET_WINDOW),
+    quiet_windows: parseQuietWindows(
+      v.quiet_windows !== undefined ? v.quiet_windows : v.quiet_window !== undefined ? [v.quiet_window] : undefined,
+      env.AGAMAJUNG_QUIET_WINDOWS ?? env.AGAMAJUNG_QUIET_WINDOW,
+      env.AGAMAJUNG_QUIET_WINDOWS !== undefined ? 'AGAMAJUNG_QUIET_WINDOWS' : 'AGAMAJUNG_QUIET_WINDOW',
+    ),
     poll_interval_minutes: pair(v.poll_interval_minutes, 'poll_interval_minutes'),
     per_tick: { max_accounts: limit(perTick.max_accounts, 'per_tick.max_accounts'), max_posts_per_account: limit(perTick.max_posts_per_account, 'per_tick.max_posts_per_account'), max_stories_per_account: limit(perTick.max_stories_per_account, 'per_tick.max_stories_per_account') },
     hourly_caps: { profile_visits: limit(caps.profile_visits, 'hourly_caps.profile_visits'), post_views: limit(caps.post_views, 'hourly_caps.post_views'), story_opens: limit(caps.story_opens, 'hourly_caps.story_opens'), follows: limit(caps.follows, 'hourly_caps.follows'), hashtag_pages: limit(caps.hashtag_pages, 'hourly_caps.hashtag_pages') },

@@ -1,5 +1,5 @@
 import type { QuietWindow } from './quiet-window';
-import { QuietWindowError, quietWindowAt } from './quiet-window';
+import { QuietWindowError, quietWindowsAt } from './quiet-window';
 import type { health } from './health';
 
 // All effects and the clock are injected so the actual scheduler is tested offline.
@@ -22,7 +22,7 @@ type LoopDependencies<Session> = {
 class LoopStopped extends Error {}
 
 export async function runMainLoop<Session>(
-  options: { quietWindow: QuietWindow; pollMinutes: [number, number]; once: boolean },
+  options: { quietWindows: QuietWindow[]; pollMinutes: [number, number]; once: boolean },
   deps: LoopDependencies<Session>,
 ) {
   let session: Session | undefined;
@@ -33,15 +33,15 @@ export async function runMainLoop<Session>(
   let diagnostics: AbortController | undefined;
 
   const enterQuiet = () => {
-    const quiet = quietWindowAt(options.quietWindow, deps.now());
+    const quiet = quietWindowsAt(options.quietWindows, deps.now());
     if (quiet.endAt === null || resumeAt !== undefined) return;
-    const [min, max] = options.quietWindow.jitter_ms;
+    const [min, max] = quiet.jitter_ms!;
     resumeAt = quiet.endAt + min + deps.random() * (max - min);
     diagnostics?.abort();
     deps.log('quiet_window_enter', {
-      timezone: options.quietWindow.timezone,
-      end_at: new Date(quiet.endAt).toISOString(),
-      resume_at: new Date(resumeAt).toISOString(),
+      timezone: 'Asia/Seoul',
+      end_at: Number.isFinite(quiet.endAt) ? new Date(quiet.endAt).toISOString() : null,
+      resume_at: Number.isFinite(resumeAt) ? new Date(resumeAt).toISOString() : null,
     });
   };
   const closeSession = () => {
@@ -62,11 +62,13 @@ export async function runMainLoop<Session>(
   };
   const armTimer = () => {
     cancelTimer();
+    const nextStartAt = quietWindowsAt(options.quietWindows, deps.now()).nextStartAt;
+    if (!Number.isFinite(nextStartAt)) return;
     cancelTimer = deps.schedule(() => {
       enterQuiet();
       if (resumeAt !== undefined) void closeSession();
       else armTimer(); // A backwards wall-clock adjustment must not start quiet early.
-    }, Math.max(0, quietWindowAt(options.quietWindow, deps.now()).nextStartAt - deps.now()));
+    }, Math.max(0, nextStartAt - deps.now()));
   };
 
   try {
@@ -79,14 +81,14 @@ export async function runMainLoop<Session>(
         // Short sleeps keep SIGINT/SIGTERM responsive even in an overnight window.
         while (!deps.stopped() && deps.now() < resumeAt) await deps.sleep(Math.min(1000, resumeAt - deps.now()));
         if (deps.stopped()) break;
-        const quiet = quietWindowAt(options.quietWindow, deps.now());
+        const quiet = quietWindowsAt(options.quietWindows, deps.now());
         if (quiet.endAt !== null) {
           // Clock jumps or unusually long jitter can carry us into the next window.
-          resumeAt = quiet.endAt + options.quietWindow.jitter_ms[0];
+          resumeAt = quiet.endAt + quiet.jitter_ms![0];
           continue;
         }
         resumeAt = undefined;
-        deps.log('quiet_window_exit', { timezone: options.quietWindow.timezone });
+        deps.log('quiet_window_exit', { timezone: 'Asia/Seoul' });
         await deps.flush();
         continue;
       }

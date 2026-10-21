@@ -3,7 +3,7 @@ import { assertHuman, guardPage } from './browser';
 import type { Settings } from './config';
 import type { CrawlerState } from './state';
 import { firstVisible, parseHandle, visibleHandles } from './selectors';
-import { QuietWindowError, quietWindowAt } from './quiet-window';
+import { QuietWindowError, quietWindowsAt } from './quiet-window';
 import { sleep } from './util';
 import { health } from './health';
 
@@ -14,7 +14,7 @@ export async function syncFollowing(page: Page, ctx: { state: CrawlerState; sett
   const { state, settings } = ctx;
   const active = () => {
     check();
-    if (quietWindowAt(settings.quiet_window, Date.now()).active) throw new QuietWindowError();
+    if (quietWindowsAt(settings.quiet_windows, Date.now()).active) throw new QuietWindowError();
   };
   active();
   if (state.lastFollowingSyncAttempt && Date.now() - Date.parse(state.lastFollowingSyncAttempt) < 86_400_000) return;

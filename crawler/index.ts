@@ -37,7 +37,7 @@ export async function main() {
   process.once('SIGTERM', () => { stopped = true; });
   health('run_start', { seeds: accounts.seed_accounts.length, ocr: settings.ocr.enabled, follow_daily_cap: settings.follow.daily_cap, poll: settings.poll_interval_minutes.join('-') });
   try {
-    await runMainLoop({ quietWindow: settings.quiet_window, pollMinutes: settings.poll_interval_minutes, once: process.env.AGAMAJUNG_ONCE === '1' }, {
+    await runMainLoop({ quietWindows: settings.quiet_windows, pollMinutes: settings.poll_interval_minutes, once: process.env.AGAMAJUNG_ONCE === '1' }, {
       now: Date.now,
       random: Math.random,
       sleep,

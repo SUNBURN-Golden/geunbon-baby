@@ -75,9 +75,9 @@ test('attempt limit survives failure, restart, and KST midnight and expires only
   expect(mock.goto).toHaveBeenCalledTimes(2);
 });
 
-test('quiet hours block sync before navigation or spending any budget', async () => {
+test.each(['06:45:00', '13:00:00'])('quiet hours at %s block sync before navigation or spending any budget', async local => {
   const { ctx, mock } = await fixture();
-  vi.setSystemTime(at('2026-10-21T06:45:00'));
+  vi.setSystemTime(at(`2026-10-21T${local}`));
   await expect(syncFollowing(mock.page, ctx)).rejects.toBeInstanceOf(QuietWindowError);
   expect(mock.goto).not.toHaveBeenCalled();
   expect(ctx.state.lastFollowingSyncAttempt).toBeUndefined();
