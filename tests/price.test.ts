@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { models } from '../seed/models.json';
 import { comparison, money, type Model } from '../lib/data';

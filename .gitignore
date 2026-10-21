@@ -8,4 +8,5 @@ node_modules/
 !.env.example
 crawler/.session/
 crawler/.cache/
+crawler/logs/
 *.tsbuildinfo

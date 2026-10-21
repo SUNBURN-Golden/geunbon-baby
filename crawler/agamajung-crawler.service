@@ -1,0 +1,40 @@
+# 아가마중 크롤러 systemd 단위 예시.
+# 1) 전용 사용자 생성: sudo useradd -r -m -d /opt/agamajung agamajung-crawler
+# 2) 저장소를 /opt/agamajung/repo 에 두고 npm ci && PLAYWRIGHT_BROWSERS_PATH=/opt/agamajung/repo/node_modules/.cache/ms-playwright npx playwright install chromium 실행
+# 3) 비밀 환경파일 작성(예: /etc/agamajung/crawler.env, root 소유 0600):
+#      AGAMAJUNG_IG_USER=...
+#      AGAMAJUNG_IG_PASSWORD=...
+#      AGAMAJUNG_API_URL=https://...
+#      INGEST_TOKEN=...
+#    비밀값은 이 파일(unit)에 적지 않는다.
+# 4) 이 파일을 /etc/systemd/system/agamajung-crawler.service 로 복사 후:
+#      sudo systemctl daemon-reload && sudo systemctl enable --now agamajung-crawler
+# 챌린지·차단·로그인 이탈(75)은 재시작하지 않는다. 사람이 원인을 확인한 뒤 재개한다.
+[Unit]
+Description=agamajung Instagram crawler (review queue collection)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=agamajung-crawler
+Group=agamajung-crawler
+WorkingDirectory=/opt/agamajung/repo
+EnvironmentFile=/etc/agamajung/crawler.env
+ExecStart=/usr/bin/node --import tsx crawler/index.ts
+Restart=on-failure
+RestartSec=600
+RestartPreventExitStatus=75
+TimeoutStopSec=90
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/agamajung/repo/node_modules/.cache/ms-playwright
+ReadWritePaths=/opt/agamajung/repo/crawler
+
+[Install]
+WantedBy=multi-user.target

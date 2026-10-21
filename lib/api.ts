@@ -14,6 +14,57 @@ export const safeUrl = (value: unknown): value is string => {
 };
 const text = (v: unknown, max = 500) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 const date = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(v) && Number.isFinite(Date.parse(v));
+
+// ── 크롤러 자동 추출 제안(검수 보조용, 승인 전까지 게시 데이터와 무관) ─────────────
+export type Suggestions = {
+  models: { model_id: string; brand: string; name: string; matched: string[]; confidence: number }[];
+  price: { value: number; raw: string; confidence: number } | null;
+  dates: { starts_at: string | null; ends_at: string | null; raw: string; confidence: number } | null;
+  links: { url: string; kind: 'url' | 'link_in_bio'; confidence: number }[];
+  confidence: number;
+};
+const confidence = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+export function parseSuggestions(value: unknown): Suggestions | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || JSON.stringify(value).length > 8000) return null;
+  const v = value as Record<string, unknown>;
+  if (!Array.isArray(v.models) || v.models.length > 10 || !confidence(v.confidence)) return null;
+  const models: Suggestions['models'] = [];
+  for (const raw of v.models) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const m = raw as Record<string, unknown>;
+    if (!text(m.model_id, 120) || !text(m.brand, 120) || !text(m.name, 120) || !Array.isArray(m.matched) || m.matched.length > 8 || !m.matched.every((x: unknown) => text(x, 60)) || !confidence(m.confidence)) return null;
+    models.push({ model_id: m.model_id as string, brand: m.brand as string, name: m.name as string, matched: m.matched as string[], confidence: m.confidence as number });
+  }
+  let price: Suggestions['price'] = null;
+  if (v.price != null) {
+    if (!v.price || typeof v.price !== 'object' || Array.isArray(v.price)) return null;
+    const p = v.price as Record<string, unknown>;
+    if (!Number.isSafeInteger(p.value) || (p.value as number) < 0 || (p.value as number) > 1e9 || !text(p.raw, 120) || !confidence(p.confidence)) return null;
+    price = { value: p.value as number, raw: p.raw as string, confidence: p.confidence as number };
+  }
+  let dates: Suggestions['dates'] = null;
+  if (v.dates != null) {
+    if (!v.dates || typeof v.dates !== 'object' || Array.isArray(v.dates)) return null;
+    const d = v.dates as Record<string, unknown>;
+    if (!text(d.raw, 200) || !confidence(d.confidence) || (d.starts_at != null && !date(d.starts_at)) || (d.ends_at != null && !date(d.ends_at))) return null;
+    dates = { starts_at: (d.starts_at as string) ?? null, ends_at: (d.ends_at as string) ?? null, raw: d.raw as string, confidence: d.confidence as number };
+  }
+  if (!Array.isArray(v.links) || v.links.length > 10) return null;
+  const links: Suggestions['links'] = [];
+  for (const raw of v.links) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const l = raw as Record<string, unknown>;
+    if (l.kind !== 'url' && l.kind !== 'link_in_bio') return null;
+    if (l.kind === 'url' ? !safeUrl(l.url) : l.url !== '') return null; // link_in_bio 는 빈 url(원문 프로필로 직접 확인)
+    if (!confidence(l.confidence)) return null;
+    links.push({ url: l.url as string, kind: l.kind, confidence: l.confidence as number });
+  }
+  return { models, price, dates, links, confidence: v.confidence as number };
+}
+export function parseStoredSuggestions(value: string | null): Suggestions | null {
+  try { return value ? parseSuggestions(JSON.parse(value)) : null; }
+  catch { return null; }
+}
 async function body(request: Request) {
   const reader = request.body?.getReader();
   if (!reader) throw new Error('body');
@@ -53,11 +104,17 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     if (!b || typeof b !== 'object') return json({ error: '잘못된 입력' }, 400);
     if (path === 'ingest') {
       if (!safeUrl(b.source_url) || !text(b.account, 100) || !text(b.text, 20000) || !['post', 'story'].includes(b.kind) || !date(b.captured_at)) return json({ error: 'source_url, account, text, kind, captured_at 확인 필요' }, 400);
+      let suggestions: string | null = null;
+      if (b.suggestions != null) {
+        const parsed = parseSuggestions(b.suggestions);
+        if (!parsed) return json({ error: 'suggestions 형식 확인 필요(모델·가격·일정·링크·신뢰도 스키마)' }, 400);
+        suggestions = JSON.stringify(parsed);
+      }
       const u = new URL(b.source_url);
       if (!['www.instagram.com', 'instagram.com'].includes(u.hostname) || u.protocol !== 'https:' || u.search || u.hash || !/^\/(p|reel)\/[A-Za-z0-9_-]+\/?$|^\/stories\/[A-Za-z0-9._]+\/[0-9]+\/?$/.test(u.pathname)) return json({ error: 'Instagram 원문 URL 필요' }, 400);
       const canonical = `https://www.instagram.com${u.pathname.replace(/\/$/, '')}/`;
       const id = crypto.randomUUID();
-      await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at) VALUES (?,?,?,?,?,?) ON CONFLICT(source_url) DO NOTHING').bind(id, canonical, b.account, b.text, b.kind, new Date(b.captured_at).toISOString()).run();
+      await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,suggestions) VALUES (?,?,?,?,?,?,?) ON CONFLICT(source_url) DO NOTHING').bind(id, canonical, b.account, b.text, b.kind, new Date(b.captured_at).toISOString(), suggestions).run();
       const item = await env.DB.prepare('SELECT id,status FROM ingested_items WHERE source_url = ?').bind(canonical).first();
       return json({ data: item }, 202);
     }
