@@ -3,7 +3,7 @@ import config from '../tools/dev-daemon/models.json';
 import { fallback } from '../tools/dev-daemon/fallback';
 import { isLimited, parseReset } from '../tools/dev-daemon/limits';
 import { modelCommand, redactor } from '../tools/dev-daemon/runner';
-import { chains, verdict } from '../tools/dev-daemon/stages';
+import { chains, readOnly, verdict } from '../tools/dev-daemon/stages';
 import type { ModelsConfig, Result } from '../tools/dev-daemon/types';
 
 const models = config as ModelsConfig;
@@ -18,14 +18,21 @@ function run(results: Result[], prompt = 'task') {
 
 describe('daemon fallback', () => {
   it('uses the exact requested chains and effort levels', () => {
-    expect(chains.design?.map(c => `${c.model}:${c.effort ?? ''}`)).toEqual(['fable:medium', 'astra6:high', 'glm:', 'swe2:']);
-    expect(chains['design-review']?.map(c => c.model)).toEqual(['opus55', 'astra6', 'glm', 'swe2']);
-    expect(chains.build?.map(c => c.model)).toEqual(['sol61', 'sonnet', 'glm', 'swe2']);
-    expect(chains['build-review']?.map(c => c.model)).toEqual(['opus55', 'sol61', 'glm', 'swe2']);
-    expect(chains['re-review']?.[0]).toEqual({ model: 'sonnet', effort: 'medium' });
-    expect(chains['design-revise']).toEqual(chains.design);
-    expect(chains['review-fix']).toEqual(chains.build);
-    expect(chains.audit).toEqual(chains.design);
+    const design = [{ model: 'fable', effort: 'medium' }, { model: 'astra6', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
+    const build = [{ model: 'sol61', effort: 'medium' }, { model: 'sonnet', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
+    expect(chains).toEqual({
+      design,
+      'design-review': [{ model: 'opus55', effort: 'medium' }, { model: 'astra6', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }],
+      'design-revise': design,
+      build,
+      'build-review': [{ model: 'opus55', effort: 'medium' }, { model: 'sol61', effort: 'medium' }, { model: 'glm' }, { model: 'swe2' }],
+      'review-fix': build,
+      're-review': [{ model: 'sonnet', effort: 'medium' }, { model: 'sol61', effort: 'medium' }, { model: 'glm' }, { model: 'swe2' }],
+      audit: design,
+    });
+    expect(chains['design-revise']).toBe(chains.design);
+    expect(chains['review-fix']).toBe(chains.build);
+    expect(chains.audit).toBe(chains.design);
   });
   it('falls back on nonzero exit and zero-exit quota output, stopping at success', async () => {
     const { promise, execute } = run([result('CLI failed', 1), diagnostic('quota exceeded', 0), result('completed')]);
@@ -108,6 +115,26 @@ describe('reset parsing', () => {
 });
 
 describe('runner contracts', () => {
+  it.each([
+    ['build', false],
+    ['build-review', true],
+    ['review-fix', false],
+    ['re-review', true],
+  ] as const)('passes the configured Sol medium effort and permissions for %s', (stage, expectedReadOnly) => {
+    const choice = chains[stage]?.find(c => c.model === 'sol61');
+    expect(choice).toEqual({ model: 'sol61', effort: 'medium' });
+    expect(readOnly(stage)).toBe(expectedReadOnly);
+    const command = modelCommand(models, choice!, 'task', '/repo', '/log', readOnly(stage));
+    expect(command.bin).toBe('codex');
+    expect(command.args.slice(0, 5)).toEqual(['exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort=medium']);
+    if (expectedReadOnly) {
+      expect(command.args.slice(5, 9)).toEqual(['-s', 'read-only', '-c', 'approval_policy="never"']);
+      expect(command.args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    } else {
+      expect(command.args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(command.args).not.toContain('-s');
+    }
+  });
   it('places Claude prompt before variadic flags and isolates the Fable profile', () => {
     const command = modelCommand(models, { model: 'opus55', effort: 'medium' }, 'review task', '/repo', '/log', true);
     expect(command.args.slice(0, 2)).toEqual(['-p', 'review task']);
@@ -127,7 +154,7 @@ describe('runner contracts', () => {
     expect(review.args).toContain('model_reasoning_effort=high');
     expect(review.args).toContain('read-only');
     expect(review.answerFile).toBe('/log.answer');
-    expect(modelCommand(models, { model: 'sol61', effort: 'high' }, 'build', '/repo', '/log', false).args)
+    expect(modelCommand(models, { model: 'sol61', effort: 'medium' }, 'build', '/repo', '/log', false).args)
       .toContain('--dangerously-bypass-approvals-and-sandbox');
   });
   it('uses Devin print mode, skips workspace trust, and enforces read-only mounts', () => {

@@ -1,15 +1,15 @@
 import type { Choice, Stage } from './types';
 
 const design: Choice[] = [{ model: 'fable', effort: 'medium' }, { model: 'astra6', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
-const build: Choice[] = [{ model: 'sol61', effort: 'high' }, { model: 'sonnet', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
+const build: Choice[] = [{ model: 'sol61', effort: 'medium' }, { model: 'sonnet', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
 export const chains: Partial<Record<Stage, Choice[]>> = {
   design,
   'design-review': [{ model: 'opus55', effort: 'medium' }, { model: 'astra6', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }],
   'design-revise': design,
   build,
-  'build-review': [{ model: 'opus55', effort: 'medium' }, { model: 'sol61', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }],
+  'build-review': [{ model: 'opus55', effort: 'medium' }, { model: 'sol61', effort: 'medium' }, { model: 'glm' }, { model: 'swe2' }],
   'review-fix': build,
-  're-review': [{ model: 'sonnet', effort: 'medium' }, { model: 'sol61', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }],
+  're-review': [{ model: 'sonnet', effort: 'medium' }, { model: 'sol61', effort: 'medium' }, { model: 'glm' }, { model: 'swe2' }],
   audit: design,
 };
 export const readOnly = (stage: Stage) => !['build', 'review-fix'].includes(stage);
