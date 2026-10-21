@@ -17,7 +17,6 @@ export type DealWithContext = Deal & {
   model_official_price: number | null;
   model_checked: string | null;
   model_verify_level: string | null;
-  model_note: string | null;
   seller_joined_id: string | null;
   seller_name: string | null;
 };
@@ -29,7 +28,7 @@ export const DEAL_SELECT = `
          d.verify_level, d.checked, d.starts_at, d.ends_at,
          m.id AS model_joined_id, m.name AS model_name,
          m.official_price AS model_official_price, m.checked AS model_checked,
-         m.verify_level AS model_verify_level, m.note AS model_note,
+         m.verify_level AS model_verify_level,
          s.id AS seller_joined_id, s.name AS seller_name
   FROM deals AS d
   LEFT JOIN models AS m ON m.id = d.model_id

@@ -442,11 +442,130 @@ form { max-width: 100%; }
   .deals-page .deal-facts > div { grid-template-columns: 128px minmax(0, 1fr); }
 }
 
+.active-deals {
+  max-width: 1280px;
+  margin-inline: auto;
+  padding: var(--s-5) var(--s-4);
+  border-bottom: 1px solid var(--border);
+}
+.active-deals h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-4);
+  font-family: var(--font-sans);
+  font-size: 24px;
+  font-weight: 650;
+}
+.active-deal-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--s-6);
+  min-height: var(--s-6);
+  padding-inline: var(--s-2);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 600 16px/1.5 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.active-deal-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: min(304px, calc(100% - var(--s-4)));
+  gap: var(--s-4);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--s-2);
+  overscroll-behavior-x: contain;
+  margin: 0;
+  padding: var(--s-2) var(--s-2) var(--s-4);
+  list-style: none;
+}
+.active-deal-row > li { min-width: 0; scroll-snap-align: start; }
+.active-deal-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  height: 100%;
+  padding: var(--s-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  text-decoration: none;
+}
+.active-deal-card:hover { border-color: var(--accent); }
+.active-deal-card h3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 0;
+  font: 600 16px/1.5 var(--font-sans);
+}
+.active-deal-card p { margin: 0; }
+.active-deal-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.active-deal-top .deal-image {
+  flex-shrink: 0;
+  width: var(--s-8);
+  height: var(--s-8);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  margin: 0;
+}
+.active-deal-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--s-7);
+  height: var(--s-8);
+  border-radius: var(--s-5) var(--s-5) var(--r-sm) var(--r-sm);
+  background: var(--surface-2);
+  color: var(--accent);
+  font: 500 24px/1.5 var(--font-serif);
+}
+.active-deal-ad { color: var(--muted); font-size: 12px; }
+.active-deal-days {
+  margin-left: auto;
+  padding: var(--s-2);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.active-deal-label { color: var(--muted); font-size: 13px; }
+.active-deal-price {
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  letter-spacing: -1px;
+}
+.active-deal-price span { margin-left: var(--s-2); font-size: 16px; letter-spacing: 0; }
+.active-deal-unknown { font-size: 16px; }
+.active-deal-comparison { margin-top: auto; }
+.active-deal-gap { color: var(--accent); font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.active-deal-empty { margin: 0; color: var(--muted); font-size: 14px; }
+.deals-heading { margin-bottom: var(--s-5); }
+.deals-heading h1 { margin-bottom: var(--s-2); }
+.deals-heading p { display: flex; align-items: center; gap: var(--s-2); margin: 0; }
+@media (min-width: 768px) {
+  .active-deals { padding: var(--s-6); }
+  .active-deal-row { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); overflow: visible; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .model-card:hover .product-mark, .button:active, button:active { transform: none; }
+  .active-deal-row { scroll-snap-type: none; }
 }
 
+.keep-line { white-space: nowrap; }
 .deal-image { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: contain; border-radius: 1rem; margin: 0 0 1.25rem; background: var(--surface-2); }
 .seller .deal-image { max-width: 40rem; }
 .image-choice { display: flex; align-items: center; gap: .6rem; }

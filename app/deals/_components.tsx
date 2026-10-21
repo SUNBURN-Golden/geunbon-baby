@@ -36,10 +36,11 @@ export function DealPrice({ deal, timing }: { deal: DealWithContext; timing: Tim
   const validPrice = deal.price !== null && Number.isFinite(deal.price) && deal.price >= 0;
   return (
     <div className="deal-price-block">
+      <p className="deal-context">{dealsCopy.groupBuyPrice}</p>
       <p className={validPrice ? 'deal-price' : 'deal-price-unknown'}>
         {validPrice ? <>{deal.price!.toLocaleString('ko-KR')}<span>{dealsCopy.won}</span></> : dealsCopy.unknownPrice}
       </p>
-      {timing.state === 'ended' && <p className="deal-archive">{dealsCopy.archived} · <CheckedDate value={deal.checked} /></p>}
+      {timing.state === 'ended' && <p className="deal-archive"><WithDate label={dealsCopy.archived}><CheckedDate value={deal.checked} /></WithDate></p>}
     </div>
   );
 }
@@ -49,15 +50,15 @@ export function PriceGap({ deal, gap, showContext = true }: { deal: DealWithCont
   if (!gap) return deal.model_official_price === null ? <p className="deal-context">{dealsCopy.unknownOfficial}</p> : null;
   return (
     <div className="deal-comparison">
+      <p className="deal-context">{dealsCopy.officialPrice} · {deal.model_official_price!.toLocaleString('ko-KR')}{dealsCopy.won}</p>
       <p className="deal-gap">{gapChunks(formatGap(gap)).map((chunk, i) => <span className="deal-gap-chunk" key={i}>{i > 0 ? ` · ${chunk}` : chunk}</span>)}</p>
       {showContext && <>
         <p className="deal-context">{dealsCopy.qualification}</p>
         <p className="deal-context">
-          {dealsCopy.dealChecked} · <CheckedDate value={deal.checked} /> · {verificationCopy(deal.verify_level)}
+          <WithDate label={dealsCopy.dealChecked}><CheckedDate value={deal.checked} /></WithDate> · {verificationCopy(deal.verify_level)}
           <br />
-          {dealsCopy.officialChecked} · <CheckedDate value={deal.model_checked} /> · {verificationCopy(deal.model_verify_level)}
+          <WithDate label={dealsCopy.officialChecked}><CheckedDate value={deal.model_checked} /></WithDate> · {verificationCopy(deal.model_verify_level)}
         </p>
-        {deal.model_note && <p className="deal-context">{deal.model_note}</p>}
       </>}
     </div>
   );
@@ -77,7 +78,7 @@ export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number
   const gap = priceGap(deal.price, deal.model_joined_id ? deal.model_official_price : null);
   return (
     <article className="deal-card">
-      <DealImage src={deal.image_url} alt={`${deal.title} 상품 이미지`} />
+      <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
       <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} /></div>
       <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link></h2>
       <DealPrice deal={deal} timing={timing} />
@@ -136,7 +137,7 @@ export function DealDetail({ deal, nowMs }: { deal: DealWithContext; nowMs: numb
       <Link className="deal-back" href="/deals">{dealsCopy.back}</Link>
       <article className="deal-detail">
         <DealHeader deal={deal} timing={timing} />
-        <DealImage src={deal.image_url} alt={`${deal.title} 상품 이미지`} />
+        <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
         <DealPrice deal={deal} timing={timing} />
         <PriceGap deal={deal} gap={gap} />
         <PriceToneBadge gap={gap} timing={timing} />
@@ -151,4 +152,11 @@ export function DealDetail({ deal, nowMs }: { deal: DealWithContext; nowMs: numb
 // Keep the won amount and its verb on one line so 낮아요/높아요 never wraps alone.
 function gapChunks(text: string): string[] {
   return text.split(' · ');
+}
+
+// Keeps the label's last word, the separator and the date on one line at 320px.
+function WithDate({ label, children }: { label: string; children: React.ReactNode }) {
+  const cut = label.lastIndexOf(' ');
+  const head = cut > 0 ? label.slice(0, cut + 1) : '';
+  return <>{head}<span className="keep-line">{label.slice(cut + 1)} · {children}</span></>;
 }

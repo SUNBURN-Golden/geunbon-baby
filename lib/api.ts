@@ -1,5 +1,6 @@
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
+import { dealsCopy } from './deals-copy';
 import { comparison, type Model, type Deal } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
 export async function authorized(request: Request, token?: string) {
@@ -15,6 +16,10 @@ export const safeUrl = (value: unknown): value is string => {
 };
 const text = (v: unknown, max = 500) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 const date = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(v) && Number.isFinite(Date.parse(v));
+
+// Seed notes can contain retailer, discount, overseas and used prices.
+// Keep them out of every public model response, including comparisons.
+const PUBLIC_MODEL_COLUMNS = 'id, brand, name, category, importer, official_price, source_url, checked, verify_level';
 
 // ── 크롤러 자동 추출 제안(검수 보조용, 승인 전까지 게시 데이터와 무관) ─────────────
 export type Suggestions = {
@@ -87,15 +92,15 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     if (path === 'brands') return json({ data: await all(env.DB, 'SELECT brand AS name, COUNT(*) AS model_count FROM models GROUP BY brand ORDER BY brand') });
     if (path === 'models') {
       const u = new URL(request.url); const brand = u.searchParams.get('brand'); const category = u.searchParams.get('category');
-      return json({ data: await all(env.DB, 'SELECT * FROM models WHERE (? = \'\' OR brand = ?) AND (? = \'\' OR category = ?) ORDER BY rowid', brand ?? '', brand ?? '', category ?? '', category ?? '') });
+      return json({ data: await all(env.DB, `SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE (? = '' OR brand = ?) AND (? = '' OR category = ?) ORDER BY rowid`, brand ?? '', brand ?? '', category ?? '', category ?? '') });
     }
     if (parts[0] === 'models' && parts.length === 2) {
-      const model = await env.DB.prepare('SELECT * FROM models WHERE id = ?').bind(parts[1]).first<Model>();
+      const model = await env.DB.prepare(`SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE id = ?`).bind(parts[1]).first<Omit<Model, 'note'>>();
       if (!model) return json({ error: '모델을 찾을 수 없습니다' }, 404);
       const deals = await all<Deal>(env.DB, 'SELECT * FROM deals WHERE model_id = ? ORDER BY starts_at', model.id);
       return json({ data: { ...model, comparison: comparison(model, deals) } });
     }
-    if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, 'SELECT * FROM deals ORDER BY starts_at')).map(d => ({ ...d, advertisement: true, notice: '아가마중은 거래 당사자가 아닙니다.' })) });
+    if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, 'SELECT * FROM deals ORDER BY starts_at')).map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })) });
     if (path === 'sellers') return json({ data: await all(env.DB, 'SELECT * FROM sellers ORDER BY name') });
     if (path === 'admin/queue') return json({ data: await all(env.DB, "SELECT * FROM ingested_items WHERE status = 'pending' ORDER BY captured_at LIMIT 100") });
   }

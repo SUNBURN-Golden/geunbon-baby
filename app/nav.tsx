@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { siteCopy } from '../lib/site-copy';
+import { dealsCopy } from '../lib/deals-copy';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 const items = [
-  { label: '혜택가', href: '/deals', icon: 'M3 7h18v14H3z M2 3h20v4H2z M12 3v18 M7 12h10' },
+  { label: dealsCopy.nav, href: '/deals', icon: 'M3 7h18v14H3z M2 3h20v4H2z M12 3v18 M7 12h10' },
   { label: '브랜드', href: '/models?by=brand', icon: 'M3 3h8l10 10-8 8L3 11V3Z M7 7h.01' },
-  { label: '기준가', href: '/models', icon: 'M4 4v16h16 M7 8l5 5 7-7 M14 6h5v5' },
+  { label: siteCopy.modelsNav, href: '/models', icon: 'M4 4v16h16 M7 8l5 5 7-7 M14 6h5v5' },
   { label: '소식지', href: '/#letter', icon: 'M3 5h18v14H3z M3 6l9 7 9-7' },
 ] as const;
 

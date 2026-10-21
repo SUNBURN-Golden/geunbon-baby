@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { memoryD1 } from './helpers/sqlite';
 import { handleApi } from '../lib/api';
+import { dealsCopy } from '../lib/deals-copy';
+import type { Model } from '../lib/data';
 import type { Env } from '../lib/db';
 const memory = memoryD1();
 let env: Env;
@@ -18,7 +20,7 @@ beforeAll(async () => {
     const migration = await readFile(new URL(file, dir), 'utf8');
     for (const sql of migration.split(';').filter(s => s.trim())) await env.DB.prepare(sql).run();
   }
-  await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','')").run();
+  await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','Other retailer 123,456 KRW; used 98,765 KRW')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','test','https://www.stokke.com/')").run();
 });
 afterAll(() => { memory.close(); });
@@ -50,7 +52,7 @@ test('ingest stays private; canonical URL is idempotent; approval publishes atom
   assert.equal((await call(`admin/review/${one.data.id}`, 'POST', approval, env.ADMIN_TOKEN)).status, 200);
   assert.equal((await call(`admin/review/${one.data.id}`, 'POST', approval, env.ADMIN_TOKEN)).status, 409);
   const deals = (await (await call('deals')).json<ListResponse>()).data;
-  assert.equal(deals.length, 1); assert.equal(deals[0].price, null); assert.equal(deals[0].advertisement, true); assert.match(deals[0].notice, /거래 당사자가 아닙니다/);
+  assert.equal(deals.length, 1); assert.equal(deals[0].price, null); assert.equal(deals[0].advertisement, true); assert.equal(deals[0].notice, dealsCopy.apiNotice);
   assert.equal((await (await call('admin/queue', 'GET', undefined, env.ADMIN_TOKEN)).json<ListResponse>()).data.length, 0);
 });
 test('reject never publishes and cannot later be approved', async () => {
@@ -85,4 +87,44 @@ test('malformed hint entries return 400 and stored JSON parses for admin display
   for (const suggestions of [{ ...hints, models: [null] }, { ...hints, links: [null] }, { ...hints, price: [] }, { ...hints, dates: 'nope' }]) {
     assert.equal((await call('ingest', 'POST', { ...ingest, source_url: 'https://www.instagram.com/p/malformed-hints/', suggestions }, env.INGEST_TOKEN)).status, 400);
   }
+});
+
+test('public models expose only official/group-buy prices and never leak seed price notes', async () => {
+  const list = await (await call('models')).json<{ data: Omit<Model, 'note'>[] }>();
+  assert.equal(list.data.length, 1);
+  assert.ok(!('note' in list.data[0]));
+  const response = await call('models/model-1');
+  const payload = await response.json<{ data: Omit<Model, 'note'> & { comparison: Record<string, unknown> } }>();
+  assert.deepEqual(Object.keys(payload.data.comparison).sort(), ['gonggu', 'official']);
+  assert.equal(payload.data.official_price, null);
+  for (const value of [list, payload]) {
+    const serialized = JSON.stringify(value);
+    for (const forbidden of ['"overseas"', '"used"', '"fx"', '"note"', '123,456', '98,765']) {
+      assert.ok(!serialized.includes(forbidden), forbidden);
+    }
+  }
+});
+
+
+test('public model responses omit notes and overseas, used and FX prices', async () => {
+  type PublicModel = { id: string; official_price: number | null; comparison?: { official: { price: number | null }; gonggu: unknown[] } };
+  for (const path of ['models', 'models?brand=Stokke', 'models?category=high_chair', 'models/model-1']) {
+    const response = await call(path);
+    assert.equal(response.status, 200);
+    const payload = await response.json<{ data: PublicModel | PublicModel[] }>();
+    const rows = Array.isArray(payload.data) ? payload.data : [payload.data];
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].id, 'model-1');
+    assert.equal(rows[0].official_price, null);
+    const serialized = JSON.stringify(payload);
+    for (const forbidden of ['note', 'overseas', 'used', 'fx', '123,456', '234,567', '$799']) {
+      assert.ok(!serialized.includes(forbidden), `${path} exposed ${forbidden}`);
+    }
+    if (rows[0].comparison) {
+      assert.deepEqual(Object.keys(rows[0].comparison).sort(), ['gonggu', 'official']);
+      assert.equal(rows[0].comparison.official.price, null);
+      assert.deepEqual(Object.keys(rows[0].comparison.official).sort(), ['checked', 'price', 'source', 'verify_level']);
+    }
+  }
+  assert.deepEqual((await (await call('models?category=unknown')).json<{ data: unknown[] }>()).data, []);
 });
