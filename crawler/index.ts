@@ -9,6 +9,7 @@ import { launchBrowser, ensureLogin, HaltError } from './lib/browser';
 import { readSignals } from './lib/activity';
 import { collectAccount } from './lib/collect';
 import { maybeFollow } from './lib/follow';
+import { syncFollowing } from './lib/following';
 import { discoverSellers } from './lib/discover';
 import { IngestError } from './lib/ingest';
 import { sleep } from './lib/util';
@@ -48,6 +49,8 @@ async function main() {
       log: health,
       isFatal: error => error instanceof HaltError || error instanceof IngestError,
       cycle: async ({ page }, check) => {
+        check();
+        await syncFollowing(page, { state, settings }, check);
         check();
         const signals = await readSignals(page, settings);
         check();

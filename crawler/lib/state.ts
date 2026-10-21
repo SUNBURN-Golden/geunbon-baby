@@ -14,6 +14,7 @@ type StateData = {
   candidates: Record<string, Candidate>;
   last_discovery?: string;
   last_follow_at?: string;
+  last_following_sync_attempt?: string;
   next_follow_at?: string;
   discovery_cursor?: number;
   discovery_seen: string[];
@@ -84,6 +85,8 @@ export class CrawlerState {
   }
   get lastFollowAt(): string | undefined { return this.data.last_follow_at; }
   set lastFollowAt(value: string) { this.data.last_follow_at = value; }
+  get lastFollowingSyncAttempt(): string | undefined { return this.data.last_following_sync_attempt; }
+  set lastFollowingSyncAttempt(value: string) { this.data.last_following_sync_attempt = value; }
   get nextFollowAt(): string | undefined { return this.data.next_follow_at; }
   set nextFollowAt(value: string) { this.data.next_follow_at = value; }
   get discoveryCursor(): number { return this.data.discovery_cursor ?? 0; }

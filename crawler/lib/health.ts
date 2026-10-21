@@ -14,7 +14,7 @@ export async function initHealth(root: string) {
   failed = false;
   await mkdir(logsDir, { recursive: true, mode: 0o700 });
 }
-export type HealthEvent = 'quiet_window_enter' | 'quiet_window_exit' | 'run_start' | 'run_stop' | 'signals' | 'queue' | 'poll' | 'account_visit' | 'post_sent' | 'story_seen' | 'story_skip' | 'follow' | 'follow_skip' | 'candidate_found' | 'discovery' | 'challenge' | 'blocked' | 'api_error' | 'selector_miss' | 'warn' | 'error';
+export type HealthEvent = 'following_sync' | 'quiet_window_enter' | 'quiet_window_exit' | 'run_start' | 'run_stop' | 'signals' | 'queue' | 'poll' | 'account_visit' | 'post_sent' | 'story_seen' | 'story_skip' | 'follow' | 'follow_skip' | 'candidate_found' | 'discovery' | 'challenge' | 'blocked' | 'api_error' | 'selector_miss' | 'warn' | 'error';
 type Fields = Record<string, string | number | boolean | null | undefined>;
 export function health(event: HealthEvent, fields: Fields = {}) {
   if (!logsDir) return;

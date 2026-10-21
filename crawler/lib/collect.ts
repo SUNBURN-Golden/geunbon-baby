@@ -14,6 +14,21 @@ import { extract, toSuggestions } from './extract';
 import { QuietWindowError } from './quiet-window';
 
 const exec = promisify(execFile);
+async function pauseReadyStory(page: Page, account: string, previousPath: string | null): Promise<boolean> {
+  // Wait for a decoded frame, without the human pacing delay: playback is live.
+  await page.waitForFunction(({ account, previousPath }) => {
+    const story = /^\/stories\/([^/]+)\/(\d+)\/?$/.exec(location.pathname);
+    if (!story || story[1].toLowerCase() !== account.toLowerCase() || location.pathname === previousPath) return false;
+    return [...document.querySelectorAll('video, [role="dialog"] img, main img')].some(media => {
+      if (!media.getBoundingClientRect().width || !media.getBoundingClientRect().height) return false;
+      return media instanceof HTMLVideoElement ? media.readyState >= 2 : media instanceof HTMLImageElement && media.complete && media.naturalWidth > 0;
+    });
+  }, { account, previousPath }, { timeout: 5000 });
+  const pause = await firstVisible([page.getByRole('button', { name: /^(Pause|일시 정지|일시정지)$/i })]);
+  if (pause) { await pause.click(); return true; }
+  // Next may retain the paused state. Never toggle Play back on.
+  return Boolean(await firstVisible([page.getByRole('button', { name: /^(Play|재생)$/i })]));
+}
 export async function readCaption(page: Page): Promise<string> {
   for (const selector of ['article h1', 'article', 'main, [role="main"]']) {
     const text = await page.locator(selector).first().innerText({ timeout: 4000 }).catch(() => '');
@@ -83,16 +98,17 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
   if (ctx.scanStories && settings.ocr.enabled && settings.per_tick.max_stories_per_account > 0 &&
     await state.reserve('story_opens', { hourly: settings.hourly_caps.story_opens })) {
     await page.goto(`https://www.instagram.com/stories/${account}/`, { waitUntil: 'domcontentloaded' });
-    await sleep(...settings.delays_ms.action);
+    let previousPath: string | null = null;
     for (let n = 0; n < settings.per_tick.max_stories_per_account; n++) {
       await assertHuman(page);
+      if (!await pauseReadyStory(page, account, previousPath)) { health('selector_miss', { scope: 'story_pause', account }); break; }
       const url = new URL(page.url());
       const id = /^\/stories\/([^/]+)\/(\d+)\/?$/.exec(url.pathname);
       if (!id || id[1].toLowerCase() !== account.toLowerCase()) break;
       const canonical = `https://www.instagram.com/stories/${account}/${id[2]}/`;
-      // Pause automatic playback while OCR runs, otherwise text may belong to the next story.
-      const pause = await firstVisible([page.getByRole('button', { name: /^(Pause|일시 정지|일시정지)$/i })]);
-      if (pause) await pause.click();
+      await sleep(...settings.delays_ms.action);
+      await assertHuman(page);
+      if (new URL(page.url()).pathname !== url.pathname) break;
       if (!state.isSeen(canonical)) {
         const text = await ocrStory(page, ctx.crawlerDir, settings);
         if (text.trim() && new URL(page.url()).pathname.replace(/\/$/, '') === url.pathname.replace(/\/$/, '')) {
@@ -105,8 +121,8 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
       if (n + 1 >= settings.per_tick.max_stories_per_account) break;
       const next = await firstVisible(nextStoryButton(page));
       if (!next || !await state.reserve('story_opens', { hourly: settings.hourly_caps.story_opens })) break;
+      previousPath = url.pathname;
       await next.click();
-      await sleep(...settings.delays_ms.action);
     }
     accountState.last_story_at = new Date().toISOString();
     await state.save();

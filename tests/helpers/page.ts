@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import type { Locator, Page } from 'playwright';
-export type Node = { name?: string; text?: string; href?: string; visible?: boolean; click?: () => Promise<void> | void; screenshot?: (path: string) => Promise<void>; throws?: boolean };
+export type Node = { name?: string; text?: string; href?: string; visible?: boolean; click?: () => Promise<void> | void; evaluate?: () => unknown; screenshot?: (path: string) => Promise<void>; throws?: boolean };
 export function mockLocator(nodes: () => Node[]): Locator {
   const view = {
     count: vi.fn(async () => nodes().length),
@@ -13,6 +13,7 @@ export function mockLocator(nodes: () => Node[]): Locator {
     getAttribute: vi.fn(async () => nodes()[0]?.href ?? null),
     screenshot: vi.fn(async (options: { path: string }) => { await nodes()[0]?.screenshot?.(options.path); }),
     evaluateAll: vi.fn(async (fn: (elements: { getAttribute: () => string }[]) => unknown) => fn(nodes().map(node => ({ getAttribute: () => node.href ?? '' })))),
+    evaluate: vi.fn(async () => nodes()[0]?.evaluate?.()),
     locator: () => mockLocator(nodes),
     filter: () => mockLocator(nodes),
   };
@@ -23,6 +24,7 @@ export function mockPage(resolve: (selector: string) => Node[] = () => []) {
   const page = {
     goto: vi.fn(async (url: string) => { current = url; }),
     url: vi.fn(() => current),
+    waitForFunction: vi.fn(async () => {}),
     locator: vi.fn((selector: string) => mockLocator(() => resolve(selector))),
     getByRole: vi.fn((role: string, options?: { name?: RegExp }) => mockLocator(() => resolve(`role:${role}`).filter(node => !options?.name || options.name.test(node.name ?? '')))),
     getByText: vi.fn((pattern: RegExp) => mockLocator(() => resolve('text').filter(node => pattern.test(node.text ?? '')))),
