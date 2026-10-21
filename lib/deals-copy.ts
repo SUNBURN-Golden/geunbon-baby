@@ -1,41 +1,41 @@
-// Draft UI copy lives here so wording can be reviewed independently.
+// UI copy decided with Gemini Argon (2026-10-21).
 export const dealsCopy = {
-  title: '혜택가', // copy:draft title
-  ad: '광고', // copy:draft ad
-  good: '좋은 가격이에요', // copy:draft good
-  wait: '기다려도 돼요', // copy:draft wait
-  active: '진행', // copy:draft active
-  upcoming: '예정', // copy:draft upcoming
-  ended: '종료', // copy:draft ended
-  remaining: '{n}일 남았어요', // copy:draft remaining
-  starts: '{n}일 뒤 시작해요', // copy:draft starts
-  endsToday: '오늘 종료돼요', // copy:draft endsToday
-  startsToday: '오늘 시작해요', // copy:draft startsToday
-  unknownSchedule: '일정을 확인하고 있어요', // copy:draft unknownSchedule
-  unknownPrice: '가격을 확인하고 있어요', // copy:draft unknownPrice
-  unknownOfficial: '기준가를 확인하고 있어요', // copy:draft unknownOfficial
-  below: '공식가보다 {percent}% · {won}원 낮아요', // copy:draft below
-  above: '공식가보다 {percent}% · {won}원 높아요', // copy:draft above
-  equal: '공식가와 같아요', // copy:draft equal
-  archived: '마지막 확인 가격이에요', // copy:draft archived
-  primary: '원문에서 확인', // copy:draft primary
-  secondary: '기준가 보기', // copy:draft secondary
-  disclaimer: '아가마중은 거래 당사자가 아니에요. 가격·조건은 판매처에서 확인해 주세요.', // copy:draft disclaimer
-  empty: '등록된 혜택이 아직 없어요', // copy:draft empty
-  missing: '혜택을 찾을 수 없어요', // copy:draft missing
-  back: '혜택가 목록', // copy:draft back
-  newTab: '새 창에서 열려요', // copy:draft newTab
-  won: '원', // copy:draft won
-  seller: '판매처', // copy:draft seller
-  unknownSeller: '판매처를 확인하고 있어요', // copy:draft unknownSeller
-  period: '기간 (한국 시간)', // copy:draft period
-  model: '모델', // copy:draft model
-  dealChecked: '혜택가 확인', // copy:draft dealChecked
-  officialChecked: '기준가 확인', // copy:draft officialChecked
-  unknownChecked: '확인일을 확인하고 있어요', // copy:draft unknownChecked
-  qualification: '각 확인일의 참고 가격이에요. 구성·소재·보증 조건이 같은지 확인해 주세요.', // copy:draft qualification
-  pageText: '페이지 본문을 확인했어요', // copy:draft pageText
-  searchSummary: '검색 요약 기준이라 원문 재확인이 필요해요', // copy:draft searchSummary
-  seedUnspecified: '검증 수준을 확인하고 있어요', // copy:draft seedUnspecified
-  manual: '관리자가 원문을 확인했어요', // copy:draft manual
+  title: '혜택가',
+  ad: '광고',
+  good: '살 만한 가격이에요',
+  wait: '서두르지 않아도 돼요',
+  active: '진행',
+  upcoming: '예정',
+  ended: '종료',
+  remaining: '{n}일 남았어요',
+  starts: '{n}일 뒤 시작해요',
+  endsToday: '오늘 마감해요',
+  startsToday: '오늘 시작해요',
+  unknownSchedule: '일정을 알아보고 있어요',
+  unknownPrice: '혜택가를 알아보고 있어요',
+  unknownOfficial: '기준가를 알아보고 있어요',
+  below: '기준가보다 {percent}% · {won}원 낮아요',
+  above: '기준가보다 {percent}% · {won}원 높아요',
+  equal: '기준가와 같아요',
+  archived: '종료 시점의 혜택가예요',
+  primary: '원문에서 보기',
+  secondary: '기준가 보기',
+  disclaimer: '아가마중은 직접 판매하지 않아요. 최종 가격·조건은 판매처에서 확인해 주세요.',
+  empty: '아직 등록된 혜택이 없어요',
+  missing: '찾으시는 혜택 정보가 없어요',
+  back: '혜택가 목록으로',
+  newTab: '새 창에서 열려요',
+  won: '원',
+  seller: '판매처',
+  unknownSeller: '판매처를 알아보고 있어요',
+  period: '혜택 기간 (한국 시간)',
+  model: '모델명',
+  dealChecked: '혜택가 확인일',
+  officialChecked: '기준가 확인일',
+  unknownChecked: '기준 일자를 알아보고 있어요',
+  qualification: '조회 시점의 참고 가격이에요. 구성품·소재·보증 조건이 같은지 꼭 살펴봐 주세요.',
+  pageText: '상세 페이지 본문을 확인했어요',
+  searchSummary: '검색 요약본 기준이라 원문 확인이 필요해요',
+  seedUnspecified: '정보 출처를 살펴보고 있어요',
+  manual: '아가마중이 원문을 직접 확인했어요',
 } as const;
