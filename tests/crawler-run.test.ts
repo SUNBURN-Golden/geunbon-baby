@@ -11,7 +11,7 @@ import { readSignals } from '../crawler/lib/activity';
 import { maybeFollow } from '../crawler/lib/follow';
 import { discoverSellers } from '../crawler/lib/discover';
 import { saveSession, SessionError } from '../crawler/lib/session';
-import { health } from '../crawler/lib/health';
+import { health, initHealth } from '../crawler/lib/health';
 
 vi.mock('../crawler/lib/config', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/config')>(), loadConfig: vi.fn() }));
 vi.mock('../crawler/lib/browser', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/browser')>(), launchBrowser: vi.fn(), ensureLogin: vi.fn(), assertHuman: vi.fn() }));
@@ -25,13 +25,28 @@ vi.mock('../crawler/lib/session', async importOriginal => ({ ...await importOrig
 
 const initialExitCode = process.exitCode;
 const signalListeners = new Map((['SIGINT', 'SIGTERM'] as const).map(signal => [signal, new Set(process.listeners(signal))]));
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv('AGAMAJUNG_IG_USER', undefined);
+});
 afterEach(() => {
   process.exitCode = initialExitCode;
   vi.useRealTimers();
   for (const [signal, listeners] of signalListeners) {
     for (const listener of process.listeners(signal)) if (!listeners.has(listener)) process.removeListener(signal, listener);
   }
+});
+
+test('health initializes before startup configuration can fail, without opening a browser', async () => {
+  vi.stubEnv('AGAMAJUNG_API_URL', 'https://ingest.invalid/');
+  vi.stubEnv('INGEST_TOKEN', 'offline-token');
+  const failure = new SyntaxError('offline invalid config');
+  vi.mocked(loadConfig).mockRejectedValueOnce(failure);
+  await expect(main()).rejects.toBe(failure);
+  expect(initHealth).toHaveBeenCalledOnce();
+  expect(vi.mocked(initHealth).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(loadConfig).mock.invocationCallOrder[0]);
+  expect(launchBrowser).not.toHaveBeenCalled();
+  expect(ensureLogin).not.toHaveBeenCalled();
 });
 
 test.each(['login', 'challenge', 'cycle'])('the orchestrator captures a %s halt before closing, using the unguarded diagnostic page', async phase => {
@@ -129,7 +144,7 @@ test.each(['healthy', 'persistence', 'login', 'cycle', 'interrupted', 'security'
     expect(vi.getTimerCount()).toBe(0);
   } else if (phase === 'healthy' || phase === 'interrupted') await main();
   else await expect(main()).rejects.toBe(failure);
-  expect(ensureLogin).toHaveBeenCalledWith(context, page, expect.anything(), expect.any(String), file, expect.any(Function));
+  expect(ensureLogin).toHaveBeenCalledWith(context, page, expect.anything(), 'agamajung', file, expect.any(Function));
   if (phase === 'healthy' || phase === 'persistence' || phase === 'persistence-quiet') expect(saveSession).toHaveBeenCalledExactlyOnceWith(context, file, expect.any(Function), expect.any(Function));
   else expect(saveSession).not.toHaveBeenCalled();
   expect(vi.mocked(health).mock.calls.some(([event]) => event === 'poll')).toBe(phase === 'healthy');
