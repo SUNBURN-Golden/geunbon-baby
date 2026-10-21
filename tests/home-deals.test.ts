@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
@@ -20,8 +20,11 @@ const nowMs = Date.parse('2026-10-21T03:00:00Z');
 const memory = memoryD1();
 beforeAll(async () => {
   context.db = memory.db;
-  const schema = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
-  for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+  const dir = new URL('../migrations/', import.meta.url);
+  for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
+    const schema = await readFile(new URL(file, dir), 'utf8');
+    for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+  }
   await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
   await memory.db.prepare("INSERT INTO models VALUES ('model', 'Brand', 'Chair', 'high_chair', 'Importer', 500000, 'https://example.com/model', '2026-10-20', 'manual', '')").run();
   // Deliberately insert in an order different from the required closing order.
@@ -33,8 +36,9 @@ beforeAll(async () => {
     ['unknown', 'invalid-start', 'invalid-stop'],
     ['today', '2026-10-20', '2026-10-21T03:00:00Z'],
   ]) {
-    await memory.db.prepare('INSERT INTO deals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, 'model', 'seller', `${id} deal`, 400000, 'https://example.com/deal', 'manual', '2026-10-20', start, end).run();
+    await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, 'model', 'seller', `${id} deal`, 400000, 'https://example.com/deal', 'manual', '2026-10-20', start, end,
+        id === 'today' ? 'https://cdninstagram.com/chair.jpg?sig=synthetic%2B&x=1' : null).run();
   }
 });
 afterAll(() => memory.close());
@@ -65,13 +69,49 @@ test('dynamic home queries D1 and renders only active deals before the hero, soo
     expect(card).toContain('500,000원');
     expect(card).toContain('20.0% 낮아요');
     expect(card).toContain(dealsCopy.ad);
-    expect(card).toContain('aria-hidden="true"');
+  }
+  expect(cards[0]).toContain('<img');
+  expect(cards[0]).toContain('src="https://cdninstagram.com/chair.jpg?sig=synthetic%2B&amp;x=1"');
+  expect(cards[0]).toContain('alt="Chair 상품 이미지"');
+  expect(cards[0]).toContain('referrerPolicy="no-referrer"');
+  expect(cards[0]).not.toContain('class="active-deal-mark"');
+  for (const card of cards.slice(1)) {
+    expect(card).toContain('<span class="active-deal-mark" aria-hidden="true">C</span>');
     expect(card).not.toContain('<img');
   }
   expect(cards[0]).toContain(dealsCopy.endsToday);
   expect(cards[1]).toContain(dealsCopy.remaining.replace('{n}', '1'));
   expect(cards[2]).toContain(dealsCopy.remaining.replace('{n}', '4'));
 });
+
+test('home image alt prefers the joined model name and falls back to the deal title', async () => {
+  const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+  const base = rows.find(deal => deal.id === 'today')!;
+  for (const [patch, name] of [
+    [{}, 'Chair'],
+    [{ model_joined_id: null }, 'today deal'],
+    [{ model_name: null }, 'today deal'],
+  ] as const) {
+    const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], nowMs }));
+    expect(html).toContain(`alt="${name} 상품 이미지"`);
+    expect(html).not.toContain('class="active-deal-mark"');
+    expect(html).not.toContain('/_next/image');
+  }
+});
+
+test.each([null, '', 'http://cdninstagram.com/chair.jpg', 'https://example.com/chair.jpg', 'javascript:alert(1)'])(
+  'home keeps the letter placeholder for missing or unsafe image %s', async image_url => {
+    const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+    const base = rows.find(deal => deal.id === 'today')!;
+    for (const [patch, letter] of [[{}, 'C'], [{ model_joined_id: null }, 't']] as const) {
+      const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch, image_url }], nowMs }));
+      expect(html).toContain(`<span class="active-deal-mark" aria-hidden="true">${letter}</span>`);
+      expect(html).not.toContain('<img');
+      expect(html).toContain(base.title);
+      expect(html).toContain('400,000');
+    }
+  },
+);
 
 test('no active deals renders a zero count and one short empty line without cards', async () => {
   vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-01T00:00:00Z'));

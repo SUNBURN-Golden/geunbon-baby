@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
@@ -25,13 +25,16 @@ const memory = memoryD1();
 const note = 'Other retailer 123,456 KRW; overseas 234,567 KRW; used 98,765 KRW';
 beforeAll(async () => {
   context.db = memory.db;
-  const schema = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
-  for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+  const dir = new URL('../migrations/', import.meta.url);
+  for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
+    const schema = await readFile(new URL(file, dir), 'utf8');
+    for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+  }
   await memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind('model-1', 'Stokke', 'Example model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'manual', note).run();
   await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at) VALUES ('deal-1', 'https://example.com/deal', 'example', 'Example', 'post', '2026-10-20')").run();
-  await memory.db.prepare("INSERT INTO deals VALUES ('deal-1', 'model-1', 'seller-1', 'Example deal', 390000, 'https://example.com/deal', 'manual', '2026-10-20', '2026-10-21', '2026-10-22')").run();
+  await memory.db.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES ('deal-1', 'model-1', 'seller-1', 'Example deal', 390000, 'https://example.com/deal', 'manual', '2026-10-20', '2026-10-21', '2026-10-22')").run();
 });
 afterAll(() => memory.close());
 

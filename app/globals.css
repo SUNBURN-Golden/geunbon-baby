@@ -508,6 +508,15 @@ form { max-width: 100%; }
 }
 .active-deal-card p { margin: 0; }
 .active-deal-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.active-deal-top .deal-image {
+  flex-shrink: 0;
+  width: var(--s-8);
+  height: var(--s-8);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  margin: 0;
+}
 .active-deal-mark {
   display: grid;
   place-items: center;

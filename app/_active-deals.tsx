@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { dealTiming, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
+import { DealImage } from './deals/_image';
 
 export function ActiveDealCount({ count }: { count: number }) {
   return <span className="active-deal-count" aria-label={dealsCopy.activeCount.replace('{count}', String(count))}>{count}</span>;
@@ -8,6 +9,7 @@ export function ActiveDealCount({ count }: { count: number }) {
 
 function ActiveDealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number }) {
   const timing = dealTiming(deal.starts_at, deal.ends_at, nowMs);
+  const productName = (deal.model_joined_id && deal.model_name) || deal.title;
   const official = deal.model_joined_id ? deal.model_official_price : null;
   const validOfficial = official !== null && Number.isFinite(official) && official >= 0;
   const validPrice = deal.price !== null && Number.isFinite(deal.price) && deal.price >= 0;
@@ -19,8 +21,8 @@ function ActiveDealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number 
   return (
     <Link className="active-deal-card" href={`/deals/${encodeURIComponent(deal.id)}`}>
       <div className="active-deal-top">
-        {/* No product image key exists in the schema; never infer an R2 object. */}
-        <span className="active-deal-mark" aria-hidden="true">{(deal.model_name || deal.title).trim().slice(0, 1)}</span>
+        <DealImage src={deal.image_url} alt={`${productName} 상품 이미지`}
+          fallback={<span className="active-deal-mark" aria-hidden="true">{productName.trim().slice(0, 1)}</span>} />
         <span className="active-deal-ad">{dealsCopy.ad}</span>
         <span className="active-deal-days">{timing.days === 0 ? dealsCopy.endsToday : dealsCopy.remaining.replace('{n}', String(timing.days))}</span>
       </div>

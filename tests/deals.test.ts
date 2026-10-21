@@ -340,7 +340,7 @@ describe('deal images', () => {
       const html = render({ image_url });
       expect(html).toContain('class="deal-image"');
       expect(html).toContain('src="https://cdninstagram.com/product.jpg?sig=synthetic%2B&amp;x=1"');
-      expect(html).toContain(`alt="${fixture.title} 상품 이미지"`);
+      expect(html).toContain(`alt="${fixture.model_name} 상품 이미지"`);
       expect(html).toContain('width="640" height="480"');
       expect(html).toContain('loading="lazy"');
       expect(html).toContain('referrerPolicy="no-referrer"');
@@ -351,6 +351,15 @@ describe('deal images', () => {
       expect(html.replace(/<img[^>]*>/g, '')).toBe(render());
     }
     expect(detail({ image_url })).toContain(dealsCopy.disclaimer);
+  });
+
+  test('image alt falls back to the deal title without a joined model name', () => {
+    for (const render of [card, detail]) {
+      for (const patch of [{ model_joined_id: null }, { model_name: null }]) {
+        expect(render({ ...patch, image_url: 'https://fbcdn.net/product.jpg' }))
+          .toContain(`alt="${fixture.title} 상품 이미지"`);
+      }
+    }
   });
 
   test.each([null, '', 'blob:local', 'https://example.com/unapproved.jpg'])('missing/invalid image %s leaves text-only content', image_url => {

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
@@ -24,18 +24,21 @@ const memory = memoryD1();
 const note = 'Retailer 123,456원; discount 234,567원; overseas $799; used 345,678원';
 const deal: Deal = {
   id: 'deal-1', model_id: 'model-1', seller_id: 'seller-1', title: 'Reviewed group buy',
-  price: 390000, source_url: 'https://example.com/deal', verify_level: 'manual',
+  image_url: null, price: 390000, source_url: 'https://example.com/deal', verify_level: 'manual',
   checked: '2026-10-21', starts_at: '2026-10-21T00:00:00Z', ends_at: '2026-10-22T00:00:00Z',
 };
 beforeAll(async () => {
   context.db = memory.db;
-  const schema = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
-  for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+  const dir = new URL('../migrations/', import.meta.url);
+  for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
+    const schema = await readFile(new URL(file, dir), 'utf8');
+    for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+  }
   await memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind('model-1', 'Stokke', 'Test chair', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-21', 'page_text', note).run();
   await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at, status) VALUES ('deal-1', 'https://example.com/deal', 'example', 'Reviewed deal', 'post', '2026-10-21', 'approved')").run();
-  await memory.db.prepare('INSERT INTO deals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(deal.id, deal.model_id, deal.seller_id, deal.title, deal.price, deal.source_url, deal.verify_level, deal.checked, deal.starts_at, deal.ends_at).run();
 });
 afterAll(() => memory.close());

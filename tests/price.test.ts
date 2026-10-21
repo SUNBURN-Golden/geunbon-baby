@@ -31,7 +31,7 @@ test('all seed models expose only official and group-buy comparison data, withou
 test('group-buy prices come only from matching deals, preserving missing and zero prices', () => {
   const base: Deal = {
     id: 'deal-1', model_id: 'model-1', seller_id: 'seller-1', title: 'Reviewed deal',
-    price: 390000, source_url: 'https://example.com/deal', verify_level: 'manual',
+    image_url: null, price: 390000, source_url: 'https://example.com/deal', verify_level: 'manual',
     checked: '2026-10-21', starts_at: '2026-10-21T00:00:00Z', ends_at: '2026-10-22T00:00:00Z',
   };
   const deals = [base, { ...base, id: 'unknown', price: null }, { ...base, id: 'free', price: 0 },
