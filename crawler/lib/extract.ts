@@ -13,7 +13,7 @@ export type Suggestions = { models: ModelSuggestion[]; price: { value: number; r
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
 const stripUrls = (text: string) => text.replace(URL_RE, ' ');
 // OCR 이슈로 숫자 중간에 공백/줄바꿈이 섞인 경우("390,0 00원") 숫자 실행 구간 안의 공백만 붙인다.
-const collapseNumberRuns = (text: string) => text.replace(/\d[\d,][\d,\s]*\d/g, run => run.replace(/\s+/g, ''));
+const collapseNumberRuns = (text: string) => text.replace(/\d[\d,][\d,\s]*\d/g, run => run.replace(/[^\S\r\n]+/g, ''));
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // ── 모델 매칭 ────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ const BRAND_ALIASES: Record<string, string[]> = {
   Cybex: ['싸이벡스', '사이벡스', 'cybex'],
   Nuna: ['뉴나', 'nuna'],
   Joie: ['조이', 'joie'],
-  Egg: ['에그'],
+  Egg: ['에그', 'egg'],
   'D.THRONE': ['디트로네', 'd.throne', 'dthrone'],
   Britax: ['브리텍스', '브리탁스', 'britax'],
   'Maxi-Cosi': ['맥시코시', 'maxi-cosi', 'maxicosi'],
@@ -73,7 +73,7 @@ export function extractModels(text: string): ModelSuggestion[] {
     const confidence = brandHit && distinctive ? 0.95 : brandHit && hits.length ? 0.9 : distinctive ? 0.8 : hits.length ? 0.75 : 0.35;
     out.push({ model_id: m.id, brand: m.brand, name: m.name, matched: [brandHit, ...hits.map(h => h.display)].filter((v): v is string => Boolean(v)), confidence });
   }
-  return out.sort((a, b) => b.confidence - a.confidence || a.model_id.localeCompare(b.model_id)).slice(0, 5);
+  return out.sort((a, b) => b.confidence - a.confidence || a.model_id.localeCompare(b.model_id)).slice(0, 10);
 }
 
 // ── 가격 매칭 ────────────────────────────────────────────────────────────────
@@ -91,7 +91,9 @@ export function extractPrices(text: string): { prices: PriceSuggestion[]; primar
   const lines = collapseNumberRuns(stripUrls(text)).split(/\r?\n/);
   const matches: PriceMatch[] = [];
   lines.forEach((line, lineIndex) => {
-    const push = (raw: string, value: number, confidence: number, format: string, column: number) => matches.push({ value, raw, confidence, format, line, lineIndex, column, arrowTail: false });
+    const push = (raw: string, value: number, confidence: number, format: string, column: number) => {
+      if (Number.isSafeInteger(value) && value >= 0 && value <= 1e9 && raw.length <= 120) matches.push({ value, raw, confidence, format, line, lineIndex, column, arrowTail: false });
+    };
     for (const m of line.matchAll(/(?<![\d.,])(?:(?:\d{1,3},)+\d{3}|\d{3,})\s*원/g)) push(m[0], Number(m[0].replace(/[,\s원]/g, '')), 0.9, 'won', m.index ?? 0);
     for (const m of line.matchAll(/(\d[\d,]*(?:\.\d+)?)\s*만\s*원/g)) push(m[0], Math.round(Number(m[1].replace(/,/g, '')) * 10000), 0.9, 'man_won', m.index ?? 0);
     for (const m of line.matchAll(/(\d[\d,]*)\s*만\s*(\d{1,3})\s*천\s*원?/g)) push(m[0], Number(m[1].replace(/,/g, '')) * 10000 + Number(m[2]) * 1000, 0.85, 'man_cheon', m.index ?? 0);
@@ -146,14 +148,15 @@ const WEEKDAY = /(?:\(\s*[월화수목금토일](?:요일)?\s*\)|[월화수목�
 
 function matchTimeAfter(text: string, index: number): { hour: number; minute: number; end: number } | null {
   const rest = text.slice(index, index + 28);
-  const m = new RegExp(`^\\s*${WEEKDAY.source}?\\s*\\(?\\s*(오전|오후|am|pm)?\\s*(\\d{1,2})\\s*(?::(\\d{2})|시\\s*(?:(\\d{1,2})\\s*분)?)`, 'i').exec(rest);
+  const m = new RegExp(`^\\s*${WEEKDAY.source}?\\s*\\(?\\s*(오전|오후|아침|저녁|밤|am|pm)?\\s*(\\d{1,2})\\s*(?::(\\d{2})|시\\s*(?:(\\d{1,2})\\s*분)?)`, 'i').exec(rest);
   if (!m) return null;
   let hour = Number(m[2]);
   const minute = Number(m[3] ?? m[4] ?? 0);
   if (hour > 23 || minute > 59) return null;
   const meridiem = m[1]?.toLowerCase();
-  if ((meridiem === '오후' || meridiem === 'pm') && hour < 12) hour += 12;
-  if ((meridiem === '오전' || meridiem === 'am') && hour === 12) hour = 0;
+  if (meridiem && (hour < 1 || hour > 12)) return null;
+  if ((meridiem === '오후' || meridiem === '저녁' || meridiem === '밤' || meridiem === 'pm') && hour < 12) hour += 12;
+  if ((meridiem === '오전' || meridiem === '아침' || meridiem === 'am') && hour === 12) hour = 0;
   return { hour, minute, end: index + m[0].length };
 }
 
@@ -162,8 +165,8 @@ export function extractDates(text: string, now: Date = new Date()): DateSuggesti
   const dates: DateMatch[] = [];
   for (const m of t.matchAll(DATE_RE)) {
     const year = m[1] ? Number(m[1]) : null;
-    const month = Number(m[4] ? m[4] : m[6]);
-    const day = Number(m[5] ? m[5] : m[7]);
+    const month = Number(m[1] ? m[2] : m[4] ?? m[6]);
+    const day = Number(m[1] ? m[3] : m[5] ?? m[7]);
     if (month < 1 || month > 12 || day < 1 || day > 31) continue;
     let end = (m.index ?? 0) + m[0].length;
     const time = matchTimeAfter(t, end);
@@ -180,6 +183,10 @@ export function extractDates(text: string, now: Date = new Date()): DateSuggesti
     if (at(year) > nowKst.getTime() + 62 * 86_400_000 && at(year - 1) >= nowKst.getTime() - 21 * 86_400_000) return year - 1;
     return year;
   };
+  for (const d of dates) {
+    const calendar = new Date(Date.UTC(resolveYear(d), d.month - 1, d.day));
+    if (calendar.getUTCMonth() !== d.month - 1 || calendar.getUTCDate() !== d.day) return null;
+  }
   const pad = (n: number) => String(n).padStart(2, '0');
   const iso = (d: DateMatch, endOfDay: boolean) => {
     const hour = d.hour ?? (endOfDay ? 23 : 0);
@@ -200,6 +207,8 @@ export function extractDates(text: string, now: Date = new Date()): DateSuggesti
   }
   if (pairs.length) {
     const [a, b] = pairs[0];
+    dates[a].year = resolveYear(dates[a]);
+    dates[b].year ??= dates[a].year + (dates[b].month < dates[a].month ? 1 : 0);
     const period = /기간/.test(t.slice(Math.max(0, dates[a].start - 20), dates[a].start));
     return { starts_at: iso(dates[a], false), ends_at: iso(dates[b], true), raw: raw(a, b), confidence: period ? 0.95 : 0.85 };
   }
@@ -222,7 +231,7 @@ export function extractLinks(text: string): LinkSuggestion[] {
     const url = m[0].replace(/[.,;:!?)\]]+$/, '');
     try {
       const parsed = new URL(url);
-      if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) continue;
+      if (url.length > 2048 || !['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) continue;
     } catch { continue; }
     const window = text.slice(Math.max(0, (m.index ?? 0) - 30), (m.index ?? 0) + url.length + 30);
     links.push({ url, kind: 'url', confidence: /공구|구매|오픈|예약|신청|주문|판매|폼|shop|store|link/i.test(window) ? 0.9 : 0.6 });
@@ -244,5 +253,8 @@ export function extract(text: string, options: { now?: Date } = {}): Extraction 
 
 // 수집 API 스키마에 맞는 형태로만 좁힌다(전체 후보 목록 등은 검수 화면에 보내지 않음).
 export function toSuggestions(extraction: Extraction): Suggestions {
-  return { models: extraction.models, price: extraction.price && { value: extraction.price.value, raw: extraction.price.raw, confidence: extraction.price.confidence }, dates: extraction.dates, links: extraction.links, confidence: extraction.confidence };
+  const suggestions: Suggestions = { models: extraction.models.map(model => ({ ...model, matched: model.matched.slice(0, 8) })), price: extraction.price && { value: extraction.price.value, raw: extraction.price.raw, confidence: extraction.price.confidence }, dates: extraction.dates, links: extraction.links.slice(0, 10), confidence: extraction.confidence };
+  // The review API limits suggestions to 8KB. Keep complete URLs, dropping excess hints.
+  while (JSON.stringify(suggestions).length > 8000 && suggestions.links.length) suggestions.links.pop();
+  return suggestions;
 }

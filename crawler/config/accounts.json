@@ -1,28 +1,157 @@
 {
   "$comment": "아가마중 크롤러 v2 시드 계정 목록. 운영자가 직접 검수하는 것이 전제다. verified=false 는 핸들이 실제 공식 계정인지 확인되지 않았다는 뜻이며, 기본 설정(settings.json 의 follow.allow_unverified=false)에서는 자동 팔로우 대상에서 제외된다. 해시태그 탐색으로 발견한 공구 셀러·팔이피플 후보는 crawler/.cache/state.json 의 candidates 에만 기록되고 절대 자동 팔로우하지 않는다. 운영자가 원문 프로필을 확인한 뒤 이 파일의 seed_accounts 로 옮겨 적고 follow=true 로 바꾸면 다음 실행부터 팔로우 후보가 된다.",
   "seed_accounts": [
-    { "handle": "stokke", "brand": "Stokke", "scope": "global", "verified": true, "follow": false, "note": "글로벌 공식 계정" },
-    { "handle": "stokke_korea", "brand": "Stokke", "scope": "kr", "verified": false, "follow": true, "note": "한국 공식 계정 후보. 핸들 미확인" },
-    { "handle": "babybjorn", "brand": "BabyBjorn", "scope": "global", "verified": true, "follow": false, "note": "글로벌 공식 계정" },
-    { "handle": "babybjorn_korea", "brand": "BabyBjorn", "scope": "kr", "verified": false, "follow": true, "note": "베이비뵨 한국 계정 후보. 핸들 미확인" },
-    { "handle": "bugaboo", "brand": "Bugaboo", "scope": "global", "verified": true, "follow": false, "note": "글로벌 공식 계정" },
-    { "handle": "bugaboo_korea", "brand": "Bugaboo", "scope": "kr", "verified": false, "follow": true, "note": "부가부코리아 계정 후보. 핸들 미확인" },
-    { "handle": "cybex", "brand": "Cybex", "scope": "global", "verified": false, "follow": false, "note": "싸이벡스 글로벌 계정 후보. 핸들 미확인" },
-    { "handle": "cybex_korea", "brand": "Cybex", "scope": "kr", "verified": false, "follow": true, "note": "싸이벡스코리아 계정 후보. 핸들 미확인" },
-    { "handle": "nuna", "brand": "Nuna", "scope": "global", "verified": false, "follow": false, "note": "뉴나 글로벌 계정 후보. 핸들 미확인" },
-    { "handle": "nuna_korea", "brand": "Nuna", "scope": "kr", "verified": false, "follow": true, "note": "에이원(뉴나) 국내 계정 후보. 핸들 미확인" },
-    { "handle": "joiebaby", "brand": "Joie", "scope": "global", "verified": false, "follow": false, "note": "조이 글로벌 계정 후보. 핸들 미확인" },
-    { "handle": "joie_korea", "brand": "Joie", "scope": "kr", "verified": false, "follow": true, "note": "조이베이비 국내 계정 후보. 핸들 미확인" },
-    { "handle": "eggstroller", "brand": "Egg", "scope": "kr", "verified": false, "follow": true, "note": "에그스토롤러 공식몰 운영 계정 후보. 핸들 미확인" },
-    { "handle": "dthrone", "brand": "D.THRONE", "scope": "kr", "verified": false, "follow": true, "note": "디트로네 공식 계정 후보. 국내 브랜드. 핸들 미확인" },
-    { "handle": "stokke_official_kr", "brand": "Stokke", "scope": "kr", "verified": false, "follow": false, "note": "예비 후보. 다른 한국 계정 확인 후 삭제" }
+    {
+      "handle": "stokke",
+      "brand": "Stokke",
+      "scope": "global",
+      "verified": true,
+      "follow": true,
+      "note": "글로벌 공식 계정"
+    },
+    {
+      "handle": "stokke_korea",
+      "brand": "Stokke",
+      "scope": "kr",
+      "verified": false,
+      "follow": true,
+      "note": "한국 공식 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "babybjorn",
+      "brand": "BabyBjorn",
+      "scope": "global",
+      "verified": true,
+      "follow": true,
+      "note": "글로벌 공식 계정"
+    },
+    {
+      "handle": "babybjorn_korea",
+      "brand": "BabyBjorn",
+      "scope": "kr",
+      "verified": false,
+      "follow": true,
+      "note": "베이비뵨 한국 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "bugaboo",
+      "brand": "Bugaboo",
+      "scope": "global",
+      "verified": true,
+      "follow": true,
+      "note": "글로벌 공식 계정"
+    },
+    {
+      "handle": "bugaboo_korea",
+      "brand": "Bugaboo",
+      "scope": "kr",
+      "verified": false,
+      "follow": true,
+      "note": "부가부코리아 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "cybex",
+      "brand": "Cybex",
+      "scope": "global",
+      "verified": false,
+      "follow": false,
+      "note": "싸이벡스 글로벌 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "cybex_korea",
+      "brand": "Cybex",
+      "scope": "kr",
+      "verified": false,
+      "follow": true,
+      "note": "싸이벡스코리아 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "nuna",
+      "brand": "Nuna",
+      "scope": "global",
+      "verified": false,
+      "follow": false,
+      "note": "뉴나 글로벌 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "nuna_korea",
+      "brand": "Nuna",
+      "scope": "kr",
+      "verified": false,
+      "follow": true,
+      "note": "에이원(뉴나) 국내 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "joiebaby",
+      "brand": "Joie",
+      "scope": "global",
+      "verified": false,
+      "follow": false,
+      "note": "조이 글로벌 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "joie_korea",
+      "brand": "Joie",
+      "scope": "kr",
+      "verified": false,
+      "follow": true,
+      "note": "조이베이비 국내 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "eggstroller",
+      "brand": "Egg",
+      "scope": "kr",
+      "verified": false,
+      "follow": true,
+      "note": "에그스토롤러 공식몰 운영 계정 후보. 핸들 미확인"
+    },
+    {
+      "handle": "dthrone",
+      "brand": "D.THRONE",
+      "scope": "kr",
+      "verified": false,
+      "follow": true,
+      "note": "디트로네 공식 계정 후보. 국내 브랜드. 핸들 미확인"
+    },
+    {
+      "handle": "stokke_official_kr",
+      "brand": "Stokke",
+      "scope": "kr",
+      "verified": false,
+      "follow": false,
+      "note": "예비 후보. 다른 한국 계정 확인 후 삭제"
+    }
   ],
   "discovery": {
     "$comment": "공구 셀러·팔이피플 발견용 해시태그. 탐색은 settings.json 의 discovery 속도 제한을 따른다.",
     "hashtags": {
-      "base": ["공구", "육아공구", "트립트랩공구"],
-      "brand": ["스토케", "트립트랩", "부가부", "싸이벡스", "뉴나", "베이비뵨", "조이카시트", "에그스토롤러", "디트로네"],
-      "extra": ["유모차공구", "카시트공구", "하이체어공구", "아기띠공구", "공구스타그램", "육아용품공구", "팔이피플"]
+      "base": [
+        "공구",
+        "육아템공구",
+        "육아공구",
+        "스토케공구",
+        "트립트랩공구"
+      ],
+      "brand": [
+        "스토케",
+        "트립트랩",
+        "부가부",
+        "싸이벡스",
+        "뉴나",
+        "베이비뵨",
+        "조이카시트",
+        "에그스토롤러",
+        "디트로네"
+      ],
+      "extra": [
+        "유모차공구",
+        "카시트공구",
+        "하이체어공구",
+        "아기띠공구",
+        "공구스타그램",
+        "육아용품공구",
+        "팔이피플"
+      ]
     }
   }
 }

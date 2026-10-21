@@ -2,21 +2,28 @@
 // aria role·버튼/링크 이름 정규식(한국어+영어)을 우선하고 CSS 셀렉터는 마지막 대안으로 쓴다.
 // 후보가 하나도 잡히지 않으면 selector_miss 상태 로그를 남기고 진행하거나(soft) 상위에서 중단한다.
 import type { Locator, Page } from 'playwright';
+import { canonicalPost } from './util';
 
 export async function firstVisible(candidates: Locator[]): Promise<Locator | null> {
   for (const candidate of candidates) {
     try {
-      if ((await candidate.count()) > 0 && await candidate.first().isVisible()) return candidate.first();
+      for (let i = 0; i < await candidate.count(); i++) {
+        const match = candidate.nth(i);
+        if (await match.isVisible()) return match;
+      }
     } catch { /* 렌더링 교체 중 사라진 후보는 건너뛴다 */ }
   }
   return null;
 }
 
 export async function clickFirst(candidates: Locator[]): Promise<boolean> {
-  const target = await firstVisible(candidates);
-  if (!target) return false;
-  await target.click();
-  return true;
+  for (const candidate of candidates) {
+    const target = await firstVisible([candidate]);
+    if (!target) continue;
+    try { await target.click({ timeout: 5000 }); return true; }
+    catch { /* Detached or covered: try the next selector. */ }
+  }
+  return false;
 }
 
 export async function hasText(page: Page, pattern: RegExp): Promise<boolean> {
@@ -30,9 +37,10 @@ export const followButton = (page: Page) => [
   page.getByRole('button', { name: /^(Follow|팔로우)$/ }),
   page.getByRole('button', { name: /팔로우 하기/ }),
   page.getByRole('button', { name: /^Follow$/i }),
+  page.locator('header [role="button"]').filter({ hasText: /^(Follow|팔로우)$/i }),
 ];
 export const followingButton = (page: Page) => [
-  page.getByRole('button', { name: /^(Following|팔로잉)/ }),
+  page.getByRole('button', { name: /^(Following|팔로잉|Requested|요청됨)(?:\s|$)/i }),
   page.getByRole('button', { name: /^Following$/i }),
 ];
 export const nextStoryButton = (page: Page) => [
@@ -42,13 +50,30 @@ export const nextStoryButton = (page: Page) => [
 ];
 // 프로필 링크만 남긴다(explore/reels/direct/accounts/stories/p/tv 등 예약 경로 제외).
 export const HANDLE_HREF = /^\/([A-Za-z0-9._]{1,30})\/?$/;
-export const RESERVED = /^(explore|reels|direct|accounts|stories|p|reel|tv|about|legal|developer|directory|web|challenge|emails|terms|privacy)/;
+export const RESERVED = /^(explore|reels|direct|accounts|stories|p|reel|tv|about|legal|developer|directory|web|challenge|emails|terms|privacy)$/i;
+export function parseHandle(href: string): string | null {
+  try {
+    const url = new URL(href, 'https://www.instagram.com/');
+    if (!['instagram.com', 'www.instagram.com'].includes(url.hostname) || url.protocol !== 'https:' || url.username || url.password) return null;
+    const handle = HANDLE_HREF.exec(url.pathname)?.[1]?.toLowerCase();
+    return handle && !RESERVED.test(handle) ? handle : null;
+  } catch { return null; }
+}
 export async function visibleHandles(page: Page, scope?: Locator): Promise<string[]> {
   const base = scope ?? page.locator('body');
   const hrefs = await base.locator('a[href]').evaluateAll(links => links.map(a => a.getAttribute('href') ?? ''));
-  return [...new Set(hrefs.map(href => HANDLE_HREF.exec(href)?.[1]).filter((h): h is string => Boolean(h) && !RESERVED.test(h!)))];
+  return [...new Set(hrefs.map(parseHandle).filter((h): h is string => h !== null))];
 }
 export async function postLinks(page: Page): Promise<string[]> {
   const hrefs = await page.locator('a[href*="/p/"], a[href*="/reel/"]').evaluateAll(links => links.map(a => a.getAttribute('href') ?? ''));
-  return [...new Set(hrefs.filter(Boolean))];
+  return [...new Set(hrefs.map(canonicalPost).filter((url): url is string => url !== null))];
+}
+
+export function parseStoryHandle(href: string): string | null {
+  try {
+    const url = new URL(href, 'https://www.instagram.com/');
+    if (!['instagram.com', 'www.instagram.com'].includes(url.hostname) || url.protocol !== 'https:') return null;
+    const handle = /^\/stories\/([A-Za-z0-9._]{1,30})(?:\/\d+)?\/?$/.exec(url.pathname)?.[1];
+    return handle && !['highlights', 'archive'].includes(handle) ? handle.toLowerCase() : null;
+  } catch { return null; }
 }

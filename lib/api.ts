@@ -30,18 +30,21 @@ export function parseSuggestions(value: unknown): Suggestions | null {
   if (!Array.isArray(v.models) || v.models.length > 10 || !confidence(v.confidence)) return null;
   const models: Suggestions['models'] = [];
   for (const raw of v.models) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const m = raw as Record<string, unknown>;
     if (!text(m.model_id, 120) || !text(m.brand, 120) || !text(m.name, 120) || !Array.isArray(m.matched) || m.matched.length > 8 || !m.matched.every((x: unknown) => text(x, 60)) || !confidence(m.confidence)) return null;
     models.push({ model_id: m.model_id as string, brand: m.brand as string, name: m.name as string, matched: m.matched as string[], confidence: m.confidence as number });
   }
   let price: Suggestions['price'] = null;
   if (v.price != null) {
+    if (!v.price || typeof v.price !== 'object' || Array.isArray(v.price)) return null;
     const p = v.price as Record<string, unknown>;
     if (!Number.isSafeInteger(p.value) || (p.value as number) < 0 || (p.value as number) > 1e9 || !text(p.raw, 120) || !confidence(p.confidence)) return null;
     price = { value: p.value as number, raw: p.raw as string, confidence: p.confidence as number };
   }
   let dates: Suggestions['dates'] = null;
   if (v.dates != null) {
+    if (!v.dates || typeof v.dates !== 'object' || Array.isArray(v.dates)) return null;
     const d = v.dates as Record<string, unknown>;
     if (!text(d.raw, 200) || !confidence(d.confidence) || (d.starts_at != null && !date(d.starts_at)) || (d.ends_at != null && !date(d.ends_at))) return null;
     dates = { starts_at: (d.starts_at as string) ?? null, ends_at: (d.ends_at as string) ?? null, raw: d.raw as string, confidence: d.confidence as number };
@@ -49,6 +52,7 @@ export function parseSuggestions(value: unknown): Suggestions | null {
   if (!Array.isArray(v.links) || v.links.length > 10) return null;
   const links: Suggestions['links'] = [];
   for (const raw of v.links) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const l = raw as Record<string, unknown>;
     if (l.kind !== 'url' && l.kind !== 'link_in_bio') return null;
     if (l.kind === 'url' ? !safeUrl(l.url) : l.url !== '') return null; // link_in_bio 는 빈 url(원문 프로필로 직접 확인)
@@ -56,6 +60,10 @@ export function parseSuggestions(value: unknown): Suggestions | null {
     links.push({ url: l.url as string, kind: l.kind, confidence: l.confidence as number });
   }
   return { models, price, dates, links, confidence: v.confidence as number };
+}
+export function parseStoredSuggestions(value: string | null): Suggestions | null {
+  try { return value ? parseSuggestions(JSON.parse(value)) : null; }
+  catch { return null; }
 }
 async function body(request: Request) {
   const reader = request.body?.getReader();

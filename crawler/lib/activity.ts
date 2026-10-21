@@ -3,7 +3,7 @@
 // 구조가 잡히지 않으면 빈 신호를 돌려주고(soft fail), 챌린지·로그인 이탈만 즉시 중단한다.
 import type { Page } from 'playwright';
 import { assertHuman } from './browser';
-import { firstVisible, visibleHandles } from './selectors';
+import { clickFirst, firstVisible, parseStoryHandle, visibleHandles } from './selectors';
 import { sleep } from './util';
 import { health } from './health';
 import type { Settings } from './config';
@@ -14,17 +14,24 @@ async function storiesTray(page: Page, settings: Settings): Promise<string[]> {
   await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
   await sleep(...settings.delays_ms.navigation);
   await assertHuman(page);
-  const tray = await firstVisible([page.locator('section'), page.locator('nav + section')]);
-  const handles = await visibleHandles(page, tray ?? page.locator('body'));
-  return handles.filter(h => h !== 'www.instagram.com').slice(0, 30);
+  const links = await page.locator('a[href*="/stories/"]').evaluateAll(anchors => anchors.map(a => a.getAttribute('href') ?? ''));
+  const handles = [...new Set(links.map(parseStoryHandle).filter((h): h is string => h !== null))];
+  if (!handles.length) health('selector_miss', { scope: 'stories_tray' });
+  return handles.slice(0, 30);
 }
 
 async function notifications(page: Page, settings: Settings): Promise<string[]> {
   try {
-    await page.goto('https://www.instagram.com/accounts/activity/', { waitUntil: 'domcontentloaded' });
+    // Current layouts use a side panel; retain the activity route as a fallback.
+    const opened = await clickFirst([
+      page.getByRole('link', { name: /알림|Notifications/i }),
+      page.getByRole('button', { name: /알림|Notifications/i }),
+      page.locator('a[href="/accounts/activity/"]'),
+    ]);
+    if (!opened) await page.goto('https://www.instagram.com/accounts/activity/', { waitUntil: 'domcontentloaded' });
     await sleep(...settings.delays_ms.action);
     await assertHuman(page);
-    if (!/accounts\/activity/.test(page.url())) return []; // UI가 홈으로 돌려보내면 알림 없음으로 처리
+    if (!opened && !/accounts\/activity/.test(page.url())) return [];
     const panel = await firstVisible([page.getByRole('dialog'), page.locator('[role="main"], main')]);
     const handles = await visibleHandles(page, panel ?? page.locator('body'));
     if (!handles.length) health('selector_miss', { scope: 'activity' });
@@ -37,7 +44,12 @@ async function notifications(page: Page, settings: Settings): Promise<string[]> 
 }
 
 export async function readSignals(page: Page, settings: Settings): Promise<Signals> {
-  const storyAccounts = await storiesTray(page, settings);
+  let storyAccounts: string[] = [];
+  try { storyAccounts = await storiesTray(page, settings); }
+  catch (error) {
+    if (error instanceof Error && error.message.startsWith('halt:')) throw error;
+    health('selector_miss', { scope: 'stories_tray' });
+  }
   const freshAccounts = await notifications(page, settings);
   const signals = { storyAccounts, freshAccounts: freshAccounts.filter(h => !storyAccounts.includes(h)) };
   health('signals', { story_accounts: signals.storyAccounts.length, fresh_accounts: signals.freshAccounts.length });

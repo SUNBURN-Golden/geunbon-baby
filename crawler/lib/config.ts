@@ -21,14 +21,18 @@ async function readJson(path: string): Promise<unknown> {
   catch { throw new Error(`설정 파일을 읽을 수 없습니다: ${path}. JSON 형식을 확인하세요.`); }
 }
 const pair = (v: unknown, what: string): [number, number] => {
-  if (!Array.isArray(v) || v.length !== 2 || v.some(x => !Number.isFinite(x) || (x as number) <= 0)) throw new Error(`${what} 값이 잘못되었습니다.`);
+  if (!Array.isArray(v) || v.length !== 2 || v.some(x => !Number.isFinite(x) || (x as number) <= 0) || v[1] < v[0]) throw new Error(`${what} 값이 잘못되었습니다.`);
   return [v[0] as number, v[1] as number];
 };
+const limit = (v: unknown, what: string) => { if (!Number.isSafeInteger(v) || (v as number) < 0) throw new Error(`${what} 값이 잘못되었습니다.`); return v as number; };
 const positive = (v: unknown, what: string) => { if (!Number.isFinite(v) || (v as number) <= 0) throw new Error(`${what} 값이 잘못되었습니다.`); return v as number; };
 
-function parseSettings(raw: unknown): Settings {
+export function parseSettings(raw: unknown): Settings {
   if (!raw || typeof raw !== 'object') throw new Error('settings.json 형식 오류');
   const v = raw as Record<string, unknown>;
+  for (const key of ['per_tick', 'hourly_caps', 'follow', 'delays_ms', 'discovery', 'ocr', 'staleness']) {
+    if (!v[key] || typeof v[key] !== 'object' || Array.isArray(v[key])) throw new Error(`settings.json: ${key} 형식 오류`);
+  }
   const perTick = v.per_tick as Record<string, unknown>;
   const caps = v.hourly_caps as Record<string, unknown>;
   const follow = v.follow as Record<string, unknown>;
@@ -38,11 +42,11 @@ function parseSettings(raw: unknown): Settings {
   const staleness = v.staleness as Record<string, unknown>;
   return {
     poll_interval_minutes: pair(v.poll_interval_minutes, 'poll_interval_minutes'),
-    per_tick: { max_accounts: positive(perTick.max_accounts, 'per_tick.max_accounts'), max_posts_per_account: positive(perTick.max_posts_per_account, 'per_tick.max_posts_per_account'), max_stories_per_account: positive(perTick.max_stories_per_account, 'per_tick.max_stories_per_account') },
-    hourly_caps: { profile_visits: positive(caps.profile_visits, 'hourly_caps.profile_visits'), post_views: positive(caps.post_views, 'hourly_caps.post_views'), story_opens: positive(caps.story_opens, 'hourly_caps.story_opens'), follows: positive(caps.follows, 'hourly_caps.follows'), hashtag_pages: positive(caps.hashtag_pages, 'hourly_caps.hashtag_pages') },
-    follow: { daily_cap: positive(follow.daily_cap, 'follow.daily_cap'), allow_unverified: follow.allow_unverified === true, gap_seconds: pair(follow.gap_seconds, 'follow.gap_seconds') },
+    per_tick: { max_accounts: limit(perTick.max_accounts, 'per_tick.max_accounts'), max_posts_per_account: limit(perTick.max_posts_per_account, 'per_tick.max_posts_per_account'), max_stories_per_account: limit(perTick.max_stories_per_account, 'per_tick.max_stories_per_account') },
+    hourly_caps: { profile_visits: limit(caps.profile_visits, 'hourly_caps.profile_visits'), post_views: limit(caps.post_views, 'hourly_caps.post_views'), story_opens: limit(caps.story_opens, 'hourly_caps.story_opens'), follows: limit(caps.follows, 'hourly_caps.follows'), hashtag_pages: limit(caps.hashtag_pages, 'hourly_caps.hashtag_pages') },
+    follow: { daily_cap: limit(follow.daily_cap, 'follow.daily_cap'), allow_unverified: follow.allow_unverified === true, gap_seconds: pair(follow.gap_seconds, 'follow.gap_seconds') },
     delays_ms: { navigation: pair(delays.navigation, 'delays_ms.navigation'), action: pair(delays.action, 'delays_ms.action'), login: pair(delays.login, 'delays_ms.login') },
-    discovery: { enabled: discovery.enabled === true, posts_per_tag: positive(discovery.posts_per_tag, 'discovery.posts_per_tag'), min_interval_hours: positive(discovery.min_interval_hours, 'discovery.min_interval_hours') },
+    discovery: { enabled: discovery.enabled === true, posts_per_tag: limit(discovery.posts_per_tag, 'discovery.posts_per_tag'), min_interval_hours: positive(discovery.min_interval_hours, 'discovery.min_interval_hours') },
     ocr: { enabled: ocr.enabled === true, langs: typeof ocr.langs === 'string' && ocr.langs ? ocr.langs : 'kor+eng', timeout_ms: positive(ocr.timeout_ms, 'ocr.timeout_ms') },
     staleness: { account_recheck_minutes: positive(staleness.account_recheck_minutes, 'staleness.account_recheck_minutes'), story_recheck_minutes: positive(staleness.story_recheck_minutes, 'staleness.story_recheck_minutes') },
   };
@@ -54,7 +58,7 @@ function parseAccounts(raw: unknown): AccountsFile {
   const accounts = Array.isArray(v.seed_accounts) ? v.seed_accounts : [];
   const parsed: SeedAccount[] = accounts.map(a => {
     const item = a as Record<string, unknown>;
-    const handle = String(item.handle ?? '');
+    const handle = String(item.handle ?? '').toLowerCase();
     if (!/^[A-Za-z0-9._]{1,30}$/.test(handle)) throw new Error(`잘못된 핸들: ${handle || '(없음)'}`);
     return { handle, brand: String(item.brand ?? ''), scope: item.scope === 'kr' ? 'kr' : 'global', verified: item.verified === true, follow: item.follow === true, note: String(item.note ?? '') };
   });
