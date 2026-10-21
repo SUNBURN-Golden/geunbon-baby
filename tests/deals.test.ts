@@ -131,7 +131,8 @@ describe('server rendered deals UI', () => {
     expect(html).toContain(dealsCopy.active);
     expect(html).toContain(fixture.title);
     expect(html).toContain('390,000');
-    expect(html).toContain(formatGap(priceGap(fixture.price, fixture.model_official_price)!));
+    expect(html.replace(/<[^>]+>/g, "")).toContain(formatGap(priceGap(fixture.price, fixture.model_official_price)!));
+    expect(html).toMatch(/<span class="deal-gap-chunk"> · [^<]*(낮아요|높아요)<\/span>/);
     expect(html).toContain(dealsCopy.good);
     expect(html).not.toContain(dealsCopy.disclaimer);
     expect(html).not.toContain(fixture.source_url);

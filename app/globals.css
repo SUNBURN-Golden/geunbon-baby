@@ -411,7 +411,8 @@ form { max-width: 100%; }
 .deals-page .deal-archive { margin: var(--s-2) 0 0; color: var(--muted); font-size: 14px; }
 .deals-page .deal-comparison { display: grid; gap: var(--s-2); }
 .deals-page .deal-comparison p { margin: 0; }
-.deals-page .deal-gap { font-weight: 600; }
+.deals-page .deal-gap { font-weight: 600; text-wrap: balance; }
+.deals-page .deal-gap-chunk { white-space: nowrap; }
 .deals-page .deal-context, .deals-page .deal-disclaimer { color: var(--muted); font-size: 13px; }
 .deals-page .deal-tone {
   align-self: flex-start;

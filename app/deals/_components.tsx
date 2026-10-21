@@ -48,7 +48,7 @@ export function PriceGap({ deal, gap, showContext = true }: { deal: DealWithCont
   if (!gap) return deal.model_official_price === null ? <p className="deal-context">{dealsCopy.unknownOfficial}</p> : null;
   return (
     <div className="deal-comparison">
-      <p className="deal-gap">{formatGap(gap)}</p>
+      <p className="deal-gap">{gapChunks(formatGap(gap)).map((chunk, i) => <span className="deal-gap-chunk" key={i}>{i > 0 ? ` · ${chunk}` : chunk}</span>)}</p>
       {showContext && <>
         <p className="deal-context">{dealsCopy.qualification}</p>
         <p className="deal-context">
@@ -143,4 +143,9 @@ export function DealDetail({ deal, nowMs }: { deal: DealWithContext; nowMs: numb
       </article>
     </main>
   );
+}
+
+// Keep the won amount and its verb on one line so 낮아요/높아요 never wraps alone.
+function gapChunks(text: string): string[] {
+  return text.split(' · ');
 }

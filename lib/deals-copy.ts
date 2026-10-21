@@ -17,7 +17,7 @@ export const dealsCopy = {
   below: '기준가보다 {percent}% · {won}원 낮아요',
   above: '기준가보다 {percent}% · {won}원 높아요',
   equal: '기준가와 같아요',
-  archived: '종료 시점의 혜택가예요',
+  archived: '마지막으로 확인한 혜택가예요',
   primary: '원문에서 보기',
   secondary: '기준가 보기',
   disclaimer: '아가마중은 직접 판매하지 않아요. 최종 가격·조건은 판매처에서 확인해 주세요.',
