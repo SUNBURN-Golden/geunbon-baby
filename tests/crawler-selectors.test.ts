@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { clickFirst, firstVisible, followButton, parseHandle, parseStoryHandle, postLinks, visibleHandles } from '../crawler/lib/selectors';
+import { clickFirst, firstVisible, followButton, loginPrompt, parseHandle, parseStoryHandle, postLinks, visibleHandles } from '../crawler/lib/selectors';
 import { canonicalPost } from '../crawler/lib/util';
 import { mockLocator, mockPage } from './helpers/page';
 test('visibility fallback skips missing, hidden and detached candidates, including hidden first matches', async () => {
@@ -40,4 +40,21 @@ test('post links canonicalize tracking URLs, reject external URLs, and dedupe', 
 test('handle list parsing dedupes profile links', async () => {
   const { page } = mockPage(() => ['/seller/', '/seller/', '/explore/', '/seller2/'].map(href => ({ href })));
   expect(await visibleHandles(page)).toEqual(['seller', 'seller2']);
+});
+
+test('prompt handling never selects an unrelated page-level Not now button', async () => {
+  const { page } = mockPage(selector => {
+    if (selector === 'text') return [{ text: 'Save your login info?' }];
+    if (selector === 'role:button') return [{ name: 'Not now' }];
+    return [];
+  });
+  expect(await loginPrompt(page)).toEqual({ kind: 'save', dismiss: null });
+});
+
+test('legacy full-page save prompt is scoped to the onetap route', async () => {
+  const node = { text: 'Save your login info?', children: () => [{ name: 'Not now' }] };
+  const mock = mockPage(selector => selector === 'text' || selector === 'body' ? [node] : []);
+  expect((await loginPrompt(mock.page))?.dismiss).toBeNull();
+  mock.setUrl('https://www.instagram.com/accounts/onetap/?next=/');
+  expect((await loginPrompt(mock.page))?.dismiss).not.toBeNull();
 });

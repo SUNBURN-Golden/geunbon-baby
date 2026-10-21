@@ -1,13 +1,13 @@
 import { vi } from 'vitest';
 import type { Locator, Page } from 'playwright';
-export type Node = { name?: string; text?: string; href?: string; visible?: boolean; click?: () => Promise<void> | void; evaluate?: () => unknown; screenshot?: (path: string) => Promise<void>; throws?: boolean };
+export type Node = { name?: string; text?: string; href?: string; visible?: boolean; click?: () => Promise<void> | void; fill?: (value: string) => Promise<void> | void; children?: (selector: string) => Node[]; evaluate?: () => unknown; screenshot?: (path: string) => Promise<void>; throws?: boolean };
 export function mockLocator(nodes: () => Node[]): Locator {
   const view = {
     count: vi.fn(async () => nodes().length),
     nth: (i: number) => mockLocator(() => nodes().slice(i, i + 1)),
     first: () => mockLocator(() => nodes().slice(0, 1)),
     isVisible: vi.fn(async () => { if (nodes()[0]?.throws) throw new Error('detached'); return nodes()[0]?.visible !== false; }),
-    fill: vi.fn(async () => {}),
+    fill: vi.fn(async (value: string) => { await nodes()[0]?.fill?.(value); }),
     click: vi.fn(async () => { if (nodes()[0]?.throws) throw new Error('detached'); await nodes()[0]?.click?.(); }),
     innerText: vi.fn(async () => nodes()[0]?.text ?? ''),
     getAttribute: vi.fn(async () => nodes()[0]?.href ?? null),
@@ -15,7 +15,8 @@ export function mockLocator(nodes: () => Node[]): Locator {
     evaluateAll: vi.fn(async (fn: (elements: { getAttribute: () => string }[]) => unknown) => fn(nodes().map(node => ({ getAttribute: () => node.href ?? '' })))),
     evaluate: vi.fn(async () => nodes()[0]?.evaluate?.()),
     locator: () => mockLocator(nodes),
-    filter: () => mockLocator(nodes),
+    getByRole: (role: string, options?: { name?: RegExp }) => mockLocator(() => nodes().flatMap(node => node.children?.(`role:${role}`) ?? []).filter(node => !options?.name || options.name.test(node.name ?? ''))),
+    filter: (options?: { hasText?: RegExp }) => mockLocator(() => nodes().filter(node => !options?.hasText || options.hasText.test(node.text ?? ''))),
   };
   return view as unknown as Locator;
 }
