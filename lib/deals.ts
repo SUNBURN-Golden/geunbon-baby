@@ -24,7 +24,7 @@ export type DealWithContext = Deal & {
 // Both routes use the same projection; joined IDs distinguish missing rows
 // from rows whose price is still unknown.
 export const DEAL_SELECT = `
-  SELECT d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url,
+  SELECT d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.image_url,
          d.verify_level, d.checked, d.starts_at, d.ends_at,
          m.id AS model_joined_id, m.name AS model_name,
          m.official_price AS model_official_price, m.checked AS model_checked,

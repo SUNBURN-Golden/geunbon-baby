@@ -4,7 +4,7 @@ import { health } from './health';
 
 export class IngestError extends Error {}
 
-export type IngestItem = { source_url: string; account: string; kind: 'post' | 'story'; text: string; captured_at: string; suggestions?: unknown };
+export type IngestItem = { source_url: string; account: string; kind: 'post' | 'story'; text: string; captured_at: string; image_url?: string | null; suggestions?: unknown };
 
 export async function sendItem(api: URL, token: string, item: IngestItem): Promise<void> {
   let response: Response;

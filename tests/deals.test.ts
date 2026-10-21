@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
@@ -22,7 +22,7 @@ const nowMs = Date.parse('2026-10-21T03:00:00Z');
 // Extra legacy fields must never reach the UI, even if supplied by a caller.
 const fixture: DealWithContext & { model_note: string } = {
   id: 'deal-1', model_id: 'model-1', seller_id: 'seller-1', title: 'A carefully checked deal',
-  price: 390000, source_url: 'https://www.instagram.com/p/example/',
+  image_url: null, price: 390000, source_url: 'https://www.instagram.com/p/example/',
   verify_level: 'manual', checked: '2026-10-20T16:00:00Z',
   starts_at: '2026-10-20T00:00:00Z', ends_at: '2026-10-22T14:59:59Z',
   model_joined_id: 'model-1', model_name: 'Example model', model_official_price: 430000,
@@ -275,15 +275,18 @@ describe('dynamic routes and LEFT JOIN projection', () => {
   const memory = memoryD1();
   beforeAll(async () => {
     context.db = memory.db;
-    const schema = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
-    for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+    const dir = new URL('../migrations/', import.meta.url);
+    for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
+      const schema = await readFile(new URL(file, dir), 'utf8');
+      for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+    }
     // Model/seller deletion and old incomplete records must not hide a deal.
     await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
     await memory.db.prepare("INSERT INTO models VALUES ('model-1', 'Brand', 'Model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'search_summary', 'Retailer 123,456원; overseas $799; used 234,567원')").run();
     await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
     for (const d of [fixture, { ...fixture, id: 'missing-joins', model_id: 'absent-model', seller_id: 'absent-seller' }]) {
-      await memory.db.prepare('INSERT INTO deals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.verify_level, d.checked, d.starts_at, d.ends_at).run();
+      await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.verify_level, d.checked, d.starts_at, d.ends_at, d.id === fixture.id ? 'https://cdninstagram.com/fixture.jpg?x=1&sig=synthetic%2Bvalue' : null).run();
     }
   });
   afterAll(() => memory.close());
@@ -294,7 +297,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     for (const row of rows) expect(row).not.toHaveProperty('model_note');
     expect(rows.find(d => d.id === fixture.id)).toMatchObject({
       id: 'deal-1', checked: fixture.checked, verify_level: 'manual', source_url: fixture.source_url,
-      model_joined_id: 'model-1', model_checked: '2026-10-18', model_verify_level: 'search_summary', seller_name: 'Seller',
+      image_url: 'https://cdninstagram.com/fixture.jpg?x=1&sig=synthetic%2Bvalue', model_joined_id: 'model-1', model_checked: '2026-10-18', model_verify_level: 'search_summary', seller_name: 'Seller',
     });
     expect(rows.find(d => d.id === 'missing-joins')).toMatchObject({ model_joined_id: null, seller_name: null });
   });
@@ -326,6 +329,37 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     expect(html).toContain(dealsCopy.unknownSeller);
     for (const id of ['absent', "' OR 1=1 --"]) {
       await expect(DealDetailPage({ params: Promise.resolve({ id }) })).rejects.toThrow('NEXT_NOT_FOUND');
+    }
+  });
+});
+
+describe('deal images', () => {
+  test('cards and details render images without changing existing text, prices, advertising or notices', () => {
+    const image_url = 'https://cdninstagram.com/product.jpg?sig=synthetic%2B&x=1';
+    for (const render of [card, detail]) {
+      const html = render({ image_url });
+      expect(html).toContain('class="deal-image"');
+      expect(html).toContain('src="https://cdninstagram.com/product.jpg?sig=synthetic%2B&amp;x=1"');
+      expect(html).toContain(`alt="${fixture.title} 상품 이미지"`);
+      expect(html).toContain('width="640" height="480"');
+      expect(html).toContain('loading="lazy"');
+      expect(html).toContain('referrerPolicy="no-referrer"');
+      expect(html).not.toContain('/_next/image');
+      expect(html).toContain(dealsCopy.ad);
+      expect(html).toContain('390,000');
+      expect(html).toContain(fixture.title);
+      expect(html.replace(/<img[^>]*>/g, '')).toBe(render());
+    }
+    expect(detail({ image_url })).toContain(dealsCopy.disclaimer);
+  });
+
+  test.each([null, '', 'blob:local', 'https://example.com/unapproved.jpg'])('missing/invalid image %s leaves text-only content', image_url => {
+    for (const render of [card, detail]) {
+      const html = render({ image_url });
+      expect(html).not.toContain('<img');
+      expect(html).toContain(fixture.title);
+      expect(html).toContain(dealsCopy.ad);
+      expect(html).toContain('390,000');
     }
   });
 });

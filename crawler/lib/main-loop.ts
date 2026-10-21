@@ -10,7 +10,7 @@ type LoopDependencies<Session> = {
   schedule: (callback: () => void, ms: number) => () => void;
   stopped: () => boolean;
   open: (check: () => void) => Promise<Session>;
-  login: (session: Session) => Promise<void>;
+  login: (session: Session, check: () => void) => Promise<void>;
   cycle: (session: Session, check: () => void) => Promise<void>;
   close: (session: Session) => Promise<void>;
   save: () => Promise<void>;
@@ -99,7 +99,7 @@ export async function runMainLoop<Session>(
           armTimer();
           session = await deps.open(check);
           check();
-          await deps.login(session);
+          await deps.login(session, check);
         }
         check();
         const cycleStarted = deps.now();

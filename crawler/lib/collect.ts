@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { chmod, unlink } from 'node:fs/promises';
@@ -11,7 +11,8 @@ import { sleep } from './util';
 import { health } from './health';
 import { sendItem } from './ingest';
 import { extract, toSuggestions } from './extract';
-import { QuietWindowError } from './quiet-window';
+import { postImageUrl, selectMedia, readMediaUrl, propagateMediaInterruption } from './media';
+import { isImageUrl } from '../../lib/image-url';
 
 const exec = promisify(execFile);
 async function pauseReadyStory(page: Page, account: string, previousPath: string | null): Promise<boolean> {
@@ -44,25 +45,35 @@ export async function postAuthor(page: Page): Promise<string | null> {
   }
   return null;
 }
-async function ocrStory(page: Page, crawlerDir: string, settings: Settings): Promise<string> {
-  const image = await firstVisible([
-    page.locator('video:visible'),
-    page.locator('[role="dialog"] img:visible'),
-    page.locator('main img:visible'),
-    page.locator('img:visible:not([alt*="profile" i]):not([alt*="프로필"])'),
-  ]);
-  if (!image) { health('selector_miss', { scope: 'story_media' }); return ''; }
+async function ocrStory(page: Page, image: Locator, crawlerDir: string, settings: Settings): Promise<{ text: string; image_url?: string }> {
   const file = resolve(crawlerDir, '.cache', 'story.png');
+  let handle: Awaited<ReturnType<Locator['elementHandle']>> = null;
   try {
-    await image.screenshot({ path: file });
+    // Pin the DOM node: a live locator could resolve a different carousel/story
+    // element between URL extraction and screenshotting. Detached nodes fail OCR
+    // and remain retryable. Explicit page reads retain the quiet/stop guard before
+    // every handle operation, since ElementHandles are not wrapped by guardPage.
+    handle = await image.elementHandle({ timeout: 1000 });
+    if (!handle) return { text: '' };
+    let image_url: string | undefined;
+    try {
+      page.url();
+      const candidate = await handle.evaluate(readMediaUrl);
+      if (isImageUrl(candidate)) image_url = candidate;
+    } catch (error) { propagateMediaInterruption(error); }
+    page.url();
+    await handle.screenshot({ path: file });
     await chmod(file, 0o600);
     const { stdout } = await exec('tesseract', [file, 'stdout', '-l', settings.ocr.langs], { timeout: settings.ocr.timeout_ms, maxBuffer: 32768 });
-    return stdout.trim().slice(0, 6000);
+    return { text: stdout.trim().slice(0, 6000), ...(image_url ? { image_url } : {}) };
   } catch (error) {
-    if (error instanceof QuietWindowError) throw error;
+    propagateMediaInterruption(error);
     health('warn', { scope: 'ocr', detail: 'tesseract·화면 캡처 실패(설치·언어팩 확인)' });
-    return '';
-  } finally { await unlink(file).catch(() => {}); }
+    return { text: '' };
+  } finally {
+    await handle?.dispose().catch(() => {});
+    await unlink(file).catch(() => {});
+  }
 }
 export type CollectContext = { account: string; crawlerDir: string; state: CrawlerState; settings: Settings; api: URL; token: string; scanPosts: boolean; scanStories: boolean };
 export async function collectAccount(page: Page, ctx: CollectContext): Promise<{ posts: number; stories: number }> {
@@ -85,7 +96,8 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
       await assertHuman(page);
       const text = await readCaption(page);
       if (!text.trim()) { health('selector_miss', { scope: 'caption', account }); continue; }
-      await sendItem(api, token, { source_url: canonical, account, kind: 'post', text, captured_at: new Date().toISOString(), suggestions: toSuggestions(extract(text)) });
+      const image_url = await postImageUrl(page);
+      await sendItem(api, token, { source_url: canonical, account, kind: 'post', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions: toSuggestions(extract(text)) });
       state.markSeen(canonical);
       await state.save();
       result.posts++;
@@ -110,9 +122,12 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
       await assertHuman(page);
       if (new URL(page.url()).pathname !== url.pathname) break;
       if (!state.isSeen(canonical)) {
-        const text = await ocrStory(page, ctx.crawlerDir, settings);
+        const media = await selectMedia(page, 'story');
+        if (!media) { health('selector_miss', { scope: 'story_media' }); break; }
+        if (new URL(page.url()).pathname !== url.pathname) break;
+        const { text, image_url } = await ocrStory(page, media.element, ctx.crawlerDir, settings);
         if (text.trim() && new URL(page.url()).pathname.replace(/\/$/, '') === url.pathname.replace(/\/$/, '')) {
-          await sendItem(api, token, { source_url: canonical, account, kind: 'story', text, captured_at: new Date().toISOString(), suggestions: toSuggestions(extract(text)) });
+          await sendItem(api, token, { source_url: canonical, account, kind: 'story', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions: toSuggestions(extract(text)) });
           state.markSeen(canonical);
           await state.save();
           result.stories++;
