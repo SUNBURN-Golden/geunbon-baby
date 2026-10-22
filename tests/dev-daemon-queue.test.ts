@@ -10,7 +10,7 @@ import type { Command, Execute, ModelsConfig, Result, Stage } from '../tools/dev
 const temps: string[] = [];
 afterEach(async () => { await Promise.all(temps.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
 const ok = (answer = ''): Result => ({ code: 0, output: answer, answer });
-async function fixture(options: { answers?: Partial<Record<Stage, (string | Result)[]>>; failCheck?: string } = {}) {
+async function fixture(options: { answers?: Partial<Record<Stage, (string | Result)[]>>; failCheck?: string; failPrepare?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dev-daemon-test-')); temps.push(root);
   const queue = new Queue(join(root, 'queue'));
   await queue.init();
@@ -20,22 +20,49 @@ async function fixture(options: { answers?: Partial<Record<Stage, (string | Resu
   const blueprint = join(root, 'TASK.md');
   await writeFile(blueprint, 'Site and crawler are separate.');
   const calls: Command[] = [];
+  const worktrees = new Map<string, string>();
   let branch = '', prCreated = false, merged = false, dirty = false, head = 'abc123', diff = '';
   const answers = options.answers ?? {};
   const stages = ['design-review', 'design-revise', 'build-review', 'review-fix', 're-review', 'design', 'build', 'audit'] as Stage[];
   const execute: Execute = vi.fn(async command => {
     calls.push(command);
-    const args = command.args;
+    const args = command.args[0] === '-C' ? command.args.slice(2) : command.args;
+    const gitCwd = command.args[0] === '-C' ? command.args[1] : command.cwd;
     const label = basename(command.log);
     if (command.bin === 'git') {
+      if (args[0] === 'fetch' && options.failPrepare) return { ...ok(), code: 1 };
       if (args.includes('--git-common-dir')) return ok(common);
       if (args[0] === 'worktree') {
-        branch = args[3]; await mkdir(args[4], { recursive: true });
-        await writeFile(join(args[4], 'file.ts'), 'reviewed content'); return ok();
+        switch (args[1]) {
+          case 'list': return ok([repo, ...worktrees.keys()].map(path =>
+            `worktree ${path}\0HEAD abc123\0branch refs/heads/${path === repo ? 'main' : branch}\0\0`).join(''));
+          case 'add': {
+            branch = args[3];
+            const path = args[4], admin = join(common, 'worktrees', basename(path));
+            await mkdir(path, { recursive: true });
+            await mkdir(admin, { recursive: true });
+            await writeFile(join(path, '.git'), `gitdir: ${admin}\n`);
+            await writeFile(join(admin, 'gitdir'), join(path, '.git') + '\n');
+            worktrees.set(path, admin);
+            await writeFile(join(path, 'file.ts'), 'reviewed content'); return ok();
+          }
+          case 'remove': {
+            const path = args[3], admin = worktrees.get(path);
+            await rm(path, { recursive: true, force: true });
+            if (admin) await rm(admin, { recursive: true, force: true });
+            worktrees.delete(path); return ok();
+          }
+          case 'prune': return ok();
+          default: throw new Error('Unexpected worktree command');
+        }
       }
       if (args[0] === 'branch') return ok(branch);
       if (args[0] === 'write-tree' || args[1] === 'HEAD^{tree}') return ok('tree123');
-      if (args[0] === 'rev-parse') return ok(args[1] === 'HEAD^' ? 'abc123' : head);
+      if (args[0] === 'rev-parse') {
+        if (args[1] === '--show-toplevel') return ok(gitCwd);
+        if (args[1] === '--absolute-git-dir') return ok(worktrees.get(gitCwd) ?? common);
+        return ok(args[1] === 'HEAD^' ? 'abc123' : head);
+      }
       if (args[0] === 'rev-list') return ok('1');
       if (args.includes('--quiet')) return { ...ok(), code: args.includes('--cached') ? 1 : 0 };
       if (args[0] === 'diff') return ok(diff);
@@ -184,6 +211,28 @@ describe('daemon state machine with offline runners', () => {
     expect(daemon.state.active?.summary).toContain(`check-${failCheck}`);
     expect(calls.some(c => c.bin === 'gh')).toBe(false);
     expect(daemon.state.mergedPrs).toBe(0);
+    const task = daemon.state.active!;
+    await daemon.tick();
+    expect(daemon.state.active).toBeUndefined();
+    await expect(readFile(join(task.worktree, 'file.ts'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(join(queue.root, 'failed', `${task.id}.summary.md`), 'utf8')).toContain(`check-${failCheck}`);
+  });
+  it('archives a prepare failure safely when no task worktree was created', async () => {
+    const { queue, daemon, calls } = await fixture({ failPrepare: true });
+    await enqueue(queue);
+    await until(daemon, () => daemon.state.active?.stage === 'failed');
+    expect(daemon.state.active?.summary).toContain('fetch-main');
+    await daemon.tick();
+    expect(daemon.state.active).toBeUndefined();
+    expect(await readdir(join(queue.root, 'failed'))).toHaveLength(2);
+    expect(calls.some(c => c.args[0] === 'worktree' && c.args[1] === 'remove')).toBe(false);
+  });
+  it('does not clean a running task or another task waiting in inbox', async () => {
+    const { queue, daemon, calls } = await fixture();
+    await enqueue(queue); await enqueue(queue, '# Second\nbody', '002.md');
+    await until(daemon, () => daemon.state.active?.stage === 'build');
+    expect(calls.some(c => c.args[0] === 'worktree' && ['remove', 'prune'].includes(c.args[1]))).toBe(false);
+    expect(await readdir(join(queue.root, 'inbox'))).toEqual(['002.md']);
   });
   it('persists a quota pause and resumes the same stage after restart, leaving the next task in inbox', async () => {
     const { queue, daemon, daemonOptions, calls } = await fixture({ answers: { design: Array.from({ length: 4 }, () => ({
@@ -196,6 +245,7 @@ describe('daemon state machine with offline runners', () => {
     const before = calls.length;
     expect(await restarted.tick()).toBe(30000);
     expect(calls).toHaveLength(before);
+    expect(calls.some(c => c.args[0] === 'worktree' && ['remove', 'prune'].includes(c.args[1]))).toBe(false);
     expect(restarted.state.active?.id).toBe(saved.active.id);
     expect(await readdir(join(queue.root, 'inbox'))).toEqual(['002.md']);
     const later = new Daemon({ ...daemonOptions, now: () => Date.parse('2026-10-21T01:01:00Z') });
