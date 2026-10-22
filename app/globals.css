@@ -570,3 +570,8 @@ form { max-width: 100%; }
 .seller .deal-image { max-width: 40rem; }
 .image-choice { display: flex; align-items: center; gap: .6rem; }
 .image-choice input { width: auto; }
+
+.account-link { flex-shrink: 0; white-space: nowrap; font-size: 13px; color: var(--muted); }
+.auth-buttons { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-5); }
+.consent { display: flex; align-items: center; gap: .6rem; }
+.consent input { width: auto; margin-top: 0; }

@@ -23,6 +23,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Suspense fallback={<NavLinks />}>
             <Nav />
           </Suspense>
+          <Link className="account-link" href="/me">내 계정</Link>
         </header>
         {children}
         <footer>

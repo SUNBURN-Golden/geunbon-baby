@@ -32,9 +32,25 @@ npm run dev
 - `/models/:id`: 공구가 / 공식가 / 해외가 / 당근 중고 시세, 출처·확인일·검증 수준
 - `/deals`, `/calendar`: 검수 완료 공구 및 일정 (전부 **광고** 표시)
 - `/sellers`: 통신판매업 신고·청약철회 7일·정식수입 증빙. 시드에 증빙이 없으므로 미확인으로 표시
+- `/login`, `/me`: 구글·카카오 소셜 로그인 가입(자체 가입폼 없음)과 내 계정(뉴스레터 해지·재구독, 로그아웃). 아래 "소셜 로그인" 참고
 - `/admin`: ADMIN_TOKEN 로그인 후 검수 대기 원문 승인/반려. 크롤러가 보낸 자동 추출 제안(모델·가격·일정·링크 후보와 근거)은 참고용으로만 함께 표시. httpOnly·SameSite strict 1시간 쿠키, Next.js Server Actions의 동일 origin 검증 사용. 공개 화면에는 대기 원문을 전달하지 않음
 
 로컬 HTTP의 localhost는 브라우저 secure cookie 예외가 적용됩니다. 관리자 접속은 localhost를 사용하세요. 공유/운영 환경은 HTTPS가 필수입니다. 토큰을 URL에 넣지 마세요. 운영 공개 전 관리자 경로와 ingest에 Cloudflare Access/WAF 등의 접근통제·레이트리밋을 별도로 설정하는 것을 권장합니다.
+
+## 소셜 로그인
+
+가입은 구글·카카오 소셜 로그인만 지원합니다(네이버·자체 가입폼 없음). 의존성 없이 OAuth 2.0 authorization code 흐름을 직접 구현했고 Workers의 `fetch`와 `crypto.subtle`만 씁니다.
+
+- 흐름: `/login`의 한 `<form method="get">`에 뉴스레터 체크박스(기본 체크)와 공급자 버튼이 함께 있습니다. `GET /api/auth/login/{google,kakao}`가 state(구글은 PKCE 포함)와 체크박스 값을 `agamajung_oauth` 쿠키(httpOnly·SameSite=Lax·Path=/api/auth/callback·10분)에 담아 공급자로 302하고, `GET /api/auth/callback/{google,kakao}`가 state를 확인한 뒤 토큰 교환 → 이메일·공급자 id 조회 → D1 기록 → 세션 쿠키 발급 후 `/me`로 302합니다. 로그아웃은 `/me`의 서버 액션으로만 처리합니다(GET 라우트 없음). 모든 인증 응답은 `Cache-Control: no-store`입니다.
+- 환경변수(`.dev.vars` 또는 운영 비밀 바인딩): `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`(둘 다 필요), `KAKAO_REST_KEY`(필수)·`KAKAO_CLIENT_SECRET`(선택), `AUTH_ORIGIN`(기본 `https://agamajoong.soulbound.co.kr`, 로컬은 `http://localhost:8787`). 설정되지 않은 공급자는 버튼이 숨겨지고 login·callback이 404이며, 모두 미설정이면 `/login`에 준비 중 안내만 보입니다. 쿠키 `Secure`는 `AUTH_ORIGIN`이 https일 때만 켜집니다. 리디렉트 URI는 Host 헤더가 아니라 `AUTH_ORIGIN`으로 고정됩니다.
+- 운영자가 등록할 리디렉트 URI(Google Cloud Console, Kakao Developers):
+  - `https://agamajoong.soulbound.co.kr/api/auth/callback/google`
+  - `https://agamajoong.soulbound.co.kr/api/auth/callback/kakao`
+  - 카카오는 동의항목에서 카카오계정(이메일)을 켜야 합니다. 이 작업에서는 공급자 콘솔 설정을 하지 않았습니다.
+- 수집 정보: 이메일과 공급자 id뿐입니다. 액세스·리프레시 토큰, 이름, 프로필은 저장하지 않습니다. 구글은 `email_verified`, 카카오는 `is_email_valid`·`is_email_verified`가 참인 이메일만 받습니다.
+- 마이그레이션 `0005_users.sql`(users, user_identities, sessions)은 CREATE만 있는 add-only입니다. **로컬(`npm run db:migrate`)에만 적용했고 운영 D1 적용은 운영자가 따로 합니다.** 세션 토큰은 해시만 저장합니다(30일).
+- 뉴스레터: 신규 가입 때만 체크박스 값과 동의 시각을 기록하고 재로그인은 값을 바꾸지 않습니다. `/me`에서 해지·재구독할 수 있습니다.
+- 이메일이 같아도 공급자가 다르면 별도 계정입니다(자동 연결 없음). 따라서 **뉴스레터 발송 시 이메일 기준 중복 제거가 필요**합니다. **계정 삭제는 후속 과제**입니다. 레이트리밋은 Cloudflare 운영 설정에 맡깁니다.
 
 ## JSON REST API v1
 
