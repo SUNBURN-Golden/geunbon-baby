@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterAll, beforeAll, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest';
 import Home from '../app/page';
 import Models from '../app/models/page';
 import ModelDetail from '../app/models/[id]/page';
@@ -49,7 +49,11 @@ function excludesOtherPrices(html: string) {
   }
 }
 
+afterEach(() => { vi.useRealTimers(); });
+
 test('home, models, model detail, calendar and shared cards expose only the allowed price sources', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime('2026-10-21T03:00:00Z');
   const home = renderToStaticMarkup(await Home());
   const models = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
   const detail = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
@@ -57,9 +61,15 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   const card = renderToStaticMarkup(createElement(DealCard, { deal }));
   for (const html of [home, models, detail, calendar, card]) excludesOtherPrices(html);
   expect(home).toContain(siteCopy.pricePromise);
-  expect(models).toContain(siteCopy.officialPrice);
+  expect(models).toContain(siteCopy.officialLabel);
   expect(models).toContain('430,000원');
-  expect(models).not.toContain('390,000원');
+  expect(models).toContain('390,000<span>원</span>');
+  vi.setSystemTime('2026-10-23T00:00:00Z');
+  const later = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
+  excludesOtherPrices(later);
+  expect(later).toContain('430,000원');
+  expect(later).not.toContain('390,000');
+  vi.setSystemTime('2026-10-21T03:00:00Z');
   expect(detail).toContain('430,000원');
   expect(detail).toContain('390,000원');
   expect(detail.match(/<section>/g)).toHaveLength(2);

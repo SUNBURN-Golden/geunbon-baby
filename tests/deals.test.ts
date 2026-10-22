@@ -259,7 +259,7 @@ describe('theme contrast', () => {
     const prefix = theme === 'dark' ? '--dark-' : '--';
     for (const [foreground, background] of [
       ['text', 'surface'], ['text', 'surface-2'], ['text', 'clay'],
-      ['muted', 'surface'], ['on-accent', 'accent'],
+      ['muted', 'surface'], ['on-accent', 'accent'], ['muted', 'neutral'], ['text', 'surface'],
       ['accent', 'surface'], ['accent', 'surface-2'], ['muted', 'bg'],
     ]) {
       expect(contrast(tokens[prefix + foreground], tokens[prefix + background])).toBeGreaterThanOrEqual(4.5);

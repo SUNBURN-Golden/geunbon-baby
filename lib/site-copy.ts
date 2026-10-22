@@ -18,6 +18,8 @@ export const siteCopy = {
   officialSource: "공식가격 출처를 확인해요 ↗",
   officialSourceNotice: "기사나 판매처에서 확인한 가격은 공식몰에서도 확인해 주세요.",
   modelsTitle: "공식가격을 살펴봐요",
-  modelsLead: "확인한 공식가격을 모델별로 모았어요.",
-  modelsCount: "{count}개 모델의 공식가격이에요. 확인일 기준이에요.",
+  modelsLead: "공식가격과 진행 중인 공구가를 모델별로 모았어요.",
+  modelsCount: "{count}개 모델이에요.",
+  officialLabel: "공식가",
+  noActiveDeal: "진행 중인 공구 없음",
 } as const;

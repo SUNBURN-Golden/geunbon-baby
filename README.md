@@ -28,7 +28,7 @@ npm run dev
 ## 화면
 
 - `/`: 브랜드 소개
-- `/models`: 종류·브랜드·모델명 검색
+- `/models`: 종류·브랜드·모델명 검색. 카드에는 상품명·손그림·공식가·진행 중 공구가만 표시하고 진행 중인 공구가 있는 모델을 먼저 보여줌. 손그림은 `public/img/models/` 정적 에셋이며 `lib/model-illustrations.ts` 목록으로 연결하고, 없는 모델은 자리표시를 씀
 - `/models/:id`: 공구가 / 공식가 / 해외가 / 당근 중고 시세, 출처·확인일·검증 수준
 - `/deals`, `/calendar`: 검수 완료 공구 및 일정 (전부 **광고** 표시)
 - `/sellers`: 통신판매업 신고·청약철회 7일·정식수입 증빙. 시드에 증빙이 없으므로 미확인으로 표시
@@ -150,6 +150,7 @@ npm run typecheck
 npm test
 npm run build
 npm run build:worker
+npx tsx scripts/card-screenshots.ts --out <dir>   # /models 카드 모바일·데스크톱 × 라이트·다크 스크린샷 (서버·네트워크 불필요)
 ```
 
 `tests`는 Vitest와 메모리 SQLite로 가격 매핑·인증·검수 격리·중복 및 크롤러 추출·한도·지터·발견·셀렉터·OCR 실패 복구를 확인합니다. 테스트에서 소켓·실제 fetch·브라우저 실행을 차단하며 네트워크 접속 없이 검증합니다. Worker 빌드 후 `wrangler dev --local --test-scheduled`와 로컬 `/__scheduled` 요청으로 Cron stub을 수동 확인할 수 있습니다. 배포 스크립트는 의도적으로 제공하지 않습니다.
