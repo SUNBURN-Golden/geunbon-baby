@@ -1,6 +1,6 @@
 # 아가마중 크롤러 systemd 단위 예시.
 # 1) 전용 사용자 생성: sudo useradd -r -m -d /opt/agamajung agamajung-crawler
-# 2) 저장소를 /opt/agamajung/repo 에 두고 npm ci && PLAYWRIGHT_BROWSERS_PATH=/opt/agamajung/repo/node_modules/.cache/ms-playwright npx playwright install chromium 실행
+# 2) 저장소를 /opt/agamajung/repo 에 두고 npm ci && PLAYWRIGHT_BROWSERS_PATH=/opt/agamajung/repo/node_modules/.cache/ms-playwright npx playwright install chromium --only-shell 실행 (해당 캐시에 필요한 revision이 있으면 설치 생략)
 # 3) 비밀 환경파일 작성(예: /etc/agamajung/crawler.env, root 소유 0600):
 #      AGAMAJUNG_IG_USER=...
 #      AGAMAJUNG_IG_PASSWORD=...
