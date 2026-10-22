@@ -9,7 +9,7 @@ import { planScans } from '../crawler/lib/schedule';
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'crawler-schedule-')); });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
-const seed: SeedAccount = { handle: 'stokke', brand: 'Stokke', scope: 'global', verified: true, follow: true, note: '' };
+const seed: SeedAccount = { handle: 'stokke', brand: 'Stokke', scope: 'global', verified: true, follow: true, collect_images: true, note: '' };
 test('persistent signals trigger stories independently without repeated full profile scans', async () => {
   const state = await CrawlerState.open(join(dir, 'state.json'));
   const config = parseSettings(settingsJson);

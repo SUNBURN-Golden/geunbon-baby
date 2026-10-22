@@ -205,3 +205,38 @@ test('story URL reading and OCR use a pinned node even when the live locator cha
   expect(captured).toEqual(['pinned-original']);
   expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).image_url).toBe(original.src);
 });
+
+const CHILD_TEXT = '7개월 아기 트립트랩 공구 010-1234-5678 39만원';
+test('collect_images=false posts omit image_url and mask text and suggestions', async () => {
+  ctx.collectImages = false;
+  const article = new MediaElement('ARTICLE'); mediaDOM([article]);
+  const image = new MediaElement('IMG', article);
+  image.currentSrc = 'https://scontent.cdninstagram.com/child.jpg?sig=1';
+  const { page } = mockPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/seller/' }] : selector === 'article' ? [{ text: CHILD_TEXT }] : selector === POST_MEDIA ? [{ dom: asElement(image) }] : []);
+  expect(await collectAccount(page, ctx)).toEqual({ posts: 1, stories: 0 });
+  const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+  expect(body).not.toHaveProperty('image_url');
+  expect(body.text).toContain('[아이 나이]');
+  expect(body.text).toContain('[전화번호]');
+  expect(body.text).not.toContain('010-1234-5678');
+  expect(JSON.stringify(body.suggestions)).not.toContain('010-1234-5678');
+  expect(JSON.stringify(body.suggestions)).not.toContain('7개월');
+  expect(body.suggestions.price).toMatchObject({ value: 390000 });
+});
+test('collect_images=false stories skip media URL reads and mask OCR text and suggestions', async () => {
+  ctx.collectImages = false; ctx.scanPosts = false; ctx.scanStories = true; ctx.settings.per_tick.max_stories_per_account = 1;
+  vi.mocked(promisify(execFile)).mockResolvedValueOnce({ stdout: CHILD_TEXT, stderr: '' });
+  const element = new MediaElement('IMG');
+  let urlReads = 0;
+  Object.defineProperty(element, 'currentSrc', { get: () => { urlReads++; return 'https://scontent.cdninstagram.com/child.jpg?sig=1'; } });
+  const mock = mockPage(selector => selector === STORY_MEDIA ? [{ dom: asElement(element), screenshot: async path => { await writeFile(path, 'fixture'); } }] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
+  mock.goto.mockImplementation(async () => { mock.setUrl('https://www.instagram.com/stories/stokke/123/'); });
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 1 });
+  const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+  expect(body).not.toHaveProperty('image_url');
+  expect(body.text).toContain('[아이 나이]');
+  expect(body.text).not.toContain('010-1234-5678');
+  expect(JSON.stringify(body.suggestions)).not.toContain('010-1234-5678');
+  expect(body.suggestions.price).toMatchObject({ value: 390000 });
+  expect(urlReads).toBe(1); // 미디어 선택 단계의 한 번뿐. readMediaUrl(두 번째 읽기)은 호출되지 않는다.
+});
