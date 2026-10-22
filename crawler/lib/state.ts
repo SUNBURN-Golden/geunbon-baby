@@ -13,6 +13,7 @@ type StateData = {
   hourly: Record<string, number>;
   candidates: Record<string, Candidate>;
   last_discovery?: string;
+  last_external_run?: string;
   last_follow_at?: string;
   last_following_sync_attempt?: string;
   next_follow_at?: string;
@@ -93,6 +94,8 @@ export class CrawlerState {
   set discoveryCursor(value: number) { this.data.discovery_cursor = value; }
   isDiscoverySeen(url: string) { return this.data.discovery_seen.includes(url); }
   markDiscoverySeen(url: string) { this.data.discovery_seen = [...new Set([...this.data.discovery_seen, url])].slice(-10000); }
+  get lastExternalRun(): string | undefined { return this.data.last_external_run; }
+  setLastExternalRun(value: string) { this.data.last_external_run = value; }
   get lastDiscovery(): string | undefined { return this.data.last_discovery; }
   set lastDiscovery(value: string) { this.data.last_discovery = value; }
   // 발견된 후보는 검수 대상으로만 기록한다. 자동 팔로우하지 않는다.

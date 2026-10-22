@@ -1,7 +1,7 @@
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
 import { dealsCopy } from './deals-copy';
-import { comparison, type Model, type Deal } from './data';
+import { comparison, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
 export async function authorized(request: Request, token?: string) {
   if (!token) return false;
@@ -71,6 +71,78 @@ export function parseStoredSuggestions(value: string | null): Suggestions | null
   try { return value ? parseSuggestions(JSON.parse(value)) : null; }
   catch { return null; }
 }
+// ── 외부 공구 모음 사이트 후보(external_listing) ─────────────────────────────────
+// ingested_items와 완전히 분리된 external_candidates에만 저장한다. 승인 API가 읽지 않으므로 공구가가 될 수 없다.
+const TRACKING_PARAMS = /^(utm_.*|fbclid|gclid|igshid|ref|from|share)$/i;
+const FORBIDDEN_EXTERNAL_PATH = /^\/(api|my|auth)(\/|$)/;
+export function canonicalExternalUrl(value: unknown, source: ExternalSourceId): string | null {
+  if (!safeUrl(value)) return null;
+  let u: URL;
+  try { u = new URL(value); } catch { return null; }
+  const host = u.hostname.toLowerCase().replace(/^www\./, '');
+  if (u.protocol !== 'https:' || u.hash || u.port || host !== EXTERNAL_SOURCES[source].host) return null;
+  const kept = [...u.searchParams.entries()].filter(([key]) => !TRACKING_PARAMS.test(key)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const query = new URLSearchParams(kept).toString();
+  const path = u.pathname.replace(/\/{2,}/g, '/');
+  let decoded = path;
+  try { decoded = decodeURIComponent(path); } catch { /* 디코딩 불가 경로는 원형으로만 검사한다. */ }
+  if (FORBIDDEN_EXTERNAL_PATH.test(path.toLowerCase()) || FORBIDDEN_EXTERNAL_PATH.test(decoded.toLowerCase())) return null;
+  return `https://${host}${path.length > 1 ? path.replace(/\/$/, '') : path}${query ? `?${query}` : ''}`;
+}
+const optText = (v: unknown, max: number) => v == null || text(v, max);
+const iso = (v: unknown) => (v == null ? null : new Date(v as string).toISOString());
+function parseExternalListing(b: Record<string, unknown>) {
+  const bad = (error = '외부 공구 후보 형식 확인 필요') => ({ error });
+  if ('image_url' in b) return bad('외부 소스에서는 image_url을 받지 않습니다');
+  const source = b.source;
+  if (typeof source !== 'string' || !Object.hasOwn(EXTERNAL_SOURCES, source)) return bad('허용되지 않은 외부 소스');
+  const id = source as ExternalSourceId;
+  const sourceUrl = canonicalExternalUrl(b.source_url, id);
+  if (!sourceUrl) return bad('source_url이 소스 호스트의 허용된 공개 https 경로가 아닙니다');
+  if (!text(b.title, 200) || !text(b.text, 2000) || !date(b.captured_at)) return bad();
+  if (!optText(b.price_raw, 100) || !optText(b.dates_raw, 100) || !optText(b.seller_name, 100) || !optText(b.category, 40)) return bad();
+  if (b.price_basis != null && b.price_basis !== 'external_listing') return bad();
+  if (b.price_hint != null && (!Number.isSafeInteger(b.price_hint) || (b.price_hint as number) < 0)) return bad();
+  if (b.model_match != null && typeof b.model_match !== 'boolean') return bad();
+  if ((b.starts_at != null && !date(b.starts_at)) || (b.ends_at != null && !date(b.ends_at))) return bad();
+  if (b.starts_at != null && b.ends_at != null && Date.parse(b.ends_at as string) <= Date.parse(b.starts_at as string)) return bad();
+  if (b.seller_handle != null && (typeof b.seller_handle !== 'string' || !/^[A-Za-z0-9._]{1,30}$/.test(b.seller_handle))) return bad();
+  if (b.seller_url != null) {
+    let ok = false;
+    try { const u = new URL(b.seller_url as string); ok = safeUrl(b.seller_url) && u.protocol === 'https:' && ['instagram.com', 'www.instagram.com'].includes(u.hostname) && /^\/[A-Za-z0-9._]{1,30}\/?$/.test(u.pathname) && !u.search && !u.hash; } catch { /* invalid */ }
+    if (!ok) return bad();
+  }
+  let suggestions: string | null = null;
+  if (b.suggestions != null) {
+    const parsed = parseSuggestions(b.suggestions);
+    if (!parsed) return bad('suggestions 형식 확인 필요');
+    suggestions = JSON.stringify(parsed);
+  }
+  return {
+    value: {
+      source: id, source_url: sourceUrl, title: b.title as string, text: b.text as string,
+      seller_handle: (b.seller_handle as string | undefined) ?? null, seller_name: (b.seller_name as string | undefined) ?? null, seller_url: (b.seller_url as string | undefined) ?? null,
+      price_hint: (b.price_hint as number | undefined) ?? null, price_raw: (b.price_raw as string | undefined) ?? null,
+      starts_at: iso(b.starts_at), ends_at: iso(b.ends_at), dates_raw: (b.dates_raw as string | undefined) ?? null,
+      category: (b.category as string | undefined) ?? null, model_match: b.model_match === true ? 1 : 0, suggestions,
+      captured_at: new Date(b.captured_at as string).toISOString(),
+    },
+  };
+}
+async function ingestExternal(b: Record<string, unknown>, env: Env) {
+  const parsed = parseExternalListing(b);
+  if ('error' in parsed) return json({ error: parsed.error }, 400);
+  const v = parsed.value;
+  // 이미 있는 URL은 candidate 상태일 때만 갱신한다. dismissed는 그대로 두고 같은 202로 응답한다.
+  await env.DB.prepare(`INSERT INTO external_candidates (id,source,source_url,title,text,seller_handle,seller_name,seller_url,price_hint,price_raw,price_basis,starts_at,ends_at,dates_raw,category,model_match,suggestions,captured_at,last_seen_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,'external_listing',?,?,?,?,?,?,?,?)
+    ON CONFLICT(source_url) DO UPDATE SET title=excluded.title, text=excluded.text, seller_handle=excluded.seller_handle, seller_name=excluded.seller_name, seller_url=excluded.seller_url,
+      price_hint=excluded.price_hint, price_raw=excluded.price_raw, starts_at=excluded.starts_at, ends_at=excluded.ends_at, dates_raw=excluded.dates_raw,
+      category=excluded.category, model_match=excluded.model_match, suggestions=excluded.suggestions, last_seen_at=excluded.last_seen_at
+    WHERE external_candidates.status = 'candidate'`)
+    .bind(crypto.randomUUID(), v.source, v.source_url, v.title, v.text, v.seller_handle, v.seller_name, v.seller_url, v.price_hint, v.price_raw, v.starts_at, v.ends_at, v.dates_raw, v.category, v.model_match, v.suggestions, v.captured_at, v.captured_at).run();
+  return json({ data: await env.DB.prepare('SELECT id,status FROM external_candidates WHERE source_url = ?').bind(v.source_url).first() }, 202);
+}
 async function body(request: Request) {
   const reader = request.body?.getReader();
   if (!reader) throw new Error('body');
@@ -102,12 +174,24 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     }
     if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, 'SELECT * FROM deals ORDER BY starts_at')).map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })) });
     if (path === 'sellers') return json({ data: await all(env.DB, 'SELECT * FROM sellers ORDER BY name') });
+    if (path === 'admin/candidates') return json({ data: await all(env.DB, "SELECT * FROM external_candidates WHERE status = 'candidate' ORDER BY captured_at LIMIT 200") });
     if (path === 'admin/queue') return json({ data: await all(env.DB, "SELECT * FROM ingested_items WHERE status = 'pending' ORDER BY captured_at LIMIT 100") });
+  }
+  if (request.method === 'POST' && admin && parts.length === 3 && parts[1] === 'candidates') {
+    let b;
+    try { b = await body(request); } catch { return json({ error: '32KB 이하 JSON 필요' }, 400); }
+    if (!b || typeof b !== 'object' || b.action !== 'dismiss') return json({ error: 'dismiss 필요' }, 400);
+    const candidate = await env.DB.prepare('SELECT status FROM external_candidates WHERE id = ?').bind(parts[2]).first<{ status: string }>();
+    if (!candidate) return json({ error: '항목 없음' }, 404);
+    if (candidate.status !== 'candidate') return json({ error: '이미 처리된 항목' }, 409);
+    const result = await env.DB.prepare("UPDATE external_candidates SET status = 'dismissed', reviewed_at = ? WHERE id = ? AND status = 'candidate'").bind(new Date().toISOString(), parts[2]).run();
+    return result.meta.changes ? json({ data: { status: 'dismissed' } }) : json({ error: '이미 처리된 항목' }, 409);
   }
   if (request.method === 'POST' && (path === 'ingest' || (admin && parts.length === 3 && parts[1] === 'review'))) {
     let b;
     try { b = await body(request); } catch { return json({ error: '32KB 이하 JSON 필요' }, 400); }
     if (!b || typeof b !== 'object') return json({ error: '잘못된 입력' }, 400);
+    if (path === 'ingest' && b.kind === 'external_listing') return ingestExternal(b, env);
     if (path === 'ingest') {
       if (!safeUrl(b.source_url) || !text(b.account, 100) || !text(b.text, 20000) || !['post', 'story'].includes(b.kind) || !date(b.captured_at)) return json({ error: 'source_url, account, text, kind, captured_at 확인 필요' }, 400);
       if (b.image_url != null && !isImageUrl(b.image_url)) return json({ error: '잘못된 입력' }, 400);
