@@ -47,7 +47,7 @@ export async function postAuthor(page: Page): Promise<string | null> {
 }
 async function ocrStory(page: Page, image: Locator, crawlerDir: string, settings: Settings): Promise<{ text: string; image_url?: string }> {
   const file = resolve(crawlerDir, '.cache', 'story.png');
-  let handle: Awaited<ReturnType<Locator['elementHandle']>> = null;
+  let handle: Awaited<ReturnType<Locator['elementHandle']>> | null = null;
   try {
     // Pin the DOM node: a live locator could resolve a different carousel/story
     // element between URL extraction and screenshotting. Detached nodes fail OCR

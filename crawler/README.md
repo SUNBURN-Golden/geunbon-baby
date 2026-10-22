@@ -4,7 +4,9 @@
 
 ## 설치와 환경변수
 
-저장소 루트에서 `npm ci`, `npx playwright install chromium`을 실행합니다. OCR은 **기본 켜짐**이므로 tesseract와 한국어·영어 언어팩을 설치하고 `tesseract --list-langs`로 확인하세요. OCR을 끄려면 `AGAMAJUNG_OCR=0`을 설정합니다.
+저장소 루트에서 `npm ci`를 실행합니다. Playwright는 `1.64.1`로 고정되어 있으며 Chromium headless shell revision `1248`을 사용합니다. 같은 사용자·브라우저 캐시에 해당 revision이 이미 있으면 다운로드가 필요 없습니다. 없으면 `npx playwright install chromium --only-shell`로 headless 실행에 필요한 항목만 설치해 디스크 사용을 줄입니다. `AGAMAJUNG_HEADLESS=0`으로 실행할 때는 전체 Chromium이 필요하므로 `npx playwright install chromium`을 사용합니다. Playwright 버전을 바꿀 때는 필요한 브라우저 revision도 함께 확인하세요.
+
+OCR은 **기본 켜짐**이므로 tesseract와 한국어·영어 언어팩을 설치하고 `tesseract --list-langs`로 확인하세요. OCR을 끄려면 `AGAMAJUNG_OCR=0`을 설정합니다.
 
 `.env.example`을 참고해 비밀 저장소나 gitignore 대상인 루트 `.env.crawler`로 환경변수를 주입합니다. 크롤러는 시작 시 루트 `.env.crawler`가 있으면 읽고, 이미 주입된 환경변수는 유지합니다. 파일이 없으면 주입된 환경변수만 사용합니다. 비밀번호는 **`AGAMAJUNG_IG_PASSWORD` 환경변수에서만** 읽습니다. 명령행 인수·로그·git에 넣지 마세요.
 
