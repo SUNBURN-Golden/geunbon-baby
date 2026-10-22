@@ -2,7 +2,7 @@
 // 준실시간 폴링: 알림·스토리 트레이 신호 → 우선순위 큐 → 새 게시물/스토리 수집 →
 // 자동 추출 제안과 함께 /api/v1/ingest 검수 대기열 전송 → 보수적 자동 팔로우 → 해시태그 셀러 발견.
 // 챌린지·차단·API 실패 시 즉시 중단하며 자동 재시도하지 않는다(종료코드 75/1).
-import { loadConfig } from './lib/config';
+import { loadConfig, loadEnvironment } from './lib/config';
 import { CrawlerState, statePath } from './lib/state';
 import { health, initHealth, flushHealth } from './lib/health';
 import { launchBrowser, ensureLogin, HaltError, assertHuman } from './lib/browser';
@@ -19,19 +19,21 @@ import { runMainLoop } from './lib/main-loop';
 import { QuietWindowError } from './lib/quiet-window';
 import { captureHalt } from './lib/halt';
 import { pathToFileURL } from 'node:url';
+import { failureDetails } from './lib/failure';
 
 export async function main() {
+  const crawlerDir = import.meta.dirname;
+  await initHealth(crawlerDir);
+  loadEnvironment(crawlerDir);
   const endpoint = process.env.AGAMAJUNG_API_URL;
   const token = process.env.INGEST_TOKEN;
   if (!endpoint || !token) throw new Error('AGAMAJUNG_API_URL과 INGEST_TOKEN이 필요합니다.');
   const api = new URL('/api/v1/ingest', endpoint);
   if (api.username || api.password || (api.protocol !== 'https:' && !(api.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(api.hostname)))) throw new Error('외부 API는 HTTPS가 필요합니다.');
 
-  const crawlerDir = import.meta.dirname;
   const { settings, accounts } = await loadConfig(crawlerDir);
-  await initHealth(crawlerDir);
   const state = await CrawlerState.open(statePath(crawlerDir));
-  const username = process.env.AGAMAJUNG_IG_USER ?? 'jaytparkitrighthere@gmail.com';
+  const username = process.env.AGAMAJUNG_IG_USER ?? 'agamajung';
 
   let stopped = false;
   process.once('SIGINT', () => { stopped = true; });
@@ -110,9 +112,12 @@ export async function handleFailure(error: unknown) {
   process.exitCode = code;
   const reason = error instanceof HaltError ? error.reason : error instanceof IngestError ? 'api' : 'unknown';
   try {
-    health(reason === 'challenge' || reason === 'blocked' ? reason : 'error', { scope: reason });
-    await flushHealth();
+    const details = failureDetails(error);
+    // stderr remains available even when health initialization or disk writes fail.
+    console.error(JSON.stringify({ event: 'error', scope: reason, ...details }));
     console.error(`크롤러 중단(${reason}): 인증·차단·환경변수·화면 구조를 수동 점검하세요. 상세는 crawler/logs 상태 로그와 비밀값을 가린 halt 진단 파일 확인.`);
+    health(reason === 'challenge' || reason === 'blocked' ? reason : 'error', { scope: reason, ...details });
+    await flushHealth();
   } finally {
     // A failed browser close can leave live handles. Exit after the diagnostics
     // and flush have finished rather than depending on an empty event loop.

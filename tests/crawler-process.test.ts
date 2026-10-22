@@ -34,7 +34,21 @@ test.each([app.script, 'crawler/index.ts'])('entrypoint %s with missing config e
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('크롤러 중단(unknown)');
+  expect(result.stderr).toContain('AGAMAJUNG_API_URL과 INGEST_TOKEN이 필요합니다.');
+  expect(result.stderr).toContain('error_stack');
   expect(result.stderr).not.toContain('TypeScript support unavailable');
+});
+
+test('startup diagnostics reach stderr even if health initialization fails', () => {
+  const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `
+    import { initHealth } from './crawler/lib/health.ts';
+    import { handleFailure } from './crawler/index.ts';
+    await initHealth('/dev/null').catch(handleFailure);
+  `], { cwd: root, encoding: 'utf8', timeout: 15000 });
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('ENOTDIR');
+  expect(result.stderr).toContain('error_stack');
 });
 
 test('pm2 runs exactly twice daily in KST, once per launch, without other restart triggers', () => {

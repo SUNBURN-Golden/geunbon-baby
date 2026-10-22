@@ -3,6 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseQuietWindows, type QuietWindow } from './quiet-window';
 
+// Keep explicitly injected values; a local secret file is an optional fallback.
+export function loadEnvironment(crawlerDir: string) {
+  try { process.loadEnvFile(resolve(crawlerDir, '..', '.env.crawler')); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
+
 export type SeedAccount = { handle: string; brand: string; scope: 'global' | 'kr'; verified: boolean; follow: boolean; note: string };
 export type DiscoveryConfig = { hashtags: { base: string[]; brand: string[]; extra: string[] } };
 export type AccountsFile = { seed_accounts: SeedAccount[]; discovery: DiscoveryConfig };
