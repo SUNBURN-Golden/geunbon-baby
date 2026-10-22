@@ -11,3 +11,20 @@ export function comparison(model: Omit<Model, 'note'>, deals: Deal[]) {
     official: { price: model.official_price, source: model.source_url, checked: model.checked, verify_level: model.verify_level },
   };
 }
+// 외부 공구 모음 사이트. 허용 소스·호스트의 단일 출처(서버 검증, 관리자 화면, 크롤러 설정 검증이 함께 쓴다). 표시 순서가 곧 수집 순서다.
+export const EXTERNAL_SOURCES = {
+  pangpang: { host: '09pangpang.com', name: '공구팡팡' },
+  momcalendar: { host: 'momcalendar.com', name: '맘캘린더' },
+  buyg: { host: 'buyg.kr', name: 'BUYG' },
+  snapup: { host: 'snapup.co.kr', name: '스냅업' },
+} as const;
+export type ExternalSourceId = keyof typeof EXTERNAL_SOURCES;
+export const externalSourceIds = Object.keys(EXTERNAL_SOURCES) as ExternalSourceId[];
+export type ExternalCandidate = {
+  id: string; source: string; source_url: string; title: string; text: string;
+  seller_handle: string | null; seller_name: string | null; seller_url: string | null;
+  price_hint: number | null; price_raw: string | null; price_basis: string;
+  starts_at: string | null; ends_at: string | null; dates_raw: string | null;
+  category: string | null; model_match: number; suggestions: string | null;
+  captured_at: string; last_seen_at: string; status: 'candidate' | 'dismissed'; reviewed_at: string | null;
+};

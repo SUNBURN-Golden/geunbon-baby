@@ -67,6 +67,8 @@ npm run dev
 | POST | `/api/v1/ingest` | `Authorization: Bearer INGEST_TOKEN` |
 | GET | `/api/v1/admin/queue` | `Authorization: Bearer ADMIN_TOKEN`, 최대 100건 |
 | POST | `/api/v1/admin/review/:id` | 관리자 승인/반려 |
+| GET | `/api/v1/admin/candidates` | `Authorization: Bearer ADMIN_TOKEN`, 외부 공구 모음 후보(candidate) 최대 200건 |
+| POST | `/api/v1/admin/candidates/:id` | `{ "action": "dismiss" }`만 허용(그 외 400, 이미 처리됨 409, 없는 id 404) |
 
 수집 JSON (최대 32KB, text 최대 20,000자):
 
@@ -95,6 +97,34 @@ npm run dev
 
 승인된 이미지는 공구 카드·상세 화면에서 브라우저가 직접 불러옵니다(`referrerPolicy="no-referrer"`, 지연 로딩, 서버 프록시·최적화 요청 없음). 이미지가 없거나 로딩에 실패해도 텍스트·가격·광고 및 거래 안내는 유지됩니다. **Instagram CDN URL은 만료될 수 있으므로 영구 보관을 보장하지 않습니다.** 현재 ingest는 R2 업로드를 지원하지 않습니다. R2 영구 저장은 업로드와 검수 후 공개 계약을 별도로 설계해야 합니다.
 
+### 외부 공구 모음 후보 (`kind: "external_listing"`)
+
+공구팡팡·맘캘린더·BUYG·스냅업 같은 외부 공구 모음 사이트의 가격은 지난 가격이거나 AI 요약일 수 있어 **후보로만** 저장합니다. 같은 `POST /api/v1/ingest`에 `kind: "external_listing"`을 보내면 `ingested_items`가 아니라 별도 테이블 `external_candidates`(마이그레이션 `0006`)에만 저장됩니다. 승인 API(`admin/review`)는 이 테이블을 읽지 않으므로 외부 후보는 공구가로 게시될 수 없고, 공개 GET API·화면은 이 테이블을 읽지 않습니다. 인스타 원문으로 확인된 항목만 기존 경로로 공구가가 됩니다. `/admin`에는 참고용 목록과 “확인 완료”(dismiss) 버튼만 있습니다.
+
+```json
+{
+  "kind": "external_listing",
+  "source": "pangpang",
+  "source_url": "https://09pangpang.com/deal/예시",
+  "account": "pangpang",
+  "title": "예시 제목",
+  "text": "예시 제목 / 기간 10/26~10/28 / 가격 390,000원 / 셀러 @seller",
+  "seller_handle": "seller", "seller_name": null, "seller_url": "https://www.instagram.com/seller/",
+  "price_hint": 390000, "price_raw": "390,000원", "price_basis": "external_listing",
+  "starts_at": "2026-10-26T00:00:00+09:00", "ends_at": "2026-10-28T23:59:59+09:00", "dates_raw": "10/26~10/28",
+  "category": "high_chair", "model_match": true,
+  "captured_at": "2026-10-22T00:30:00Z",
+  "suggestions": { "models": [], "price": null, "dates": null, "links": [], "confidence": 0 }
+}
+```
+
+위 값은 프로토콜 설명용 예시이며 실제 데이터가 아닙니다.
+
+- 허용 소스·호스트는 `lib/data.ts`의 `EXTERNAL_SOURCES`(`pangpang`, `momcalendar`, `buyg`, `snapup`) 한 곳에서 검증합니다. 소스를 추가하려면 이 상수만 바꾸면 되고 DB 제약은 없습니다. `source`와 `source_url` 호스트(`www.` 변형 포함)가 일치하지 않거나 gonggumoa·Instagram·그 밖의 호스트, http, 자격 증명, fragment, 비표준 포트는 400입니다.
+- `source_url`은 저장 전에 정규화합니다: 호스트 소문자·`www.` 제거, `utm_*`·`fbclid`·`gclid`·`igshid`·`ref`·`from`·`share` 제거, 남은 쿼리 키 순서 정렬, 끝 `/` 제거, 한글 경로 퍼센트 인코딩 통일. 정규화 결과가 UNIQUE 키이며 `/api/`, `/my/`, `/auth/` 경로는 서버에서도 400입니다.
+- 길이 상한: `title` 200자, `text` 2,000자, `price_raw`·`dates_raw`·`seller_name` 100자(요청 전체 32KB). `image_url` 키가 있으면 400입니다. `model_match`는 boolean만 받습니다(누락 시 false).
+- 같은 URL을 다시 보내면 `candidate` 상태일 때만 `last_seen_at`과 가격·일정·제목을 갱신하고, `dismissed`는 갱신하지 않고 같은 202로 응답합니다.
+
 ## 가격 원칙
 
 최초 데이터는 **`seed/models.json`, `seed/tripp_trapp.json`만** 사용합니다. 시드 자체를 실시간 재검증했다는 의미는 아닙니다. 가격이 null이거나 수집되지 않았으면 **정보 없음**입니다. 시드에 공구가·일정이 없으므로 공구와 달력은 빈 화면이 정상입니다.
@@ -106,7 +136,7 @@ npm run dev
 
 ## 크롤러
 
-별도 Linux Node+Playwright worker의 설치·보안·제약은 [crawler/README.md](crawler/README.md)를 참고하세요. Workers Cron에서 Instagram에 접속하지 않습니다. v2 크롤러는 검수 가능한 설정 파일(`crawler/config/`)로 시드 계정·속도 한도를 관리하고, 알림·스토리 트레이 신호로 수집 우선순위를 정하며, 캡션·스토리 OCR에서 모델·가격·공구 일정·링크를 자동 추출해 **제안**으로만 검수 대기열에 함께 전송합니다. 사람 승인 전까지 게시되지 않습니다. 자동 팔로우는 일일 상한·무작위 간격을 지키고 차단·챌린지 감지 시 즉시 중단합니다. 공유 계정을 쓰는 다른 두 봇을 위해 매일 **06:45~08:00, 13:00~14:00 Asia/Seoul**에는 브라우저·로그인·팔로우·스캔을 쉬고, 실행 중에도 다음 휴식 시작에 브라우저를 닫고 각 Instagram 행동 전에 확인합니다. `quiet_windows` 배열 설정이나 `AGAMAJUNG_QUIET_WINDOWS='06:45-08:00,13:00-14:00'` 환경변수로 여러 시간을 지정하며 자정 통과도 지원합니다. 겹치거나 맞닿은 시간은 합친 종료 후 지터를 한 번 더해 재개하고 건강 로그에 진입·종료를 남깁니다. 이전 `quiet_window` 설정과 `AGAMAJUNG_QUIET_WINDOW` 환경변수도 읽으며 각각 복수형이 우선합니다.
+별도 Linux Node+Playwright worker의 설치·보안·제약은 [crawler/README.md](crawler/README.md)를 참고하세요. Workers Cron에서 Instagram에 접속하지 않습니다. v2 크롤러는 검수 가능한 설정 파일(`crawler/config/`)로 시드 계정·속도 한도를 관리하고, 알림·스토리 트레이 신호로 수집 우선순위를 정하며, 캡션·스토리 OCR에서 모델·가격·공구 일정·링크를 자동 추출해 **제안**으로만 검수 대기열에 함께 전송합니다. 사람 승인 전까지 게시되지 않습니다. 자동 팔로우는 일일 상한·무작위 간격을 지키고 차단·챌린지 감지 시 즉시 중단합니다. 외부 공구 모음 사이트(공구팡팡·맘캘린더·BUYG·스냅업)는 같은 크롤러가 Instagram 사이클 전에 공개 페이지만 읽어 후보로 보냅니다(robots.txt 준수, 로그인 없음, 공구모아 수집 금지). 자세한 내용과 운영 전 dry-run 절차는 [crawler/README.md](crawler/README.md)의 “외부 공구 모음 사이트” 절을 참고하세요. 공유 계정을 쓰는 다른 두 봇을 위해 매일 **06:45~08:00, 13:00~14:00 Asia/Seoul**에는 브라우저·로그인·팔로우·스캔을 쉬고, 실행 중에도 다음 휴식 시작에 브라우저를 닫고 각 Instagram 행동 전에 확인합니다. `quiet_windows` 배열 설정이나 `AGAMAJUNG_QUIET_WINDOWS='06:45-08:00,13:00-14:00'` 환경변수로 여러 시간을 지정하며 자정 통과도 지원합니다. 겹치거나 맞닿은 시간은 합친 종료 후 지터를 한 번 더해 재개하고 건강 로그에 진입·종료를 남깁니다. 이전 `quiet_window` 설정과 `AGAMAJUNG_QUIET_WINDOW` 환경변수도 읽으며 각각 복수형이 우선합니다.
 
 ## 개발 작업 데몬
 

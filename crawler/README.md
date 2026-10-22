@@ -58,6 +58,34 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 3. 자동 팔로우는 설정의 `follow: true` 계정 중 기본 verified 계정만 한 사이클에 최대 1개 처리합니다. 기본 **일 20회·시간 8회**, **120~420초 무작위 최소 간격**입니다. 요청 전에 시도 횟수와 다음 허용 시각을 저장하므로 실패·재시작으로 한도가 초기화되지 않습니다. 요청됨(Requested)도 팔로우 상태로 취급하며, 버튼 미발견 계정은 90분 뒤 다시 확인합니다. `allow_unverified`로 미확인 시드의 팔로우를 명시적으로 허용할 수 있습니다.
 4. 발견 탐색은 기본 최소 6시간 간격으로 태그 1개·게시물 최대 2개를 확인합니다. 태그 커서를 저장해 재시작 후에도 전체 목록을 순환합니다. 공구 문구나 모델이 있는 작성자를 `candidates`에 기록합니다. 발견 이력과 전송 이력은 별도여서 발견한 게시물도 이후 수집할 수 있습니다. 후보는 자동 팔로우하지 않으며, 운영자가 검수 후 accounts.json에 등록합니다.
 
+## 외부 공구 모음 사이트
+
+공구팡팡(`09pangpang.com`), 맘캘린더(`momcalendar.com`), BUYG(`buyg.kr`), 스냅업(`snapup.co.kr`)의 **공개 목록 페이지**에서 공구 일정·가격 힌트·셀러 후보를 모읍니다. 설정은 `config/external-sources.json`(소스별 `enabled`, `render`, `item_selector`, 시작 URL, 상한)이며 잘못된 값은 실행 전 오류입니다.
+
+- **후보로만 저장**: 이 사이트들의 가격은 지난 가격이거나 AI 요약일 수 있습니다. 결과는 `POST /api/v1/ingest`의 `kind: "external_listing"`으로만 보내며 사이트 쪽 `external_candidates`에 저장됩니다. 공구가로 게시되지 않고, 인스타 원문을 확인한 항목만 기존 검수 경로로 공구가가 됩니다. 출처 URL과 수집 시각이 함께 저장됩니다.
+- **지키는 규칙**: robots.txt 준수(소스당 먼저 읽음. 404는 허용, 5xx·네트워크 오류·그 밖의 오류 응답은 해당 호스트 전체 금지), `/api/ /my/ /auth/ /login /logout /signin /signup /admin /account /member /mypage /oauth /session` 경로는 robots와 무관하게 요청하지 않음, 같은 호스트 요청 간격 `min_interval_ms`(1000 이상) + 지터, 로그인·쿠키 없음, 같은 origin 리디렉트만 따라가며 매번 재판정, 응답 본문 2MB 상한. **공구모아(`gonggumoa.com`)는 어떤 설정으로도 요청하지 않습니다.**
+- **세션 분리**: Instagram 세션·storageState를 외부 사이트에 쓰지 않습니다. 렌더링이 필요한 소스는 쿠키 없는 별도 브라우저 컨텍스트를 씁니다.
+- **수집 범위**: 유아용품 키워드(또는 시드 모델 매칭)가 있는 항목만 보내고 기저귀·분유는 제외합니다. 이미지·영상은 내려받지 않고 `image_url`도 보내지 않습니다. 전송하는 `title`/`text`는 제목·기간·가격·셀러 핸들만 조합한 짧은 문자열이며 전화번호·이메일·긴 숫자열·아이 나이(“N개월”, “N살”, “돌 아기”)·“OO이 엄마”류 호칭을 가리고 길이(제목 200자, 본문 2,000자)를 제한합니다. 건강 로그에는 `title`·`text`·`seller_name`이 남지 않습니다(필터가 2차 방어).
+- **셀러 후보**: 목록에서 찾은 `@핸들`·Instagram 프로필 링크는 `state.candidates`에 `found_via`=소스 id로 기록됩니다. 자동 팔로우하지 않으며 운영자가 `accounts.json`으로 옮기는 기존 절차를 따릅니다.
+- **렌더링**: `render: true`는 항상, `"auto"`는 정적 HTML에서 항목이 0개일 때만 브라우저로 렌더링합니다. **렌더링 중 브라우저가 내보내는 모든 요청(document·XHR·fetch·script)에 같은 robots·금지 경로 판정을 적용**하므로 페이지 스크립트가 `/api/`나 다른 origin을 부르면 차단되고 `robots_block`으로 남습니다. **허용된 요청은 script·stylesheet까지 모두 같은 호스트 큐를 거쳐 1초 이상 간격으로** 나가므로 자산이 많은 페이지는 렌더링이 느려지고 `timeout_ms`에 걸릴 수 있습니다(그 경우 소스 오류로 기록하고 다음 소스로 넘어갑니다). WebSocket 연결은 서버에 연결하지 않고 닫으며 `robots_block`(reason=`websocket`)으로 남깁니다. 이미지·미디어·폰트는 받지 않습니다.
+- **`origin`은 정식(canonical) 호스트로 설정**: `09pangpang.com`이 `www.09pangpang.com`으로 리디렉트하는 사이트라면 `external-sources.json`의 `origin`을 `www.` 쪽으로 바꿔야 합니다. 다른 origin 리디렉트는 거부되고 robots.txt를 읽지 못한 호스트는 전체 금지로 처리되어, dry-run에서 `needs_review`만 나옵니다.
+- **BUYG는 기본 꺼짐(`enabled: false`)**: 목록이 페이지 로드 후 별도 요청으로 채워지며 그 경로가 `/api/`이면 수집할 수 없습니다(의도된 결과). dry-run에서 `blocked_requests`가 0이고 가격이 숫자로 읽힐 때만 켭니다. 차단이 발생하면 공개 HTML만으로는 수집할 수 없는 사이트이므로 끈 채로 둡니다.
+- **전송 오류 정책**: 수집 API가 400을 돌려주면 그 항목만 건너뜁니다. 401·403·404·405·413·429·5xx·네트워크 오류·타임아웃은 설정·서버 문제일 수 있어 즉시 중단하고 종료코드 1로 끝납니다. 사이트 fetch·파싱·렌더링 오류는 `error`(scope=external)로 남기고 다음 소스로 넘어가며 Instagram 수집을 막지 않습니다.
+- **실행 시점**: 외부 수집은 Instagram 사이클보다 **먼저** 같은 프로세스에서 실행됩니다. pm2 cron(`30 9,20 * * *`, KST)과 `AGAMAJUNG_ONCE=1`을 그대로 따르므로 별도 스케줄러가 없습니다. **연속 실행 모드(`AGAMAJUNG_ONCE` 미설정)에서는 프로세스 시작 시 한 번만 실행**하고 폴링마다 반복하지 않습니다. cron 모드가 권장 방식입니다.
+- **끄기·확인**: `AGAMAJUNG_EXTERNAL=0`이면 외부 수집을 건너뜁니다. `AGAMAJUNG_EXTERNAL_DRY_RUN=1`이면 fetch·파싱·필터까지만 하고 전송, 후보 기록, 상태 저장을 하지 않으며 소스별 `external_source` 로그에 `items`, `blocked_requests`, `needs_review`만 남깁니다. 로그 이벤트: `external_run`, `external_source`, `external_item`, `external_skip`, `robots_block`.
+
+**셀렉터 미검증 경고**: 이 구현은 네트워크 없이 합성 픽스처로만 검증했습니다. 네 사이트의 실제 DOM과 robots.txt는 확인되지 않았습니다. `item_selector`가 비어 있으면 범용 휴리스틱(링크가 있고 가격·공구·일정 단서가 있는 블록)을 쓰며, 0건이면 운영자가 셀렉터를 채워야 합니다. 지원하는 셀렉터는 태그, `.class`, `#id`, `[attr]`, `[attr=value]`, 공백(자손) 결합자, 쉼표 목록입니다.
+
+**운영 전 dry-run 절차**(Linux 박스에서 1회):
+
+```sh
+AGAMAJUNG_EXTERNAL_DRY_RUN=1 AGAMAJUNG_ONCE=1 node --import tsx crawler/run.mjs
+```
+
+(pm2 cron 등록에는 쓰지 않습니다. dry-run 환경변수가 예약 실행에 남지 않게 터미널에서 직접 실행하세요. dry-run은 외부 수집이 끝나면 Instagram 로그인·사이클 없이 종료하므로 공유 Instagram 계정을 쓰지 않습니다.)
+
+`crawler/logs`의 `external_source`에서 `items`, `blocked_requests`, `needs_review`를 봅니다. 0건인 소스는 `external-sources.json`의 `item_selector`를 채운 뒤 다시 dry-run합니다. BUYG는 `enabled: true`로 바꾼 dry-run에서 `blocked_requests`가 0이고 가격이 숫자로 읽힐 때만 운영 설정에서 켭니다. 운영 D1 마이그레이션 `0006`은 0005와 마찬가지로 운영자가 별도로 적용합니다. 배포는 이 작업에 포함되지 않습니다.
+
 ## 상태·건강 로그
 
 - `crawler/.cache/state.json`: KST 날짜·시간별 행동 카운터, 다음 팔로우 허용 시각, 팔로잉 목록 동기화 시도 시각·계정, 계정 확인 시각, 전송/발견 URL 이력(각 최근 1만 개), 후보와 태그 커서. 임시 파일을 rename해 원자적으로 저장하며 0600입니다. 파일이 손상되면 한도를 초기화하는 대신 실행을 중단합니다. 이틀 전 카운터는 정리합니다.

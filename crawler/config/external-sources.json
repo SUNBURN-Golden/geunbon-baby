@@ -1,0 +1,14 @@
+{
+  "min_interval_ms": 1500,
+  "jitter_ms": [0, 1500],
+  "timeout_ms": 20000,
+  "max_pages_per_source": 3,
+  "max_items_per_source": 40,
+  "follow_detail_links": false,
+  "sources": [
+    { "id": "pangpang", "enabled": true, "origin": "https://09pangpang.com", "entries": ["/search/r/육아템"], "render": false, "item_selector": "" },
+    { "id": "momcalendar", "enabled": true, "origin": "https://momcalendar.com", "entries": ["/"], "render": false, "item_selector": "" },
+    { "id": "buyg", "enabled": false, "origin": "https://buyg.kr", "entries": ["/"], "render": true, "item_selector": "" },
+    { "id": "snapup", "enabled": true, "origin": "https://snapup.co.kr", "entries": ["/influencer/calendar"], "render": "auto", "item_selector": "" }
+  ]
+}

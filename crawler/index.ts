@@ -20,6 +20,10 @@ import { QuietWindowError } from './lib/quiet-window';
 import { captureHalt } from './lib/halt';
 import { pathToFileURL } from 'node:url';
 import { failureDetails } from './lib/failure';
+import { loadExternalSettings } from './lib/external/sources';
+import { runExternalSources } from './lib/external/run';
+import { PoliteFetcher } from './lib/external/fetch';
+import { renderPage } from './lib/external/render';
 
 export async function main() {
   const crawlerDir = import.meta.dirname;
@@ -32,14 +36,31 @@ export async function main() {
   if (api.username || api.password || (api.protocol !== 'https:' && !(api.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(api.hostname)))) throw new Error('외부 API는 HTTPS가 필요합니다.');
 
   const { settings, accounts } = await loadConfig(crawlerDir);
+  // 외부 공구 모음 설정 오류는 어떤 수집보다 먼저(실행 전) 중단시킨다.
+  const external = process.env.AGAMAJUNG_EXTERNAL !== '0';
+  const externalDryRun = process.env.AGAMAJUNG_EXTERNAL_DRY_RUN === '1';
+  const externalSettings = external ? await loadExternalSettings(crawlerDir) : null;
   const state = await CrawlerState.open(statePath(crawlerDir));
   const username = process.env.AGAMAJUNG_IG_USER ?? 'agamajung';
 
   let stopped = false;
   process.once('SIGINT', () => { stopped = true; });
   process.once('SIGTERM', () => { stopped = true; });
-  health('run_start', { seeds: accounts.seed_accounts.length, ocr: settings.ocr.enabled, follow_daily_cap: settings.follow.daily_cap, poll: settings.poll_interval_minutes.join('-') });
+  health('run_start', { seeds: accounts.seed_accounts.length, ocr: settings.ocr.enabled, follow_daily_cap: settings.follow.daily_cap, poll: settings.poll_interval_minutes.join('-'), external, external_dry_run: external && externalDryRun });
   try {
+    // 외부 수집은 Instagram 사이클보다 먼저, 프로세스 시작 시 한 번만 실행한다(연속 모드에서도 반복하지 않음).
+    if (externalSettings && !stopped) {
+      try {
+        const fetcher = new PoliteFetcher(externalSettings, { fetch: (...args) => globalThis.fetch(...args), sleep: ms => sleep(ms), now: Date.now, random: Math.random }, info => health('robots_block', info));
+        await runExternalSources({ settings: externalSettings, state, api, token, stopped: () => stopped, fetcher, render: renderPage, dryRun: externalDryRun, log: health });
+      } catch (error) {
+        // 수집 API 오류는 설정·인증 문제일 수 있어 그대로 중단한다. 그 밖의 외부 오류는 Instagram 수집을 막지 않는다.
+        if (error instanceof IngestError) throw error;
+        health('error', { scope: 'external' });
+      }
+    }
+    // dry-run은 외부 소스만 점검하는 용도이므로 공유 Instagram 계정으로 로그인하거나 사이클을 돌리지 않고 종료한다.
+    if (externalSettings && externalDryRun) return;
     await runMainLoop({ quietWindows: settings.quiet_windows, pollMinutes: settings.poll_interval_minutes, once: process.env.AGAMAJUNG_ONCE === '1' }, {
       now: Date.now,
       random: Math.random,

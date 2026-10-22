@@ -12,6 +12,10 @@ import { maybeFollow } from '../crawler/lib/follow';
 import { discoverSellers } from '../crawler/lib/discover';
 import { saveSession, SessionError } from '../crawler/lib/session';
 import { health, initHealth } from '../crawler/lib/health';
+import { runExternalSources } from '../crawler/lib/external/run';
+import { IngestError } from '../crawler/lib/ingest';
+import { loadExternalSettings, parseExternalSettings } from '../crawler/lib/external/sources';
+import externalJson from '../crawler/config/external-sources.json';
 
 vi.mock('../crawler/lib/config', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/config')>(), loadConfig: vi.fn() }));
 vi.mock('../crawler/lib/browser', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/browser')>(), launchBrowser: vi.fn(), ensureLogin: vi.fn(), assertHuman: vi.fn() }));
@@ -21,6 +25,11 @@ vi.mock('../crawler/lib/health', () => ({ initHealth: vi.fn(), health: vi.fn(), 
 vi.mock('../crawler/lib/activity', () => ({ readSignals: vi.fn() }));
 vi.mock('../crawler/lib/follow', () => ({ maybeFollow: vi.fn() }));
 vi.mock('../crawler/lib/discover', () => ({ discoverSellers: vi.fn() }));
+// main()은 외부 공구 모음 수집을 기본으로 먼저 호출한다. 모킹하지 않으면 PoliteFetcher의 대기가
+// 가짜 타이머에서 끝나지 않고 tests/setup.ts의 fetch 차단이 IngestError를 낸다. 기존 단언은 바꾸지 않는다.
+vi.mock('../crawler/lib/external/run', () => ({ runExternalSources: vi.fn() }));
+// 설정 파일을 실제로 읽는 비동기 I/O는 vi.runAllTimersAsync()가 타이머를 비운 뒤에야 끝나 휴식 시간 경계 테스트를 멈춘다.
+vi.mock('../crawler/lib/external/sources', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/external/sources')>(), loadExternalSettings: vi.fn() }));
 vi.mock('../crawler/lib/session', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/session')>(), saveSession: vi.fn() }));
 
 const initialExitCode = process.exitCode;
@@ -28,6 +37,8 @@ const signalListeners = new Map((['SIGINT', 'SIGTERM'] as const).map(signal => [
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('AGAMAJUNG_IG_USER', undefined);
+  vi.mocked(loadExternalSettings).mockResolvedValue(parseExternalSettings(externalJson));
+  vi.mocked(runExternalSources).mockResolvedValue({ sources: 0, items_sent: 0, items_skipped: 0, candidates: 0 });
 });
 afterEach(() => {
   process.exitCode = initialExitCode;
@@ -150,4 +161,77 @@ test.each(['healthy', 'persistence', 'login', 'cycle', 'interrupted', 'security'
   expect(vi.mocked(health).mock.calls.some(([event]) => event === 'poll')).toBe(phase === 'healthy');
   expect(closeContext).toHaveBeenCalledOnce();
   expect(closeBrowser).toHaveBeenCalledOnce();
+});
+
+// ── 외부 공구 모음 수집 연동 ──────────────────────────────────────────────────
+function healthyInstagram() {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-21T12:00:00+09:00'));
+  vi.stubEnv('AGAMAJUNG_API_URL', 'https://ingest.invalid/');
+  vi.stubEnv('INGEST_TOKEN', 'offline-token');
+  vi.stubEnv('AGAMAJUNG_ONCE', '1');
+  vi.mocked(loadConfig).mockResolvedValue({ settings: parseSettings(settingsJson), accounts: { seed_accounts: [], discovery: { hashtags: { base: [], brand: [], extra: [] } } } });
+  vi.spyOn(CrawlerState, 'open').mockResolvedValue({ save: vi.fn(async () => {}), followingHandles: [], countDay: () => 0 } as unknown as CrawlerState);
+  const page = {} as Page;
+  vi.mocked(launchBrowser).mockResolvedValue({ page, diagnosticPage: page, sessionFile: '/unused-offline-session', context: { close: vi.fn(async () => {}) } as unknown as BrowserContext, browser: { close: vi.fn(async () => {}) } as unknown as Browser });
+  vi.mocked(ensureLogin).mockResolvedValue(undefined);
+  vi.mocked(syncFollowing).mockResolvedValue(undefined);
+  vi.mocked(readSignals).mockResolvedValue({ storyAccounts: [], freshAccounts: [] });
+  vi.mocked(maybeFollow).mockResolvedValue('none');
+  vi.mocked(discoverSellers).mockResolvedValue(0);
+  vi.mocked(assertHuman).mockResolvedValue(undefined);
+  vi.mocked(saveSession).mockResolvedValue(undefined);
+  vi.mocked(captureHalt).mockResolvedValue(undefined);
+}
+
+test('external collection runs once before the browser opens, with live (non-dry) settings by default', async () => {
+  healthyInstagram();
+  await main();
+  expect(runExternalSources).toHaveBeenCalledOnce();
+  expect(runExternalSources).toHaveBeenCalledWith(expect.objectContaining({ dryRun: false, token: 'offline-token' }));
+  expect(vi.mocked(runExternalSources).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(launchBrowser).mock.invocationCallOrder[0]);
+  expect(health).toHaveBeenCalledWith('run_start', expect.objectContaining({ external: true, external_dry_run: false }));
+});
+
+test('a generic external failure does not stop the Instagram cycle', async () => {
+  healthyInstagram();
+  vi.mocked(runExternalSources).mockRejectedValue(new Error('parse failed'));
+  await main();
+  expect(health).toHaveBeenCalledWith('error', { scope: 'external' });
+  expect(launchBrowser).toHaveBeenCalledOnce();
+  expect(vi.mocked(health).mock.calls.some(([event]) => event === 'poll')).toBe(true);
+});
+
+test('an external ingest API error aborts before Instagram opens', async () => {
+  healthyInstagram();
+  const failure = new IngestError('수집 API 요청 실패(401)', 401);
+  vi.mocked(runExternalSources).mockRejectedValue(failure);
+  await expect(main()).rejects.toBe(failure);
+  expect(launchBrowser).not.toHaveBeenCalled();
+});
+
+test('AGAMAJUNG_EXTERNAL=0 skips external collection entirely', async () => {
+  healthyInstagram();
+  vi.stubEnv('AGAMAJUNG_EXTERNAL', '0');
+  await main();
+  expect(runExternalSources).not.toHaveBeenCalled();
+  expect(loadExternalSettings).not.toHaveBeenCalled();
+  expect(launchBrowser).toHaveBeenCalledOnce();
+});
+
+test('AGAMAJUNG_EXTERNAL_DRY_RUN=1 passes dryRun to the collector', async () => {
+  healthyInstagram();
+  vi.stubEnv('AGAMAJUNG_EXTERNAL_DRY_RUN', '1');
+  await main();
+  expect(runExternalSources).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
+  expect(health).toHaveBeenCalledWith('run_start', expect.objectContaining({ external_dry_run: true }));
+});
+
+test('AGAMAJUNG_EXTERNAL_DRY_RUN=1 exits after the external run without touching Instagram', async () => {
+  healthyInstagram();
+  vi.stubEnv('AGAMAJUNG_EXTERNAL_DRY_RUN', '1');
+  await main();
+  expect(runExternalSources).toHaveBeenCalledOnce();
+  expect(launchBrowser).not.toHaveBeenCalled();
+  expect(ensureLogin).not.toHaveBeenCalled();
 });
