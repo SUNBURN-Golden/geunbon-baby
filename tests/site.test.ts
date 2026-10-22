@@ -42,7 +42,7 @@ test('model list, detail and calendar show only supported prices with explicit l
   const list = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
   const detail = renderToStaticMarkup(await Detail({ params: Promise.resolve({ id: 'model-1' }) }));
   const calendar = renderToStaticMarkup(await Calendar());
-  expect(list).toContain(siteCopy.officialPrice);
+  expect(list).toContain(siteCopy.officialLabel);
   expect(list).toContain('430,000');
   expect(detail.match(/<section>/g)).toHaveLength(2);
   expect(detail).toContain(siteCopy.officialPrice);
