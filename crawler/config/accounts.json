@@ -1,5 +1,5 @@
 {
-  "$comment": "아가마중 크롤러 v2 시드 계정 목록. 운영자가 직접 검수하는 것이 전제다. verified=false 는 핸들이 실제 공식 계정인지 확인되지 않았다는 뜻이며, 기본 설정(settings.json 의 follow.allow_unverified=false)에서는 자동 팔로우 대상에서 제외된다. 해시태그 탐색으로 발견한 공구 셀러·팔이피플 후보는 crawler/.cache/state.json 의 candidates 에만 기록되고 절대 자동 팔로우하지 않는다. 운영자가 원문 프로필을 확인한 뒤 이 파일의 seed_accounts 로 옮겨 적고 follow=true 로 바꾸면 다음 실행부터 팔로우 후보가 된다.",
+  "$comment": "아가마중 크롤러 v2 시드 계정 목록. 운영자가 직접 검수하는 것이 전제다. verified=false 는 핸들이 실제 공식 계정인지 확인되지 않았다는 뜻이며, 기본 설정(settings.json 의 follow.allow_unverified=false)에서는 자동 팔로우 대상에서 제외된다. 해시태그 탐색으로 발견한 공구 셀러·팔이피플 후보는 crawler/.cache/state.json 의 candidates 에만 기록되고 절대 자동 팔로우하지 않는다. 운영자가 원문 프로필을 확인한 뒤 이 파일의 seed_accounts 로 옮겨 적고 follow=true 로 바꾸면 다음 실행부터 팔로우 후보가 된다. 브랜드 공식 계정이 아닌 공구 셀러는 brand 를 빈 문자열로, collect_images 를 false 로 둔다.",
   "seed_accounts": [
     {
       "handle": "stokke",
@@ -120,6 +120,87 @@
       "verified": false,
       "follow": false,
       "note": "예비 후보. 다른 한국 계정 확인 후 삭제"
+    },
+    {
+      "handle": "wooamom_goeun",
+      "brand": "",
+      "scope": "kr",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러(우아맘). 공구모아에서 사람이 직접 확인, 준태 승인 2026-10-22"
+    },
+    {
+      "handle": "teenywishmarket",
+      "brand": "",
+      "scope": "kr",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러(티니위시마켓). 공구모아에서 사람이 직접 확인, 준태 승인 2026-10-22"
+    },
+    {
+      "handle": "narin__mommy",
+      "brand": "",
+      "scope": "kr",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러(나린맘). 공구모아에서 사람이 직접 확인, 준태 승인 2026-10-22"
+    },
+    {
+      "handle": "rouny.day",
+      "brand": "",
+      "scope": "kr",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러. VIRAL 확인, 2026-10-22 등록"
+    },
+    {
+      "handle": "somda.park",
+      "brand": "",
+      "scope": "kr",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러. VIRAL 확인, 2026-10-22 등록"
+    },
+    {
+      "handle": "bbu__mom",
+      "brand": "",
+      "scope": "kr",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러. VIRAL 확인, 2026-10-22 등록"
+    },
+    {
+      "handle": "honeybrread",
+      "brand": "",
+      "scope": "kr",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러. VIRAL 확인, 2026-10-22 등록"
+    },
+    {
+      "handle": "rinhaamom",
+      "brand": "",
+      "scope": "kr",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러. VIRAL 확인, 2026-10-22 등록"
+    },
+    {
+      "handle": "thejamiegrayson",
+      "brand": "",
+      "scope": "global",
+      "verified": true,
+      "follow": true,
+      "collect_images": false,
+      "note": "공구 셀러. VIRAL 확인, 2026-10-22 등록"
     }
   ],
   "discovery": {

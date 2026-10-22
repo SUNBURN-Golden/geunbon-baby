@@ -11,7 +11,7 @@ export function loadEnvironment(crawlerDir: string) {
   }
 }
 
-export type SeedAccount = { handle: string; brand: string; scope: 'global' | 'kr'; verified: boolean; follow: boolean; note: string };
+export type SeedAccount = { handle: string; brand: string; scope: 'global' | 'kr'; verified: boolean; follow: boolean; collect_images: boolean; note: string };
 export type DiscoveryConfig = { hashtags: { base: string[]; brand: string[]; extra: string[] } };
 export type AccountsFile = { seed_accounts: SeedAccount[]; discovery: DiscoveryConfig };
 export type Settings = {
@@ -75,8 +75,13 @@ function parseAccounts(raw: unknown): AccountsFile {
     const item = a as Record<string, unknown>;
     const handle = String(item.handle ?? '').toLowerCase();
     if (!/^[A-Za-z0-9._]{1,30}$/.test(handle)) throw new Error(`잘못된 핸들: ${handle || '(없음)'}`);
-    return { handle, brand: String(item.brand ?? ''), scope: item.scope === 'kr' ? 'kr' : 'global', verified: item.verified === true, follow: item.follow === true, note: String(item.note ?? '') };
+    return { handle, brand: String(item.brand ?? ''), scope: item.scope === 'kr' ? 'kr' : 'global', verified: item.verified === true, follow: item.follow === true, collect_images: item.collect_images !== false, note: String(item.note ?? '') };
   });
+  const seen = new Set<string>();
+  for (const { handle } of parsed) {
+    if (seen.has(handle)) throw new Error(`중복된 핸들: ${handle}`);
+    seen.add(handle);
+  }
   const tags = (v.discovery as Record<string, unknown> | undefined)?.hashtags as Record<string, string[]> | undefined;
   const list = (xs: unknown) => (Array.isArray(xs) ? xs.map(String).filter(Boolean) : []);
   return { seed_accounts: parsed, discovery: { hashtags: { base: list(tags?.base), brand: list(tags?.brand), extra: list(tags?.extra) } } };

@@ -90,12 +90,13 @@ export async function main() {
         health('queue', { size: queue.length, accounts: queue.map(job => job.account).join(',') });
         let posts = 0;
         let stories = 0;
+        const imagePolicy = new Map(accounts.seed_accounts.map(seed => [seed.handle.toLowerCase(), seed.collect_images]));
         for (const job of queue) {
           if (stopped) break;
           check();
           const { account } = job;
           try {
-            const collected = await collectAccount(page, { account, crawlerDir, state, settings, api, token, scanPosts: job.posts, scanStories: job.stories });
+            const collected = await collectAccount(page, { account, crawlerDir, state, settings, api, token, scanPosts: job.posts, scanStories: job.stories, collectImages: imagePolicy.get(account.toLowerCase()) ?? true });
             posts += collected.posts;
             stories += collected.stories;
           } catch (error) {

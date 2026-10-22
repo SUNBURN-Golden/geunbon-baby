@@ -12,7 +12,7 @@ import { mockPage } from './helpers/page';
 vi.mock('../crawler/lib/util', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/util')>(), sleep: vi.fn(async () => {}) }));
 let dir: string;
 const settings = () => parseSettings(settingsJson);
-const seed = (handle = 'stokke'): SeedAccount => ({ handle, brand: 'Stokke', scope: 'global', verified: true, follow: true, note: '' });
+const seed = (handle = 'stokke'): SeedAccount => ({ handle, brand: 'Stokke', scope: 'global', verified: true, follow: true, collect_images: true, note: '' });
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'crawler-follow-')); vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-21T00:00:00Z')); });
 afterEach(async () => { vi.useRealTimers(); await rm(dir, { recursive: true, force: true }); });
 test('follows at most once and persists sampled delay across restart', async () => {
