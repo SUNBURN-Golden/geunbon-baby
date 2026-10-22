@@ -5,6 +5,7 @@ import { fallback } from './fallback';
 import { Queue, atomicWrite, exists } from './queue';
 import { chains, readOnly, verdict } from './stages';
 import { promptFor } from './prompts';
+import { cleanupWorktree } from './worktrees';
 import type { Execute, ModelsConfig, Result, Stage, State, Task } from './types';
 
 const REPOSITORY = 'SUNBURN-Golden/geunbon-baby';
@@ -68,7 +69,19 @@ export class Daemon {
     }
     const task = this.state.active;
     if (task.wakeAt && Date.parse(task.wakeAt) > this.now()) return Math.min(30000, Date.parse(task.wakeAt) - this.now());
-    if (task.stage === 'done' || task.stage === 'failed') { await this.options.queue.finish(this.state); return 0; }
+    if (task.stage === 'done' || task.stage === 'failed') {
+      // Keep cleanup outside the stage catch: a cleanup error must not rewrite a
+      // successful merge or audit result as a new failure. Restart retries it.
+      try {
+        await cleanupWorktree({ task, queueRoot: this.options.queue.root, repo: this.options.repo,
+          commonDir: this.commonDir, execute: this.options.execute, log: label => this.log(label) });
+      } catch (error) {
+        await atomicWrite(this.log('worktree-cleanup-error'), this.options.queue.scrub((error as Error).message) + '\n');
+        throw error;
+      }
+      await this.options.queue.finish(this.state);
+      return 0;
+    }
     try {
       switch (task.stage) {
         case 'prepare': await this.prepare(task); break;

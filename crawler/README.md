@@ -6,11 +6,11 @@
 
 저장소 루트에서 `npm ci`, `npx playwright install chromium`을 실행합니다. OCR은 **기본 켜짐**이므로 tesseract와 한국어·영어 언어팩을 설치하고 `tesseract --list-langs`로 확인하세요. OCR을 끄려면 `AGAMAJUNG_OCR=0`을 설정합니다.
 
-`.env.example`을 참고해 비밀 저장소나 gitignore 대상인 루트 `.env.crawler`로 환경변수를 주입합니다. 비밀번호는 **`AGAMAJUNG_IG_PASSWORD` 환경변수에서만** 읽습니다. 명령행 인수·로그·git에 넣지 마세요.
+`.env.example`을 참고해 비밀 저장소나 gitignore 대상인 루트 `.env.crawler`로 환경변수를 주입합니다. 크롤러는 시작 시 루트 `.env.crawler`가 있으면 읽고, 이미 주입된 환경변수는 유지합니다. 파일이 없으면 주입된 환경변수만 사용합니다. 비밀번호는 **`AGAMAJUNG_IG_PASSWORD` 환경변수에서만** 읽습니다. 명령행 인수·로그·git에 넣지 마세요.
 
 | 변수 | 설명 |
 | --- | --- |
-| `AGAMAJUNG_IG_USER` | 로그인 아이디. 기본값 `jaytparkitrighthere@gmail.com` |
+| `AGAMAJUNG_IG_USER` | 로그인 사용자명. 기본값 `agamajung`. 이메일 로그인은 다른 계정(`hanset.mag`)으로 연결되므로 사용하지 마세요. |
 | `AGAMAJUNG_IG_PASSWORD` | 로그인 비밀번호. 저장된 세션이 유효하면 생략 가능 |
 | `AGAMAJUNG_API_URL` | API origin. localhost 외에는 HTTPS 필수 |
 | `INGEST_TOKEN` | 수집 전용 Bearer 토큰. ADMIN_TOKEN과 분리 |
@@ -60,6 +60,7 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 
 - `crawler/.cache/state.json`: KST 날짜·시간별 행동 카운터, 다음 팔로우 허용 시각, 팔로잉 목록 동기화 시도 시각·계정, 계정 확인 시각, 전송/발견 URL 이력(각 최근 1만 개), 후보와 태그 커서. 임시 파일을 rename해 원자적으로 저장하며 0600입니다. 파일이 손상되면 한도를 초기화하는 대신 실행을 중단합니다. 이틀 전 카운터는 정리합니다.
 - `crawler/logs/health-YYYY-MM-DD.jsonl`: UTC 일자별 순서 있는 이벤트 기록. 비밀번호·토큰·쿠키·수집 원문은 기록하지 않습니다. 단, `halt` 이벤트에는 비밀값을 가린 화면 텍스트 앞 200자(`preview`), 중단 이유(`reason`), URL 경로(`path`)를 남깁니다.
+- 환경변수·설정·상태 파일 검증 전에 건강 로그를 초기화합니다. 종료 오류에는 비밀값을 가린 예외 종류·메시지·코드·스택(`error_name`, `error_message`, `error_code`, `error_stack`)을 기록하며, 로그 초기화/디스크 실패 때도 stderr에 같은 진단을 남깁니다. URL 쿼리·이메일·인증 정보는 가립니다.
 - 상태가 바뀔 때만 `login_state`, 빈 화면 복구 직전에는 `login_recovery`를 기록합니다. 필드는 단계(`phase`), 상태(`state`: `challenge`/`blocked`/`login-form`/`known-prompt`/`authenticated`/`blank-loading`/`unknown`), 단계 경과 밀리초(`elapsed_ms`), 복구 횟수(`recoveries`)이며 화면 원문·입력값·URL은 넣지 않습니다. `authenticated` 상태의 탐색 메뉴만으로 성공하지 않으며 유효 쿠키·원자적 저장까지 확인합니다.
 - 로그인 제출 전 `login_attempt`, 로그인 성공 확인 후 `login_ok`, 로그인 제출 없이 기존 세션을 확인하면 `session_reused`를 기록합니다. 아이디·비밀번호는 포함하지 않습니다.
 - 모든 `HaltError`는 브라우저를 닫기 전에 `crawler/logs/halt-<UTC시각>-<고유값>.png`와 같은 이름의 `.txt`(이유·URL·보이는 페이지 텍스트)를 저장합니다. 파일 권한은 **0600**, 로그 디렉터리는 **0700**입니다. 환경변수의 비밀번호·토큰·시크릿, Bearer/JWT 및 토큰 필드를 가리고 화면 입력란을 숨긴 뒤 캡처합니다. 마스킹 전 본문 길이(`body_length`)와 최상위 html/body의 마스킹 여부(`root_masked`)도 txt/건강 로그에 기록합니다(읽기 실패는 `null`/`unknown`). 비밀값이 하위 노드에 있으면 상위 요소까지 숨기므로 **흰 PNG만으로 빈 화면을 판단하지 마세요**. `root_masked: true`이고 본문 길이가 0보다 크면 마스킹 결과일 수 있습니다. 로그인 사용자 식별값·이메일·Instagram 쿠키 필드도 진단에서 가립니다. 페이지 종료·디스크 오류 등으로 진단을 저장하지 못하면 `warn`을 기록하며, 종료코드 75는 유지합니다.
@@ -81,7 +82,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now agamajung-crawler
 ```
 
-pm2를 사용할 때도 같은 환경변수를 비밀 저장소에서 주입하고 실행합니다. pm2는 `.env.crawler`를 자동으로 읽지 않습니다. 환경변수 변경 후 `pm2 restart agamajung-crawler --update-env`를 실행하세요.
+pm2를 사용할 때도 같은 환경변수를 비밀 저장소에서 주입하거나 루트 `.env.crawler`를 준비합니다. pm2 자체는 파일을 읽지 않지만 크롤러가 시작 시 읽습니다. 주입된 환경변수 변경 후 `pm2 restart agamajung-crawler --update-env`를 실행하세요. 주입된 값은 파일보다 우선하므로 기존 이메일 아이디도 `agamajung`으로 수정해야 합니다.
 
 ```sh
 pm2 start crawler/ecosystem.config.cjs
