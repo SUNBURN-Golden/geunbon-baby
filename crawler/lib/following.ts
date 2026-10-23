@@ -2,7 +2,7 @@ import type { Page } from 'playwright';
 import { assertHuman, guardPage } from './browser';
 import type { Settings } from './config';
 import type { CrawlerState } from './state';
-import { firstVisible, parseHandle, visibleHandles } from './selectors';
+import { firstVisible, HANDLE_HREF, parseHandle, profileLink, visibleHandles } from './selectors';
 import { QuietWindowError, quietWindowsAt } from './quiet-window';
 import { sleep } from './util';
 import { health } from './health';
@@ -10,7 +10,7 @@ import { health } from './health';
 // Reserve before navigation: failed/interrupted attempts and restarts share the
 // same 24-hour limit. Resolve the authenticated profile from navigation because
 // the login identifier may be an email rather than a profile handle.
-export async function syncFollowing(page: Page, ctx: { state: CrawlerState; settings: Settings }, check: () => void = () => {}) {
+export async function syncFollowing(page: Page, ctx: { state: CrawlerState; settings: Settings; username?: string }, check: () => void = () => {}) {
   const { state, settings } = ctx;
   const active = () => {
     check();
@@ -26,11 +26,11 @@ export async function syncFollowing(page: Page, ctx: { state: CrawlerState; sett
     await guarded.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
     await sleep(...settings.delays_ms.navigation);
     await assertHuman(guarded);
-    const profile = await firstVisible([
-      guarded.getByRole('link', { name: /(?:^|\s)(Profile|프로필)$/i }),
-      guarded.locator('a:has(svg[aria-label="Profile"]), a:has(svg[aria-label="프로필"])'),
-    ]);
-    const handle = profile && parseHandle(await profile.getAttribute('href') ?? '');
+    let handle = await profileLink(guarded, ctx.username);
+    if (!handle && ctx.username && HANDLE_HREF.test(`/${ctx.username}/`)) {
+      handle = parseHandle(`/${ctx.username}/`);
+      if (handle) health('following_profile_fallback', { via: 'username' });
+    }
     if (!handle) { health('selector_miss', { scope: 'following_profile' }); return; }
     await guarded.goto(`https://www.instagram.com/${handle}/`, { waitUntil: 'domcontentloaded' });
     await sleep(...settings.delays_ms.navigation);

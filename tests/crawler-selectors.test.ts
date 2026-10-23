@@ -103,3 +103,102 @@ test('DOM read failures never qualify for blank recovery and interruption still 
   error = new QuietWindowError();
   await expect(blankLoginSurface(page)).rejects.toBe(error);
 });
+
+test.each([
+  ['/babybjorn/p/abc/?x=1', 'https://www.instagram.com/p/abc/'],
+  ['/babybjorn/reel/xyz/', 'https://www.instagram.com/reel/xyz/'],
+  ['/p/abc/', 'https://www.instagram.com/p/abc/'],
+  ['/explore/p/abc/', null], ['/stories/p/abc/', null], ['/a b/p/x/', null],
+])('canonical post accepts profile-prefixed permalinks: %s', (href, expected) => {
+  expect(canonicalPost(href)).toBe(expected);
+});
+
+test.each([
+  ['Seller.Mom님의 프로필 사진', 'seller.mom'], ["seller's profile picture", 'seller'],
+  [' seller님의 프로필 사진', null], ['seller 님의 프로필 사진', null],
+  ['explore님의 프로필 사진', null], [`${'a'.repeat(31)}님의 프로필 사진`, null],
+  ['seller?query님의 프로필 사진', null], ['seller', null],
+])('profile picture alt validates the complete handle: %s', async (alt, expected) => {
+  const { parseProfilePictureAlt } = await import('../crawler/lib/selectors');
+  expect(parseProfilePictureAlt(alt)).toBe(expected);
+});
+
+test('story tray reads alt and aria labels, excludes self and feed avatars, and dedupes', async () => {
+  const { storyTrayHandles } = await import('../crawler/lib/selectors');
+  const feed = { getAttribute: () => 'feed_seller님의 프로필 사진', closest: (selector: string) => selector === 'article' ? {} : null } as unknown as Element;
+  const { page, goto } = mockPage(selector => {
+    if (selector === 'main [role="button"] img[alt], main li img[alt]') return [
+      { attrs: { alt: 'seller님의 프로필 사진' } }, { attrs: { alt: "seller's profile picture" } },
+      { attrs: { alt: 'agamajung님의 프로필 사진' } }, { dom: feed },
+    ];
+    if (selector === 'main [role="button"][aria-label]') return [{ attrs: { 'aria-label': "second's profile picture" } }];
+    return [];
+  });
+  expect(await storyTrayHandles(page, 'agamajung')).toEqual(['seller', 'second']);
+  expect(goto).not.toHaveBeenCalled();
+});
+
+test('explicit story links skip all avatar and aria fallbacks even if only self is linked', async () => {
+  const { storyTrayHandles } = await import('../crawler/lib/selectors');
+  const { page } = mockPage(selector => {
+    if (selector === 'a[href*="/stories/"]') return [{ href: '/stories/agamajung/123/' }];
+    throw new Error('Avatar fallback must not be read');
+  });
+  expect(await storyTrayHandles(page, 'agamajung')).toEqual([]);
+});
+
+test('story alt fallback stays inside the first tray with at least three images', async () => {
+  const { storyTrayHandles } = await import('../crawler/lib/selectors');
+  const first = { closest: () => null, querySelectorAll: () => [{}, {}, {}], contains: (el: unknown) => el === inside };
+  const second = { closest: () => null, querySelectorAll: () => [{}, {}, {}], contains: () => true };
+  const main = { querySelectorAll: () => [first, second] };
+  const avatar = (handle: string) => ({ getAttribute: () => `${handle}님의 프로필 사진`, closest: (sel: string) => sel === 'main' ? main : null });
+  const inside = avatar('story_seller'), outside = avatar('recommendation');
+  const { page } = mockPage(selector => selector === 'main [role="button"] img[alt], main li img[alt]' ? [inside, outside].map(dom => ({ dom: dom as unknown as Element })) : []);
+  expect(await storyTrayHandles(page)).toEqual(['story_seller']);
+});
+
+test.each([1, 2, 3])('feed image lists cannot replace the story tray with %i stories', async count => {
+  const { storyTrayHandles } = await import('../crawler/lib/selectors');
+  const article = {};
+  const avatar = (handle: string, inArticle = false) => ({
+    getAttribute: (name: string) => name === 'alt' ? `${handle}님의 프로필 사진` : name === 'aria-label' ? `${handle}'s profile picture` : null,
+    closest: (selector: string) => selector === 'article' ? (inArticle ? article : null) : selector === 'main' ? main : null,
+  });
+  const stories = Array.from({ length: count }, (_, i) => avatar(`story_${i}`));
+  const feedAvatar = avatar('feed_seller', true);
+  const feedList = { closest: () => article, querySelectorAll: () => [{}, {}, {}], contains: (el: unknown) => el === feedAvatar };
+  const storyList = { closest: () => null, querySelectorAll: () => stories, contains: (el: unknown) => stories.includes(el as typeof stories[number]) };
+  // Even when the feed list precedes the tray in DOM order, it is ineligible.
+  const main = { querySelectorAll: () => [feedList, storyList] };
+  const { page, goto } = mockPage(selector =>
+    selector === 'main [role="button"] img[alt], main li img[alt]' || selector === 'main [role="button"][aria-label]'
+      ? [...stories, feedAvatar].map(dom => ({ dom: dom as unknown as Element })) : []);
+  expect(await storyTrayHandles(page)).toEqual(stories.map((_, i) => `story_${i}`));
+  expect(goto).not.toHaveBeenCalled();
+});
+
+test('profile link falls back through icon, username and matching navigation avatar', async () => {
+  const { profileLink } = await import('../crawler/lib/selectors');
+  for (const source of ['icon', 'username', 'avatar']) {
+    const { page, goto } = mockPage(selector => {
+      if (source === 'icon' && selector === 'a:has(svg[aria-label="프로필"]), a:has(svg[aria-label="Profile"])') return [{ href: '/agamajung/' }];
+      if (source === 'username' && selector === 'a[href="/agamajung/"]') return [{ href: '/agamajung/' }];
+      if (source === 'avatar' && selector === 'nav a[href] img[alt]') return [{ dom: {
+        getAttribute: () => 'agamajung님의 프로필 사진', closest: () => ({ getAttribute: () => '/agamajung/' }),
+      } as unknown as Element }];
+      return [];
+    });
+    expect(await profileLink(page, 'agamajung')).toBe('agamajung');
+    expect(goto).not.toHaveBeenCalled();
+  }
+});
+
+test('email username skips handle-only profile candidates', async () => {
+  const { profileLink } = await import('../crawler/lib/selectors');
+  const { page } = mockPage(selector => {
+    if (selector.startsWith('a[href=') || selector === 'nav a[href] img[alt]') throw new Error('Handle-only fallback');
+    return [];
+  });
+  expect(await profileLink(page, 'x@y.test')).toBeNull();
+});

@@ -3,19 +3,18 @@
 // 구조가 잡히지 않으면 빈 신호를 돌려주고(soft fail), 챌린지·로그인 이탈만 즉시 중단한다.
 import type { Page } from 'playwright';
 import { assertHuman } from './browser';
-import { clickFirst, firstVisible, parseStoryHandle, visibleHandles } from './selectors';
+import { clickFirst, firstVisible, HANDLE_HREF, parseHandle, storyTrayHandles, visibleHandles } from './selectors';
 import { sleep } from './util';
 import { health } from './health';
 import type { Settings } from './config';
 
 export type Signals = { storyAccounts: string[]; freshAccounts: string[] };
 
-async function storiesTray(page: Page, settings: Settings): Promise<string[]> {
+async function storiesTray(page: Page, settings: Settings, ownHandle?: string): Promise<string[]> {
   await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
   await sleep(...settings.delays_ms.navigation);
   await assertHuman(page);
-  const links = await page.locator('a[href*="/stories/"]').evaluateAll(anchors => anchors.map(a => a.getAttribute('href') ?? ''));
-  const handles = [...new Set(links.map(parseStoryHandle).filter((h): h is string => h !== null))];
+  const handles = await storyTrayHandles(page, ownHandle);
   if (!handles.length) health('selector_miss', { scope: 'stories_tray' });
   return handles.slice(0, 30);
 }
@@ -43,9 +42,10 @@ async function notifications(page: Page, settings: Settings): Promise<string[]> 
   }
 }
 
-export async function readSignals(page: Page, settings: Settings): Promise<Signals> {
+export async function readSignals(page: Page, settings: Settings, username?: string): Promise<Signals> {
   let storyAccounts: string[] = [];
-  try { storyAccounts = await storiesTray(page, settings); }
+  const ownHandle = username && HANDLE_HREF.test(`/${username}/`) ? parseHandle(`/${username}/`) ?? undefined : undefined;
+  try { storyAccounts = await storiesTray(page, settings, ownHandle); }
   catch (error) {
     if (error instanceof Error && error.message.startsWith('halt:')) throw error;
     health('selector_miss', { scope: 'stories_tray' });

@@ -58,7 +58,7 @@ test('og:image fallback requires a matching post-specific og:url', async () => {
   mediaDOM();
   let source = 'https://www.instagram.com/p/wrong/';
   const image = 'https://cdninstagram.com/fallback.jpg?sig=synthetic%2B';
-  const mock = mockPage(selector => selector === 'meta[property="og:url"]' ? [{ href: source }] : selector === 'meta[property="og:image"]' ? [{ href: image }] : []);
+  const mock = mockPage(selector => selector === 'meta[property="og:url"]' ? [{ attrs: { content: source } }] : selector === 'meta[property="og:image"]' ? [{ attrs: { content: image } }] : []);
   mock.setUrl('https://www.instagram.com/p/current/');
   expect(await postImageUrl(mock.page)).toBeUndefined();
   source = 'https://instagram.com/p/current';
@@ -88,4 +88,19 @@ test('selection failures omit images without logging raw errors; interruptions p
     }
   }
   expect(logs).not.toHaveBeenCalled();
+});
+
+test('og:url compares normalized profile-prefixed permalinks and rejects unrelated posts', async () => {
+  mediaDOM();
+  let source = 'https://instagram.com/p/current/';
+  const image = 'https://cdninstagram.com/fallback.jpg';
+  const mock = mockPage(selector => selector === 'meta[property="og:url"]' ? [{ attrs: { content: source } }] : selector === 'meta[property="og:image"]' ? [{ attrs: { content: image } }] : []);
+  mock.setUrl('https://www.instagram.com/seller/p/current/?tracking=1');
+  expect(await postImageUrl(mock.page)).toBe(image);
+  source = 'https://www.instagram.com/another/p/current/';
+  expect(await postImageUrl(mock.page)).toBe(image);
+  source = 'https://www.instagram.com/seller/reel/current/';
+  expect(await postImageUrl(mock.page)).toBeUndefined();
+  source = 'https://evil.test/p/current/';
+  expect(await postImageUrl(mock.page)).toBeUndefined();
 });

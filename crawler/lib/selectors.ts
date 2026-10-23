@@ -2,7 +2,7 @@
 // aria role·버튼/링크 이름 정규식(한국어+영어)을 우선하고 CSS 셀렉터는 마지막 대안으로 쓴다.
 // 후보가 하나도 잡히지 않으면 selector_miss 상태 로그를 남기고 진행하거나(soft) 상위에서 중단한다.
 import type { Locator, Page } from 'playwright';
-import { canonicalPost } from './util';
+import { canonicalPost, RESERVED } from './util';
 import { QuietWindowError } from './quiet-window';
 
 export async function firstVisible(candidates: Locator[]): Promise<Locator | null> {
@@ -129,7 +129,7 @@ export const nextStoryButton = (page: Page) => [
 ];
 // 프로필 링크만 남긴다(explore/reels/direct/accounts/stories/p/tv 등 예약 경로 제외).
 export const HANDLE_HREF = /^\/([A-Za-z0-9._]{1,30})\/?$/;
-export const RESERVED = /^(explore|reels|direct|accounts|stories|p|reel|tv|about|legal|developer|directory|web|challenge|emails|terms|privacy)$/i;
+export { RESERVED } from './util';
 export function parseHandle(href: string): string | null {
   try {
     const url = new URL(href, 'https://www.instagram.com/');
@@ -143,9 +143,9 @@ export async function visibleHandles(page: Page, scope?: Locator): Promise<strin
   const hrefs = await base.locator('a[href]').evaluateAll(links => links.map(a => a.getAttribute('href') ?? ''));
   return [...new Set(hrefs.map(parseHandle).filter((h): h is string => h !== null))];
 }
-export async function postLinks(page: Page): Promise<string[]> {
+export async function postLinksDetailed(page: Page): Promise<{ links: string[]; anchors: number }> {
   const hrefs = await page.locator('a[href*="/p/"], a[href*="/reel/"]').evaluateAll(links => links.map(a => a.getAttribute('href') ?? ''));
-  return [...new Set(hrefs.map(canonicalPost).filter((url): url is string => url !== null))];
+  return { links: [...new Set(hrefs.map(canonicalPost).filter((url): url is string => url !== null))], anchors: hrefs.length };
 }
 
 export function parseStoryHandle(href: string): string | null {
@@ -155,4 +155,59 @@ export function parseStoryHandle(href: string): string | null {
     const handle = /^\/stories\/([A-Za-z0-9._]{1,30})(?:\/\d+)?\/?$/.exec(url.pathname)?.[1];
     return handle && !['highlights', 'archive'].includes(handle) ? handle.toLowerCase() : null;
   } catch { return null; }
+}
+
+export async function postLinks(page: Page): Promise<string[]> {
+  return (await postLinksDetailed(page)).links;
+}
+
+export function parseProfilePictureAlt(alt: string): string | null {
+  const handle = /^(.+?)(?:'s profile picture|님의 프로필 사진)$/.exec(alt)?.[1];
+  return handle && HANDLE_HREF.test(`/${handle}/`) ? parseHandle(`/${handle}/`) : null;
+}
+
+async function trayAttributes(page: Page, selector: string, attribute: string): Promise<string[]> {
+  return page.locator(selector).evaluateAll((elements, attribute) => elements.filter(el => {
+    if (el.closest('article') !== null) return false;
+    const main = el.closest('main');
+    const tray = main && [...main.querySelectorAll('ul')].find(ul => ul.closest('article') === null && ul.querySelectorAll('img[alt]').length >= 3);
+    return !tray || tray.contains(el);
+  }).map(el => el.getAttribute(attribute) ?? ''), attribute);
+}
+
+export async function storyTrayHandles(page: Page, ownHandle?: string): Promise<string[]> {
+  const hrefs = await page.locator('a[href*="/stories/"]').evaluateAll(links => links.map(el => el.getAttribute('href') ?? ''));
+  let handles = hrefs.map(parseStoryHandle).filter((handle): handle is string => handle !== null);
+  // Prefer explicit story links; do not read avatars from recommendation modules.
+  if (!handles.length) {
+    const alts = await trayAttributes(page, 'main [role="button"] img[alt], main li img[alt]', 'alt');
+    const labels = await trayAttributes(page, 'main [role="button"][aria-label]', 'aria-label');
+    handles = [...alts, ...labels].map(parseProfilePictureAlt).filter((handle): handle is string => handle !== null);
+  }
+  return [...new Set(handles)].filter(handle => handle !== ownHandle?.toLowerCase()).slice(0, 30);
+}
+
+export async function profileLink(page: Page, username?: string): Promise<string | null> {
+  for (const candidate of [
+    page.getByRole('link', { name: /(?:^|\s)(Profile|프로필)$/i }),
+    page.locator('a:has(svg[aria-label="프로필"]), a:has(svg[aria-label="Profile"])'),
+  ]) {
+    const link = await firstVisible([candidate]);
+    const handle = link && parseHandle(await link.getAttribute('href') ?? '');
+    if (handle) return handle;
+  }
+  const ownHandle = username && HANDLE_HREF.test(`/${username}/`) && parseHandle(`/${username}/`);
+  if (!ownHandle) return null;
+  const exact = await firstVisible([page.locator(`a[href="/${username}/"]`)]);
+  const handle = exact && parseHandle(await exact.getAttribute('href') ?? '');
+  if (handle) return handle;
+  const avatars = await page.locator('nav a[href] img[alt]').evaluateAll(images => images.map(img => ({
+    alt: img.getAttribute('alt') ?? '', href: img.closest('a[href]')?.getAttribute('href') ?? '',
+  })));
+  for (const avatar of avatars) {
+    if (parseProfilePictureAlt(avatar.alt) !== ownHandle) continue;
+    const handle = parseHandle(avatar.href);
+    if (handle) return handle;
+  }
+  return null;
 }

@@ -55,3 +55,13 @@ test('a login form at home halts before clicking a notification control', async 
   expect(mock.goto.mock.calls.some(([url]) => url.includes('/accounts/activity/'))).toBe(false);
   expect(mock.submit).not.toHaveBeenCalled();
 });
+
+test.each(['agamajung', 'x@y.test'])('story signals read alt-only trays and exclude self for handle login: %s', async username => {
+  const { mockPage } = await import('./helpers/page');
+  const { page } = mockPage(selector => selector === 'main [role="button"] img[alt], main li img[alt]' ? [
+    { attrs: { alt: 'story_seller님의 프로필 사진' } }, { attrs: { alt: 'agamajung님의 프로필 사진' } },
+  ] : []);
+  const reading = readSignals(page, loginSettings(), username);
+  await vi.runAllTimersAsync();
+  expect((await reading).storyAccounts).toEqual(username === 'agamajung' ? ['story_seller'] : ['story_seller', 'agamajung']);
+});
