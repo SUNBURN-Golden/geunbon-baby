@@ -41,6 +41,9 @@ export interface Command {
   env?: NodeJS.ProcessEnv;
   log: string;
   answerFile?: string;
+  input?: { text: string; transport: 'stdin' | 'file' };
+  /** Keep consuming stdout after this byte limit, without storing or logging it. */
+  stdoutLimitBytes?: number;
 }
-export interface Result { code: number; output: string; answer: string; stdout?: string; stderr?: string }
+export interface Result { code: number; output: string; answer: string; stdout?: string; stderr?: string; stdoutTruncated?: boolean }
 export type Execute = (command: Command) => Promise<Result>;

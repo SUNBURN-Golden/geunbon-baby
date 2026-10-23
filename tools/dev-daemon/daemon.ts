@@ -5,6 +5,7 @@ import { fallback } from './fallback';
 import { Queue, atomicWrite, exists } from './queue';
 import { chains, readOnly, verdict } from './stages';
 import { promptFor } from './prompts';
+import { buildReviewContext } from './review-context';
 import { cleanupWorktree } from './worktrees';
 import type { Execute, ModelsConfig, Result, Stage, State, Task } from './types';
 
@@ -167,9 +168,7 @@ export class Daemon {
     const before = readOnly(stage) ? await this.fingerprint(task) : undefined;
     let reviewContext = '';
     if (stage === 'build-review' || stage === 're-review') {
-      const diff = await this.command('git', ['diff', '--no-ext-diff', '--no-textconv', 'origin/main', '--'], task.worktree, 'review-main-diff');
-      const files = await this.command('git', ['ls-files', '--others', '--exclude-standard'], task.worktree, 'review-new-files');
-      reviewContext = `\nTracked diff against origin/main (inspect these files and surrounding code):\n${diff.answer}\nUntracked paths to read as part of the review:\n${files.answer}`;
+      reviewContext = await buildReviewContext({ cwd: task.worktree, execute: this.options.execute, log: label => this.log(label) });
     }
     // Checkpoint the attempt number before invoking a potentially interrupted process.
     const invocation = ++task.attempts;
