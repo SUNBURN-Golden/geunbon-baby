@@ -71,8 +71,8 @@ async function pngPixels(file: URL) {
   return { width, height, pixels };
 }
 
-test('all twenty models have square, transparent, unclipped PNG pairs', async () => {
-  expect(SQUARE_MODEL_IDS).toEqual(Array.from({ length: 20 }, (_, i) => `model-${i + 1}`));
+test('all thirty models have square, transparent, unclipped PNG pairs', async () => {
+  expect(SQUARE_MODEL_IDS).toEqual(Array.from({ length: 30 }, (_, i) => `model-${i + 1}`));
   for (const id of SQUARE_MODEL_IDS) {
     for (const size of [252, 540]) {
       const { width, height, pixels } = await pngPixels(new URL(`${id}-${size}x${size}.png`, dir));
@@ -169,6 +169,8 @@ test('set components keep distinct detailed groups rather than abstract stand-in
     ['model-12', ['bumper-bar', 'chassis', 'seat']],
     ['model-13', ['stroller', 'bassinet', 'chassis', 'seat']],
     ['model-14', ['chassis', 'seat']],
+    ['model-21', ['toddler-seat', 'infant-carrier', 'isofix-base']],
+    ['model-22', ['stroller', 'infant-carrier', 'ring-adapter']],
   ] as const) {
     const svg = await readFile(new URL(`${id}.svg`, dir), 'utf8');
     for (const name of groups) {
@@ -177,14 +179,13 @@ test('set components keep distinct detailed groups rather than abstract stand-in
       expect(ds.filter(d => /[CQ]/.test(d)).length, `${id}: ${name} curves`).toBeGreaterThanOrEqual(12);
     }
   }
-  const gi = await readFile(new URL('model-18.svg', dir), 'utf8');
-  expect(gi).toContain('id="integral-rotating-base"');
+  for (const n of [18, 23, 24]) expect(await readFile(new URL(`model-${n}.svg`, dir), 'utf8')).toContain('id="integral-rotating-base"');
   for (const id of ['model-19', 'model-20']) {
     expect(await readFile(new URL(`${id}.svg`, dir), 'utf8')).not.toContain('id="integral-rotating-base"');
   }
 });
 
-test('only the sixty square illustration files remain', async () => {
+test('only the ninety square illustration files remain', async () => {
   const files = (await readdir(dir)).sort();
   const expected = SQUARE_MODEL_IDS.flatMap(id => [`${id}.svg`, `${id}-540x540.png`, `${id}-252x252.png`]).sort();
   expect(files).toEqual(expected);
@@ -202,8 +203,10 @@ test('single items and bundles retain different component structures', async () 
   for (const [n, groups] of [[2, ['grain']], [6, ['chassis', 'seat', 'canopy', 'wheels']], [9, ['adapter']], [10, ['chassis', 'seat', 'canopy', 'wheels', 'basket']]] as const) {
     for (const id of groups) expect(await svg(n)).toContain(`id="${id}"`);
   }
+  expect(await svg(21)).toContain('id="isofix-base"');
+  expect(await svg(20)).not.toContain('id="isofix-base"');
   const pathSet = (s: string) => [...new Set([...s.matchAll(/<path d="([^"]+)"/g)].map(m => m[1]))].sort();
-  for (const [a, b] of [[3, 4], [7, 8], [7, 9], [10, 11]]) expect(pathSet(await svg(a))).not.toEqual(pathSet(await svg(b)));
+  for (const [a, b] of [[3, 4], [7, 8], [7, 9], [10, 11], [23, 24], [25, 26], [27, 28], [27, 29], [28, 29]]) expect(pathSet(await svg(a))).not.toEqual(pathSet(await svg(b)));
 });
 
 type Point = [number, number];
@@ -272,7 +275,7 @@ function componentExtent(svg: string, id: string) {
 }
 
 test('detached accessories and mounted harness remain legible at card size without transformed wrappers', async () => {
-  for (const [model, id, width] of [[5, 'baby-set', 300], [5, 'tray', 300], [5, 'harness', 220], [8, 'harness', 137]] as const) {
+  for (const [model, id, width] of [[5, 'baby-set', 300], [5, 'tray', 300], [5, 'harness', 220], [8, 'harness', 137], [21, 'isofix-base', 300], [22, 'ring-adapter', 300]] as const) {
     const svg = await readFile(new URL(`model-${model}.svg`, dir), 'utf8');
     const box = componentExtent(svg, id);
     expect(box.width, `${model} ${id}`).toBeGreaterThanOrEqual(width);
@@ -338,7 +341,7 @@ test('tray footprint hides rail and crotch guard without paint or masks', async 
 });
 
 test('all refined set ink, including transformed stroke widths, stays inside the safe square', async () => {
-  for (const n of [3, 4, 5, 8, 9]) {
+  for (const n of [3, 4, 5, 8, 9, 21, 22]) {
     const svg = await readFile(new URL(`model-${n}.svg`, dir), 'utf8');
     const stack: { matrix: Matrix; stroke: number }[] = [{ matrix: [1,0,0,1,0,0], stroke: 5.5 }];
     for (const tag of svg.matchAll(/<g\b[^>]*>|<\/g>|<path\b[^>]*>/g)) {

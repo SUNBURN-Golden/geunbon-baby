@@ -1,6 +1,6 @@
-// Renders all twenty illustrated models plus one placeholder fixture into a static page and screenshots them in
+// Renders all registered illustrated models plus one placeholder fixture into a static page and screenshots them in
 // mobile/desktop x light/dark. No server, no network: images are inlined.
-//   npx tsx scripts/card-screenshots.ts --out <dir>
+//   npx tsx scripts/card-screenshots.ts --out <dir> [--cards model-21,model-22]
 import { mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createElement } from 'react';
@@ -14,8 +14,12 @@ import { SQUARE_MODEL_IDS } from '../lib/model-illustrations';
 const root = new URL('..', import.meta.url).pathname;
 const DARK_BG = 'rgb(27, 33, 28)';
 const outIndex = process.argv.indexOf('--out');
-if (outIndex < 0 || !process.argv[outIndex + 1]) throw new Error('Usage: tsx scripts/card-screenshots.ts --out <dir>');
+if (outIndex < 0 || !process.argv[outIndex + 1]) throw new Error('Usage: tsx scripts/card-screenshots.ts --out <dir> [--cards model-21,model-22]');
 const out = resolve(process.argv[outIndex + 1]);
+
+const cardsIndex = process.argv.indexOf('--cards');
+const cardIds: readonly string[] = cardsIndex < 0 ? SQUARE_MODEL_IDS.slice(-10) : [...new Set((process.argv[cardsIndex + 1] ?? '').split(','))];
+if (cardIds.some(id => !(SQUARE_MODEL_IDS as readonly string[]).includes(id))) throw new Error('--cards requires comma-separated registered model IDs');
 
 const seed = JSON.parse(await readFile(join(root, 'seed/models.json'), 'utf8')) as { models: { brand: string; model: string; kr_official_price_krw: number | null }[] };
 const base = (n: number) => ({ id: `model-${n}`, name: seed.models[n - 1].model, brand: seed.models[n - 1].brand, official_price: seed.models[n - 1].kr_official_price_krw });
@@ -29,7 +33,7 @@ const cards: ModelCardData[] = [
     const price = ({ 1: 390000, 5: 780000, 10: 1990000 } as Record<number, number>)[n];
     return price === undefined ? noDeal(card) : withDeal(card, price);
   }),
-  noDeal(base(21)),
+  noDeal(base(31)),
 ];
 
 const css = await readFile(join(root, 'app/globals.css'), 'utf8');
@@ -69,7 +73,7 @@ try {
         }));
         await document.fonts.ready;
       });
-      if (await page.locator('.model-art-line img').count() !== 20) throw new Error('Illustrated model coverage is incomplete');
+      if (await page.locator('.model-art-line img').count() !== SQUARE_MODEL_IDS.length) throw new Error('Illustrated model coverage is incomplete');
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       if (overflow) throw new Error(`${name}-${scheme}: horizontal overflow`);
       const broken = await page.evaluate(() => [...document.images].filter(img => !img.complete || img.naturalWidth === 0 || img.naturalWidth !== img.naturalHeight).length);
@@ -88,11 +92,11 @@ try {
         return { invalidDeals, unevenRows: [...rows.values()].filter(h => Math.max(...h) - Math.min(...h) > 1).length };
       });
       if (layout.invalidDeals || layout.unevenRows) throw new Error(`${name}-${scheme}: ${JSON.stringify(layout)}`);
-      if (await page.locator('.model-art-mark').count() !== 1 || await page.locator('a[href="/models/model-21"] .model-art-mark').count() !== 1) throw new Error('Placeholder coverage is incorrect');
+      if (await page.locator('.model-art-mark').count() !== 1 || await page.locator('a[href="/models/model-31"] .model-art-mark').count() !== 1) throw new Error('Placeholder coverage is incorrect');
       for (const id of SQUARE_MODEL_IDS) {
         if (await page.locator(`a[href="/models/${id}"] .model-art-mark`).count()) throw new Error(`Unexpected placeholder: ${id}`);
       }
-      for (const id of SQUARE_MODEL_IDS.slice(0, 10)) {
+      for (const id of cardIds) {
         const card = page.locator(`a[href="/models/${id}"]`);
         await card.screenshot({ path: join(out, `${name}-${scheme}-${id}.png`) });
       }
@@ -104,7 +108,7 @@ try {
     const light = seen[`${name}-light`], dark = seen[`${name}-dark`];
     if (light.bg === dark.bg || light.body === dark.body) throw new Error(`${name}: light and dark backgrounds are identical`);
   }
-  console.log(`Saved 4 full-page and 40 model-1–10 card screenshots to ${out}`);
+  console.log(`Saved 4 full-page and ${cardIds.length * 4} selected card screenshots to ${out}`);
 } finally {
   await browser.close();
 }

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-label="아이스핀 360 메쉬">
+<title>아이스핀 360 메쉬</title>
+<g fill="none" stroke="#334338" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+<g id="shell-and-padding">
+<path d="M269,616 Q233,498 245,334 Q238,249 268,211 Q284,195 307,216 Q370,242 478,225 Q565,209 616,183 Q642,177 660,202 Q700,274 713,392 L740,537 Q749,598 708,638 Q646,704 505,716 Q352,729 292,666 Z" stroke-width="5.7"/>
+<path d="M268,211 Q295,236 304,304 Q300,383 334,468 Q341,486 366,489" stroke-width="5.4"/>
+<path d="M643,206 Q611,213 602,257 Q595,341 641,422" stroke-width="6.0"/>
+<path d="M280,247 Q286,315 279,365 Q281,410 299,449" stroke-width="5.2"/>
+<path d="M662,249 Q675,314 684,363" stroke-width="5.6"/>
+<path d="M334,307 Q335,276 369,267 Q413,254 449,267 Q495,244 550,260 Q583,278 573,315 L548,378 Q526,406 499,385 Q458,369 418,390 Q391,410 367,385 Z" stroke-width="5.7"/>
+<path d="M350,302 Q371,279 394,294 Q412,321 401,352 Q378,367 362,345 Z" stroke-width="5.4"/>
+<path d="M502,282 Q529,267 551,287 Q567,319 545,348 Q524,357 508,339 Z" stroke-width="6.0"/>
+<path d="M397,290 Q446,275 502,282" stroke-width="5.2"/>
+<path d="M401,352 Q450,360 508,339" stroke-width="5.6"/>
+<path d="M367,385 Q382,396 396,394" stroke-width="5.7"/>
+<path d="M517,387 Q535,395 548,378" stroke-width="5.4"/>
+<path d="M372,412 Q354,453 368,492" stroke-width="6.0"/>
+<path d="M550,411 Q583,443 576,477" stroke-width="5.2"/>
+<path d="M385,420 Q442,407 533,418" stroke-width="5.6"/>
+<path d="M310,502 Q332,470 359,496 Q378,522 388,556 Q450,585 576,546 Q589,501 621,482 Q648,469 669,498 Q683,532 658,574 Q555,633 380,611 Q328,600 310,562 Z" stroke-width="5.7"/>
+<path d="M332,516 Q344,527 354,553" stroke-width="5.4"/>
+<path d="M381,575 Q471,610 584,566" stroke-width="6.0"/>
+<path d="M638,505 Q651,528 634,549" stroke-width="5.2"/>
+<path d="M299,578 Q324,646 398,666 Q573,702 699,615" stroke-width="5.6"/>
+<path d="M311,610 Q340,657 405,675 Q564,707 681,644" stroke-width="5.7"/>
+<path d="M372,625 Q444,652 522,639" stroke-width="5.4"/>
+<path d="M553,635 Q611,620 654,590" stroke-width="6.0"/>
+<path d="M394,468 Q407,455 420,467 L444,530 Q441,544 427,540 Z" stroke-width="5.2"/>
+<path d="M520,460 Q532,451 545,464 L504,534 Q492,543 483,529 Z" stroke-width="5.6"/>
+<path d="M409,477 Q416,505 433,526" stroke-width="5.7"/>
+<path d="M530,470 Q515,499 497,525" stroke-width="5.4"/>
+<path d="M438,542 Q465,529 492,540 L491,566 Q467,581 445,568 Z" stroke-width="6.0"/>
+<path d="M450,548 L478,545 L479,558 L454,562 Z" stroke-width="5.2"/>
+<path d="M458,579 L454,601 Q470,615 484,598 L480,577" stroke-width="5.6"/>
+<path d="M262,394 Q225,380 215,398 Q208,421 232,432 L277,441" stroke-width="5.7"/>
+<path d="M234,399 Q246,393 251,405 Q251,416 240,416" stroke-width="5.4"/>
+<path d="M677,402 Q707,388 719,407 Q729,426 705,441" stroke-width="6.0"/>
+<path d="M689,412 Q704,405 708,419" stroke-width="5.2"/>
+<path d="M274,575 Q264,542 268,511" stroke-width="5.6"/>
+<path d="M697,566 Q714,536 708,504" stroke-width="5.7"/>
+</g><g id="ventilated-mesh-panels">
+<path d="M292,288 Q300,348 309,389" stroke-width="5.7"/>
+<path d="M304,295 Q314,349 320,386" stroke-width="5.4"/>
+<path d="M315,303 Q325,352 331,388" stroke-width="6.0"/>
+<path d="M324,319 Q336,359 341,389" stroke-width="5.2"/>
+<path d="M626,260 Q630,316 649,355" stroke-width="5.6"/>
+<path d="M637,260 Q640,312 660,350" stroke-width="5.7"/>
+<path d="M648,267 Q653,308 670,340" stroke-width="5.4"/>
+<path d="M382,437 Q444,425 540,436" stroke-width="6.0"/>
+<path d="M380,450 Q443,438 548,449" stroke-width="5.2"/>
+<path d="M381,463 Q441,453 552,462" stroke-width="5.6"/>
+<path d="M388,479 Q446,469 552,475" stroke-width="5.7"/>
+<path d="M357,622 Q378,641 400,647" stroke-width="5.4"/>
+<path d="M364,615 Q390,635 415,640" stroke-width="6.0"/>
+<path d="M373,608 Q401,629 430,634" stroke-width="5.2"/>
+<path d="M616,590 Q645,579 661,563" stroke-width="5.6"/>
+<path d="M623,597 Q656,583 673,569" stroke-width="5.7"/>
+<path d="M628,607 Q664,591 683,575" stroke-width="5.4"/>
+</g><g id="integral-rotating-base">
+<path d="M325,690 Q301,705 314,740 Q332,778 439,791 Q588,808 675,757 Q698,740 686,707" stroke-width="5.7"/>
+<path d="M324,714 Q360,753 455,757 Q589,766 675,726" stroke-width="5.4"/>
+<path d="M337,747 Q399,786 505,781 Q604,779 651,754" stroke-width="6.0"/>
+<path d="M391,772 Q435,794 490,791" stroke-width="5.2"/>
+<path d="M340,772 L332,806 Q379,834 453,835 L649,800 Q672,788 665,769" stroke-width="5.6"/>
+<path d="M343,800 Q401,822 455,822 L638,793" stroke-width="5.7"/>
+<path d="M368,792 Q397,811 427,812" stroke-width="5.4"/>
+<path d="M478,808 Q492,803 503,812 L502,828 Q490,839 478,829 Z" stroke-width="6.0"/>
+<path d="M487,812 Q494,811 496,817" stroke-width="5.2"/>
+<path d="M477,833 L477,945 Q482,955 497,948 L502,834" stroke-width="5.6"/>
+<path d="M482,852 L483,922" stroke-width="5.7"/>
+<path d="M480,945 L477,982 Q486,990 498,982 L499,949" stroke-width="5.4"/>
+<path d="M480,968 Q489,966 496,969" stroke-width="6.0"/>
+<path d="M475,980 Q465,985 465,996 L467,1007 Q489,1016 511,1006 L509,992 Q505,981 498,982" stroke-width="5.2"/>
+<path d="M470,1001 Q490,1008 507,999" stroke-width="5.6"/>
+<path d="M589,807 L658,797 Q670,799 664,810 L596,824" stroke-width="5.7"/>
+<path d="M607,817 Q636,819 655,810" stroke-width="5.4"/>
+<path d="M341,810 Q337,825 349,831 L378,835" stroke-width="6.0"/>
+<path d="M361,817 Q370,825 383,826" stroke-width="5.2"/>
+<path d="M527,804 Q539,796 552,801 L551,815 Q540,824 530,817 Z" stroke-width="5.6"/>
+</g>
+</g>
+</svg>

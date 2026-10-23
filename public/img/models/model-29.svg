@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-label="베이비 캐리어 미니">
+<title>베이비 캐리어 미니</title>
+<g fill="none" stroke="#334338" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+<g id="shoulder-straps">
+<path d="M356,269 Q333,234 339,201 Q349,167 391,152 L437,161 Q413,181 399,212 L383,258" stroke-width="5.7"/>
+<path d="M350,215 Q362,184 391,176" stroke-width="5.4"/>
+<path d="M530,303 L595,184 Q611,154 640,155 L689,177 Q704,184 696,205 L592,376" stroke-width="6.0"/>
+<path d="M553,313 L619,198 Q632,177 647,185 L669,195 L579,344" stroke-width="5.2"/>
+<path d="M637,199 Q650,199 661,205" stroke-width="5.6"/>
+<path d="M623,222 Q637,222 648,229" stroke-width="5.7"/>
+<path d="M616,428 L697,539 Q718,569 701,592 L608,638" stroke-width="5.4"/>
+<path d="M601,440 L677,546 Q690,564 681,576 L604,613" stroke-width="6.0"/>
+<path d="M385,526 L330,570 Q323,580 337,591 L368,607" stroke-width="5.2"/>
+<path d="M370,545 L347,575 L369,587" stroke-width="5.6"/>
+<path d="M660,603 L642,657 Q634,678 614,685" stroke-width="5.7"/>
+<path d="M674,594 L658,662 Q648,689 620,701" stroke-width="5.4"/>
+<path d="M369,198 Q377,187 391,183" stroke-width="6.0"/>
+<path d="M352,224 Q358,212 363,209" stroke-width="5.2"/>
+</g><g id="body-and-fasteners">
+<path d="M356,259 Q391,229 440,256 L531,302 Q570,326 586,378 L565,442 Q549,478 571,540 L599,617 Q606,677 562,701 Q486,737 406,705 Q370,688 366,647 L363,494 Q340,436 340,376 Q338,305 356,259 Z" stroke-width="5.7"/>
+<path d="M368,271 Q398,250 435,270 L521,316 Q550,336 564,376" stroke-width="5.4"/>
+<path d="M368,303 Q360,376 379,440 Q391,489 387,571 L388,638" stroke-width="6.0"/>
+<path d="M410,281 Q397,362 418,426 L421,665" stroke-width="5.2"/>
+<path d="M499,326 Q473,383 492,444 L506,673" stroke-width="5.6"/>
+<path d="M386,652 Q421,687 476,683 Q533,687 577,657" stroke-width="5.7"/>
+<path d="M389,685 Q475,721 565,685" stroke-width="5.4"/>
+<path d="M365,442 Q375,475 373,515" stroke-width="6.0"/>
+<path d="M555,461 Q554,505 572,544" stroke-width="5.2"/>
+<path d="M562,371 Q590,350 614,368 L636,400 Q637,419 617,426 L596,411 L590,395" stroke-width="5.6"/>
+<path d="M577,379 Q590,369 601,381 L614,401 Q610,412 599,403" stroke-width="5.7"/>
+<path d="M577,438 Q604,426 618,445 L624,475 Q621,494 601,496 L581,481" stroke-width="5.4"/>
+<path d="M590,446 Q602,437 610,450 L613,472 Q608,483 598,475 Z" stroke-width="6.0"/>
+<path d="M361,458 Q344,463 346,479 L355,508 Q365,518 376,505" stroke-width="5.2"/>
+<path d="M355,470 Q365,463 367,478 L370,494" stroke-width="5.6"/>
+<path d="M412,710 L394,748 Q406,774 442,777 L553,766 Q575,757 568,737 L552,710" stroke-width="5.7"/>
+<path d="M427,718 Q420,741 427,760" stroke-width="5.4"/>
+<path d="M449,724 Q443,748 449,767" stroke-width="6.0"/>
+<path d="M475,726 Q469,747 476,770" stroke-width="5.2"/>
+<path d="M500,723 Q496,747 503,768" stroke-width="5.6"/>
+<path d="M525,718 Q526,743 538,761" stroke-width="5.7"/>
+<path d="M403,750 Q474,784 564,750" stroke-width="5.4"/>
+</g>
+</g>
+</svg>
