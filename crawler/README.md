@@ -71,7 +71,7 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 
 ## 외부 공구 모음 이관
 
-공개 외부 수집은 아래 독립 로컬 작업기로 이관했습니다. Instagram 프로세스는 외부 수집을 실행하지 않습니다. 구형 `AGAMAJUNG_EXTERNAL_DRY_RUN=1`은 이관 안내 후 설정/인증/Instagram 접근 전에 종료합니다. 기존 `config/external-sources.json`은 구형 파서의 호환 자료이며 실행 설정은 `config/collector.json`입니다. 검토 전 사이트는 disabled로 출하합니다. 기존 사이트 D1 external_candidates는 과거 조회·dismiss만 유지하며 신규 건수에 합산하지 않습니다.
+공개 외부 수집은 아래 독립 로컬 작업기로 이관했습니다. Instagram 프로세스는 외부 수집을 실행하지 않습니다. 구형 `AGAMAJUNG_EXTERNAL_DRY_RUN=1`은 주입 환경변수·`.env.crawler` 모두 이관 안내 후 설정/인증/Instagram 접근 전에 종료하며, `0`·`1`·빈 값 외에는 시작 전 종료코드 1로 거부합니다. 기존 `config/external-sources.json`은 구형 파서의 호환 자료이며 실행 설정은 `config/collector.json`입니다. 검토 전 사이트는 disabled로 출하합니다. 기존 사이트 D1 external_candidates는 과거 조회·dismiss만 유지하며 신규 건수에 합산하지 않습니다.
 
 ## 상태·건강 로그
 

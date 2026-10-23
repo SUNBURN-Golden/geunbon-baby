@@ -2,23 +2,28 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import settingsJson from '../crawler/config/settings.json';
 import { main } from '../crawler/index';
-import { loadConfig, parseSettings } from '../crawler/lib/config';
+import { loadConfig, loadEnvironment, parseSettings } from '../crawler/lib/config';
 import { CrawlerState } from '../crawler/lib/state';
 import { assertHuman, ensureLogin, HaltError, launchBrowser } from '../crawler/lib/browser';
 import { captureHalt } from '../crawler/lib/halt';
 import { syncFollowing } from '../crawler/lib/following';
 import { readSignals } from '../crawler/lib/activity';
+import { collectAccount } from '../crawler/lib/collect';
+import { loadExternalSettings, parseExternalSettings } from '../crawler/lib/external/sources';
+import externalSettingsJson from '../crawler/config/external-sources.json';
 import { maybeFollow } from '../crawler/lib/follow';
 import { discoverSellers } from '../crawler/lib/discover';
 import { saveSession, SessionError } from '../crawler/lib/session';
 import { health, initHealth } from '../crawler/lib/health';
 
-vi.mock('../crawler/lib/config', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/config')>(), loadConfig: vi.fn() }));
+vi.mock('../crawler/lib/config', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/config')>(), loadConfig: vi.fn(), loadEnvironment: vi.fn() }));
 vi.mock('../crawler/lib/browser', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/browser')>(), launchBrowser: vi.fn(), ensureLogin: vi.fn(), assertHuman: vi.fn() }));
 vi.mock('../crawler/lib/halt', () => ({ captureHalt: vi.fn() }));
 vi.mock('../crawler/lib/following', () => ({ syncFollowing: vi.fn() }));
 vi.mock('../crawler/lib/health', () => ({ initHealth: vi.fn(), health: vi.fn(), flushHealth: vi.fn() }));
 vi.mock('../crawler/lib/activity', () => ({ readSignals: vi.fn() }));
+vi.mock('../crawler/lib/collect', () => ({ collectAccount: vi.fn() }));
+vi.mock('../crawler/lib/external/sources', () => ({ loadExternalSettings: vi.fn(), parseExternalSettings: vi.fn() }));
 vi.mock('../crawler/lib/follow', () => ({ maybeFollow: vi.fn() }));
 vi.mock('../crawler/lib/discover', () => ({ discoverSellers: vi.fn() }));
 vi.mock('../crawler/lib/session', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/session')>(), saveSession: vi.fn() }));
@@ -27,7 +32,11 @@ const initialExitCode = process.exitCode;
 const signalListeners = new Map((['SIGINT', 'SIGTERM'] as const).map(signal => [signal, new Set(process.listeners(signal))]));
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(loadEnvironment).mockImplementation(() => {});
   vi.stubEnv('AGAMAJUNG_IG_USER', undefined);
+  vi.stubEnv('AGAMAJUNG_EXTERNAL_DRY_RUN', undefined);
+  vi.stubEnv('AGAMAJUNG_IG_PASSWORD', undefined);
+  vi.stubEnv('AGAMAJUNG_ONCE', undefined);
 });
 afterEach(() => {
   process.exitCode = initialExitCode;
@@ -173,9 +182,107 @@ function healthyInstagram() {
   vi.mocked(captureHalt).mockResolvedValue(undefined);
 }
 
+type FlagSource = 'injected' | 'env-file';
+type ExternalConfig = 'enabled' | 'disabled' | 'source-error' | 'missing';
+
+function externalConfig(variant: ExternalConfig) {
+  if (variant === 'source-error' || variant === 'missing') {
+    vi.mocked(loadExternalSettings).mockRejectedValue(Object.assign(new Error(variant), variant === 'missing' ? { code: 'ENOENT' } : {}));
+    return;
+  }
+  vi.mocked(loadExternalSettings).mockResolvedValue({
+    ...externalSettingsJson,
+    jitter_ms: [0, 1500],
+    sources: [{ id: 'pangpang', enabled: variant === 'enabled', origin: 'https://09pangpang.com', entries: ['/'], render: false, item_selector: '' }],
+  });
+}
+
+function dryRunFlag(source: FlagSource, value = '1') {
+  if (source === 'injected') vi.stubEnv('AGAMAJUNG_EXTERNAL_DRY_RUN', value);
+  else vi.mocked(loadEnvironment).mockImplementation(() => { vi.stubEnv('AGAMAJUNG_EXTERNAL_DRY_RUN', value); });
+  vi.stubGlobal('fetch', vi.fn(() => { throw new Error('offline'); }));
+  return vi.spyOn(console, 'error').mockImplementation(() => {});
+}
+
+function expectNoInstagram(source: FlagSource) {
+  for (const operation of [loadConfig, CrawlerState.open, launchBrowser, ensureLogin, syncFollowing, readSignals,
+    collectAccount, maybeFollow, discoverSellers, assertHuman, saveSession, fetch, loadExternalSettings, parseExternalSettings]) {
+    expect(operation).not.toHaveBeenCalled();
+  }
+  expect(vi.getTimerCount()).toBe(0);
+  expect(vi.mocked(health).mock.calls.some(([event]) => event === 'run_start' || event === 'quiet_window_enter')).toBe(false);
+  if (source === 'injected') {
+    expect(initHealth).not.toHaveBeenCalled();
+    expect(loadEnvironment).not.toHaveBeenCalled();
+  } else {
+    expect(initHealth).toHaveBeenCalledOnce();
+    expect(loadEnvironment).toHaveBeenCalledOnce();
+  }
+}
+
+const dryRunCases = (['injected', 'env-file'] as const).flatMap(source =>
+  (['present', 'missing', 'invalid-url'] as const).flatMap(credentials =>
+    [true, false].flatMap(password =>
+      [true, false].flatMap(once =>
+        (['outside', 'inside', 'boundary'] as const).map(clock => ({ source, credentials, password, once, clock }))))));
+
+test.each(dryRunCases)('external dry-run never enters Instagram: $source, credentials=$credentials, password=$password, once=$once, clock=$clock', async ({ source, credentials, password, once, clock }) => {
+  healthyInstagram();
+  if (credentials === 'missing') {
+    vi.stubEnv('AGAMAJUNG_API_URL', undefined);
+    vi.stubEnv('INGEST_TOKEN', undefined);
+  } else if (credentials === 'invalid-url') vi.stubEnv('AGAMAJUNG_API_URL', 'http://example.invalid/');
+  vi.stubEnv('AGAMAJUNG_IG_PASSWORD', password ? 'offline-password' : undefined);
+  vi.stubEnv('AGAMAJUNG_ONCE', once ? '1' : undefined);
+  if (clock === 'inside') vi.setSystemTime(new Date('2026-10-21T13:30:00+09:00'));
+  if (clock === 'boundary') {
+    vi.setSystemTime(new Date('2026-10-21T12:59:59+09:00'));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+  }
+  externalConfig('enabled');
+  const notice = dryRunFlag(source);
+  // Await directly: waiting until quiet hours end must never pass as dry-run.
+  await main();
+  expectNoInstagram(source);
+  expect(notice).toHaveBeenCalledExactlyOnceWith('외부 수집은 npm run collector:worker -- discover --dry-run 으로 이관되었습니다.');
+});
+
+const externalCases = (['injected', 'env-file'] as const).flatMap(source =>
+  (['enabled', 'disabled', 'source-error', 'missing'] as const).map(config => ({ source, config })));
+
+test.each(externalCases)('external dry-run ignores legacy config: $source, $config', async ({ source, config }) => {
+  healthyInstagram();
+  externalConfig(config);
+  dryRunFlag(source);
+  await main();
+  expectNoInstagram(source);
+});
+
+const invalidCases = (['injected', 'env-file'] as const).flatMap(source =>
+  ['true', 'yes', ' 1', '2', '1\n'].map(value => ({ source, value })));
+
+test.each(invalidCases)('invalid external dry-run fails before Instagram: $source, $value', async ({ source, value }) => {
+  healthyInstagram();
+  dryRunFlag(source, value);
+  await expect(main()).rejects.toThrow('AGAMAJUNG_EXTERNAL_DRY_RUN은 0 또는 1이어야 합니다.');
+  expectNoInstagram(source);
+});
+
 test('deprecated external dry-run exits before configuration, state, credentials or Instagram', async () => {
-  vi.stubEnv('AGAMAJUNG_EXTERNAL_DRY_RUN','1');vi.stubEnv('AGAMAJUNG_API_URL',undefined);vi.stubEnv('INGEST_TOKEN',undefined);
-  const state=vi.spyOn(CrawlerState,'open');await main();expect(loadConfig).not.toHaveBeenCalled();expect(state).not.toHaveBeenCalled();expect(launchBrowser).not.toHaveBeenCalled();
+  healthyInstagram();
+  vi.stubEnv('AGAMAJUNG_API_URL', undefined);
+  vi.stubEnv('INGEST_TOKEN', undefined);
+  dryRunFlag('injected');
+  await main();
+  expectNoInstagram('injected');
 });
 
 test('Instagram runs independently after external collection migration',async()=>{healthyInstagram();await main();expect(launchBrowser).toHaveBeenCalledOnce();expect(vi.mocked(health).mock.calls.some(([event])=>event==='poll')).toBe(true);});
+
+test.each(['0', ''])('external dry-run=%j preserves the healthy Instagram cycle', async value => {
+  healthyInstagram();
+  vi.stubEnv('AGAMAJUNG_EXTERNAL_DRY_RUN', value);
+  await main();
+  expect(launchBrowser).toHaveBeenCalledOnce();
+  expect(vi.mocked(health).mock.calls.some(([event]) => event === 'poll')).toBe(true);
+});
