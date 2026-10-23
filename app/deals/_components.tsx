@@ -5,6 +5,8 @@ import { dealsCopy } from '../../lib/deals-copy';
 
 function verificationCopy(level: string | null) {
   switch (level) {
+    case 'page_body': return dealsCopy.pageBody;
+    case 'official_unpublished': return dealsCopy.officialUnpublished;
     case 'page_text': return dealsCopy.pageText;
     case 'search_summary': return dealsCopy.searchSummary;
     case 'manual': return dealsCopy.manual;

@@ -28,7 +28,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
           <h3>{money(m.official_price)}</h3>
           <p>{m.importer}</p>
           <p className="muted">{m.checked} · {verification[m.verify_level] ?? m.verify_level}</p>
-          <a href={m.source_url} target="_blank" rel="noopener noreferrer">{siteCopy.officialSource}</a>
+          {m.source_url && <a href={m.source_url} target="_blank" rel="noopener noreferrer">{siteCopy.officialSource}</a>}
           <p className="muted">{siteCopy.officialSourceNotice}</p>
         </section>
       </div>

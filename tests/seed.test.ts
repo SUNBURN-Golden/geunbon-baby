@@ -12,6 +12,10 @@ const legacyNotes = [
   ['Ergobaby', '옴니 브리즈', '검색 요약상 259,000~300,000원 범위, 단일 공식가 미확인'],
   ['Doona', '두나 카시트 겸용 유모차', '국내 공식 수입사·공식가 미확인. 비공식 판매가 701,400원(옥션, 2026-07-24 기준)'],
 ];
+const legacy0004Result: Record<string, string> = {
+  '트립트랩 하이체어(오크)': '', '익스플로리 X': '', '폭스5 리뉴': '',
+  '옴니 브리즈': '단일 공식가 미확인', '두나 카시트 겸용 유모차': '국내 공식 수입사·공식가 미확인.',
+};
 const cleanup = new URL('../migrations/0004_official_groupbuy_only.sql', import.meta.url);
 
 async function execute(db: D1Database, sql: string) {
@@ -30,12 +34,10 @@ test('seed stores only domestic official prices and retailer identities', () => 
   for (const seller of tripp.kr_retailers) expect(Object.keys(seller).sort()).toEqual(['retailer', 'source']);
   expect(tripp.gonggu.found).toEqual([]);
   expect(tripp.kr_official.find(row => row.config === '하이체어 오크')?.note).toBe('검색 요약');
-  for (const [brand, name] of legacyNotes) {
-    const model = models.find(m => m.brand === brand && m.model === name)!;
+  for (const model of models) {
     expect(model.note).not.toMatch(/\d/);
+    if (model.verify_level === 'official_unpublished') expect(model.kr_official_price_krw).toBeNull();
   }
-  expect(models.find(m => m.model === '옴니 브리즈')?.kr_official_price_krw).toBeNull();
-  expect(models.find(m => m.brand === 'Doona')?.kr_official_price_krw).toBeNull();
 });
 
 test('seed SQL can be rerun without replacing existing models, sellers or group buys', async () => {
@@ -80,9 +82,8 @@ test('UPDATE migration cleans legacy notes, preserves other columns and notes, a
     await execute(memory.db, migration);
     const after = (await memory.db.prepare('SELECT * FROM models ORDER BY id').all()).results;
     expect(after).toEqual(before.map(row => {
-      const model = models.find(m => m.brand === row.brand && m.model === row.name)!;
       return legacyNotes.some(([brand, name]) => row.brand === brand && row.name === name)
-        ? { ...row, note: `${model.note} / Reviewed context` } : row;
+        ? { ...row, note: `${legacy0004Result[String(row.name)]} / Reviewed context` } : row;
     }));
     await execute(memory.db, migration);
     expect((await memory.db.prepare('SELECT * FROM models ORDER BY id').all()).results).toEqual(after);
