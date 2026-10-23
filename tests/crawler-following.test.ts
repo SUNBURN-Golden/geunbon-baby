@@ -25,6 +25,7 @@ afterEach(async () => { vi.useRealTimers(); await rm(dir, { recursive: true, for
 
 async function fixture() {
   const ctx = { state: await CrawlerState.open(join(dir, 'state.json')), settings: parseSettings(settingsJson) };
+  ctx.settings.per_tick.max_accounts = 1;
   let batch = 0;
   const batches = [['/Seller.Mom/', '/seller.mom/', '/explore/', 'https://evil.test/fake/'], ['/another_seller/']];
   const scroll = vi.fn(() => { batch = Math.min(batch + 1, batches.length - 1); });
@@ -123,4 +124,20 @@ test('the main loop resume guard also blocks sync during quiet-window jitter', a
   await expect(syncFollowing(mock.page, ctx, () => { throw new QuietWindowError(); })).rejects.toBeInstanceOf(QuietWindowError);
   expect(mock.goto).not.toHaveBeenCalled();
   expect(ctx.state.lastFollowingSyncAttempt).toBeUndefined();
+});
+
+test.each(['agamajung', 'x@y.test', 'agamajung?query', 'explore'])('missing profile candidates fall back only for a handle username: %s', async username => {
+  const { ctx } = await fixture();
+  const events = vi.spyOn(await import('../crawler/lib/health'), 'health');
+  const mock = mockPage();
+  await syncFollowing(mock.page, { ...ctx, username });
+  if (username === 'agamajung') {
+    expect(mock.goto.mock.calls.map(([url]) => url)).toEqual(['https://www.instagram.com/', 'https://www.instagram.com/agamajung/']);
+    expect(events).toHaveBeenCalledWith('following_profile_fallback', { via: 'username' });
+  } else {
+    expect(mock.goto).toHaveBeenCalledTimes(1);
+    expect(events).toHaveBeenCalledWith('selector_miss', { scope: 'following_profile' });
+    expect(events.mock.calls.some(([event]) => event === 'following_profile_fallback')).toBe(false);
+  }
+  events.mockRestore();
 });

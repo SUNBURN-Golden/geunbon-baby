@@ -24,7 +24,7 @@ export async function initHealth(root: string) {
   lastHalt = {};
   await mkdir(logsDir, { recursive: true, mode: 0o700 });
 }
-export type HealthEvent = 'halt' | 'login_state' | 'login_recovery' | 'login_attempt' | 'login_ok' | 'session_reused' | 'following_sync' | 'quiet_window_enter' | 'quiet_window_exit' | 'run_start' | 'run_stop' | 'signals' | 'queue' | 'poll' | 'account_visit' | 'post_sent' | 'story_seen' | 'story_skip' | 'follow' | 'follow_skip' | 'candidate_found' | 'discovery' | 'challenge' | 'blocked' | 'api_error' | 'selector_miss' | 'external_run' | 'external_source' | 'external_item' | 'external_skip' | 'robots_block' | 'warn' | 'error';
+export type HealthEvent = 'halt' | 'login_state' | 'login_recovery' | 'login_attempt' | 'login_ok' | 'session_reused' | 'following_profile_fallback' | 'following_sync' | 'quiet_window_enter' | 'quiet_window_exit' | 'run_start' | 'run_stop' | 'signals' | 'queue' | 'poll' | 'account_visit' | 'post_sent' | 'story_seen' | 'story_skip' | 'follow' | 'follow_skip' | 'candidate_found' | 'discovery' | 'challenge' | 'blocked' | 'api_error' | 'selector_miss' | 'external_run' | 'external_source' | 'external_item' | 'external_skip' | 'robots_block' | 'warn' | 'error';
 type Fields = Record<string, string | number | boolean | null | undefined>;
 export function health(event: HealthEvent, fields: Fields = {}) {
   if (!logsDir) return;

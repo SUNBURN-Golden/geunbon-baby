@@ -82,9 +82,9 @@ export async function main() {
       },
       cycle: async ({ context, page, sessionFile }, check) => {
         check();
-        await syncFollowing(page, { state, settings }, check);
+        await syncFollowing(page, { state, settings, username }, check);
         check();
-        const signals = await readSignals(page, settings);
+        const signals = await readSignals(page, settings, username);
         check();
         const queue = planScans(signals, state, accounts.seed_accounts, settings);
         health('queue', { size: queue.length, accounts: queue.map(job => job.account).join(',') });

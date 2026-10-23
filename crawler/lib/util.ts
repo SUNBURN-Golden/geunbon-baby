@@ -7,11 +7,14 @@ export const kstNow = (date = new Date()) => new Date(date.getTime() + 9 * 3_600
 export const kstDayKey = (date = new Date()) => kstNow(date).toISOString().slice(0, 10);
 export const kstHourKey = (date = new Date()) => kstNow(date).toISOString().slice(0, 13);
 
+export const RESERVED = /^(explore|reels|direct|accounts|stories|p|reel|tv|about|legal|developer|directory|web|challenge|emails|terms|privacy)$/i;
+
 export function canonicalPost(href: string): string | null {
   try {
     const url = new URL(href, 'https://www.instagram.com/');
     if (url.protocol !== 'https:' || !['instagram.com', 'www.instagram.com'].includes(url.hostname) || url.username || url.password) return null;
-    if (!/^\/(p|reel)\/[A-Za-z0-9_-]+\/?$/.test(url.pathname)) return null;
-    return `https://www.instagram.com${url.pathname.replace(/\/$/, '')}/`;
+    const match = /^\/(?:(?<handle>[A-Za-z0-9._]{1,30})\/)?(?<kind>p|reel)\/(?<code>[A-Za-z0-9_-]+)\/?$/.exec(url.pathname);
+    if (!match?.groups || (match.groups.handle && RESERVED.test(match.groups.handle))) return null;
+    return `https://www.instagram.com/${match.groups.kind}/${match.groups.code}/`;
   } catch { return null; }
 }

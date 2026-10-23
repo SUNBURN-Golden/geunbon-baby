@@ -54,3 +54,34 @@ test('health write failure is contained and reports only a fixed operational mes
     expect(error).toHaveBeenCalledWith('크롤러 상태 로그 쓰기 실패: logs 디렉터리 권한·디스크 확인 필요.');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('selector counts, price presence and profile fallback remain safe health fields', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'crawler-health-'));
+  try {
+    await initHealth(dir);
+    health('selector_miss', { scope: 'profile_posts', anchors: 1, caption_text: 'private caption' });
+    health('following_profile_fallback', { via: 'username' });
+    const { sendItem } = await import('../crawler/lib/ingest');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 202 })));
+    for (const kind of ['post', 'story'] as const) {
+      for (const price of [{ value: 390000 }, null]) {
+        await sendItem(new URL('https://ingest.invalid/api/v1/ingest'), 'offline-token', {
+          source_url: 'https://www.instagram.com/p/test/', account: 'seller', kind, text: 'private caption',
+          captured_at: new Date().toISOString(), suggestions: { price },
+        });
+      }
+    }
+    await flushHealth();
+    const log = await readFile(join(dir, 'logs', `health-${new Date().toISOString().slice(0, 10)}.jsonl`), 'utf8');
+    const events = log.trim().split('\n').map(line => JSON.parse(line));
+    expect(events[0]).toMatchObject({ event: 'selector_miss', anchors: 1 });
+    expect(events[1]).toMatchObject({ event: 'following_profile_fallback', via: 'username' });
+    expect(events.slice(2).map(event => [event.event, event.price_found])).toEqual([
+      ['post_sent', true], ['post_sent', false], ['story_seen', true], ['story_seen', false],
+    ]);
+    expect(log).not.toContain('caption_text');
+    expect(log).not.toContain('private caption');
+    expect(log).not.toContain('390000');
+    expect(log).not.toContain('offline-token');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import type { Locator, Page } from 'playwright';
-export type Node = { dom?: Element; name?: string; text?: string; href?: string; visible?: boolean; click?: () => Promise<void> | void; fill?: (value: string) => Promise<void> | void; children?: (selector: string) => Node[]; evaluate?: () => unknown; screenshot?: (path: string) => Promise<void>; throws?: boolean };
+export type Node = { dom?: Element; attrs?: Record<string, string | null>; name?: string; text?: string; href?: string; visible?: boolean; click?: () => Promise<void> | void; fill?: (value: string) => Promise<void> | void; children?: (selector: string) => Node[]; evaluate?: () => unknown; screenshot?: (path: string) => Promise<void>; throws?: boolean };
 export function mockLocator(nodes: () => Node[]): Locator {
   // Reuse dynamic locators as Playwright does; long fake-clock waits must not
   // allocate thousands of independent spy trees for identical selector reads.
@@ -17,7 +17,7 @@ export function mockLocator(nodes: () => Node[]): Locator {
     fill: vi.fn(async (value: string) => { await nodes()[0]?.fill?.(value); }),
     click: vi.fn(async () => { if (nodes()[0]?.throws) throw new Error('detached'); await nodes()[0]?.click?.(); }),
     innerText: vi.fn(async () => nodes()[0]?.text ?? ''),
-    getAttribute: vi.fn(async () => nodes()[0]?.href ?? null),
+    getAttribute: vi.fn(async (name: string) => nodes()[0]?.attrs?.[name] ?? (name === 'href' ? nodes()[0]?.href ?? null : null)),
     elementHandle: vi.fn(async () => {
       const pinned = nodes()[0];
       return pinned ? {
@@ -27,7 +27,7 @@ export function mockLocator(nodes: () => Node[]): Locator {
       } : null;
     }),
     screenshot: vi.fn(async (options: { path: string }) => { await nodes()[0]?.screenshot?.(options.path); }),
-    evaluateAll: vi.fn(async (fn: (elements: Element[], arg?: unknown) => unknown, arg?: unknown) => fn(nodes().map(node => node.dom ?? ({ getAttribute: () => node.href ?? '' } as unknown as Element)), arg)),
+    evaluateAll: vi.fn(async (fn: (elements: Element[], arg?: unknown) => unknown, arg?: unknown) => fn(nodes().map(node => node.dom ?? ({ getAttribute: (name: string) => node.attrs?.[name] ?? (name === 'href' ? node.href ?? null : null), closest: () => null, textContent: node.text ?? '' } as unknown as Element)), arg)),
     evaluate: vi.fn(async (fn: (element: Element) => unknown) => nodes()[0]?.evaluate ? nodes()[0].evaluate!() : nodes()[0]?.dom ? fn(nodes()[0].dom!) : undefined),
     locator: () => cached('locator', nodes),
     getByRole: (role: string, options?: { name?: RegExp }) => cached(`role:${role}:${options?.name}`, () => nodes().flatMap(node => node.children?.(`role:${role}`) ?? []).filter(node => !options?.name || options.name.test(node.name ?? ''))),

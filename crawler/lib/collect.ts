@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import type { CrawlerState } from './state';
 import type { Settings } from './config';
 import { assertHuman } from './browser';
-import { firstVisible, followingButton, nextStoryButton, parseHandle, postLinks } from './selectors';
+import { firstVisible, followingButton, HANDLE_HREF, nextStoryButton, parseHandle, postLinksDetailed } from './selectors';
 import { sleep } from './util';
 import { health } from './health';
 import { sendItem } from './ingest';
@@ -31,12 +31,41 @@ async function pauseReadyStory(page: Page, account: string, previousPath: string
   // Next may retain the paused state. Never toggle Play back on.
   return Boolean(await firstVisible([page.getByRole('button', { name: /^(Play|재생)$/i })]));
 }
+// JSON-LD can be an object, array, or @graph. Ignore malformed blocks without
+// hiding page/quiet interruptions from the DOM read itself.
+async function postMetadata(page: Page): Promise<Record<string, unknown>[]> {
+  const blocks = await page.locator('script[type="application/ld+json"]').evaluateAll(scripts => scripts.map(script => script.textContent ?? ''));
+  const records: Record<string, unknown>[] = [];
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    if (!value || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    records.push(record);
+    visit(record['@graph']);
+  };
+  for (const block of blocks) {
+    try { visit(JSON.parse(block)); } catch { /* Invalid JSON-LD is optional. */ }
+  }
+  return records;
+}
+
 export async function readCaption(page: Page): Promise<string> {
-  for (const selector of ['article h1', 'article', 'main, [role="main"]']) {
+  const heading = await page.locator('article h1').first().innerText({ timeout: 4000 }).catch(() => '');
+  if (heading.trim()) return heading.slice(0, 6000);
+  for (const record of await postMetadata(page)) {
+    for (const value of [record.articleBody, record.caption]) {
+      if (typeof value === 'string' && value.trim()) return value.slice(0, 6000);
+    }
+  }
+  for (const selector of ['article', 'main, [role="main"]']) {
     const text = await page.locator(selector).first().innerText({ timeout: 4000 }).catch(() => '');
     if (text.trim()) return text.slice(0, 6000);
   }
-  return (await page.locator('meta[property="og:description"]').first().getAttribute('content', { timeout: 4000 }).catch(() => '') ?? '').slice(0, 6000);
+  for (const selector of ['meta[name="description"]', 'meta[property="og:description"]']) {
+    const text = await page.locator(selector).first().getAttribute('content', { timeout: 4000 }).catch(() => '');
+    if (text?.trim()) return text.slice(0, 6000);
+  }
+  return '';
 }
 export async function postAuthor(page: Page): Promise<string | null> {
   for (const selector of ['article header a[href]', 'main header a[href]', 'article a[role="link"][href]']) {
@@ -44,7 +73,28 @@ export async function postAuthor(page: Page): Promise<string | null> {
     const author = hrefs.map(parseHandle).find(Boolean);
     if (author) return author;
   }
-  return null;
+  for (const record of await postMetadata(page)) {
+    for (const author of [record.author].flat()) {
+      if (!author || typeof author !== 'object') continue;
+      const { alternateName, identifier, url } = author as Record<string, unknown>;
+      if (typeof url === 'string') {
+        const handle = parseHandle(url);
+        if (handle) return handle;
+      }
+      // JSON-LD commonly stores an internal User ID here, not a handle.
+      const identity = identifier && typeof identifier === 'object' ? identifier as Record<string, unknown> : undefined;
+      const id = typeof identity?.propertyID === 'string' && /^(username|handle)$/i.test(identity.propertyID) ? identity.value : undefined;
+      for (const candidate of [alternateName, id]) {
+        if (typeof candidate !== 'string') continue;
+        const href = `/${candidate.replace(/^@/, '')}/`;
+        const handle = HANDLE_HREF.test(href) ? parseHandle(href) : null;
+        if (handle) return handle;
+      }
+    }
+  }
+  const description = await page.locator('meta[name="description"]').first().getAttribute('content', { timeout: 4000 }).catch(error => { propagateMediaInterruption(error); return null; });
+  const handle = /- ([A-Za-z0-9._]{1,30}) on /.exec(description ?? '')?.[1];
+  return handle ? parseHandle(`/${handle}/`) : null;
 }
 async function ocrStory(page: Page, image: Locator, crawlerDir: string, settings: Settings, collectImages: boolean): Promise<{ text: string; image_url?: string }> {
   const file = resolve(crawlerDir, '.cache', 'story.png');
@@ -96,8 +146,8 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
     await assertHuman(page);
     if (await firstVisible(followingButton(page))) state.setFollowing(account, true);
     health('account_visit', { account });
-    const links = await postLinks(page);
-    if (!links.length) health('selector_miss', { scope: 'profile_posts', account });
+    const { links, anchors } = await postLinksDetailed(page);
+    if (!links.length) health('selector_miss', { scope: 'profile_posts', account, anchors });
     const fresh = links.filter(link => !state.isSeen(link)).slice(0, settings.per_tick.max_posts_per_account);
     for (const canonical of fresh) {
       if (!await state.reserve('post_views', { hourly: settings.hourly_caps.post_views })) break;

@@ -1,6 +1,7 @@
 import type { Locator, Page } from 'playwright';
 import { isImageUrl } from '../../lib/image-url';
 import { HaltError } from './browser';
+import { canonicalPost } from './util';
 import { QuietWindowError } from './quiet-window';
 
 export const POST_MEDIA = 'article img, article video';
@@ -85,12 +86,10 @@ export async function postImageUrl(page: Page): Promise<string | undefined> {
   // A video without a poster stays text-only; its og:image may be unrelated.
   if (media) return media.image_url;
   try {
-    const current = new URL(page.url());
+    const current = canonicalPost(page.url());
     const source = await page.locator('meta[property="og:url"]').first().getAttribute('content', { timeout: 1000 });
     if (!source) return;
-    const original = new URL(source);
-    if (!['instagram.com', 'www.instagram.com'].includes(original.hostname) || original.protocol !== 'https:' ||
-        original.pathname.replace(/\/$/, '') !== current.pathname.replace(/\/$/, '') || !/^\/(p|reel)\/[A-Za-z0-9_-]+\/?$/.test(current.pathname)) return;
+    if (!current || canonicalPost(source) !== current) return;
     const image = await page.locator('meta[property="og:image"]').first().getAttribute('content', { timeout: 1000 });
     return isImageUrl(image) ? image : undefined;
   } catch (error) { propagateMediaInterruption(error); return; }

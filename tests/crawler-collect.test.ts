@@ -240,3 +240,42 @@ test('collect_images=false stories skip media URL reads and mask OCR text and su
   expect(body.suggestions.price).toMatchObject({ value: 390000 });
   expect(urlReads).toBe(1); // 미디어 선택 단계의 한 번뿐. readMediaUrl(두 번째 읽기)은 호출되지 않는다.
 });
+
+test('profile-prefixed posts and reels ingest prices from JSON-LD before article chrome', async () => {
+  const { page } = mockPage(selector => {
+    if (selector.startsWith('a[href*="/p/"')) return ['/babybjorn/p/a/', '/babybjorn/reel/b/'].map(href => ({ href }));
+    if (selector === 'script[type="application/ld+json"]') return [{ text: '{broken' }, { text: JSON.stringify({ '@graph': [{ articleBody: '트립트랩 공구가 390,000원' }] }) }];
+    if (selector === 'article') return [{ text: '댓글 보기' }];
+    return [];
+  });
+  expect(await collectAccount(page, ctx)).toEqual({ posts: 2, stories: 0 });
+  expect(vi.mocked(fetch).mock.calls.map(([, request]) => JSON.parse(request!.body as string))).toEqual([
+    expect.objectContaining({ source_url: 'https://www.instagram.com/p/a/', kind: 'post', suggestions: expect.objectContaining({ price: expect.objectContaining({ value: 390000 }) }) }),
+    expect.objectContaining({ source_url: 'https://www.instagram.com/reel/b/', kind: 'post', suggestions: expect.objectContaining({ price: expect.objectContaining({ value: 390000 }) }) }),
+  ]);
+});
+
+test('profile post miss includes the observed anchor count', async () => {
+  const events = vi.spyOn(await import('../crawler/lib/health'), 'health');
+  const { page } = mockPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/babybjorn/tagged/' }] : []);
+  expect(await collectAccount(page, ctx)).toEqual({ posts: 0, stories: 0 });
+  expect(events).toHaveBeenCalledWith('selector_miss', { scope: 'profile_posts', account: 'stokke', anchors: 1 });
+  events.mockRestore();
+});
+
+test('caption fallback priority preserves full text and uses meta last with a 6000 character cap', async () => {
+  const { readCaption } = await import('../crawler/lib/collect');
+  const sources = ['article h1', 'script[type="application/ld+json"]', 'article', 'main, [role="main"]', 'meta[name="description"]', 'meta[property="og:description"]'];
+  for (let start = 0; start < sources.length; start++) {
+    const { page, goto } = mockPage(selector => {
+      const index = sources.indexOf(selector);
+      if (index < start) return [];
+      const text = `${index}:공구 390,000원 ${'가'.repeat(6100)}`;
+      if (index === 1) return [{ text: JSON.stringify([{ caption: text }]) }];
+      if (index >= 4) return [{ attrs: { content: text } }];
+      return index >= 0 ? [{ text }] : [];
+    });
+    expect(await readCaption(page)).toBe(`${start}:공구 390,000원 ${'가'.repeat(6100)}`.slice(0, 6000));
+    expect(goto).not.toHaveBeenCalled();
+  }
+});

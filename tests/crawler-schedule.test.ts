@@ -44,3 +44,18 @@ test('configuration rejects reversed delay bounds, fractional caps and missing s
   expect(() => parseSettings({})).toThrow();
   expect(parseSettings({ ...settingsJson, follow: { ...settingsJson.follow, daily_cap: 0 } }).follow.daily_cap).toBe(0);
 });
+
+test('default cycle schedules all twelve verified seed accounts and retains hourly caps', async () => {
+  const { default: accounts } = await import('../crawler/config/accounts.json');
+  const state = await CrawlerState.open(join(dir, 'state.json'));
+  const settings = parseSettings(settingsJson);
+  const verified = accounts.seed_accounts.filter(account => account.verified).map(account => account.handle).sort();
+  const seeds = (await loadConfig(resolve('crawler'))).accounts.seed_accounts;
+  const signals = { storyAccounts: [], freshAccounts: [] };
+  const jobs = planScans(signals, state, seeds, settings);
+  expect(verified).toHaveLength(12);
+  expect(jobs.map(job => job.account).sort()).toEqual(verified);
+  expect(settings.hourly_caps).toMatchObject({ profile_visits: 30, post_views: 40, story_opens: 20 });
+  settings.per_tick.max_accounts = 1;
+  expect(planScans(signals, state, seeds, settings)).toHaveLength(1);
+});

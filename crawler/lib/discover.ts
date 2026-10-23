@@ -3,7 +3,7 @@ import type { Page } from 'playwright';
 import type { CrawlerState } from './state';
 import type { AccountsFile, Settings } from './config';
 import { assertHuman } from './browser';
-import { parseHandle, postLinks } from './selectors';
+import { parseHandle, postLinksDetailed } from './selectors';
 import { sleep } from './util';
 import { health } from './health';
 import { extract } from './extract';
@@ -35,8 +35,9 @@ export async function discoverSellers(page: Page, ctx: { accounts: AccountsFile;
   await sleep(...settings.delays_ms.navigation);
   await assertHuman(page);
   let found = 0;
-  const links = (await postLinks(page)).slice(0, settings.discovery.posts_per_tag);
-  if (!links.length) health('selector_miss', { scope: 'discovery_posts' });
+  const posts = await postLinksDetailed(page);
+  const links = posts.links.slice(0, settings.discovery.posts_per_tag);
+  if (!links.length) health('selector_miss', { scope: 'discovery_posts', anchors: posts.anchors });
   for (const canonical of links) {
     if (state.isDiscoverySeen(canonical)) continue;
     if (!await state.reserve('post_views', { hourly: settings.hourly_caps.post_views })) break;
@@ -45,7 +46,9 @@ export async function discoverSellers(page: Page, ctx: { accounts: AccountsFile;
     await assertHuman(page);
     const text = await readCaption(page);
     const handle = await postAuthor(page);
-    if (!handle || !text.trim()) { health('selector_miss', { scope: 'discovery_author_caption' }); continue; }
+    if (!text.trim()) health('selector_miss', { scope: 'discovery_caption' });
+    if (!handle) health('selector_miss', { scope: 'discovery_author' });
+    if (!handle || !text.trim()) continue;
     const candidate = parseCandidate(handle, text);
     if (candidate) {
       if (state.addCandidate(candidate.handle, `#${tag}`, canonical, candidate.models)) found++;

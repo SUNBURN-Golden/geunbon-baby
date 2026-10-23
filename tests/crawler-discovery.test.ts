@@ -73,3 +73,60 @@ test('discovery rotates tags across restart, obeys interval/caps, and leaves pos
   await discoverSellers(page, { accounts, state, settings: config });
   expect(goto).toHaveBeenCalledTimes(count);
 });
+
+test.each(['json', 'meta'])('discovery registers a seller from %s metadata without DOM author links', async source => {
+  const state = await CrawlerState.open(join(dir, 'state.json'));
+  const accounts: AccountsFile = { seed_accounts: [], discovery: { hashtags: { base: ['공구'], brand: [], extra: [] } } };
+  const { page } = mockPage(selector => {
+    if (selector.startsWith('a[href*="/p/"')) return [{ href: '/seller/p/sale/' }];
+    if (source === 'json' && selector === 'script[type="application/ld+json"]') return [{ text: JSON.stringify({ articleBody: '트립트랩 공구 39만원', author: { alternateName: '@seller' } }) }];
+    if (source === 'meta' && selector === 'meta[name="description"]') return [{ attrs: { content: '10 likes - seller on Instagram: 트립트랩 공구 39만원' } }];
+    return [];
+  });
+  expect(await discoverSellers(page, { accounts, state, settings: parseSettings(settingsJson) })).toBe(1);
+  expect(state.candidates).toEqual([expect.objectContaining({ handle: 'seller' })]);
+});
+
+test.each([false, true])('discovery logs caption and author misses independently (caption missing: %s)', async missingCaption => {
+  const healthModule = await import('../crawler/lib/health');
+  const events = vi.spyOn(healthModule, 'health');
+  const state = await CrawlerState.open(join(dir, 'state.json'));
+  const accounts: AccountsFile = { seed_accounts: [], discovery: { hashtags: { base: ['공구'], brand: [], extra: [] } } };
+  const { page } = mockPage(selector => {
+    if (selector.startsWith('a[href*="/p/"')) return [{ href: '/p/missing/' }];
+    if (!missingCaption && selector === 'article') return [{ text: '공구 39만원' }];
+    return [];
+  });
+  expect(await discoverSellers(page, { accounts, state, settings: parseSettings(settingsJson) })).toBe(0);
+  const misses = events.mock.calls.filter(([event]) => event === 'selector_miss').map(([, fields]) => fields?.scope);
+  expect(misses).toEqual(missingCaption ? ['discovery_caption', 'discovery_author'] : ['discovery_author']);
+  events.mockRestore();
+});
+
+test('discovery post misses include anchor count', async () => {
+  const events = vi.spyOn(await import('../crawler/lib/health'), 'health');
+  const state = await CrawlerState.open(join(dir, 'state.json'));
+  const accounts: AccountsFile = { seed_accounts: [], discovery: { hashtags: { base: ['공구'], brand: [], extra: [] } } };
+  const { page } = mockPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/explore/p/invalid/' }] : []);
+  await discoverSellers(page, { accounts, state, settings: parseSettings(settingsJson) });
+  expect(events).toHaveBeenCalledWith('selector_miss', { scope: 'discovery_posts', anchors: 1 });
+  events.mockRestore();
+});
+
+test.each([
+  [{ alternateName: '@seller' }, 'seller'], [{ identifier: { propertyID: 'username', value: 'Seller.Mom' } }, 'seller.mom'],
+  [{ identifier: { propertyID: 'User ID', value: '123456789' }, url: 'https://www.instagram.com/seller/' }, 'seller'],
+  [{ identifier: { propertyID: 'username', value: 'other_seller' }, url: 'https://www.instagram.com/seller/' }, 'seller'],
+  [{ identifier: { propertyID: 'User ID', value: '123456789' } }, null],
+  [{ identifier: { value: '123456789' } }, null],
+  [{ identifier: { propertyID: 'User ID', value: 'seller.mom' } }, null],
+  [{ identifier: { propertyID: 'handle', value: '@Seller.Mom' } }, 'seller.mom'],
+  [{ identifier: { propertyID: 'username', value: '123456789' } }, '123456789'],
+  [{ url: 'https://www.instagram.com/seller/' }, 'seller'], [{ alternateName: '@explore' }, null],
+  [{ url: 'https://evil.test/seller/' }, null],
+])('JSON-LD author fields must resolve to valid profile handles: %j', async (author, expected) => {
+  const { postAuthor } = await import('../crawler/lib/collect');
+  const { page, goto } = mockPage(selector => selector === 'script[type="application/ld+json"]' ? [{ text: JSON.stringify({ author }) }] : []);
+  expect(await postAuthor(page)).toBe(expected);
+  expect(goto).not.toHaveBeenCalled();
+});

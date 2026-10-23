@@ -30,5 +30,5 @@ export async function sendItem(api: URL, token: string, item: IngestItem): Promi
     throw new IngestError(`수집 API 요청 실패(${response.status})`, response.status);
   }
   if (item.kind === 'external_listing') health('external_item', { source: item.source, status: response.status, model_match: item.model_match });
-  else health(item.kind === 'story' ? 'story_seen' : 'post_sent', { account: item.account, status: response.status });
+  else health(item.kind === 'story' ? 'story_seen' : 'post_sent', { account: item.account, status: response.status, price_found: Boolean((item.suggestions as { price?: unknown } | undefined)?.price) });
 }
