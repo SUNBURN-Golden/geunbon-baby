@@ -41,6 +41,8 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 
 ## 설정과 주기
 
+불리언은 문자열이 아닌 JSON `true`/`false`만 허용하며, 계정 객체의 알 수 없는 키는 거부합니다. 선택 필드는 키를 생략한 경우에만 `collect_images`는 true, `follow.allow_unverified`는 false, `brand`/`note`는 빈 문자열, `ocr.langs`는 `kor+eng`을 적용합니다(`null`은 오류). 계정의 `handle`·`scope`·`verified`·`follow`와 설정의 `discovery.enabled`·`ocr.enabled`는 필수입니다. `export-account` 조각을 붙여 넣을 때는 `scope`(`global` 또는 `kr`)를 추가하세요. `AGAMAJUNG_OCR`은 미설정·빈 값이면 파일 값을 유지하고 `0`·`1` 외의 값은 거부합니다.
+
 - `config/accounts.json`: Stokke, BabyBjorn, Bugaboo, Nuna, Joie, Cybex, egg, D.THRONE 시드와 `#공구`, `#육아템공구`, `#스토케공구`, `#팔이피플` 등의 발견 태그. 기존 설정의 `verified: true` 계정만 기본 방문·팔로우 대상입니다. 미확인 한국 계정은 운영자가 핸들을 확인한 뒤 활성화합니다. 이번 작업에서 핸들을 실시간 검증하지 않았습니다. 공구 셀러 계정(`brand`가 빈 문자열)은 `collect_images: false`로 등록해 아이 얼굴이 담길 수 있는 이미지 URL을 보내지 않습니다. `collect_images`를 생략하면 기본값은 true이며, 시드에 없이 손으로 팔로우한 셀러도 이미지가 수집되므로 시드에 등록해야 합니다. 핸들은 대소문자를 구분하지 않고 중복이면 실행 전에 오류로 거부합니다.
 - `config/settings.json`: 속도·한도·OCR·재확인 주기·공유 계정 휴식 시간을 관리합니다. 상한은 0으로 설정해 해당 행동을 끌 수 있습니다. 지연 범위는 양수이며 최솟값 ≤ 최댓값이어야 합니다.
 - `quiet_windows`: 휴식 시간 객체의 배열입니다. 공유 계정을 쓰는 다른 두 봇을 위해 매일 **06:45 포함 ~ 08:00 제외, 13:00 포함 ~ 14:00 제외(KST)** 동안 브라우저 실행·로그인·팔로우·모든 스캔을 멈춥니다. 각 객체는 `{ "start": "06:45", "end": "08:00", "timezone": "Asia/Seoul", "jitter_ms": [1000, 30000] }` 형식이며 두 기본 시간 모두 지터는 1~30초입니다. 키가 없으면 이전 `quiet_window` 객체를 하나짜리 배열로 읽고, 두 키 모두 없으면 위 두 시간을 적용합니다. 두 키가 함께 있으면 `quiet_windows`가 우선하며, 빈 배열 `[]`은 휴식을 끕니다.
