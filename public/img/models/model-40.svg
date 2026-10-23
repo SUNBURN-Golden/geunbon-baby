@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-label="옴니 브리즈">
+<title>옴니 브리즈</title>
+<g fill="none" stroke="#334338" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+<g id="body-panel">
+<path d="M368,346 Q412,322 469,339 Q526,350 586,331 L632,357 Q647,389 625,427 L601,479 Q601,573 641,661 Q658,706 635,742 Q587,785 490,779 Q403,775 357,738 Q334,713 349,668 Q383,570 363,490 L343,413 Q333,372 368,346 Z" stroke-width="5.7"/>
+<path d="M369,360 Q415,339 467,356 Q525,370 587,349 L616,368" stroke-width="5.4"/>
+<path d="M365,384 Q469,412 618,379" stroke-width="6.0"/>
+<path d="M375,400 Q474,427 608,396" stroke-width="5.2"/>
+<path d="M383,423 Q399,487 395,551 Q393,617 369,677" stroke-width="5.6"/>
+<path d="M582,418 Q565,481 576,551 Q584,620 618,675" stroke-width="5.7"/>
+<path d="M403,431 Q415,488 409,549" stroke-width="5.4"/>
+<path d="M555,430 Q541,496 552,556" stroke-width="6.0"/>
+<path d="M410,566 Q400,625 382,674" stroke-width="5.2"/>
+<path d="M557,573 Q572,634 601,677" stroke-width="5.6"/>
+<path d="M376,693 Q477,735 624,694" stroke-width="5.7"/>
+<path d="M366,717 Q478,768 631,720" stroke-width="5.4"/>
+<path d="M390,714 Q474,750 596,726" stroke-width="6.0"/>
+<path d="M379,670 Q402,653 416,614" stroke-width="5.2"/>
+<path d="M602,670 Q578,644 568,613" stroke-width="5.6"/>
+<path d="M411,442 Q428,452 445,453" stroke-width="5.7"/>
+<path d="M469,457 Q500,460 531,447" stroke-width="5.4"/>
+<path d="M432,482 Q453,493 474,488" stroke-width="6.0"/>
+<path d="M470,514 Q495,519 521,509" stroke-width="5.2"/>
+<path d="M433,545 Q452,553 473,548" stroke-width="5.6"/>
+<path d="M460,578 Q489,588 517,577" stroke-width="5.7"/>
+<path d="M426,610 Q444,622 463,621" stroke-width="5.4"/>
+<path d="M481,643 Q509,650 536,640" stroke-width="6.0"/>
+<path d="M382,357 Q385,378 390,391" stroke-width="5.2"/>
+<path d="M581,353 Q583,370 577,389" stroke-width="5.6"/>
+</g>
+<g id="shoulder-straps">
+<path d="M364,363 Q318,277 333,210 Q344,157 389,166 Q428,179 447,239 L472,331" stroke-width="5.7"/>
+<path d="M378,350 Q341,276 351,216 Q359,183 384,187 Q407,195 424,246 L449,337" stroke-width="5.4"/>
+<path d="M361,222 Q355,260 368,298" stroke-width="6.0"/>
+<path d="M379,200 Q392,209 401,232" stroke-width="5.2"/>
+<path d="M374,313 Q380,332 389,348" stroke-width="5.6"/>
+<path d="M402,249 Q412,275 420,304" stroke-width="5.7"/>
+<path d="M397,344 Q389,311 382,294" stroke-width="5.4"/>
+<path d="M353,211 Q346,234 350,259" stroke-width="6.0"/>
+<path d="M584,334 Q603,243 645,190 Q669,162 697,179 L726,207 Q742,231 726,271 L675,402" stroke-width="5.2"/>
+<path d="M606,340 Q625,257 660,210 Q673,194 687,203 L707,223 Q718,237 706,267 L657,389" stroke-width="5.6"/>
+<path d="M668,220 Q651,247 643,278" stroke-width="5.7"/>
+<path d="M688,215 Q700,225 695,241" stroke-width="5.4"/>
+<path d="M694,279 Q681,312 669,344" stroke-width="6.0"/>
+<path d="M660,304 Q649,334 640,364" stroke-width="5.2"/>
+<path d="M675,405 L736,491 Q755,516 739,538 L660,596" stroke-width="5.6"/>
+<path d="M660,418 L719,499 Q732,513 720,525 L650,575" stroke-width="5.7"/>
+<path d="M714,543 L691,625" stroke-width="5.4"/>
+<path d="M732,537 L710,628" stroke-width="6.0"/>
+<path d="M700,563 Q702,582 694,599" stroke-width="5.2"/>
+<path d="M716,560 Q716,578 709,591" stroke-width="5.6"/>
+<path d="M416,218 Q437,235 443,260" stroke-width="5.7"/>
+<path d="M428,224 Q449,244 453,267" stroke-width="5.4"/>
+</g>
+<g id="waist-belt">
+<path d="M357,742 Q322,742 307,769 L304,806 Q318,853 392,870 Q514,898 641,852 Q674,836 677,801 L668,758 Q657,741 635,743" stroke-width="5.7"/>
+<path d="M319,773 Q334,806 401,822 Q516,848 660,794" stroke-width="5.4"/>
+<path d="M318,802 Q354,838 408,846 Q528,875 653,828" stroke-width="6.0"/>
+<path d="M372,862 Q492,892 612,855" stroke-width="5.2"/>
+<path d="M335,789 Q348,803 367,807" stroke-width="5.6"/>
+<path d="M390,816 Q411,823 434,823" stroke-width="5.7"/>
+<path d="M456,832 Q479,836 501,831" stroke-width="5.4"/>
+<path d="M526,831 Q551,829 573,820" stroke-width="6.0"/>
+<path d="M597,813 Q619,806 638,794" stroke-width="5.2"/>
+<path d="M326,812 Q335,834 359,841" stroke-width="5.6"/>
+<path d="M375,843 Q396,851 417,853" stroke-width="5.7"/>
+<path d="M442,861 Q463,866 485,862" stroke-width="5.4"/>
+<path d="M513,859 Q539,860 562,851" stroke-width="6.0"/>
+<path d="M588,848 Q614,840 635,826" stroke-width="5.2"/>
+<path d="M319,759 Q303,744 283,755 L267,791 Q267,816 290,825 L310,825" stroke-width="5.6"/>
+<path d="M289,769 Q281,784 284,800" stroke-width="5.7"/>
+<path d="M278,795 Q281,811 294,812" stroke-width="5.4"/>
+<path d="M645,855 Q664,871 686,857 L719,821 L703,803" stroke-width="6.0"/>
+<path d="M659,855 Q672,861 682,847" stroke-width="5.2"/>
+<path d="M688,832 Q695,822 697,813" stroke-width="5.6"/>
+<path d="M358,751 Q364,765 369,777" stroke-width="5.7"/>
+<path d="M620,755 Q618,771 611,784" stroke-width="5.4"/>
+</g>
+<g id="buckle">
+<path d="M669,761 Q697,738 720,752 L745,778 Q757,794 744,811 L718,834 Q703,844 689,831 L669,811" stroke-width="5.7"/>
+<path d="M684,770 Q699,756 713,765 L733,784 Q742,795 731,806 L714,820 Q704,827 695,817" stroke-width="5.4"/>
+<path d="M698,776 Q707,767 716,777 L731,792 Q733,802 723,806 L709,797 Z" stroke-width="6.0"/>
+<path d="M706,781 Q711,777 717,785" stroke-width="5.2"/>
+<path d="M714,798 Q718,802 724,798" stroke-width="5.6"/>
+<path d="M679,783 Q669,777 663,785 L664,802 Q669,812 680,808" stroke-width="5.7"/>
+<path d="M673,785 Q680,786 681,794" stroke-width="5.4"/>
+<path d="M672,804 Q678,804 681,798" stroke-width="6.0"/>
+<path d="M738,766 L778,737 Q796,728 808,746 L820,768 Q822,783 806,793 L756,820" stroke-width="5.2"/>
+<path d="M747,779 L786,750 Q792,748 796,757 L803,770 Q807,775 795,783 L756,807" stroke-width="5.6"/>
+<path d="M787,756 Q797,760 799,770" stroke-width="5.7"/>
+<path d="M772,773 Q782,775 784,784" stroke-width="5.4"/>
+<path d="M777,797 L761,868 Q759,883 744,879 L733,870 L749,817" stroke-width="6.0"/>
+<path d="M764,815 Q761,843 751,866" stroke-width="5.2"/>
+<path d="M739,863 Q747,870 755,870" stroke-width="5.6"/>
+<path d="M767,838 Q777,842 779,850 L774,868 Q765,876 758,868" stroke-width="5.7"/>
+<path d="M769,845 Q776,848 772,860" stroke-width="5.4"/>
+<path d="M726,826 Q726,837 715,842" stroke-width="6.0"/>
+<path d="M694,817 Q698,825 706,825" stroke-width="5.2"/>
+<path d="M806,744 Q816,744 820,756" stroke-width="5.6"/>
+<path d="M812,779 Q813,786 803,792" stroke-width="5.7"/>
+<path d="M751,752 Q755,761 749,766" stroke-width="5.4"/>
+</g>
+</g>
+</svg>

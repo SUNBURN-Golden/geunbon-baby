@@ -1,5 +1,5 @@
 // Render the editable registered SVGs without a server or network.
-// Usage: npx tsx scripts/render-model-illustrations.ts [model-1 ... model-30]
+// Usage: npx tsx scripts/render-model-illustrations.ts [model-1 ... model-41]
 import { readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { SQUARE_MODEL_IDS } from '../lib/model-illustrations';

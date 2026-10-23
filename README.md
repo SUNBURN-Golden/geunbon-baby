@@ -164,15 +164,15 @@ npx tsx scripts/card-screenshots.ts --out <dir>   # /models 카드 모바일·�
 
 ### 상품 손그림 에셋
 
-`lib/model-illustrations.ts`가 모델별 이미지 규격을 반환합니다. model-1–30은 모두 편집 가능한 `1080×1080` SVG와 투명 `540×540`·`252×252` PNG를 사용합니다. 신규 선화에는 제품 경로만 넣고 글자·로고·종이 배경·액자·그림자를 넣지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다.
+`lib/model-illustrations.ts`가 모델별 이미지 규격을 반환합니다. model-1–41 중 등록된 39개(model-32·39 제외)는 모두 편집 가능한 `1080×1080` SVG와 투명 `540×540`·`252×252` PNG를 사용합니다. 신규 선화에는 제품 경로만 넣고 글자·로고·종이 배경·액자·그림자를 넣지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다.
 
 ```sh
-npx tsx scripts/render-model-illustrations.ts            # 등록된 30개 전부 두 크기로 재생성
+npx tsx scripts/render-model-illustrations.ts            # 등록된 39개 전부 두 크기로 재생성
 npx tsx scripts/render-model-illustrations.ts model-13   # 특정 모델만
 npx tsx scripts/card-screenshots.ts --out .local/card-qa
 ```
 
-렌더링·스크린샷은 기존 Playwright를 쓰며 서버나 네트워크가 필요 없습니다. 스크린샷은 등록된 30개 모델과 미등록 자리표시 1개를 모바일 390px·데스크톱 1280px × 라이트·다크에서 확인하며 이미지 디코딩 완료 후 전체 화면 4장과 기본 model-21–30 카드 40장(`--cards model-21,model-22`로 선택 가능)을 저장합니다. 모든 공구가 행의 높이(40px 이하), 정사각 이미지 디코딩, 같은 행 카드 높이, 자리표시와 가로 넘침을 검사합니다. 공식 참조·구성품·세부 경로·시각 검수 기록은 [배치 1 제작 기록](docs/model-illustrations-batch-1.md), [배치 2 제작 기록](docs/model-illustrations-batch-2.md), [배치 3 제작 기록](docs/model-illustrations-batch-3.md)을 참고하세요. 참조 사진은 임시 확인 후 삭제하며 저장소에 보관하지 않습니다. 서버 축소 요청의 제한은 배치 1 제작 기록에 남겼습니다.
+렌더링·스크린샷은 기존 Playwright를 쓰며 서버나 네트워크가 필요 없습니다. 스크린샷은 등록된 39개 모델과 미등록 자리표시 1개를 모바일 390px·데스크톱 1280px × 라이트·다크에서 확인하며 이미지 디코딩 완료 후 전체 화면 4장과 기본 model-31–41 중 등록된 9개 카드 36장(`--cards model-31,model-33`으로 선택 가능)을 저장합니다. 모든 공구가 행의 높이(40px 이하), 정사각 이미지 디코딩, 같은 행 카드 높이, 자리표시와 가로 넘침을 검사합니다. 공식 참조·구성품·세부 경로·시각 검수 기록은 [배치 1 제작 기록](docs/model-illustrations-batch-1.md), [배치 2 제작 기록](docs/model-illustrations-batch-2.md), [배치 3 제작 기록](docs/model-illustrations-batch-3.md), [배치 4 제작 기록](docs/model-illustrations-batch-4.md)을 참고하세요. model-32·39는 기준 내 공식 썸네일을 확보하지 못해 자리표시를 유지합니다. 참조 사진은 임시 확인 후 삭제하며 저장소에 보관하지 않습니다. 서버 축소 요청의 제한은 배치 1 제작 기록에 남겼습니다.
 
 ## Linux 로컬 수집함과 사이트 현황
 
