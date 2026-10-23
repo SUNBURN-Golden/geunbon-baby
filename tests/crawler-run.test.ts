@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Browser, BrowserContext, Page } from 'playwright';
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import settingsJson from '../crawler/config/settings.json';
 import { main } from '../crawler/index';
 import { loadConfig, loadEnvironment, parseSettings } from '../crawler/lib/config';
-import { CrawlerState } from '../crawler/lib/state';
+import { CrawlerState, type AccountState } from '../crawler/lib/state';
 import { assertHuman, ensureLogin, HaltError, launchBrowser } from '../crawler/lib/browser';
 import { captureHalt } from '../crawler/lib/halt';
 import { syncFollowing } from '../crawler/lib/following';
@@ -181,6 +184,62 @@ function healthyInstagram() {
   vi.mocked(saveSession).mockResolvedValue(undefined);
   vi.mocked(captureHalt).mockResolvedValue(undefined);
 }
+
+const realLoadConfig = async (dir: string) => (await vi.importActual<typeof import('../crawler/lib/config')>('../crawler/lib/config')).loadConfig(dir);
+async function crawlerDir(seeds: unknown[]) {
+  const dir = await mkdtemp(join(tmpdir(), 'crawler-run-'));
+  await mkdir(join(dir, 'config'));
+  await copyFile(resolve('crawler/config/settings.json'), join(dir, 'config/settings.json'));
+  await writeFile(join(dir, 'config/accounts.json'), JSON.stringify({ seed_accounts: seeds }));
+  return dir;
+}
+function clearConfigEnv() {
+  for (const key of ['AGAMAJUNG_OCR', 'AGAMAJUNG_OCR_LANG', 'AGAMAJUNG_QUIET_WINDOWS', 'AGAMAJUNG_QUIET_WINDOW']) vi.stubEnv(key, undefined);
+}
+
+test('a string image policy fails before state, browser or network activity', async () => {
+  healthyInstagram();
+  clearConfigEnv();
+  vi.stubGlobal('fetch', vi.fn(() => { throw new Error('offline'); }));
+  const dir = await crawlerDir([{ handle: 'seller', scope: 'kr', verified: true, follow: false, collect_images: 'false' }]);
+  try {
+    vi.mocked(loadConfig).mockImplementationOnce(() => realLoadConfig(dir));
+    await expect(main()).rejects.toThrow('seed_accounts[0].collect_images');
+    for (const operation of [CrawlerState.open, launchBrowser, ensureLogin, syncFollowing, readSignals, collectAccount, fetch]) expect(operation).not.toHaveBeenCalled();
+    expect(vi.mocked(health).mock.calls.some(([event]) => event === 'run_start')).toBe(false);
+    expect(initHealth).toHaveBeenCalledOnce();
+    expect(vi.mocked(initHealth).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(loadConfig).mock.invocationCallOrder[0]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('real configuration and scheduling preserve false and default omitted image policies to true', async () => {
+  healthyInstagram();
+  clearConfigEnv();
+  const dir = await crawlerDir([
+    { handle: 'seller', scope: 'kr', verified: true, follow: false, collect_images: false },
+    { handle: 'stokke', scope: 'global', verified: true, follow: false },
+  ]);
+  try {
+    vi.mocked(loadConfig).mockImplementationOnce(() => realLoadConfig(dir));
+    const records: Record<string, AccountState> = {};
+    const account = vi.fn((handle: string) => (records[handle] ??= {}));
+    vi.spyOn(CrawlerState, 'open').mockResolvedValue({
+      save: vi.fn(async () => {}), followingHandles: [], countDay: () => 0,
+      account, isFollowing: (handle: string) => account(handle).following === true,
+    } as unknown as CrawlerState);
+    vi.mocked(collectAccount).mockResolvedValue({ posts: 0, stories: 0 });
+    await main();
+    const { page } = await vi.mocked(launchBrowser).mock.results[0].value;
+    expect(account).toHaveBeenCalledWith('seller');
+    expect(account).toHaveBeenCalledWith('stokke');
+    expect(health).toHaveBeenCalledWith('queue', expect.objectContaining({ size: 2 }));
+    expect(collectAccount).toHaveBeenCalledTimes(2);
+    expect(collectAccount).toHaveBeenCalledWith(page, expect.objectContaining({ account: 'seller', scanPosts: true, collectImages: false }));
+    expect(collectAccount).toHaveBeenCalledWith(page, expect.objectContaining({ account: 'stokke', scanPosts: true, collectImages: true }));
+    expect(health).not.toHaveBeenCalledWith('error', expect.objectContaining({ scope: 'collect' }));
+    expect(health).toHaveBeenCalledWith('poll', expect.anything());
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 
 type FlagSource = 'injected' | 'env-file';
 type ExternalConfig = 'enabled' | 'disabled' | 'source-error' | 'missing';
