@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { buildModelCards, discountLabel, showStrike } from '../lib/model-cards';
-import { ILLUSTRATED_MODEL_IDS, modelIllustration } from '../lib/model-illustrations';
+import { ILLUSTRATED_MODEL_IDS, SQUARE_MODEL_IDS, modelIllustration } from '../lib/model-illustrations';
 import type { Gap } from '../lib/deals';
 
 const NOW = Date.parse('2026-10-21T03:00:00Z');
@@ -66,10 +66,11 @@ test('strikethrough follows the same condition as the pill', () => {
 
 test('illustrations resolve only for listed IDs', () => {
   for (const id of ILLUSTRATED_MODEL_IDS) {
+    const square = (SQUARE_MODEL_IDS as readonly string[]).includes(id);
     expect(modelIllustration(id)).toEqual({
-      src: `/img/models/${id}-540x675.png`,
-      srcSet: `/img/models/${id}-252x315.png 252w, /img/models/${id}-540x675.png 540w`,
-      width: 540, height: 675,
+      src: `/img/models/${id}-540x${square ? 540 : 675}.png`,
+      srcSet: `/img/models/${id}-252x${square ? 252 : 315}.png 252w, /img/models/${id}-540x${square ? 540 : 675}.png 540w`,
+      width: 540, height: square ? 540 : 675, lineArt: square,
     });
   }
   for (const id of ['model-3', 'model-41', '../model-1', 'model-1/../model-2', '', 'MODEL-1']) expect(modelIllustration(id)).toBeNull();

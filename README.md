@@ -154,3 +154,15 @@ npx tsx scripts/card-screenshots.ts --out <dir>   # /models 카드 모바일·�
 ```
 
 `tests`는 Vitest와 메모리 SQLite로 가격 매핑·인증·검수 격리·중복 및 크롤러 추출·한도·지터·발견·셀렉터·OCR 실패 복구를 확인합니다. 테스트에서 소켓·실제 fetch·브라우저 실행을 차단하며 네트워크 접속 없이 검증합니다. Worker 빌드 후 `wrangler dev --local --test-scheduled`와 로컬 `/__scheduled` 요청으로 Cron stub을 수동 확인할 수 있습니다. 배포 스크립트는 의도적으로 제공하지 않습니다.
+
+### 상품 손그림 에셋
+
+`lib/model-illustrations.ts`가 모델별 이미지 규격을 반환합니다. 기존 여섯 모델은 SVG와 `540×675`·`252×315` PNG를 유지하며, model-11–20은 편집 가능한 `1080×1080` SVG와 투명 `540×540`·`252×252` PNG를 사용합니다. 신규 선화에는 제품 경로만 넣고 글자·로고·종이 배경·액자·그림자를 넣지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다.
+
+```sh
+npx tsx scripts/render-model-illustrations.ts            # 이번 배치만 두 크기로 재생성
+npx tsx scripts/render-model-illustrations.ts model-13   # 특정 모델만
+npx tsx scripts/card-screenshots.ts --out .local/card-screenshots-batch2
+```
+
+렌더링·스크린샷은 기존 Playwright를 쓰며 서버나 네트워크가 필요 없습니다. 스크린샷은 신규 열 모델과 기존 이미지·자리표시를 모바일 390px·데스크톱 1280px × 라이트·다크에서 확인하며 이미지 디코딩 완료 후 전체 화면 4장과 신규 카드 40장을 저장합니다. 공식 참조·구성품·세부 경로·시각 검수 기록은 [배치 2 제작 기록](docs/model-illustrations-batch-2.md)을 참고하세요. 참조 사진은 서버에서 축소된 작은 썸네일만 임시 확인하고 즉시 삭제하며 저장소에 보관하지 않습니다.
