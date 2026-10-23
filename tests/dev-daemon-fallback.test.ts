@@ -135,9 +135,11 @@ describe('runner contracts', () => {
       expect(command.args).not.toContain('-s');
     }
   });
-  it('places Claude prompt before variadic flags and isolates the Fable profile', () => {
+  it('uses Claude stdin and isolates the Fable profile', () => {
     const command = modelCommand(models, { model: 'opus55', effort: 'medium' }, 'review task', '/repo', '/log', true);
-    expect(command.args.slice(0, 2)).toEqual(['-p', 'review task']);
+    expect(command.args[0]).toBe('-p');
+    expect(command.input).toEqual({ text: 'review task', transport: 'stdin' });
+    expect(command.args).not.toContain('review task');
     expect(command.args.slice(-4)).toEqual(['--allowedTools', 'Read', 'Grep', 'Glob']);
     expect(command.args).toContain('dontAsk');
     expect(command.env?.CLAUDE_CONFIG_DIR).toBe('/home/box/.claude-fable');
@@ -161,6 +163,27 @@ describe('runner contracts', () => {
     const command = modelCommand(models, { model: 'swe2' }, 'review', '/repo', '/log', true, ['/shared/.git', '/queue']);
     expect(command.bin).toBe('bwrap');
     expect(command.args).toEqual(expect.arrayContaining(['--ro-bind', '/repo', '/shared/.git', '/queue', '--respect-workspace-trust', 'false', 'swe-2', '-p']));
+  });
+  it.each([256, 400])('keeps a %s KiB prompt out of argv and environment for every provider', size => {
+    const prompt = 'diff --git a/code.ts b/code.ts\n' + 'x'.repeat(size * 1024);
+    for (const model of ['fable', 'glm', 'sol61', 'swe2'] as const) {
+      const command = modelCommand(models, { model }, prompt, '/repo', '/log', true);
+      expect(command.input).toEqual({ text: prompt, transport: model === 'swe2' ? 'file' : 'stdin' });
+      expect(JSON.stringify(command.args)).not.toContain(prompt);
+      expect(Object.values(command.env ?? {})).not.toContain(prompt);
+      expect(Math.max(...command.args.map(arg => Buffer.byteLength(arg)))).toBeLessThan(1024);
+      if (model === 'sol61') expect(command.args.at(-1)).toBe('-');
+    }
+  });
+  it('provides the complete large prompt again to every fallback after input failures', async () => {
+    const prompt = '한글\n"quoted" '.repeat(40000);
+    const { promise, execute } = run([result('Runner prompt delivery failed', 1), result('quota', 1), result('failed', 1), result('complete')], prompt);
+    expect(await promise).toEqual({ kind: 'success', answer: 'complete' });
+    expect(execute).toHaveBeenCalledTimes(4);
+    for (const [command] of execute.mock.calls as unknown as [import('../tools/dev-daemon/types').Command][]) {
+      expect(command.input?.text).toBe(prompt);
+      expect(command.args).not.toContain(prompt);
+    }
   });
   it('accepts only an unambiguous standalone verdict', () => {
     expect(verdict('Looks good\nVERDICT: APPROVE')).toBe('APPROVE');

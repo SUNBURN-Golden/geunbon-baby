@@ -1,8 +1,8 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProcessRunner, redactor } from '../tools/dev-daemon/runner';
@@ -10,9 +10,9 @@ import { ProcessRunner, redactor } from '../tools/dev-daemon/runner';
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
 const temps: string[] = [];
 afterEach(async () => { await Promise.all(temps.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
-function mockProcess(action: (child: EventEmitter & { stdout: PassThrough; stderr: PassThrough }) => Promise<void>) {
+function mockProcess(action: (child: EventEmitter & { stdout: PassThrough; stderr: PassThrough; stdin: PassThrough }) => Promise<void>) {
   vi.mocked(spawn).mockImplementation(() => {
-    const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() });
+    const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough() });
     queueMicrotask(() => { void action(child).then(() => child.emit('close', 0)); });
     return child as unknown as ReturnType<typeof spawn>;
   });
@@ -36,6 +36,45 @@ describe('process runner with mocked subprocesses', () => {
     expect(result.stdout).toBe('[REDACTED]\n');
     expect(result.stderr).toBe('[REDACTED AUTH]\n');
     expect(await readFile(log, 'utf8')).toBe('[REDACTED]\n[REDACTED AUTH]\n');
+  });
+  it('pipes the complete prompt with backpressure and EOF without logging input', async () => {
+    const log = await logPath();
+    const prompt = '한글\n"quoted" '.repeat(40000);
+    let received = '';
+    mockProcess(async child => {
+      child.stdin.setEncoding('utf8').on('data', text => { received += text; });
+      await once(child.stdin, 'end');
+      child.stdout.write('complete\n');
+    });
+    const result = await new ProcessRunner(1000).execute({ bin: 'stub', args: [], cwd: '/tmp', log,
+      input: { transport: 'stdin', text: prompt } });
+    expect(received).toBe(prompt); expect(result.code).toBe(0);
+    expect(vi.mocked(spawn).mock.calls.at(-1)?.[2]).toMatchObject({ stdio: ['pipe', 'pipe', 'pipe'] });
+    expect(await readFile(log, 'utf8')).toBe('complete\n');
+  });
+  it('rejects a zero exit after a stdin write error and preserves stderr diagnostics', async () => {
+    const log = await logPath();
+    mockProcess(async child => {
+      child.stdin.emit('error', Object.assign(new Error('broken pipe'), { code: 'EPIPE' }));
+      child.stderr.write('quota resets in 1 hour\n');
+      child.stdout.write('partial answer\n');
+    });
+    const result = await new ProcessRunner(1000).execute({ bin: 'stub', args: [], cwd: '/tmp', log,
+      input: { transport: 'stdin', text: 'x'.repeat(400 * 1024) } });
+    expect(result.code).toBe(1); expect(result.stderr).toContain('quota');
+  });
+  it('cleans private prompt files after synchronous spawn failure', async () => {
+    const log = await logPath();
+    let file = '';
+    vi.mocked(spawn).mockImplementation((_bin, args) => {
+      file = (args as string[]).at(-1)!;
+      throw new Error('spawn EACCES');
+    });
+    const result = await new ProcessRunner().execute({ bin: 'stub', args: ['-p'], cwd: '/tmp', log,
+      input: { transport: 'file', text: 'private body' } });
+    expect(result.code).toBe(1); expect(file).not.toBe('');
+    await expect(stat(dirname(file))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(log, 'utf8')).not.toContain('private body');
   });
   it('uses the Codex final-answer file rather than echoed prompt/transcript verdicts', async () => {
     const log = await logPath();

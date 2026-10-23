@@ -21,6 +21,7 @@ async function fixture(options: { answers?: Partial<Record<Stage, (string | Resu
   await writeFile(blueprint, 'Site and crawler are separate.');
   const calls: Command[] = [];
   const worktrees = new Map<string, string>();
+  let extraFiles = '';
   let branch = '', prCreated = false, merged = false, dirty = false, head = 'abc123', diff = '';
   const answers = options.answers ?? {};
   const stages = ['design-review', 'design-revise', 'build-review', 'review-fix', 're-review', 'design', 'build', 'audit'] as Stage[];
@@ -65,8 +66,8 @@ async function fixture(options: { answers?: Partial<Record<Stage, (string | Resu
       }
       if (args[0] === 'rev-list') return ok('1');
       if (args.includes('--quiet')) return { ...ok(), code: args.includes('--cached') ? 1 : 0 };
-      if (args[0] === 'diff') return ok(diff);
-      if ((args[0] === 'ls-files' && args.includes('--cached')) || args[0] === 'ls-tree') return ok('file.ts\0');
+      if (args[0] === 'diff') return ok(args.includes('--name-status') ? 'M\0file.ts\0' : diff);
+      if ((args[0] === 'ls-files' && args.includes('--cached')) || args[0] === 'ls-tree') return ok('file.ts\0' + extraFiles);
       if (args[0] === 'status') return ok(dirty ? ' M file.ts' : '');
       return ok();
     }
@@ -91,7 +92,7 @@ async function fixture(options: { answers?: Partial<Record<Stage, (string | Resu
   const daemon = new Daemon(daemonOptions);
   await daemon.init();
   return { root, queue, calls, daemon, daemonOptions, setDirty: () => { dirty = true; }, setMerged: () => { merged = true; },
-    setHead: (value: string) => { head = value; }, setDiff: (value: string) => { diff = value; } };
+    setFiles: (value: string) => { extraFiles = value; }, setHead: (value: string) => { head = value; }, setDiff: (value: string) => { diff = value; } };
 }
 async function enqueue(queue: Queue, body = '# Improve site\n\nMake a scoped change.', file = '001-task.md') {
   await writeFile(join(queue.root, 'inbox', file), body);
@@ -270,6 +271,22 @@ describe('daemon state machine with offline runners', () => {
     expect(daemon.state.active?.summary).toContain('changed after final review');
     expect(calls.some(c => c.bin === 'git' && c.args[0] === 'push')).toBe(false);
   });
+  it('fingerprints complete image contents even when review context summarizes them', async () => {
+    const { queue, daemon, calls, setFiles } = await fixture();
+    await enqueue(queue);
+    await until(daemon, () => daemon.state.active?.stage === 'build-review');
+    const task = daemon.state.active!;
+    await mkdir(join(task.worktree, 'public/img'), { recursive: true });
+    const path = join(task.worktree, 'public/img/review.svg');
+    await writeFile(path, '<svg>' + 'x'.repeat(400 * 1024) + '</svg>');
+    setFiles('public/img/review.svg\0');
+    await daemon.tick();
+    expect(task.stage).toBe('validate');
+    await writeFile(path, '<svg>' + 'y'.repeat(400 * 1024) + '</svg>');
+    await daemon.tick();
+    expect(task.stage).toBe('failed'); expect(task.summary).toContain('changed after final review');
+    expect(calls.some(c => c.bin === 'git' && c.args[0] === 'push')).toBe(false);
+  });
   it('resumes after a commit completed before its publish checkpoint, without committing twice', async () => {
     const { queue, daemon, daemonOptions, calls, setHead } = await fixture();
     await enqueue(queue);
@@ -280,14 +297,17 @@ describe('daemon state machine with offline runners', () => {
     expect(restarted.state.active?.commit).toBe('new-commit');
     expect(calls.some(c => c.bin === 'git' && c.args.includes('commit'))).toBe(false);
   });
-  it('includes the actual diff and untracked paths in a read-only review prompt', async () => {
+  it.each(['build-review', 're-review'] as const)('includes bounded review context in %s stdin', async stage => {
     const { queue, daemon, calls, setDiff } = await fixture();
     await enqueue(queue);
     await until(daemon, () => daemon.state.active?.stage === 'build-review');
+    daemon.state.active!.stage = stage;
     setDiff('diff --git a/app/page.tsx b/app/page.tsx'); await daemon.tick();
-    const review = calls.find(c => basename(c.log).includes('-build-review-0-0-'))!;
-    expect(review.args[1]).toContain('diff --git a/app/page.tsx b/app/page.tsx');
-    expect(review.args[1]).toContain('Untracked paths');
+    const review = calls.find(c => basename(c.log).includes(`-${stage}-0-0-`))!;
+    expect(review.input?.text).toContain('diff --git a/app/page.tsx b/app/page.tsx');
+    expect(review.input?.text).toContain('Untracked paths');
+    expect(calls.find(c => c.log.includes('review-main-diff'))?.args).toContain(':(exclude,icase,glob)public/img/**/*.svg');
+    expect(review.input?.transport).toBe('stdin');
   });
   it('recovers an already merged PR without merging or counting twice', async () => {
     const { queue, daemon, daemonOptions, setMerged, calls } = await fixture();
