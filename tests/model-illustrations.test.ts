@@ -165,7 +165,7 @@ test('set components keep distinct detailed groups rather than abstract stand-in
     ['model-4', ['chair', 'baby-set', 'tray', 'tray-detail']],
     ['model-5', ['chair', 'newborn-set', 'baby-set', 'tray', 'harness']],
     ['model-8', ['frame', 'seat', 'canopy', 'harness']],
-    ['model-9', ['frame', 'bassinet', 'footmuff', 'canopy']],
+    ['model-9', ['frame', 'bassinet', 'footmuff', 'canopy', 'adapter']],
     ['model-12', ['bumper-bar', 'chassis', 'seat']],
     ['model-13', ['stroller', 'bassinet', 'chassis', 'seat']],
     ['model-14', ['chassis', 'seat']],
@@ -204,4 +204,159 @@ test('single items and bundles retain different component structures', async () 
   }
   const pathSet = (s: string) => [...new Set([...s.matchAll(/<path d="([^"]+)"/g)].map(m => m[1]))].sort();
   for (const [a, b] of [[3, 4], [7, 8], [7, 9], [10, 11]]) expect(pathSet(await svg(a))).not.toEqual(pathSet(await svg(b)));
+});
+
+type Point = [number, number];
+type Matrix = [number, number, number, number, number, number];
+const numbers = (s: string) => (s.match(/-?(?:\d+(?:\.\d*)?|\.\d+)/g) ?? []).map(Number);
+const pathData = (s: string) => [...s.matchAll(/<path d="([^"]+)"/g)].map(m => m[1]);
+const transformPoint = ([x, y]: Point, [a, b, c, d, e, f]: Matrix): Point => [a * x + c * y + e, b * x + d * y + f];
+
+function groupMatrix(group: string): Matrix {
+  const value = /\btransform="([^"]+)"/.exec(group.split('>')[0])?.[1] ?? '';
+  let result: Matrix = [1, 0, 0, 1, 0, 0];
+  for (const match of value.matchAll(/(translate|scale|matrix)\(([^)]+)\)/g)) {
+    const n = numbers(match[2]);
+    const next: Matrix = match[1] === 'matrix' ? n as Matrix : match[1] === 'translate'
+      ? [1, 0, 0, 1, n[0], n[1] ?? 0] : [n[0], 0, 0, n[1] ?? n[0], 0, 0];
+    const [a, b, c, d, e, f] = result, [g, h, i, j, k, l] = next;
+    result = [a*g+c*h, b*g+d*h, a*i+c*j, b*i+d*j, a*k+c*l+e, b*k+d*l+f];
+  }
+  return result;
+}
+
+function controlPoints(d: string): Point[] {
+  const n = numbers(d);
+  expect(n.length % 2).toBe(0);
+  return Array.from({ length: n.length / 2 }, (_, i) => [n[i*2], n[i*2+1]]);
+}
+
+// Absolute M/L/Q/C/Z only; include endpoints and ten samples per curve.
+function pathSamples(d: string): Point[] {
+  const points: Point[] = [];
+  let current: Point = [0, 0], first: Point = [0, 0];
+  for (const m of d.matchAll(/([MLQCZ])([^MLQCZ]*)/g)) {
+    const p = controlPoints(m[2]);
+    if (m[1] === 'Z') { points.push(first); current = first; continue; }
+    if (m[1] === 'M' || m[1] === 'L') {
+      current = p[0]; points.push(current);
+      if (m[1] === 'M') first = current;
+      continue;
+    }
+    const start = current;
+    for (let i = 1; i <= 10; i++) {
+      const t = i / 10, u = 1 - t;
+      points.push(m[1] === 'Q'
+        ? [u*u*start[0]+2*u*t*p[0][0]+t*t*p[1][0], u*u*start[1]+2*u*t*p[0][1]+t*t*p[1][1]]
+        : [u**3*start[0]+3*u*u*t*p[0][0]+3*u*t*t*p[1][0]+t**3*p[2][0], u**3*start[1]+3*u*u*t*p[0][1]+3*u*t*t*p[1][1]+t**3*p[2][1]]);
+    }
+    current = p.at(-1)!;
+  }
+  return points;
+}
+
+function componentExtent(svg: string, id: string) {
+  const group = component(svg, id);
+  const ancestors: string[] = [];
+  for (const m of svg.slice(0, svg.indexOf(group)).matchAll(/<g\b[^>]*>|<\/g>/g)) {
+    if (m[0] === '</g>') ancestors.pop(); else ancestors.push(m[0]);
+  }
+  expect(ancestors.filter(g => /\btransform=/.test(g)), `${id}: no transformed wrapper`).toEqual([]);
+  const matrix = groupMatrix(group);
+  const points = pathData(group).flatMap(controlPoints).map(p => transformPoint(p, matrix));
+  const stroke = Number(/stroke-width="([^"]+)"/.exec(group.split('>')[0])?.[1] ?? 5.5);
+  const half = stroke * Math.max(Math.hypot(matrix[0], matrix[1]), Math.hypot(matrix[2], matrix[3])) / 2;
+  const minX = Math.min(...points.map(p => p[0])) - half, maxX = Math.max(...points.map(p => p[0])) + half;
+  const minY = Math.min(...points.map(p => p[1])) - half, maxY = Math.max(...points.map(p => p[1])) + half;
+  return { minX, maxX, minY, maxY, width: maxX - minX };
+}
+
+test('detached accessories and mounted harness remain legible at card size without transformed wrappers', async () => {
+  for (const [model, id, width] of [[5, 'baby-set', 300], [5, 'tray', 300], [5, 'harness', 220], [8, 'harness', 137]] as const) {
+    const svg = await readFile(new URL(`model-${model}.svg`, dir), 'utf8');
+    const box = componentExtent(svg, id);
+    expect(box.width, `${model} ${id}`).toBeGreaterThanOrEqual(width);
+    expect(Math.min(box.minX, box.minY)).toBeGreaterThanOrEqual(32);
+    expect(Math.max(box.maxX, box.maxY)).toBeLessThanOrEqual(1048);
+  }
+  const five = await readFile(new URL('model-5.svg', dir), 'utf8');
+  const boxes = ['baby-set', 'tray', 'harness'].map(id => componentExtent(five, id));
+  for (let i = 1; i < boxes.length; i++) expect(boxes[i].minY - boxes[i-1].maxY).toBeGreaterThanOrEqual(30);
+  expect(component(five, 'newborn-set')).toContain('<g id="toy">');
+});
+
+test('mounted tray follows its own chair footplate perspective with shortened, sheared depth', async () => {
+  const svg = await readFile(new URL('model-4.svg', dir), 'utf8');
+  const tray = component(svg, 'tray');
+  expect(tray.split('>')[0]).toMatch(/transform="matrix\(/);
+  const [a,b,c,d] = groupMatrix(tray);
+  const back = Math.atan2(b,a) * 180 / Math.PI, depth = Math.atan2(d,c) * 180 / Math.PI;
+  expect(back).toBeGreaterThanOrEqual(-6); expect(back).toBeLessThanOrEqual(8);
+  expect(depth).toBeGreaterThanOrEqual(104); expect(depth).toBeLessThanOrEqual(124);
+  const ratio = Math.hypot(c,d) / Math.hypot(a,b);
+  expect(ratio).toBeGreaterThanOrEqual(.65); expect(ratio).toBeLessThanOrEqual(.85);
+  expect(310 * Math.hypot(a,b)).toBeGreaterThanOrEqual(330);
+  const chair = component(svg, 'chair');
+  for (const landmark of ['385,665', '534,657', '678,711 L 485,765']) expect(chair).toContain(landmark);
+});
+
+function inside(p: Point, polygon: Point[]) {
+  let hit = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i], b = polygon[j];
+    if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0]) hit = !hit;
+  }
+  return hit;
+}
+function edgeDistance(p: Point, polygon: Point[]) {
+  return Math.min(...polygon.map((a, i) => {
+    const b = polygon[(i+1) % polygon.length], dx = b[0]-a[0], dy = b[1]-a[1];
+    const t = Math.max(0, Math.min(1, ((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy || 1)));
+    return Math.hypot(p[0]-a[0]-t*dx, p[1]-a[1]-t*dy);
+  }));
+}
+
+test('tray footprint hides rail and crotch guard without paint or masks', async () => {
+  const svg = await readFile(new URL('model-4.svg', dir), 'utf8');
+  const tray = component(svg, 'tray'), ds = pathData(tray), matrix = groupMatrix(tray);
+  // Back chord, right end wall, front wall (reversed), left end wall.
+  const rear = pathSamples(ds[0]).slice(0, 2), wall = pathSamples(ds[5]);
+  const polygon = [...rear, ...[...wall].reverse()].map(p => transformPoint(p, matrix));
+  for (const id of ['rail', 'crotch-guard']) {
+    const group = component(svg, id);
+    expect(pathData(group).length, id).toBeGreaterThanOrEqual(8);
+    expect(svg.slice(0, svg.indexOf(group))).toContain('<g transform="translate(295 220)">');
+    const points = pathData(group).flatMap(d => [...controlPoints(d), ...pathSamples(d)]).map(([x,y]): Point => [x+295,y+220]);
+    for (const p of points) expect(inside(p, polygon) && edgeDistance(p, polygon) >= 4, `${id}: ${p}`).toBe(false);
+    if (id === 'crotch-guard') {
+      const bottom = Math.max(...ds.flatMap(d => [...controlPoints(d), ...pathSamples(d)]).map(p => transformPoint(p, matrix)[1]));
+      expect(Math.min(...points.map(p => p[1]))).toBeGreaterThanOrEqual(bottom + 4);
+    }
+  }
+  const three = await readFile(new URL('model-3.svg', dir), 'utf8');
+  expect(pathData(component(three, 'rail')).length).toBeGreaterThanOrEqual(14);
+});
+
+test('all refined set ink, including transformed stroke widths, stays inside the safe square', async () => {
+  for (const n of [3, 4, 5, 8, 9]) {
+    const svg = await readFile(new URL(`model-${n}.svg`, dir), 'utf8');
+    const stack: { matrix: Matrix; stroke: number }[] = [{ matrix: [1,0,0,1,0,0], stroke: 5.5 }];
+    for (const tag of svg.matchAll(/<g\b[^>]*>|<\/g>|<path\b[^>]*>/g)) {
+      if (tag[0] === '</g>') { stack.pop(); continue; }
+      const parent = stack.at(-1)!;
+      if (tag[0].startsWith('<g')) {
+        const [a,b,c,d,e,f] = parent.matrix, [g,h,i,j,k,l] = groupMatrix(tag[0]);
+        stack.push({ matrix: [a*g+c*h,b*g+d*h,a*i+c*j,b*i+d*j,a*k+c*l+e,b*k+d*l+f], stroke: Number(/stroke-width="([^"]+)"/.exec(tag[0])?.[1] ?? parent.stroke) });
+      } else {
+        const points = controlPoints(/\bd="([^"]+)"/.exec(tag[0])![1]).map(p => transformPoint(p, parent.matrix));
+        const [a,b,c,d] = parent.matrix;
+        // The transformed circular stroke has these exact horizontal/vertical radii.
+        const rx = parent.stroke * Math.hypot(a,c) / 2, ry = parent.stroke * Math.hypot(b,d) / 2;
+        for (const [x,y] of points) {
+          expect(Math.min(x-rx,y-ry), `model-${n} safe margin`).toBeGreaterThanOrEqual(32);
+          expect(Math.max(x+rx,y+ry), `model-${n} safe margin`).toBeLessThanOrEqual(1048);
+        }
+      }
+    }
+  }
 });
