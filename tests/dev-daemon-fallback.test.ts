@@ -18,21 +18,21 @@ function run(results: Result[], prompt = 'task') {
 
 describe('daemon fallback', () => {
   it('uses the exact requested chains and effort levels', () => {
-    const design = [{ model: 'fable', effort: 'medium' }, { model: 'astra6', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
-    const build = [{ model: 'sol61', effort: 'medium' }, { model: 'sonnet', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
+    const design = [{ model: 'opus55', effort: 'medium' }, { model: 'astra6', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
+    const build = [{ model: 'sol61', effort: 'high' }, { model: 'sonnet', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }];
     expect(chains).toEqual({
       design,
-      'design-review': [{ model: 'opus55', effort: 'medium' }, { model: 'astra6', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }],
+      'design-review': [{ model: 'astra6', effort: 'high' }, { model: 'opus55', effort: 'medium' }, { model: 'glm' }, { model: 'swe2' }],
       'design-revise': design,
       build,
-      'build-review': [{ model: 'opus55', effort: 'medium' }, { model: 'sol61', effort: 'medium' }, { model: 'glm' }, { model: 'swe2' }],
+      'build-review': [{ model: 'glm' }, { model: 'sonnet', effort: 'medium' }, { model: 'sol61', effort: 'high' }, { model: 'swe2' }],
       'review-fix': build,
-      're-review': [{ model: 'sonnet', effort: 'medium' }, { model: 'sol61', effort: 'medium' }, { model: 'glm' }, { model: 'swe2' }],
-      audit: design,
+      're-review': [{ model: 'glm' }, { model: 'sol61', effort: 'high' }, { model: 'sonnet', effort: 'medium' }, { model: 'swe2' }],
+      audit: [{ model: 'fable', effort: 'medium' }, { model: 'astra6', effort: 'high' }, { model: 'glm' }, { model: 'swe2' }],
     });
     expect(chains['design-revise']).toBe(chains.design);
     expect(chains['review-fix']).toBe(chains.build);
-    expect(chains.audit).toBe(chains.design);
+    expect(chains.audit).not.toBe(chains.design);
   });
   it('falls back on nonzero exit and zero-exit quota output, stopping at success', async () => {
     const { promise, execute } = run([result('CLI failed', 1), diagnostic('quota exceeded', 0), result('completed')]);
@@ -120,13 +120,13 @@ describe('runner contracts', () => {
     ['build-review', true],
     ['review-fix', false],
     ['re-review', true],
-  ] as const)('passes the configured Sol medium effort and permissions for %s', (stage, expectedReadOnly) => {
+  ] as const)('passes the configured Sol high effort and permissions for %s', (stage, expectedReadOnly) => {
     const choice = chains[stage]?.find(c => c.model === 'sol61');
-    expect(choice).toEqual({ model: 'sol61', effort: 'medium' });
+    expect(choice).toEqual({ model: 'sol61', effort: 'high' });
     expect(readOnly(stage)).toBe(expectedReadOnly);
     const command = modelCommand(models, choice!, 'task', '/repo', '/log', readOnly(stage));
     expect(command.bin).toBe('codex');
-    expect(command.args.slice(0, 5)).toEqual(['exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort=medium']);
+    expect(command.args.slice(0, 5)).toEqual(['exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort=high']);
     if (expectedReadOnly) {
       expect(command.args.slice(5, 9)).toEqual(['-s', 'read-only', '-c', 'approval_policy="never"']);
       expect(command.args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
@@ -156,7 +156,7 @@ describe('runner contracts', () => {
     expect(review.args).toContain('model_reasoning_effort=high');
     expect(review.args).toContain('read-only');
     expect(review.answerFile).toBe('/log.answer');
-    expect(modelCommand(models, { model: 'sol61', effort: 'medium' }, 'build', '/repo', '/log', false).args)
+    expect(modelCommand(models, { model: 'sol61', effort: 'high' }, 'build', '/repo', '/log', false).args)
       .toContain('--dangerously-bypass-approvals-and-sandbox');
   });
   it('uses Devin print mode, skips workspace trust, and enforces read-only mounts', () => {
