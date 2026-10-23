@@ -75,8 +75,10 @@ test('cards show name, art or placeholder, official price and the lowest active 
 
   const one = cardOf(html, 'model-1');
   expect(one).toContain(`alt="${names['model-1']}"`);
-  expect(one).toContain('-540x675.png');
+  expect(one).toContain('-540x540.png');
   expect(one).toContain('model-deal-price');
+  expect(one).toContain('model-art-line');
+  expect(one).toContain('width="540" height="540"');
   expect(one).toContain('390,000');
   expect(one).not.toContain('%');
   expect(one).toContain('<s>430,000원</s>');
@@ -94,6 +96,8 @@ test('cards show name, art or placeholder, official price and the lowest active 
 
   const three = cardOf(html, 'model-3');
   expect(three).toContain('정보 없음');
+  expect(three).toContain('model-3-540x540.png');
+  expect(three).toContain(`alt="${names['model-3']}"`);
   expect(three).toContain('380,000');
   expect(three).not.toContain('model-discount');
   expect(three).not.toContain('<s>');
@@ -123,4 +127,10 @@ test('after every deal ends all cards say there is no active deal', async () => 
   expect(html).not.toContain('model-discount');
   expect(html).not.toContain('390,000');
   expect([...html.matchAll(/class="model-card" href="([^"]+)"/g)].map(m => m[1])).toEqual(['/models/model-1', '/models/model-21', '/models/model-20', '/models/model-3']);
+});
+
+test('deal rows keep compact, unwrapped mobile pricing', async () => {
+  const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
+  expect(css.match(/\.model-deal \{([^}]+)\}/)?.[1]).toContain('flex-wrap: nowrap');
+  expect(css.match(/\.model-deal-price \{([^}]+)\}/)?.[1]).toContain('clamp(20px, 5vw, 28px)');
 });

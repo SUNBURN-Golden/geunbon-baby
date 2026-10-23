@@ -1,5 +1,5 @@
-// Render the editable batch-2 SVGs without a server or network.
-// Usage: npx tsx scripts/render-model-illustrations.ts [model-11 ... model-20]
+// Render the editable registered SVGs without a server or network.
+// Usage: npx tsx scripts/render-model-illustrations.ts [model-1 ... model-20]
 import { readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { SQUARE_MODEL_IDS } from '../lib/model-illustrations';
@@ -7,7 +7,7 @@ import { SQUARE_MODEL_IDS } from '../lib/model-illustrations';
 const requested = process.argv.slice(2);
 const ids = requested.length ? [...new Set(requested)] : SQUARE_MODEL_IDS;
 for (const id of ids) {
-  if (!(SQUARE_MODEL_IDS as readonly string[]).includes(id)) throw new Error(`Not a batch-2 model: ${id}`);
+  if (!(SQUARE_MODEL_IDS as readonly string[]).includes(id)) throw new Error(`Not a registered square model: ${id}`);
 }
 const dir = new URL('../public/img/models/', import.meta.url);
 const browser = await chromium.launch({ headless: true });

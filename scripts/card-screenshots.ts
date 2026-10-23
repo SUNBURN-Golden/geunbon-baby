@@ -1,4 +1,4 @@
-// Renders all batch-2 models plus legacy / placeholder card fixtures into a static page and screenshots them in
+// Renders all twenty illustrated models plus one placeholder fixture into a static page and screenshots them in
 // mobile/desktop x light/dark. No server, no network: images are inlined.
 //   npx tsx scripts/card-screenshots.ts --out <dir>
 import { mkdir, readFile } from 'node:fs/promises';
@@ -21,13 +21,15 @@ const seed = JSON.parse(await readFile(join(root, 'seed/models.json'), 'utf8')) 
 const base = (n: number) => ({ id: `model-${n}`, name: seed.models[n - 1].model, brand: seed.models[n - 1].brand, official_price: seed.models[n - 1].kr_official_price_krw });
 const withDeal = (card: ReturnType<typeof base>, price: number): ModelCardData => ({ ...card, deal: { price }, gap: priceGap(price, card.official_price) });
 const noDeal = (card: ReturnType<typeof base>): ModelCardData => ({ ...card, deal: null, gap: null });
-const official1 = base(1).official_price!;
+// Synthetic prices only exercise screenshot layout; never written to seed or DB.
 const cards: ModelCardData[] = [
-  ...SQUARE_MODEL_IDS.map(id => noDeal(base(Number(id.slice(6))))),
-  withDeal(base(1), 390000),            // art + deal
-  withDeal(base(3), Math.round((base(3).official_price ?? official1) * 0.85 / 1000) * 1000), // placeholder + deal
-  noDeal(base(2)),                      // art + no deal
-  noDeal(base(4)),                      // placeholder + no deal
+  ...SQUARE_MODEL_IDS.map(id => {
+    const n = Number(id.slice(6)), card = base(n);
+    if (n === 3) return { ...card, deal: { price: null }, gap: null };
+    const price = ({ 1: 390000, 5: 780000, 10: 1990000 } as Record<number, number>)[n];
+    return price === undefined ? noDeal(card) : withDeal(card, price);
+  }),
+  noDeal(base(21)),
 ];
 
 const css = await readFile(join(root, 'app/globals.css'), 'utf8');
@@ -67,12 +69,30 @@ try {
         }));
         await document.fonts.ready;
       });
-      if (await page.locator('.model-art-line img').count() !== 10) throw new Error('Batch-2 coverage is incomplete');
+      if (await page.locator('.model-art-line img').count() !== 20) throw new Error('Illustrated model coverage is incomplete');
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       if (overflow) throw new Error(`${name}-${scheme}: horizontal overflow`);
-      const broken = await page.evaluate(() => [...document.images].filter(img => !img.complete || img.naturalWidth === 0).length);
+      const broken = await page.evaluate(() => [...document.images].filter(img => !img.complete || img.naturalWidth === 0 || img.naturalWidth !== img.naturalHeight).length);
       if (broken) throw new Error(`${name}-${scheme}: ${broken} broken image(s)`);
+      const layout = await page.evaluate(() => {
+        const invalidDeals = [...document.querySelectorAll('.model-deal')].filter(el => {
+          const height = el.getBoundingClientRect().height;
+          return height <= 0 || height > 40;
+        }).length;
+        const rows = new Map<number, number[]>();
+        for (const el of document.querySelectorAll<HTMLElement>('.model-card')) {
+          const heights = rows.get(el.offsetTop) ?? [];
+          heights.push(el.getBoundingClientRect().height);
+          rows.set(el.offsetTop, heights);
+        }
+        return { invalidDeals, unevenRows: [...rows.values()].filter(h => Math.max(...h) - Math.min(...h) > 1).length };
+      });
+      if (layout.invalidDeals || layout.unevenRows) throw new Error(`${name}-${scheme}: ${JSON.stringify(layout)}`);
+      if (await page.locator('.model-art-mark').count() !== 1 || await page.locator('a[href="/models/model-21"] .model-art-mark').count() !== 1) throw new Error('Placeholder coverage is incorrect');
       for (const id of SQUARE_MODEL_IDS) {
+        if (await page.locator(`a[href="/models/${id}"] .model-art-mark`).count()) throw new Error(`Unexpected placeholder: ${id}`);
+      }
+      for (const id of SQUARE_MODEL_IDS.slice(0, 10)) {
         const card = page.locator(`a[href="/models/${id}"]`);
         await card.screenshot({ path: join(out, `${name}-${scheme}-${id}.png`) });
       }
@@ -84,7 +104,7 @@ try {
     const light = seen[`${name}-light`], dark = seen[`${name}-dark`];
     if (light.bg === dark.bg || light.body === dark.body) throw new Error(`${name}: light and dark backgrounds are identical`);
   }
-  console.log(`Saved 4 full-page and 40 batch-2 card screenshots to ${out}`);
+  console.log(`Saved 4 full-page and 40 model-1–10 card screenshots to ${out}`);
 } finally {
   await browser.close();
 }
