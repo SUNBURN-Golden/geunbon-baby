@@ -58,7 +58,7 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   const models = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
   const detail = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
   const calendar = renderToStaticMarkup(await Calendar());
-  const card = renderToStaticMarkup(createElement(DealCard, { deal }));
+  const card = renderToStaticMarkup(createElement(DealCard, { deal, nowMs: Date.now() }));
   for (const html of [home, models, detail, calendar, card]) excludesOtherPrices(html);
   expect(home).toContain(siteCopy.pricePromise);
   expect(models).toContain(siteCopy.officialLabel);

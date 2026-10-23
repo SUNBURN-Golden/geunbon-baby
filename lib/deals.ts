@@ -46,18 +46,34 @@ export function priceGap(price: number | null, official: number | null): Gap | n
 const DAY_MS = 86_400_000;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
-// Accept calendar dates (UTC, matching Date.parse) and ISO instants with an
-// explicit zone. Reject ambiguous local times and dates normalized by JS.
-function parseDate(value: string): number {
-  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2}))?$/.exec(value);
+// Deal schedules require an explicit instant. Validate the local calendar before
+// Date.parse can silently roll an impossible date into the following month.
+export function parseTimestamp(value: string): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.exec(value);
   if (!match) return NaN;
   const [, year, month, day, hour, minute, second, zone] = match;
   const calendar = new Date(`${year}-${month}-${day}T00:00:00Z`);
   if (calendar.getUTCFullYear() !== Number(year) || calendar.getUTCMonth() + 1 !== Number(month) ||
       calendar.getUTCDate() !== Number(day)) return NaN;
-  if (hour && (Number(hour) > 23 || Number(minute) > 59 || Number(second) > 59)) return NaN;
-  if (zone && zone !== 'Z' && (Number(zone.slice(1, 3)) > 23 || Number(zone.slice(4)) > 59)) return NaN;
-  return Date.parse(value);
+  if (Number(hour) > 23 || Number(minute) > 59 || Number(second) > 59) return NaN;
+  if (zone !== 'Z' && (Number(zone.slice(1, 3)) > 23 || Number(zone.slice(4)) > 59)) return NaN;
+  const ms = Date.parse(value);
+  const utcYear = new Date(ms).getUTCFullYear();
+  return utcYear >= 0 && utcYear <= 9999 ? ms : NaN;
+}
+
+// Checked dates may omit the time and are then interpreted as UTC midnight.
+export function parseDate(value: string): number {
+  return parseTimestamp(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value);
+}
+
+export function normalizeTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const ms = parseTimestamp(value);
+  if (!Number.isFinite(ms)) return null;
+  const iso = new Date(ms).toISOString();
+  // Keep the same result-year range as SQLite and fixed-width text ordering.
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(iso) ? iso : null;
 }
 
 function kstDay(ms: number): number {
@@ -65,8 +81,8 @@ function kstDay(ms: number): number {
 }
 
 export function dealTiming(startsAt: string, endsAt: string, nowMs: number): Timing {
-  const start = parseDate(startsAt);
-  const end = parseDate(endsAt);
+  const start = parseTimestamp(startsAt);
+  const end = parseTimestamp(endsAt);
   if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(nowMs) || end < start) {
     return { state: 'unknown', days: null };
   }
@@ -79,9 +95,9 @@ export function sortDeals<T extends Deal>(deals: readonly T[], nowMs: number): T
   const rank = { active: 0, upcoming: 1, ended: 2, unknown: 3 };
   return deals.map(deal => {
     const { state } = dealTiming(deal.starts_at, deal.ends_at, nowMs);
-    const time = state === 'upcoming' ? parseDate(deal.starts_at)
-      : state === 'active' ? parseDate(deal.ends_at)
-      : state === 'ended' ? -parseDate(deal.ends_at) : 0;
+    const time = state === 'upcoming' ? parseTimestamp(deal.starts_at)
+      : state === 'active' ? parseTimestamp(deal.ends_at)
+      : state === 'ended' ? -parseTimestamp(deal.ends_at) : 0;
     return { deal, rank: rank[state], time };
   }).sort((a, b) => a.rank - b.rank || a.time - b.time ||
     (a.deal.id < b.deal.id ? -1 : a.deal.id > b.deal.id ? 1 : 0)

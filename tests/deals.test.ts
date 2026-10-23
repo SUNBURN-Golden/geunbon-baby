@@ -77,7 +77,7 @@ describe('schedule and ordering', () => {
     expect(dealTiming(start, end, midnight - 1)).toEqual({ state: 'active', days: 1 });
     expect(dealTiming(start, end, midnight)).toEqual({ state: 'active', days: 0 });
     expect(dealTiming('2026-10-22T12:00:00+09:00', '2026-10-23T12:00:00+09:00', midnight)).toEqual({ state: 'upcoming', days: 0 });
-    expect(dealTiming('2026-10-21', '2026-10-22', nowMs)).toEqual({ state: 'active', days: 1 });
+    expect(dealTiming('2026-10-21', '2026-10-22', nowMs)).toEqual({ state: 'unknown', days: null });
   });
 
   test.each(['', 'not a date', '2026-13-01', '2026-02-30', '2026-02-29T00:00:00Z',
@@ -91,11 +91,11 @@ describe('schedule and ordering', () => {
     expect(dealTiming(end, start, nowMs)).toEqual({ state: 'unknown', days: null });
     expect(dealTiming(start, end, NaN)).toEqual({ state: 'unknown', days: null });
     expect(dealTiming(start, end, Infinity)).toEqual({ state: 'unknown', days: null });
-    expect(dealTiming('2024-02-29', '2024-03-01', nowMs).state).toBe('ended');
+    expect(dealTiming('2024-02-29T00:00:00Z', '2024-03-01T00:00:00Z', nowMs).state).toBe('ended');
   });
 
   test('sorts every group by its own time, breaks ties by ID and never mutates input', () => {
-    const deal = (id: string, starts_at: string, ends_at: string) => Object.freeze({ ...fixture, id, starts_at, ends_at, extra: id });
+    const deal = (id: string, starts_at: string, ends_at: string) => Object.freeze({ ...fixture, id, starts_at: starts_at.length === 10 ? `${starts_at}T00:00:00Z` : starts_at, ends_at: ends_at.length === 10 ? `${ends_at}T00:00:00Z` : ends_at, extra: id });
     const input = Object.freeze([
       deal('unknown-z', 'bad', end), deal('ended-old', '2026-10-01', '2026-10-02'),
       deal('upcoming-late', '2026-10-25', '2026-10-26'), deal('active-late', start, '2026-10-24'),
