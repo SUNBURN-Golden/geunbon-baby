@@ -29,12 +29,12 @@ beforeAll(async () => {
   await memory.db.prepare("INSERT INTO models VALUES ('model', 'Brand', 'Chair', 'high_chair', 'Importer', 500000, 'https://example.com/model', '2026-10-20', 'manual', '')").run();
   // Deliberately insert in an order different from the required closing order.
   for (const [id, start, end] of [
-    ['later', '2026-10-20', '2026-10-25'],
-    ['upcoming', '2026-10-22', '2026-10-23'],
-    ['ended', '2026-10-19', '2026-10-20'],
-    ['soon', '2026-10-20', '2026-10-22'],
+    ['later', '2026-10-20T00:00:00Z', '2026-10-25T00:00:00Z'],
+    ['upcoming', '2026-10-22T00:00:00Z', '2026-10-23T00:00:00Z'],
+    ['ended', '2026-10-19T00:00:00Z', '2026-10-20T00:00:00Z'],
+    ['soon', '2026-10-20T00:00:00Z', '2026-10-22T00:00:00Z'],
     ['unknown', 'invalid-start', 'invalid-stop'],
-    ['today', '2026-10-20', '2026-10-21T03:00:00Z'],
+    ['today', '2026-10-20T00:00:00Z', '2026-10-21T03:00:00Z'],
   ]) {
     await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(id, 'model', 'seller', `${id} deal`, 400000, 'https://example.com/deal', 'manual', '2026-10-20', start, end,

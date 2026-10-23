@@ -1,3 +1,4 @@
+import type { Deal } from '../../lib/data';
 import { DealImage } from './_image';
 import Link from 'next/link';
 import { dealTiming, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
@@ -14,7 +15,7 @@ function verificationCopy(level: string | null) {
   }
 }
 
-function CheckedDate({ value }: { value: string | null }) {
+export function CheckedDate({ value }: { value: string | null }) {
   const formatted = formatDealDate(value);
   return formatted ? <time dateTime={value!}>{formatted}</time> : <>{dealsCopy.unknownChecked}</>;
 }
@@ -104,15 +105,19 @@ export function DealHeader({ deal, timing }: { deal: DealWithContext; timing: Ti
   );
 }
 
+export function DealPeriod({ deal, timing }: { deal: Pick<Deal, 'starts_at' | 'ends_at'>; timing: Timing }) {
+  return <>{timing.state === 'unknown' ? dealsCopy.unknownSchedule : <>
+        <time dateTime={deal.starts_at}>{formatDealDate(deal.starts_at, true)}</time>
+        {' – '}<time dateTime={deal.ends_at}>{formatDealDate(deal.ends_at, true)}</time>
+      </>}</>;
+}
+
 export function DealFacts({ deal, timing }: { deal: DealWithContext; timing: Timing }) {
   return (
     <dl className="deal-facts">
       <div><dt>{dealsCopy.seller}</dt><dd>{deal.seller_name || dealsCopy.unknownSeller}</dd></div>
       {deal.model_joined_id && <div><dt>{dealsCopy.model}</dt><dd>{deal.model_name}</dd></div>}
-      <div><dt>{dealsCopy.period}</dt><dd>{timing.state === 'unknown' ? dealsCopy.unknownSchedule : <>
-        <time dateTime={deal.starts_at}>{formatDealDate(deal.starts_at, true)}</time>
-        {' – '}<time dateTime={deal.ends_at}>{formatDealDate(deal.ends_at, true)}</time>
-      </>}</dd></div>
+      <div><dt>{dealsCopy.period}</dt><dd><DealPeriod deal={deal} timing={timing} /></dd></div>
       <div><dt>{dealsCopy.dealChecked}</dt><dd><CheckedDate value={deal.checked} /> · {verificationCopy(deal.verify_level)}</dd></div>
       {deal.model_joined_id && <div><dt>{dealsCopy.officialChecked}</dt><dd><CheckedDate value={deal.model_checked} /> · {verificationCopy(deal.model_verify_level)}</dd></div>}
     </dl>

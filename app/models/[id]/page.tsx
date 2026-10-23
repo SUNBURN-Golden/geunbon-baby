@@ -6,10 +6,12 @@ import { dealsCopy } from '../../../lib/deals-copy';
 import { DealCard } from '../../shared';
 export const dynamic = 'force-dynamic';
 export default async function Detail({ params }: { params: Promise<{ id: string }> }) {
+  // eslint-disable-next-line react-hooks/purity -- Dynamic Server Component captures request time once for all deal statuses.
+  const nowMs = Date.now();
   const { id } = await params; const db = environment().DB;
   const m = await db.prepare('SELECT * FROM models WHERE id = ?').bind(id).first<Model>();
   if (!m) notFound();
-  const prices = comparison(m, await all<Deal>(db, 'SELECT * FROM deals WHERE model_id = ?', id));
+  const prices = comparison(m, await all<Deal>(db, 'SELECT * FROM deals WHERE model_id = ? ORDER BY starts_at, id', id));
   return (
     <main className="page">
       <p className="eyebrow">{m.brand} / {categories[m.category]}</p>
@@ -20,7 +22,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
         <section>
           <p className="eyebrow">01 / GROUP BUY</p>
           <h2>{dealsCopy.groupBuyPrice}</h2>
-          {prices.gonggu.length ? prices.gonggu.map(d => <DealCard key={d.id} deal={d} showModelLink={false}/>) : <p>{dealsCopy.modelEmpty}</p>}
+          {prices.gonggu.length ? prices.gonggu.map(d => <DealCard key={d.id} deal={d} nowMs={nowMs} showModelLink={false}/>) : <p>{dealsCopy.modelEmpty}</p>}
         </section>
         <section>
           <p className="eyebrow">02 / OFFICIAL</p>

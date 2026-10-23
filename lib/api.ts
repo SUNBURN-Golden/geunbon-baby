@@ -1,3 +1,4 @@
+import { normalizeTimestamp } from './deals';
 import { receiveStatus, collectionStatus } from './collection-status';
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
@@ -16,7 +17,7 @@ export const safeUrl = (value: unknown): value is string => {
   try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password; } catch { return false; }
 };
 const text = (v: unknown, max = 500) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
-const date = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(v) && Number.isFinite(Date.parse(v));
+const date = (v: unknown) => normalizeTimestamp(v) !== null;
 
 // Seed notes can contain retailer, discount, overseas and used prices.
 // Keep them out of every public model response, including comparisons.
@@ -91,7 +92,7 @@ export function canonicalExternalUrl(value: unknown, source: ExternalSourceId): 
   return `https://${host}${path.length > 1 ? path.replace(/\/$/, '') : path}${query ? `?${query}` : ''}`;
 }
 const optText = (v: unknown, max: number) => v == null || text(v, max);
-const iso = (v: unknown) => (v == null ? null : new Date(v as string).toISOString());
+const iso = normalizeTimestamp;
 function parseExternalListing(b: Record<string, unknown>) {
   const bad = (error = '외부 공구 후보 형식 확인 필요') => ({ error });
   if ('image_url' in b) return bad('외부 소스에서는 image_url을 받지 않습니다');
@@ -106,7 +107,9 @@ function parseExternalListing(b: Record<string, unknown>) {
   if (b.price_hint != null && (!Number.isSafeInteger(b.price_hint) || (b.price_hint as number) < 0)) return bad();
   if (b.model_match != null && typeof b.model_match !== 'boolean') return bad();
   if ((b.starts_at != null && !date(b.starts_at)) || (b.ends_at != null && !date(b.ends_at))) return bad();
-  if (b.starts_at != null && b.ends_at != null && Date.parse(b.ends_at as string) <= Date.parse(b.starts_at as string)) return bad();
+  const startsAt = iso(b.starts_at);
+  const endsAt = iso(b.ends_at);
+  if (startsAt !== null && endsAt !== null && endsAt <= startsAt) return bad();
   if (b.seller_handle != null && (typeof b.seller_handle !== 'string' || !/^[A-Za-z0-9._]{1,30}$/.test(b.seller_handle))) return bad();
   if (b.seller_url != null) {
     let ok = false;
@@ -124,9 +127,9 @@ function parseExternalListing(b: Record<string, unknown>) {
       source: id, source_url: sourceUrl, title: b.title as string, text: b.text as string,
       seller_handle: (b.seller_handle as string | undefined) ?? null, seller_name: (b.seller_name as string | undefined) ?? null, seller_url: (b.seller_url as string | undefined) ?? null,
       price_hint: (b.price_hint as number | undefined) ?? null, price_raw: (b.price_raw as string | undefined) ?? null,
-      starts_at: iso(b.starts_at), ends_at: iso(b.ends_at), dates_raw: (b.dates_raw as string | undefined) ?? null,
+      starts_at: startsAt, ends_at: endsAt, dates_raw: (b.dates_raw as string | undefined) ?? null,
       category: (b.category as string | undefined) ?? null, model_match: b.model_match === true ? 1 : 0, suggestions,
-      captured_at: new Date(b.captured_at as string).toISOString(),
+      captured_at: iso(b.captured_at),
     },
   };
 }
@@ -178,10 +181,10 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     if (parts[0] === 'models' && parts.length === 2) {
       const model = await env.DB.prepare(`SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE id = ?`).bind(parts[1]).first<Omit<Model, 'note'>>();
       if (!model) return json({ error: '모델을 찾을 수 없습니다' }, 404);
-      const deals = await all<Deal>(env.DB, 'SELECT * FROM deals WHERE model_id = ? ORDER BY starts_at', model.id);
+      const deals = await all<Deal>(env.DB, 'SELECT * FROM deals WHERE model_id = ? ORDER BY starts_at, id', model.id);
       return json({ data: { ...model, comparison: comparison(model, deals) } });
     }
-    if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, 'SELECT * FROM deals ORDER BY starts_at')).map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })) });
+    if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, 'SELECT * FROM deals ORDER BY starts_at, id')).map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })) });
     if (path === 'sellers') return json({ data: await all(env.DB, 'SELECT * FROM sellers ORDER BY name') });
     if (path === 'admin/candidates') return json({ data: await all(env.DB, "SELECT * FROM external_candidates WHERE status = 'candidate' ORDER BY captured_at LIMIT 200") });
     if (path === 'admin/queue') return json({ data: await all(env.DB, "SELECT * FROM ingested_items WHERE status = 'pending' ORDER BY captured_at LIMIT 100") });
@@ -214,7 +217,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       if (!['www.instagram.com', 'instagram.com'].includes(u.hostname) || u.protocol !== 'https:' || u.search || u.hash || !/^\/(p|reel)\/[A-Za-z0-9_-]+\/?$|^\/stories\/[A-Za-z0-9._]+\/[0-9]+\/?$/.test(u.pathname)) return json({ error: 'Instagram 원문 URL 필요' }, 400);
       const canonical = `https://www.instagram.com${u.pathname.replace(/\/$/, '')}/`;
       const id = crypto.randomUUID();
-      await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,suggestions,image_url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(source_url) DO NOTHING').bind(id, canonical, b.account, b.text, b.kind, new Date(b.captured_at).toISOString(), suggestions, b.image_url ?? null).run();
+      await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,suggestions,image_url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(source_url) DO NOTHING').bind(id, canonical, b.account, b.text, b.kind, iso(b.captured_at), suggestions, b.image_url ?? null).run();
       const item = await env.DB.prepare('SELECT id,status FROM ingested_items WHERE source_url = ?').bind(canonical).first();
       return json({ data: item }, 202);
     }
@@ -228,12 +231,14 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       const result = await env.DB.prepare("UPDATE ingested_items SET status = 'rejected', reviewed_at = ? WHERE id = ? AND status = 'pending'").bind(now, parts[2]).run();
       return json({ data: { changed: result.meta.changes } });
     }
-    if (!text(b.model_id) || !text(b.seller_id) || !text(b.title, 200) || !(b.price === null || (Number.isSafeInteger(b.price) && b.price >= 0)) || !date(b.starts_at) || !date(b.ends_at) || Date.parse(b.ends_at) <= Date.parse(b.starts_at)) return json({ error: '모델·판매자·제목·가격(null 허용)·ISO 시작/종료일 필요' }, 400);
+    const startsAt = normalizeTimestamp(b.starts_at);
+    const endsAt = normalizeTimestamp(b.ends_at);
+    if (!text(b.model_id) || !text(b.seller_id) || !text(b.title, 200) || !(b.price === null || (Number.isSafeInteger(b.price) && b.price >= 0)) || !startsAt || !endsAt || endsAt <= startsAt) return json({ error: '모델·판매자·제목·가격(null 허용)·ISO 시작/종료일 필요' }, 400);
     const model = await env.DB.prepare('SELECT id FROM models WHERE id = ?').bind(b.model_id).first();
     const seller = await env.DB.prepare('SELECT id FROM sellers WHERE id = ?').bind(b.seller_id).first();
     if (!model || !seller) return json({ error: '등록된 모델·판매자만 게시할 수 있습니다' }, 400);
     const results = await env.DB.batch([
-      env.DB.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) SELECT id, ?, ?, ?, ?, source_url, 'manual', ?, ?, ?, CASE WHEN ? THEN image_url ELSE NULL END FROM ingested_items WHERE id = ? AND status = 'pending' ON CONFLICT(id) DO NOTHING").bind(b.model_id, b.seller_id, b.title, b.price, now, b.starts_at, b.ends_at, b.include_image === false ? 0 : 1, parts[2]),
+      env.DB.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) SELECT id, ?, ?, ?, ?, source_url, 'manual', ?, ?, ?, CASE WHEN ? THEN image_url ELSE NULL END FROM ingested_items WHERE id = ? AND status = 'pending' ON CONFLICT(id) DO NOTHING").bind(b.model_id, b.seller_id, b.title, b.price, now, startsAt, endsAt, b.include_image === false ? 0 : 1, parts[2]),
       env.DB.prepare("UPDATE ingested_items SET status = 'approved', reviewed_at = ? WHERE id = ? AND status = 'pending'").bind(now, parts[2]),
     ]);
     return results[0].meta.changes ? json({ data: { status: 'approved' } }) : json({ error: '이미 검수된 항목' }, 409);
