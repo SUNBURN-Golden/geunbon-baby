@@ -1,5 +1,5 @@
 import { Scheduler } from '../scheduler';
-import { CollectorStore, requireThat } from '../store';
+import { CollectorError, CollectorStore, requireThat } from '../store';
 import { discoverLinks } from './adapters';
 import { sourceFor, type SourcePolicy } from '../source-policy';
 import { browserExtract } from './browser';
@@ -9,12 +9,17 @@ import { buildPayload } from '../../lib/external/filter';
 import type { ClipPayload, CollectionRecord } from '../../../shared/collection-schema';
 import { canonicalUrl } from '../../../shared/privacy-rules';
 import { digest } from '../dedup';
-export type Job={id:string;url:string;source_id:string;depth:number;operation:'discovery'|'recheck';phase:'pending'|'leased'|'done'|'failed';lease_until:number;cursor:number;finished_at?:number;attempt?:number};
+export type Job={id:string;url:string;source_id:string;depth:number;operation:'discovery'|'recheck';phase:'pending'|'leased'|'done'|'failed';lease_until:number;cursor:number;finished_at?:number;attempt?:number;failure_reason?:string};
+export function failureCode(error:unknown):string {
+  const code=error instanceof CollectorError?error.code:error instanceof Error?error.message:'';
+  return /^[a-z_]{1,40}$/.test(code)?code:'error';
+}
 export class DiscoveryRunner {
   constructor(readonly store:CollectorStore,readonly scheduler=new Scheduler(store)) {}
   enqueue(raw:string,source:SourcePolicy,depth=0,operation:Job['operation']='discovery') {
     requireThat(depth<=this.store.settings.limits.max_depth,'depth_limit');const url=canonicalUrl(raw),id=digest([url,operation]),old=this.store.get<Job>('collection_jobs',id);
-    if(old&&(old.phase==='pending'||old.phase==='leased'||(old.finished_at??0)+source.recheck_ms>this.store.now()))return;
+    const wait=old?.phase==='failed'?this.store.settings.limits.failure_backoff_ms:source.recheck_ms;
+    if(old&&(old.phase==='pending'||old.phase==='leased'||(old.finished_at??0)+wait>this.store.now()))return;
     this.store.transaction(()=>this.store.put('collection_jobs',id,{id,url,source_id:source.id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:(old?.attempt??0)+1} satisfies Job));
   }
   seed(){for(const source of this.store.settings.sources.filter(s=>s.enabled))for(const url of source.entries)this.enqueue(url,source);}
@@ -65,8 +70,8 @@ export class DiscoveryRunner {
             this.store.submit('linux',reservation.id,{assertions:region?extractFacts(textOf(region),source.selector):[]});
           }
         }
-        j.phase='done';
-      }catch{j.phase='failed';}
+        j.phase='done';delete j.failure_reason;
+      }catch(e){j.phase='failed';j.failure_reason=failureCode(e);}
       this.store.transaction(()=>{j.lease_until=0;j.finished_at=this.store.now();this.store.put('collection_jobs',j.id,j);});
     }
   }

@@ -1,9 +1,11 @@
 import { readFile } from 'node:fs/promises';
+import type { JobSummary } from './store';
 import { LABELS, STATUSES, type Snapshot } from '../../shared/collection-schema';
 export function formatReport(s:Snapshot,json=false){return json?JSON.stringify(s):`${STATUSES.map(k=>`${LABELS[k]} (${k}): ${s.counts[k]}`).join('\n')}\n전체: ${s.total} · 중복 제외 후: ${s.unique} · 버전: ${s.version}`;}
 export async function cli(args:string[],send:typeof fetch=fetch){
   const [command,action,id,...rest]=args;let path='',method='GET',body:unknown;
   if(command==='report')path='/v1/collection/status';
+  else if(command==='jobs')path='/v1/collection/jobs';
   else if(command==='sellers'){path='/v1/sellers';if(action!=='list'){if(!id)throw new Error('candidate_id_required');path+=`/${encodeURIComponent(id)}`;if(action==='review'){path+='/review';method='POST';body={status:rest[0],reason:rest.slice(1).join(' ')};}else if(action==='export-account')path+='/export-account';else if(action!=='show')throw new Error('seller_action');}}
   else if(command==='groups'){path='/v1/groups';if(action==='show'){path+=`/${id}`;}else if(action!=='list')throw new Error('groups_action');}
   else if(command==='review-group'){path=`/v1/groups/${action}/review`;method='POST';body=JSON.parse(await readFile(id,'utf8'));}
@@ -20,6 +22,11 @@ export async function cli(args:string[],send:typeof fetch=fetch){
     }
     return JSON.stringify({imported});
   }
-  else throw new Error('collector report [--json] | sellers list/show/review/export-account | groups list/show | review-group <id> <json-file> | import-legacy-candidates --state <path>');
-  const response=await send(`http://127.0.0.1:4318${path}`,{method,headers:{authorization:`Bearer ${process.env.COLLECTOR_REVIEW_TOKEN??''}`,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(!response.ok)throw new Error(`collector_request_${response.status}`);const result=await response.json() as {data:unknown};return command==='report'?formatReport(result.data as Snapshot,args.includes('--json')):JSON.stringify(result.data,null,2);
+  else throw new Error('collector report [--json] | jobs [--json] | sellers list/show/review/export-account | groups list/show | review-group <id> <json-file> | import-legacy-candidates --state <path>');
+  const response=await send(`http://127.0.0.1:4318${path}`,{method,headers:{authorization:`Bearer ${process.env.COLLECTOR_REVIEW_TOKEN??''}`,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(!response.ok)throw new Error(`collector_request_${response.status}`);const result=await response.json() as {data:unknown};
+  if(command==='jobs'){
+    const summary=result.data as JobSummary;
+    return args.includes('--json')?JSON.stringify(summary):Object.entries(summary.sources).map(([id,s])=>`${id}: done ${s.done} · failed ${s.failed} · pending ${s.pending}${Object.entries(s.failures).map(([reason,n])=>` · ${reason}×${n}`).join('')}`).join('\n');
+  }
+  return command==='report'?formatReport(result.data as Snapshot,args.includes('--json')):JSON.stringify(result.data,null,2);
 }

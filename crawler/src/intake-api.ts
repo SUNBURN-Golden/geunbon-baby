@@ -26,6 +26,7 @@ export async function handleLocal(request:Request,store:CollectorStore,auth:Loca
     match=path.match(/^\/v1\/intake\/reservations\/([\w-]+)\/(start|cancel)$/);
     if(method==='POST'&&match)return reply(match[2]==='start'?store.start(auth.extensionOrigin,match[1]):store.cancel(auth.extensionOrigin,match[1]));
     if(method==='POST'&&path==='/v1/intake')return reply(store.submit(auth.extensionOrigin,String(body.reservation_id),body.payload));
+    if(method==='GET'&&path==='/v1/collection/jobs')return reply(store.jobSummary());
     if(method==='GET'&&path==='/v1/collection/status')return reply(store.report());
     if(method==='GET'&&path==='/v1/groups')return reply(store.list('dedup_groups'));
     match=path.match(/^\/v1\/groups\/([\w-]+)(?:\/(review|resolve|representative|split|merge|withdraw|link))?$/);

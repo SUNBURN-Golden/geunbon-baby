@@ -20,6 +20,7 @@ type Budget = { held: number; spent: number };
 export type Seller = { id: string; handle: string; platform: string; found_via: string; first_seen: string; last_seen: string; hits: number; legacy_hits: number; sample_urls: string[]; matched_models: string[]; status: string; reason?: string };
 const dayKey = (t: number) => new Date(t+9*3600000).toISOString().slice(0,10);
 const midnight = (t: number) => Date.parse(`${dayKey(t)}T00:00:00+09:00`)+86400000;
+export type JobSummary = {generated_at:string;sources:Record<string,{done:number;failed:number;pending:number;failures:Record<string,number>;last_failure?:{reason:string;at:string}}>};
 export class CollectorStore {
   readonly db: DatabaseSync;
   private lock: string;
@@ -237,6 +238,21 @@ export class CollectorStore {
     const version=(this.get<number>('collector_meta','version')??0)+1;
     const snapshot:Snapshot={worker_id:this.settings.worker_id,version,generated_at:new Date(this.now()).toISOString(),counts,total,unique:total-counts.dedup_excluded,groups:total-counts.dedup_excluded,unresolved_conflicts:unresolved,recheck_due:this.dueCount()};
     this.put('collector_meta','version',version);this.put('sync_outbox',String(version),snapshot);this.put('collector_meta','snapshot',snapshot);return snapshot;
+  }
+  jobSummary():JobSummary {
+    const sources:JobSummary['sources']=Object.create(null);
+    const rows=this.db.prepare("SELECT json_extract(data,'$.source_id') AS source, json_extract(data,'$.phase') AS phase, json_extract(data,'$.failure_reason') AS reason, json_extract(data,'$.finished_at') AS finished FROM collection_jobs ORDER BY id").all() as {source:string;phase:string;reason:string|null;finished:number|null}[];
+    for(const row of rows){
+      const s=sources[row.source]??={done:0,failed:0,pending:0,failures:Object.create(null)};
+      if(row.phase==='done')s.done++;
+      else if(row.phase==='failed'){
+        s.failed++;const reason=row.reason&&/^[a-z_]{1,40}$/.test(row.reason)?row.reason:'error';
+        s.failures[reason]=(s.failures[reason]??0)+1;
+        const at=new Date(row.finished??0).toISOString();
+        if(!s.last_failure||at>s.last_failure.at)s.last_failure={reason,at};
+      }else s.pending++;
+    }
+    return {generated_at:new Date(this.now()).toISOString(),sources};
   }
   report() {return this.transaction(()=>{this.reap();const expired=this.expireInside();this.validateRecords();const cached=this.get<Snapshot>('collector_meta','snapshot');if(expired||!cached||cached.recheck_due!==this.dueCount())return this.snapshotInside();return cached;});}
   sellerObservation(handle:string,via:string,url:string,models:string[],event:string,legacyHits=0,legacy=false) {

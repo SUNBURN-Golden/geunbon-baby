@@ -1,3 +1,4 @@
+import { addressAllowed, type Cidr } from './egress';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { request } from 'node:https';
@@ -11,8 +12,8 @@ export function publicAddress(ip:string) {
   // Only global unicast; reject mapped IPv4, ULA, link-local, transition and documentation space.
   return isIP(ip)===6&&/^[23][0-9a-f]{3}:/i.test(ip)&&!/^2001:(?:db8|0|10|20):/i.test(ip)&&!/^2002:/i.test(ip);
 }
-export async function pinnedRequest(url:URL,maxBytes:number):Promise<NetworkResponse> {
-  const addresses=await lookup(url.hostname,{all:true,verbatim:true});requireThat(addresses.length&&addresses.every(a=>publicAddress(a.address)),'private_network');
+export async function pinnedRequest(url:URL,maxBytes:number,trusted:Cidr[]=[]):Promise<NetworkResponse> {
+  const addresses=await lookup(url.hostname,{all:true,verbatim:true});requireThat(addresses.length&&addresses.every(a=>addressAllowed(a.address,trusted)),'private_network');
   const chosen=addresses[0];
   return new Promise((resolve,reject)=>{
     const req=request(url,{method:'GET',headers:{'user-agent':USER_AGENT,accept:'text/html,application/xml,application/json,text/plain'},lookup:(_host,options,cb)=>{if(options.all)(cb as unknown as (error:null,addresses:{address:string;family:number}[])=>void)(null,[chosen]);else cb(null,chosen.address,chosen.family);}},res=>{

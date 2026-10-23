@@ -18,7 +18,7 @@ test.each([403,429,500])('response %s persists stop or cooldown across restart',
  }finally{f.close();}
 });
 test('SSRF, redirect, discovery and adapter policies remain separate',async()=>{
- for(const address of ['127.0.0.1','10.0.0.1','169.254.169.254','::1','::ffff:127.0.0.1','fc00::1','2001:db8::1'])expect(publicAddress(address)).toBe(false);
+ for(const address of ['198.18.0.1','198.19.255.255','127.0.0.1','10.0.0.1','169.254.169.254','::1','::ffff:127.0.0.1','fc00::1','2001:db8::1'])expect(publicAddress(address)).toBe(false);
  expect(publicAddress('8.8.8.8')).toBe(true);
  expect(discoverLinks('<rss><link>https://press.example.org/story</link></rss>',source.origin,'rss')).toEqual([{url:'https://press.example.org/story'}]);
  expect(discoverLinks('<sitemapindex><sitemap><loc>https://gear.example.org/map.xml</loc></sitemap></sitemapindex>',source.origin,'sitemap')).toHaveLength(1);

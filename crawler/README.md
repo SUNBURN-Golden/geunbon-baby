@@ -132,6 +132,8 @@ URL은 최대 4,096자의 HTTPS Instagram CDN(`cdninstagram.com`, `fbcdn.net` �
 
 ## 독립 로컬 수집함
 
+DNS가 프록시 가상 IP를 반환하는 박스에서는 `private_network`로 실패할 수 있습니다. 기본 DNS 검사는 엄격하게 유지하며 운영자가 `COLLECTOR_TRUSTED_EGRESS_CIDRS="198.18.0.0/15"`처럼 신뢰 egress CIDR을 명시한 경우에만 해당 대역을 허용합니다(쉼표로 여러 개, 기본 빈 값). 루프백·링크로컬·멀티캐스트 등 금지 대역과 겹치는 설정은 거부하고, 모든 DNS 응답 주소와 리디렉트마다 재검사합니다. 신뢰 대역을 지정하면 그 대역 안에서는 주소 고정이 더 이상 보호하지 않으며, 프록시가 호스트명을 다시 해석하므로 DNS 리바인딩과 내부 호스트명 차단은 프록시 정책에 의존한다. 출처별 실패 원인은 `npm run collector -- jobs [--json]`, discover stdout의 `jobs`, stderr의 출처별 실패 줄에서 확인합니다. 실패 작업은 `limits.failure_backoff_ms`(기본 300000, 5분) 후 다시 discover하면 재시도합니다. 이 설정이 없는 기존 운영 설정에도 기본값이 적용됩니다. job 요약은 로컬에만 남으며 사이트 스냅샷에 포함하지 않습니다.
+
 Node 22.20 이상 Linux에서 `src/local-worker.ts`를 실행합니다. Instagram 자격 증명·사이트 INGEST_TOKEN 없이 수집과 로컬 검토가 가능합니다. Playwright는 이 프로세스에서만 사용합니다. Cron/Workers에서 실행하지 않습니다. `.cache/collector.sqlite`와 전용 `migrations/0001_collection.sql`은 사이트 D1과 분리됩니다.
 
 ```sh
