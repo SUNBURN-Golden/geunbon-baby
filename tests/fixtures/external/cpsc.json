@@ -1,0 +1,4 @@
+[
+  {"RecallID":1,"URL":"https://www.cpsc.gov/Recalls/fixture-one","Title":"Synthetic recall one","RecallDate":"2026-01-01","Products":[{"Name":"Synthetic stroller"}]},
+  {"RecallID":2,"URL":"https://www.cpsc.gov/Recalls/fixture-two","Title":"Synthetic recall two","RecallDate":"2026-01-02","Products":[{"Name":"Synthetic high chair"}]}
+]

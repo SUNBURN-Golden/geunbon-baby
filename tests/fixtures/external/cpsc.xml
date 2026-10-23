@@ -1,0 +1,4 @@
+<Recalls>
+<Recall><RecallID>1</RecallID><URL>https://www.cpsc.gov/Recalls/fixture-one</URL><Title>Synthetic recall one</Title><Name>Synthetic stroller</Name><RecallDate>2026-01-01</RecallDate></Recall>
+<Recall><RecallID>2</RecallID><URL>https://www.cpsc.gov/Recalls/fixture-two</URL><Title>Synthetic recall two</Title><Name>Synthetic high chair</Name><RecallDate>2026-01-02</RecallDate></Recall>
+</Recalls>

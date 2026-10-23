@@ -1,3 +1,4 @@
+import { BLOCKED_CODES, failureCode } from './discovery/health';
 import { addressAllowed, type Cidr } from './egress';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
@@ -29,6 +30,8 @@ export async function pinnedRequest(url:URL,maxBytes:number,trusted:Cidr[]=[]):P
   });
 }
 export class Scheduler {
+  private blockedBySource=new Map<string,Record<string,number>>();
+  takeBlocked(){const counts=this.blockedBySource;this.blockedBySource=new Map();return counts;}
   private tails=new Map<string,Promise<unknown>>();
   private robots=new Map<string,Robots>();
   constructor(readonly store:CollectorStore,readonly transport=pinnedRequest,readonly sleep=(ms:number)=>new Promise<void>(r=>setTimeout(r,ms))) {}
@@ -37,7 +40,7 @@ export class Scheduler {
     const run=previous.catch(()=>{}).then(async()=>{let d=this.store.get<DomainState>('domain_state',domain)??{next_at:0,stopped:false};requireThat(!d.stopped,'domain_stopped',403);const wait=d.next_at-this.store.now();if(wait>0)await this.sleep(wait);d=this.store.get<DomainState>('domain_state',domain)??d;requireThat(!d.stopped,'domain_stopped',403);try{return await task();}finally{const latest=this.store.get<DomainState>('domain_state',domain)??d;latest.next_at=Math.max(latest.next_at,this.store.now()+Math.max(this.store.settings.limits.min_interval_ms,latest.crawl_delay??0));this.store.transaction(()=>this.store.put('domain_state',domain,latest));}});
     this.tails.set(domain,run);return run;
   }
-  private async raw(url:URL):Promise<NetworkResponse> {return this.slot(url.hostname,async()=>{const res=await this.transport(url,this.store.settings.limits.max_bytes);if(res.status===403||res.status===429||res.status>=500||/captcha|access denied|접근.{0,5}차단/i.test(res.body)){const d=this.store.get<DomainState>('domain_state',url.hostname)??{next_at:0,stopped:false};const retry=res.headers['retry-after'];const retryAt=/^\d+$/.test(retry??'')?this.store.now()+Number(retry)*1000:Date.parse(retry??'');d.stopped=res.status===403||/captcha|access denied|접근.{0,5}차단/i.test(res.body);d.reason=d.stopped?'blocked':'cooldown';d.next_at=Math.max(this.store.now()+60000,Number.isFinite(retryAt)?retryAt:0);this.store.transaction(()=>this.store.put('domain_state',url.hostname,d));throw new Error('source_cooldown');}return res;});}
+  private async raw(url:URL):Promise<NetworkResponse> {return this.slot(url.hostname,async()=>{const res=await this.transport(url,this.store.settings.limits.max_bytes);if(res.status===403||res.status===429||res.status>=500||/captcha|access denied|접근.{0,5}차단/i.test(res.body)){const d=this.store.get<DomainState>('domain_state',url.hostname)??{next_at:0,stopped:false};const retry=res.headers['retry-after'];const retryAt=/^\d+$/.test(retry??'')?this.store.now()+Number(retry)*1000:Date.parse(retry??'');d.stopped=res.status===403||/captcha|access denied|접근.{0,5}차단/i.test(res.body);d.reason=d.stopped?'blocked':'cooldown';d.next_at=Math.max(this.store.now()+60000,Number.isFinite(retryAt)?retryAt:0);this.store.transaction(()=>this.store.put('domain_state',url.hostname,d));throw new Error(d.stopped?'source_blocked':'source_cooldown');}return res;});}
   async robotsFor(source:SourcePolicy) {
     if(this.robots.has(source.origin))return this.robots.get(source.origin)!;
     const res=await this.raw(new URL('/robots.txt',source.origin));
@@ -48,8 +51,17 @@ export class Scheduler {
     if(delays.length){const domain=new URL(source.origin).hostname;const d=this.store.get<DomainState>('domain_state',domain)!;d.crawl_delay=Math.max(...delays);d.next_at=Math.max(d.next_at,this.store.now()+d.crawl_delay);this.store.transaction(()=>this.store.put('domain_state',domain,d));}
     return rules;
   }
-  async get(raw:string,source:SourcePolicy,hop=0):Promise<NetworkResponse> {
+  async get(raw:string,source:SourcePolicy):Promise<NetworkResponse> {
+    try{return await this.fetchWithin(raw,source,0);}catch(e){
+      const code=failureCode(e);
+      if(BLOCKED_CODES.has(code)){
+        const counts=this.blockedBySource.get(source.id)??{};counts[code]=(counts[code]??0)+1;this.blockedBySource.set(source.id,counts);
+      }
+      throw e;
+    }
+  }
+  private async fetchWithin(raw:string,source:SourcePolicy,hop:number):Promise<NetworkResponse> {
     requireThat(hop<=3&&visitAllowed(raw,source),'visit_not_allowed',403);const u=new URL(raw),robots=await this.robotsFor(source);requireThat(robotsAllows(robots,u.pathname+u.search),'robots_denied',403);
-    const res=await this.raw(u);if(res.status>=300&&res.status<400){requireThat(res.headers.location,'redirect_missing');return this.get(new URL(res.headers.location,u).href,source,hop+1);}requireThat(res.status>=200&&res.status<300,'source_response',502);return res;
+    const res=await this.raw(u);if(res.status>=300&&res.status<400){requireThat(res.headers.location,'redirect_missing');return this.fetchWithin(new URL(res.headers.location,u).href,source,hop+1);}requireThat(res.status>=200&&res.status<300,'source_response',502);return res;
   }
 }

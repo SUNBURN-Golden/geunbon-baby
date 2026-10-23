@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { CollectorStore, requireThat } from './store';
 import { config, type CollectorConfig } from './source-policy';
 import { handleLocal } from './intake-api';
+import { formatLine } from './discovery/health';
 import { DiscoveryRunner } from './discovery/run';
 import { parseTrustedEgress } from './egress';
 import { Scheduler, pinnedRequest } from './scheduler';
@@ -22,13 +23,10 @@ export async function main(){
     try{
       const runner=new DiscoveryRunner(store,new Scheduler(store,(u,m)=>pinnedRequest(u,m,trusted))),dry=args.includes('--dry-run');
       if(!dry)runner.seed();
-      await runner.run(dry);
+      const health=await runner.run(dry);
       const jobs=store.jobSummary();
-      console.log(JSON.stringify(dry?{dry_run:true}:{...store.report(),jobs}));
-      for(const [id,s] of Object.entries(jobs.sources))if(s.failed){
-        const reason=Object.entries(s.failures).sort((a,b)=>b[1]-a[1])[0][0];
-        console.error(`discover source=${id} failed=${s.failed} reason=${reason}`);
-      }
+      console.log(JSON.stringify(dry?{dry_run:true,health}:{...store.report(),jobs,health}));
+      for(const s of health.sources.filter(s=>s.pages_attempted>0))console.error(formatLine(s));
     }finally{store.close();}
     return;
   }

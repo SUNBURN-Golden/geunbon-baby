@@ -134,7 +134,7 @@ URL은 최대 4,096자의 HTTPS Instagram CDN(`cdninstagram.com`, `fbcdn.net` �
 
 ## 독립 로컬 수집함
 
-DNS가 프록시 가상 IP를 반환하는 박스에서는 `private_network`로 실패할 수 있습니다. 기본 DNS 검사는 엄격하게 유지하며 운영자가 `COLLECTOR_TRUSTED_EGRESS_CIDRS="198.18.0.0/15"`처럼 신뢰 egress CIDR을 명시한 경우에만 해당 대역을 허용합니다(쉼표로 여러 개, 기본 빈 값). 루프백·링크로컬·멀티캐스트 등 금지 대역과 겹치는 설정은 거부하고, 모든 DNS 응답 주소와 리디렉트마다 재검사합니다. 신뢰 대역을 지정하면 그 대역 안에서는 주소 고정이 더 이상 보호하지 않으며, 프록시가 호스트명을 다시 해석하므로 DNS 리바인딩과 내부 호스트명 차단은 프록시 정책에 의존한다. 출처별 실패 원인은 `npm run collector -- jobs [--json]`, discover stdout의 `jobs`, stderr의 출처별 실패 줄에서 확인합니다. 실패 작업은 `limits.failure_backoff_ms`(기본 300000, 5분) 후 다시 discover하면 재시도합니다. 이 설정이 없는 기존 운영 설정에도 기본값이 적용됩니다. job 요약은 로컬에만 남으며 사이트 스냅샷에 포함하지 않습니다.
+DNS가 프록시 가상 IP를 반환하는 박스에서는 `private_network`로 실패할 수 있습니다. 기본 DNS 검사는 엄격하게 유지하며 운영자가 `COLLECTOR_TRUSTED_EGRESS_CIDRS="198.18.0.0/15"`처럼 신뢰 egress CIDR을 명시한 경우에만 해당 대역을 허용합니다(쉼표로 여러 개, 기본 빈 값). 루프백·링크로컬·멀티캐스트 등 금지 대역과 겹치는 설정은 거부하고, 모든 DNS 응답 주소와 리디렉트마다 재검사합니다. 신뢰 대역을 지정하면 그 대역 안에서는 주소 고정이 더 이상 보호하지 않으며, 프록시가 호스트명을 다시 해석하므로 DNS 리바인딩과 내부 호스트명 차단은 프록시 정책에 의존한다. 출처별 실패 원인은 `npm run collector -- jobs [--json]`, discover stdout의 `jobs`, stderr의 `discover source=` 출처별 종료 요약에서 확인합니다. 시도한 출처는 성공·실패 모두 한 줄씩 출력하며, `source_blocked`는 403/CAPTCHA 등 차단, `source_cooldown`은 429/5xx 냉각을 뜻합니다. 실패 작업은 `limits.failure_backoff_ms`(기본 300000, 5분) 후 다시 discover하면 재시도합니다. 이 설정이 없는 기존 운영 설정에도 기본값이 적용됩니다. job 요약은 로컬에만 남으며 사이트 스냅샷에 포함하지 않습니다.
 
 Node 22.20 이상 Linux에서 `src/local-worker.ts`를 실행합니다. Instagram 자격 증명·사이트 INGEST_TOKEN 없이 수집과 로컬 검토가 가능합니다. Playwright는 이 프로세스에서만 사용합니다. Cron/Workers에서 실행하지 않습니다. `.cache/collector.sqlite`와 전용 `migrations/0001_collection.sql`은 사이트 D1과 분리됩니다.
 
@@ -151,7 +151,52 @@ npm run collector:worker -- sync
 
 동일 DB를 쓰는 작업기는 하나만 실행합니다. 위 `discover`와 `sync`는 serve를 중지한 상태에서 실행하거나 운영 스케줄에서 순차 실행하세요. 수집을 자동 운영하려면 운영자가 Linux timer/cron으로 discover와 sync를 예약합니다. 이 저장소 변경은 운영 스케줄을 수정하지 않습니다. CLI 변경 명령은 실행 중인 serve API를 거치며 DB를 직접 수정하지 않습니다.
 
-설정의 sources에는 출처 종류·브랜드 예산·origin/경로/쿼리 범위·시작점·어댑터·브라우저 승인/selector·공식 근거 권한·전문 보관 허가·재확인 간격·페이지 상한이 있습니다. 기본 소스는 모두 disabled입니다. 사이트별 robots/DOM과 범위를 운영자가 확인한 뒤 활성화하세요. 언론·인터뷰·블로그·행사·검색 링크도 발견 후보로 수용하지만 등록되지 않은 호스트를 방문하지 않습니다. 검색 쿼리를 생성하지 않으며 달력·페이지 조합을 제한합니다. 수동 담기에서 등록되지 않은 사이트는 선택한 공개 영역과 제한된 정형 사실만 받습니다.
+설정의 sources에는 출처 종류·브랜드 예산·origin/경로/쿼리 범위·시작점·어댑터·브라우저 승인/selector·공식 근거 권한·전문 보관 허가·재확인 간격·페이지 상한이 있습니다. 기본 소스는 모두 disabled입니다. 사이트별 robots/DOM과 범위를 운영자가 확인하고 아래 활성화 절차를 통과한 뒤 활성화하세요. 언론·인터뷰·블로그·행사·검색 링크도 발견 후보로 수용하지만 등록되지 않은 호스트를 방문하지 않습니다. 검색 쿼리를 생성하지 않으며 달력·페이지 조합을 제한합니다. 수동 담기에서 등록되지 않은 사이트는 선택한 공개 영역과 제한된 정형 사실만 받습니다.
+
+### 수집 건강 요약
+
+`discover` stdout JSON의 `health`는 이번 실행의 `mode`, `status`, `sources`, 검토가 필요한 출처 ID 목록 `review`를 담습니다. dry-run도 `{dry_run:true, health}`를 출력합니다. stderr에는 시도한 출처마다 `discover source=... status=...` 종료 요약 한 줄이 나오며, 모든 페이지가 실패하거나 차단된 출처도 포함됩니다. `failed=`는 실패 페이지 수, `reason=`은 가장 빈번한 실패 코드입니다. `jobs`/`report` 및 `jobs` CLI 형식은 그대로입니다. `review`여도 종료코드는 기존대로 0이므로 운영자는 반드시 `health.status`를 확인하세요.
+
+| 지표 | 의미 |
+| --- | --- |
+| `pages_attempted` / `pages_ok` / `pages_failed` | 시도 / 측정·처리 완료 / 실패 페이지 수 |
+| `pages_review` / `page_findings` | 정상 처리했지만 빈 결과 등의 소견이 있는 페이지 수 / 소견별 페이지 수 |
+| `links_found` | 어댑터가 발견한 링크 수 |
+| `parsed` | 목록 항목·피드 링크·리콜 수. 브라우저는 추출 영역 하나를 1로 셈 |
+| `eligible` | 기존 유아용품 분류를 통과한 목록 항목, 방문 범위 안의 피드 링크, ID·이름이 있는 리콜, 또는 사실이 있는 브라우저 영역 수 |
+| `price_checked` | 가격을 검사한 적격 목록 항목 수. 브라우저는 `clue_price`/`official_msrp` 사실 수 |
+| `price_hints` | 위 검사 중 숫자 가격 단서가 있는 항목/사실 수 |
+| `sent` | 로컬 저장소 제출에 성공한 항목 수. 페이지 영역 보관용 제출은 제외하며 dry-run은 항상 0 |
+| `blocked` / `blocked_reasons` | robots·방문 정책·중단·냉각·네트워크 주소 정책이 거부한 요청 수 / 코드별 횟수. 리디렉트 체인은 한 번만 셈 |
+| `failures` / `subrequest_failures` | 페이지 실패 코드별 횟수 / 영역 추출과 별개로 실패한 브라우저 XHR·스크립트 등 요청의 코드별 횟수 |
+
+숫자 가격은 0보다 큰 안전한 정수 금액만 셉니다. 문자열은 `329,000원`처럼 금액 하나가 명확해야 합니다. `가격: 문의`, 범위 가격, 안전한 정수 범위를 넘는 금액은 단서로 세지 않습니다. 피드와 리콜 자체는 가격을 검사하지 않습니다.
+
+검토 플래그는 `failed`(페이지 실패), `blocked`(거부된 요청), `not_attempted`(성공 페이지 없음), `zero_parsed`(파싱 결과 0), `zero_eligible`(파싱 결과는 있으나 적격 0), `zero_price_hints`(가격 검사 후 숫자 단서 0), `subrequest_failed`(브라우저 하위 요청 실패)입니다. 빈 결과 소견은 페이지마다 기록하므로 **다른 페이지가 정상이어도 selector 일치가 없는 페이지 하나만 있으면 출처는 항상 `review`**입니다. 의도적으로 막은 이미지·미디어·WebSocket·비 GET 요청은 거부/실패 지표에서 제외합니다. 탐색 문서 실패는 페이지 실패로만 세고, 차단된 하위 요청은 `blocked_reasons`로만 셉니다.
+
+출처 `status`는 플래그가 없으면 `ok`, 하나라도 있으면 `review`입니다. 실행 전체는 시도한 페이지가 없으면 `idle`, 시도한 모든 출처가 `ok`이면 `ok`, 그 외에는 `review`입니다. 참고 메모 `price_not_applicable`은 CPSC 리콜처럼 가격이 적용되지 않는 경우, `price_not_assessed`는 적격 결과가 있지만 가격 검사를 하지 못한 경우입니다. 메모 자체는 상태를 바꾸지 않습니다.
+
+건강 출력은 설정의 출처 ID·정수 건수·정해진 상태/코드만 포함합니다. URL·제목·인용·selector·핸들·가격 값은 출력하지 않습니다. 코드는 `^[a-z_]{1,40}$`만 허용하며 그 외 오류는 `error`입니다. 요약은 이번 실행의 로컬 출력으로만 남으며 Instagram 건강 로그·`sync` 스냅샷·사이트 D1에 포함하지 않습니다.
+
+### 외부 출처 활성화 절차
+
+1. 설정을 비공개 `COLLECTOR_CONFIG` 파일로 복사하고 대상 출처만 `enabled: true`로 설정합니다.
+2. `npm run collector:worker -- discover --dry-run`을 실행합니다. RSS·사이트맵·링크 출처는 `max_pages` 예산 안에서 시작 페이지마다 최대 2개 항목 페이지도 검사합니다. `limits.max_depth`가 탐색을 허용해야 합니다. 레코드·근거·셀러·업무 큐·outbox는 저장하지 않으며 예산과 도메인 속도/중단 상태는 유지합니다.
+3. 다음 조건을 모두 통과해야 합니다: 실행과 대상 출처의 `status=ok`, `pages_ok == pages_attempted`, `pages_review == 0`, `blocked=0`, 빈 `subrequest_failures`, `parsed>0`, `eligible>0`. `price_checked>0`이면 `price_hints>0`이어야 합니다. 메모에 `price_not_assessed`가 있으면 `max_pages`/`max_depth`를 늘려 항목 검사가 가능하도록 한 뒤 다시 dry-run합니다. CPSC의 `price_not_applicable`은 허용합니다.
+4. 조건이 실패하면 아래 조치를 적용합니다.
+
+   | 결과 | 조치 |
+   | --- | --- |
+   | `zero_parsed` | 상세 페이지를 포함한 selector/DOM 확인 |
+   | `zero_eligible` | 범위·분류·허용 경로 확인 |
+   | `zero_price_hints` | 가격 마크업·라벨 확인 |
+   | `blocked` / `robots_*` / `source_blocked` | 중단하고 활성화하지 않음 |
+   | `source_cooldown` | 냉각 후 다시 시도 |
+   | `subrequest_failed` / `failed` | 해당 코드 확인 |
+
+5. 통과한 출처를 운영 설정에서 활성화하고 첫 실제 실행 후 `health`를 다시 확인합니다.
+
+### 어댑터와 수집 제한
 
 CPSC JSON 어댑터는 [공식 REST 안내](https://www.cpsc.gov/Recalls/CPSC-Recalls-Application-Program-Interface-API-Information)의 `https://www.saferproducts.gov/RestWebServices/Recall?format=json&ProductName=Toddler`를 사용합니다. RecallID·URL·Title·RecallDate·Products[].Name을 리콜 근거로 매핑합니다. XML RSS/Atom·사이트맵/인덱스·공개 HTML 링크도 지원합니다. 일반 `/api/`·로그인·회원 경로 금지는 유지하며 CPSC의 등록 endpoint만 접근합니다. 브라우저의 모든 document/XHR/fetch/script/stylesheet GET도 공통 스케줄러/robots/주소 검사를 거칩니다. 쿠키 없는 브라우저에서만 읽으며 이미지·미디어·WebSocket은 차단합니다.
 
