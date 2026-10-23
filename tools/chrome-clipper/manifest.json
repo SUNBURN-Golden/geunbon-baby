@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "아가마중 이 자료 담기",
+  "version": "1.0.0",
+  "permissions": ["activeTab", "scripting", "storage", "alarms"],
+  "host_permissions": ["http://127.0.0.1:4318/*"],
+  "optional_host_permissions": [],
+  "background": {"service_worker": "tools/chrome-clipper/src/service-worker.js", "type": "module"},
+  "action": {"default_title": "이 자료 담기"},
+  "options_page": "options.html",
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'"}
+}

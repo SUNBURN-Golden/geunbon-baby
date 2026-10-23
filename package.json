@@ -12,7 +12,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:migrate": "wrangler d1 migrations apply DB --local",
-    "db:seed": "tsx scripts/seed.ts && wrangler d1 execute DB --local --file=.local/seed.sql"
+    "db:seed": "tsx scripts/seed.ts && wrangler d1 execute DB --local --file=.local/seed.sql",
+    "collector": "node --import tsx crawler/collector.mjs",
+    "collector:worker": "node --import tsx crawler/src/local-worker.ts",
+    "build:clipper": "node scripts/build-clipper.mjs"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.20.12",

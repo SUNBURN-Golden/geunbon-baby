@@ -1,0 +1,144 @@
+{
+  "policy_version": 1,
+  "worker_id": "local-collector",
+  "limits": {
+    "discovered": 500,
+    "new_body": 200,
+    "recheck": 200,
+    "min_interval_ms": 5000,
+    "max_depth": 2,
+    "max_bytes": 2097152,
+    "max_pages": 20
+  },
+  "reservation_ms": 600000,
+  "execution_ms": 120000,
+  "submission_grace_ms": 604800000,
+  "sources": [
+    {
+      "id": "cpsc",
+      "origin": "https://www.saferproducts.gov",
+      "brand": "unknown",
+      "kind": "government",
+      "paths": [
+        "/RestWebServices/Recall"
+      ],
+      "query_keys": [
+        "format",
+        "ProductName"
+      ],
+      "entries": [
+        "https://www.saferproducts.gov/RestWebServices/Recall?format=json&ProductName=Toddler"
+      ],
+      "adapter": "cpsc",
+      "browser": false,
+      "selector": "",
+      "official_fields": [
+        "recalls"
+      ],
+      "full_text_allowed": false,
+      "recheck_ms": 86400000,
+      "max_pages": 1,
+      "enabled": false
+    },
+    {
+      "id": "pangpang",
+      "origin": "https://09pangpang.com",
+      "brand": "unknown",
+      "kind": "event",
+      "paths": [
+        "/"
+      ],
+      "query_keys": [
+        "id",
+        "page",
+        "p"
+      ],
+      "entries": [
+        "https://09pangpang.com"
+      ],
+      "adapter": "links",
+      "browser": false,
+      "selector": "main",
+      "official_fields": [],
+      "full_text_allowed": false,
+      "recheck_ms": 21600000,
+      "max_pages": 20,
+      "enabled": false
+    },
+    {
+      "id": "momcalendar",
+      "origin": "https://momcalendar.com",
+      "brand": "unknown",
+      "kind": "event",
+      "paths": [
+        "/"
+      ],
+      "query_keys": [
+        "id",
+        "page",
+        "p"
+      ],
+      "entries": [
+        "https://momcalendar.com"
+      ],
+      "adapter": "links",
+      "browser": false,
+      "selector": "main",
+      "official_fields": [],
+      "full_text_allowed": false,
+      "recheck_ms": 21600000,
+      "max_pages": 20,
+      "enabled": false
+    },
+    {
+      "id": "buyg",
+      "origin": "https://buyg.kr",
+      "brand": "unknown",
+      "kind": "event",
+      "paths": [
+        "/"
+      ],
+      "query_keys": [
+        "id",
+        "page",
+        "p"
+      ],
+      "entries": [
+        "https://buyg.kr"
+      ],
+      "adapter": "links",
+      "browser": false,
+      "selector": "main",
+      "official_fields": [],
+      "full_text_allowed": false,
+      "recheck_ms": 21600000,
+      "max_pages": 20,
+      "enabled": false
+    },
+    {
+      "id": "snapup",
+      "origin": "https://snapup.co.kr",
+      "brand": "unknown",
+      "kind": "event",
+      "paths": [
+        "/"
+      ],
+      "query_keys": [
+        "id",
+        "page",
+        "p"
+      ],
+      "entries": [
+        "https://snapup.co.kr"
+      ],
+      "adapter": "links",
+      "browser": false,
+      "selector": "main",
+      "official_fields": [],
+      "full_text_allowed": false,
+      "recheck_ms": 21600000,
+      "max_pages": 20,
+      "enabled": false
+    }
+  ]
+}

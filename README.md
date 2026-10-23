@@ -99,7 +99,7 @@ npm run dev
 
 ### 외부 공구 모음 후보 (`kind: "external_listing"`)
 
-공구팡팡·맘캘린더·BUYG·스냅업 같은 외부 공구 모음 사이트의 가격은 지난 가격이거나 AI 요약일 수 있어 **후보로만** 저장합니다. 같은 `POST /api/v1/ingest`에 `kind: "external_listing"`을 보내면 `ingested_items`가 아니라 별도 테이블 `external_candidates`(마이그레이션 `0006`)에만 저장됩니다. 승인 API(`admin/review`)는 이 테이블을 읽지 않으므로 외부 후보는 공구가로 게시될 수 없고, 공개 GET API·화면은 이 테이블을 읽지 않습니다. 인스타 원문으로 확인된 항목만 기존 경로로 공구가가 됩니다. `/admin`에는 참고용 목록과 “확인 완료”(dismiss) 버튼만 있습니다.
+아래는 과거 external_candidates와의 호환 API이며 신규 수집기는 사용하지 않습니다. 기존 후보 조회·dismiss는 유지합니다. 공구팡팡·맘캘린더·BUYG·스냅업 같은 외부 공구 모음 사이트의 가격은 지난 가격이거나 AI 요약일 수 있어 **후보로만** 저장합니다. 같은 `POST /api/v1/ingest`에 `kind: "external_listing"`을 보내면 `ingested_items`가 아니라 별도 테이블 `external_candidates`(마이그레이션 `0006`)에만 저장됩니다. 승인 API(`admin/review`)는 이 테이블을 읽지 않으므로 외부 후보는 공구가로 게시될 수 없고, 공개 GET API·화면은 이 테이블을 읽지 않습니다. 인스타 원문으로 확인된 항목만 기존 경로로 공구가가 됩니다. `/admin`에는 참고용 목록과 “확인 완료”(dismiss) 버튼만 있습니다.
 
 ```json
 {
@@ -136,7 +136,7 @@ npm run dev
 
 ## 크롤러
 
-별도 Linux Node+Playwright worker의 설치·보안·제약은 [crawler/README.md](crawler/README.md)를 참고하세요. Workers Cron에서 Instagram에 접속하지 않습니다. v2 크롤러는 검수 가능한 설정 파일(`crawler/config/`)로 시드 계정·속도 한도를 관리하고, 알림·스토리 트레이 신호로 수집 우선순위를 정하며, 캡션·스토리 OCR에서 모델·가격·공구 일정·링크를 자동 추출해 **제안**으로만 검수 대기열에 함께 전송합니다. 사람 승인 전까지 게시되지 않습니다. 자동 팔로우는 일일 상한·무작위 간격을 지키고 차단·챌린지 감지 시 즉시 중단합니다. 외부 공구 모음 사이트(공구팡팡·맘캘린더·BUYG·스냅업)는 같은 크롤러가 Instagram 사이클 전에 공개 페이지만 읽어 후보로 보냅니다(robots.txt 준수, 로그인 없음, 공구모아 수집 금지). 자세한 내용과 운영 전 dry-run 절차는 [crawler/README.md](crawler/README.md)의 “외부 공구 모음 사이트” 절을 참고하세요. 공유 계정을 쓰는 다른 두 봇을 위해 매일 **06:45~08:00, 13:00~14:00 Asia/Seoul**에는 브라우저·로그인·팔로우·스캔을 쉬고, 실행 중에도 다음 휴식 시작에 브라우저를 닫고 각 Instagram 행동 전에 확인합니다. `quiet_windows` 배열 설정이나 `AGAMAJUNG_QUIET_WINDOWS='06:45-08:00,13:00-14:00'` 환경변수로 여러 시간을 지정하며 자정 통과도 지원합니다. 겹치거나 맞닿은 시간은 합친 종료 후 지터를 한 번 더해 재개하고 건강 로그에 진입·종료를 남깁니다. 이전 `quiet_window` 설정과 `AGAMAJUNG_QUIET_WINDOW` 환경변수도 읽으며 각각 복수형이 우선합니다.
+별도 Linux Node+Playwright worker의 설치·보안·제약은 [crawler/README.md](crawler/README.md)를 참고하세요. Workers Cron에서 Instagram에 접속하지 않습니다. v2 크롤러는 검수 가능한 설정 파일(`crawler/config/`)로 시드 계정·속도 한도를 관리하고, 알림·스토리 트레이 신호로 수집 우선순위를 정하며, 캡션·스토리 OCR에서 모델·가격·공구 일정·링크를 자동 추출해 **제안**으로만 검수 대기열에 함께 전송합니다. 사람 승인 전까지 게시되지 않습니다. 자동 팔로우는 일일 상한·무작위 간격을 지키고 차단·챌린지 감지 시 즉시 중단합니다. 공개 외부 수집은 독립 Linux local-worker로 이관했습니다. Instagram 실행부는 외부 수집을 호출하지 않으며 신규 수집함을 사이트 ingest로 보내지 않습니다. 자세한 내용과 운영 전 dry-run 절차는 [crawler/README.md](crawler/README.md)의 “외부 공구 모음 사이트” 절을 참고하세요. 공유 계정을 쓰는 다른 두 봇을 위해 매일 **06:45~08:00, 13:00~14:00 Asia/Seoul**에는 브라우저·로그인·팔로우·스캔을 쉬고, 실행 중에도 다음 휴식 시작에 브라우저를 닫고 각 Instagram 행동 전에 확인합니다. `quiet_windows` 배열 설정이나 `AGAMAJUNG_QUIET_WINDOWS='06:45-08:00,13:00-14:00'` 환경변수로 여러 시간을 지정하며 자정 통과도 지원합니다. 겹치거나 맞닿은 시간은 합친 종료 후 지터를 한 번 더해 재개하고 건강 로그에 진입·종료를 남깁니다. 이전 `quiet_window` 설정과 `AGAMAJUNG_QUIET_WINDOW` 환경변수도 읽으며 각각 복수형이 우선합니다.
 
 ## 개발 작업 데몬
 
@@ -166,3 +166,20 @@ npx tsx scripts/card-screenshots.ts --out .local/card-screenshots-batch2
 ```
 
 렌더링·스크린샷은 기존 Playwright를 쓰며 서버나 네트워크가 필요 없습니다. 스크린샷은 신규 열 모델과 기존 이미지·자리표시를 모바일 390px·데스크톱 1280px × 라이트·다크에서 확인하며 이미지 디코딩 완료 후 전체 화면 4장과 신규 카드 40장을 저장합니다. 공식 참조·구성품·세부 경로·시각 검수 기록은 [배치 2 제작 기록](docs/model-illustrations-batch-2.md)을 참고하세요. 참조 사진은 서버에서 축소된 작은 썸네일만 임시 확인하고 즉시 삭제하며 저장소에 보관하지 않습니다.
+
+## Linux 로컬 수집함과 사이트 현황
+
+신규 3경로(auto_discovery / browser_extract / manual_clip)는 [독립 작업기](crawler/README.md#독립-로컬-수집함)가 소유합니다. Chrome 수동 담기는 [확장 안내](tools/chrome-clipper/README.md)를 따릅니다. 로컬 SQLite와 마이그레이션은 `crawler/` 아래에 있고 Workers 번들에 포함하지 않습니다. AI는 필수 의존성이 아니며 공개 API나 게시 테이블과 연결하지 않습니다.
+
+사이트에는 **건수 스냅샷만** 저장합니다. `migrations/0007_collector_status.sql` 적용과 COLLECTOR_STATUS_TOKEN 바인딩은 운영자가 별도로 수행합니다. URL·원문·셀러·근거는 사이트로 보내지 않습니다.
+
+| API | 권한 | 동작 |
+| --- | --- | --- |
+| POST `/api/v1/collector/status` | 별도의 COLLECTOR_STATUS_TOKEN | 작업기별 단조 버전 스냅샷 접수 |
+| GET `/api/v1/admin/collection-status` | ADMIN_TOKEN | 다섯 상태·생성/수신 시각·지연 여부 |
+
+`/admin`은 후보(discovered)·원문 확인(source_check_needed)·중복 제외(dedup_excluded)·검증 완료(verified_waiting)·공개 대기(ready_to_publish)를 표시합니다. 미수신은 **미동기화**, 생성 후 1시간이 지난 현황은 **동기화 지연**으로 표시합니다. 미수신을 0건으로 보이지 않습니다. 여러 작업기는 각각 표시하며 고유 자료량으로 합산하지 않습니다. 같은 버전의 다른 payload는 409, 이전 버전은 최신 현황을 바꾸지 않습니다.
+
+`ready_to_publish`는 현재 묶음의 근거 버전으로 사실 검토·공개 검토를 마친 상태입니다. 실제 게시를 실행하지 않습니다. 기존 Instagram ingest → 관리자 승인 → deals 경로와 과거 external_candidates는 별개로 유지합니다.
+
+추가 명령: `npm run collector:worker -- serve`, `npm run collector:worker -- discover --dry-run`, `npm run collector -- report --json`, `npm run build:clipper`. 검증 명령은 기존 lint·typecheck·test·build·build:worker와 build:clipper입니다. 테스트는 외부 네트워크/브라우저를 차단하며 실제 SQLite 파일 복구·트랜잭션 실패·자식 프로세스 종료·확장 재시작을 검증합니다.

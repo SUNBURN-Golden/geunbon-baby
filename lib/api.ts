@@ -1,3 +1,4 @@
+import { receiveStatus, collectionStatus } from './collection-status';
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
 import { dealsCopy } from './deals-copy';
@@ -155,11 +156,19 @@ async function body(request: Request) {
 export async function handleApi(request: Request, parts: string[], env: Env): Promise<Response> {
   const path = parts.join('/');
   const admin = parts[0] === 'admin';
+  if (path === 'collector/status') {
+    if (request.method !== 'POST') return json({ error: 'method' }, 405);
+    if (!env.COLLECTOR_STATUS_TOKEN || env.COLLECTOR_STATUS_TOKEN.length < 24 || env.COLLECTOR_STATUS_TOKEN === env.ADMIN_TOKEN || env.COLLECTOR_STATUS_TOKEN === env.INGEST_TOKEN) return json({ error: 'status_token_config' }, 503);
+    if (!await authorized(request, env.COLLECTOR_STATUS_TOKEN)) return json({ error: 'unauthorized' }, 401);
+    let value: unknown; try { value = await body(request); } catch { return json({ error: 'snapshot_body' }, 400); }
+    const result = await receiveStatus(env.DB, value); return json(result.error ? { error: result.error } : { data: result.data }, result.status);
+  }
   if (admin || path === 'ingest') {
     const token = admin ? env.ADMIN_TOKEN : env.INGEST_TOKEN;
     if (!token) return json({ error: '서비스 토큰 미설정' }, 503);
     if (!await authorized(request, token)) return json({ error: '인증 필요' }, 401);
   }
+  if (path === 'admin/collection-status' && request.method === 'GET') return json({ data: await collectionStatus(env.DB) });
   if (request.method === 'GET') {
     if (path === 'brands') return json({ data: await all(env.DB, 'SELECT brand AS name, COUNT(*) AS model_count FROM models GROUP BY brand ORDER BY brand') });
     if (path === 'models') {

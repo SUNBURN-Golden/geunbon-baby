@@ -11,7 +11,7 @@ export type ParsedItem = {
 };
 
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
-const SKIP = new Set(['script', 'style', 'noscript', 'template', 'svg']);
+const SKIP = new Set(['script', 'style', 'noscript', 'template', 'svg', 'textarea', 'select']);
 const BLOCK = new Set(['address', 'article', 'aside', 'br', 'dd', 'div', 'dl', 'dt', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'li', 'main', 'ol', 'p', 'section', 'table', 'tbody', 'td', 'th', 'tr', 'ul']);
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 const decodeEntities = (value: string) => value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, name: string) => {
@@ -39,16 +39,35 @@ export function parseHtml(html: string): El {
       const name = match[2].toLowerCase();
       const attrs: Record<string, string> = {};
       for (const attr of match[3].matchAll(/([^\s=/"'>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g)) attrs[attr[1].toLowerCase()] = decodeEntities(attr[2] ?? attr[3] ?? attr[4] ?? '');
+      const excluded = SKIP.has(name) || name === 'input' || attrs.contenteditable !== undefined || attrs.hidden !== undefined || attrs['aria-hidden']?.toLowerCase() === 'true' || attrs['data-private'] !== undefined;
+      const closed = VOID.has(name) || match[3].trim().endsWith('/');
+      if (excluded) {
+        if (!closed) {
+          // Raw-text elements do not contain HTML nesting. Other excluded regions
+          // must consume the matching close, including nested tags of the same name.
+          if (['script', 'style', 'textarea'].includes(name)) {
+            const close = new RegExp(`</${name}\\s*>`, 'gi');
+            close.lastIndex = last;
+            const end = close.exec(html);
+            last = end ? close.lastIndex : html.length;
+          } else {
+            let depth = 1, nested: RegExpExecArray | null;
+            while (depth && (nested = tag.exec(html))) {
+              if (nested[2] && ['script','style','textarea'].includes(nested[2].toLowerCase())) {
+                const rawClose=new RegExp(`</${nested[2]}\\s*>`,'gi');rawClose.lastIndex=tag.lastIndex;
+                tag.lastIndex=rawClose.exec(html)?rawClose.lastIndex:html.length;
+              } else if (nested[1]?.toLowerCase() === name) depth--;
+              else if (nested[2]?.toLowerCase() === name && !nested[3].trim().endsWith('/')) depth++;
+            }
+            last = depth ? html.length : tag.lastIndex;
+          }
+          tag.lastIndex = last;
+        }
+        continue;
+      }
       const element: El = { tag: name, attrs, children: [], parent: node };
       node.children.push(element);
-      if (SKIP.has(name) && !match[3].trim().endsWith('/')) {
-        // 스크립트·스타일 본문은 건너뛴다.
-        const close = new RegExp(`</${name}\\s*>`, 'i');
-        const rest = html.slice(last);
-        const end = close.exec(rest);
-        last += end ? end.index + end[0].length : rest.length;
-        tag.lastIndex = last;
-      } else if (!VOID.has(name) && !match[3].trim().endsWith('/')) node = element;
+      if (!closed) node = element;
     }
   }
   pushText(html.slice(last));

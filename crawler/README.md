@@ -69,33 +69,9 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 - `selector_miss`는 발견 캡션/작성자 누락을 각각 `discovery_caption`/`discovery_author`로 기록합니다(둘 다 없으면 두 이벤트). `profile_posts`/`discovery_posts`에는 조회한 앵커 수 `anchors`가 붙습니다. `anchors > 0`이면 CSS가 앵커를 찾았으므로 URL 형태를, `0`이면 CSS 자체를 점검합니다. 정규화 가설의 확인에는 이후 실제 수집 결과도 함께 확인해야 합니다.
 - 전송 성공 이벤트 `post_sent`/`story_seen`은 가격 제안 존재 여부인 `price_found` boolean만 추가합니다. 캡션·가격 값은 건강 로그에 남기지 않습니다. 다음 예약 실행에서 `queue.size`와 `account_visit`, `post_sent.price_found` 및 남은 미스 스코프를 확인하세요. 현재 기본 설정은 verified 12계정을 한 사이클에 큐에 넣습니다. 실제 방문 수는 시간당 한도·휴식·보안 중단의 영향을 받습니다.
 
-## 외부 공구 모음 사이트
+## 외부 공구 모음 이관
 
-공구팡팡(`09pangpang.com`), 맘캘린더(`momcalendar.com`), BUYG(`buyg.kr`), 스냅업(`snapup.co.kr`)의 **공개 목록 페이지**에서 공구 일정·가격 힌트·셀러 후보를 모읍니다. 설정은 `config/external-sources.json`(소스별 `enabled`, `render`, `item_selector`, 시작 URL, 상한)이며 잘못된 값은 실행 전 오류입니다.
-
-- **후보로만 저장**: 이 사이트들의 가격은 지난 가격이거나 AI 요약일 수 있습니다. 결과는 `POST /api/v1/ingest`의 `kind: "external_listing"`으로만 보내며 사이트 쪽 `external_candidates`에 저장됩니다. 공구가로 게시되지 않고, 인스타 원문을 확인한 항목만 기존 검수 경로로 공구가가 됩니다. 출처 URL과 수집 시각이 함께 저장됩니다.
-- **지키는 규칙**: robots.txt 준수(소스당 먼저 읽음. 404는 허용, 5xx·네트워크 오류·그 밖의 오류 응답은 해당 호스트 전체 금지), `/api/ /my/ /auth/ /login /logout /signin /signup /admin /account /member /mypage /oauth /session` 경로는 robots와 무관하게 요청하지 않음, 같은 호스트 요청 간격 `min_interval_ms`(1000 이상) + 지터, 로그인·쿠키 없음, 같은 origin 리디렉트만 따라가며 매번 재판정, 응답 본문 2MB 상한. **공구모아(`gonggumoa.com`)는 어떤 설정으로도 요청하지 않습니다.**
-- **세션 분리**: Instagram 세션·storageState를 외부 사이트에 쓰지 않습니다. 렌더링이 필요한 소스는 쿠키 없는 별도 브라우저 컨텍스트를 씁니다.
-- **수집 범위**: 유아용품 키워드(또는 시드 모델 매칭)가 있는 항목만 보내고 기저귀·분유는 제외합니다. 이미지·영상은 내려받지 않고 `image_url`도 보내지 않습니다. 전송하는 `title`/`text`는 제목·기간·가격·셀러 핸들만 조합한 짧은 문자열이며 전화번호·이메일·긴 숫자열·아이 나이(“N개월”, “N살”, “돌 아기”)·“OO이 엄마”류 호칭을 가리고 길이(제목 200자, 본문 2,000자)를 제한합니다. 건강 로그에는 `title`·`text`·`seller_name`이 남지 않습니다(필터가 2차 방어).
-- **셀러 후보**: 목록에서 찾은 `@핸들`·Instagram 프로필 링크는 `state.candidates`에 `found_via`=소스 id로 기록됩니다. 자동 팔로우하지 않으며 운영자가 `accounts.json`으로 옮기는 기존 절차를 따릅니다.
-- **렌더링**: `render: true`는 항상, `"auto"`는 정적 HTML에서 항목이 0개일 때만 브라우저로 렌더링합니다. **렌더링 중 브라우저가 내보내는 모든 요청(document·XHR·fetch·script)에 같은 robots·금지 경로 판정을 적용**하므로 페이지 스크립트가 `/api/`나 다른 origin을 부르면 차단되고 `robots_block`으로 남습니다. **허용된 요청은 script·stylesheet까지 모두 같은 호스트 큐를 거쳐 1초 이상 간격으로** 나가므로 자산이 많은 페이지는 렌더링이 느려지고 `timeout_ms`에 걸릴 수 있습니다(그 경우 소스 오류로 기록하고 다음 소스로 넘어갑니다). WebSocket 연결은 서버에 연결하지 않고 닫으며 `robots_block`(reason=`websocket`)으로 남깁니다. 이미지·미디어·폰트는 받지 않습니다.
-- **`origin`은 정식(canonical) 호스트로 설정**: `09pangpang.com`이 `www.09pangpang.com`으로 리디렉트하는 사이트라면 `external-sources.json`의 `origin`을 `www.` 쪽으로 바꿔야 합니다. 다른 origin 리디렉트는 거부되고 robots.txt를 읽지 못한 호스트는 전체 금지로 처리되어, dry-run에서 `needs_review`만 나옵니다.
-- **BUYG는 기본 꺼짐(`enabled: false`)**: 목록이 페이지 로드 후 별도 요청으로 채워지며 그 경로가 `/api/`이면 수집할 수 없습니다(의도된 결과). dry-run에서 `blocked_requests`가 0이고 가격이 숫자로 읽힐 때만 켭니다. 차단이 발생하면 공개 HTML만으로는 수집할 수 없는 사이트이므로 끈 채로 둡니다.
-- **전송 오류 정책**: 수집 API가 400을 돌려주면 그 항목만 건너뜁니다. 401·403·404·405·413·429·5xx·네트워크 오류·타임아웃은 설정·서버 문제일 수 있어 즉시 중단하고 종료코드 1로 끝납니다. 사이트 fetch·파싱·렌더링 오류는 `error`(scope=external)로 남기고 다음 소스로 넘어가며 Instagram 수집을 막지 않습니다.
-- **실행 시점**: 외부 수집은 Instagram 사이클보다 **먼저** 같은 프로세스에서 실행됩니다. pm2 cron(`30 9,20 * * *`, KST)과 `AGAMAJUNG_ONCE=1`을 그대로 따르므로 별도 스케줄러가 없습니다. **연속 실행 모드(`AGAMAJUNG_ONCE` 미설정)에서는 프로세스 시작 시 한 번만 실행**하고 폴링마다 반복하지 않습니다. cron 모드가 권장 방식입니다.
-- **끄기·확인**: `AGAMAJUNG_EXTERNAL=0`이면 외부 수집을 건너뜁니다. `AGAMAJUNG_EXTERNAL_DRY_RUN=1`이면 fetch·파싱·필터까지만 하고 전송, 후보 기록, 상태 저장을 하지 않으며 소스별 `external_source` 로그에 `items`, `blocked_requests`, `needs_review`만 남깁니다. 로그 이벤트: `external_run`, `external_source`, `external_item`, `external_skip`, `robots_block`.
-
-**셀렉터 미검증 경고**: 이 구현은 네트워크 없이 합성 픽스처로만 검증했습니다. 네 사이트의 실제 DOM과 robots.txt는 확인되지 않았습니다. `item_selector`가 비어 있으면 범용 휴리스틱(링크가 있고 가격·공구·일정 단서가 있는 블록)을 쓰며, 0건이면 운영자가 셀렉터를 채워야 합니다. 지원하는 셀렉터는 태그, `.class`, `#id`, `[attr]`, `[attr=value]`, 공백(자손) 결합자, 쉼표 목록입니다.
-
-**운영 전 dry-run 절차**(Linux 박스에서 1회):
-
-```sh
-AGAMAJUNG_EXTERNAL_DRY_RUN=1 AGAMAJUNG_ONCE=1 node --import tsx crawler/run.mjs
-```
-
-(pm2 cron 등록에는 쓰지 않습니다. dry-run 환경변수가 예약 실행에 남지 않게 터미널에서 직접 실행하세요. dry-run은 외부 수집이 끝나면 Instagram 로그인·사이클 없이 종료하므로 공유 Instagram 계정을 쓰지 않습니다.)
-
-`crawler/logs`의 `external_source`에서 `items`, `blocked_requests`, `needs_review`를 봅니다. 0건인 소스는 `external-sources.json`의 `item_selector`를 채운 뒤 다시 dry-run합니다. BUYG는 `enabled: true`로 바꾼 dry-run에서 `blocked_requests`가 0이고 가격이 숫자로 읽힐 때만 운영 설정에서 켭니다. 운영 D1 마이그레이션 `0006`은 0005와 마찬가지로 운영자가 별도로 적용합니다. 배포는 이 작업에 포함되지 않습니다.
+공개 외부 수집은 아래 독립 로컬 작업기로 이관했습니다. Instagram 프로세스는 외부 수집을 실행하지 않습니다. 구형 `AGAMAJUNG_EXTERNAL_DRY_RUN=1`은 이관 안내 후 설정/인증/Instagram 접근 전에 종료합니다. 기존 `config/external-sources.json`은 구형 파서의 호환 자료이며 실행 설정은 `config/collector.json`입니다. 검토 전 사이트는 disabled로 출하합니다. 기존 사이트 D1 external_candidates는 과거 조회·dismiss만 유지하며 신규 건수에 합산하지 않습니다.
 
 ## 상태·건강 로그
 
@@ -153,3 +129,55 @@ Linux 크롤러는 이미 열린 게시물·스토리에서 선택한 상품 이
 URL은 최대 4,096자의 HTTPS Instagram CDN(`cdninstagram.com`, `fbcdn.net` 및 실제 하위 도메인)만 허용하며 서명 쿼리를 그대로 유지합니다. 이미지 누락·잘못된 URL·선택 실패는 정상 캡션 전송을 막지 않고, OCR 가능한 영상 프레임·이미지도 URL 없이 수집할 수 있습니다. 휴식·halt 오류는 계속 전파합니다. 이미지 다운로드·추가 Instagram 탐색은 하지 않으며 URL·원시 미디어 오류를 로그에 남기지 않습니다. 기존 OCR 필수 조건·속도 제한·중복 처리·API 전달 성공 후 완료 기록을 유지합니다.
 
 이미지는 승인 전까지 비공개입니다. 관리자는 미리보기를 확인하고 “이미지 포함”을 해제해 텍스트만 게시할 수 있습니다(`include_image: false`, 기본 true). 공개 화면은 브라우저 직접 로딩과 `no-referrer`를 사용하며 실패한 이미지를 숨깁니다. **CDN URL은 만료될 수 있습니다.** ingest에 업로드 지원이 없어 이번 구현은 R2에 저장하지 않습니다. 영구 저장은 별도의 업로드·검수 후 공개 계약이 필요합니다. Playwright/OCR은 Linux에서만 실행하며 사이트·Workers로 옮기지 않습니다.
+
+## 독립 로컬 수집함
+
+Node 22.20 이상 Linux에서 `src/local-worker.ts`를 실행합니다. Instagram 자격 증명·사이트 INGEST_TOKEN 없이 수집과 로컬 검토가 가능합니다. Playwright는 이 프로세스에서만 사용합니다. Cron/Workers에서 실행하지 않습니다. `.cache/collector.sqlite`와 전용 `migrations/0001_collection.sql`은 사이트 D1과 분리됩니다.
+
+```sh
+npm run collector:worker -- serve
+npm run collector -- report
+npm run collector -- report --json
+npm run collector:worker -- discover --dry-run
+npm run collector:worker -- discover
+npm run collector:worker -- sync
+```
+
+`serve`는 loopback 127.0.0.1:4318만 엽니다. COLLECTOR_INTAKE_TOKEN·COLLECTOR_REVIEW_TOKEN은 서로 다른 24자 이상의 비밀로 주입하고 COLLECTOR_EXTENSION_ORIGIN에는 등록한 Chrome 확장 origin을 넣습니다. Host·Origin·토큰·JSON 형식·32KB 크기 제한을 검사합니다. 인테이크 토큰은 예약/조회/시작/취소/제출만 가능하고, CLI·검토 API는 별도 검토 토큰이 필요합니다. 토큰을 인자로 넘기거나 로그로 남기지 마세요. COLLECTOR_DB/COLLECTOR_CONFIG로 전용 경로를 바꿀 수 있습니다. 예시 환경 파일은 값의 목록일 뿐 자동 로드하지 않습니다. 환경을 프로세스에 주입하세요.
+
+동일 DB를 쓰는 작업기는 하나만 실행합니다. 위 `discover`와 `sync`는 serve를 중지한 상태에서 실행하거나 운영 스케줄에서 순차 실행하세요. 수집을 자동 운영하려면 운영자가 Linux timer/cron으로 discover와 sync를 예약합니다. 이 저장소 변경은 운영 스케줄을 수정하지 않습니다. CLI 변경 명령은 실행 중인 serve API를 거치며 DB를 직접 수정하지 않습니다.
+
+설정의 sources에는 출처 종류·브랜드 예산·origin/경로/쿼리 범위·시작점·어댑터·브라우저 승인/selector·공식 근거 권한·전문 보관 허가·재확인 간격·페이지 상한이 있습니다. 기본 소스는 모두 disabled입니다. 사이트별 robots/DOM과 범위를 운영자가 확인한 뒤 활성화하세요. 언론·인터뷰·블로그·행사·검색 링크도 발견 후보로 수용하지만 등록되지 않은 호스트를 방문하지 않습니다. 검색 쿼리를 생성하지 않으며 달력·페이지 조합을 제한합니다. 수동 담기에서 등록되지 않은 사이트는 선택한 공개 영역과 제한된 정형 사실만 받습니다.
+
+CPSC JSON 어댑터는 [공식 REST 안내](https://www.cpsc.gov/Recalls/CPSC-Recalls-Application-Program-Interface-API-Information)의 `https://www.saferproducts.gov/RestWebServices/Recall?format=json&ProductName=Toddler`를 사용합니다. RecallID·URL·Title·RecallDate·Products[].Name을 리콜 근거로 매핑합니다. XML RSS/Atom·사이트맵/인덱스·공개 HTML 링크도 지원합니다. 일반 `/api/`·로그인·회원 경로 금지는 유지하며 CPSC의 등록 endpoint만 접근합니다. 브라우저의 모든 document/XHR/fetch/script/stylesheet GET도 공통 스케줄러/robots/주소 검사를 거칩니다. 쿠키 없는 브라우저에서만 읽으며 이미지·미디어·WebSocket은 차단합니다.
+
+브랜드/KST 하루 발견 500개, 본문 추출 시도 200회, 별도 재확인 200회, 미확정 브랜드 공용 예산도 동일합니다. 모든 경로가 예약을 공유합니다. 같은 도메인은 응답 본문이 끝날 때까지 동시 1개, 간격은 5초와 Crawl-delay 중 큰 값, 깊이 2, 응답 2MB를 상한으로 둡니다. 재확인 기한이 지난 가격·조건은 새 탐색보다 먼저 배정합니다. DNS 공인 주소를 검사한 결과에 연결을 결속하고 리디렉트마다 정책을 재검사합니다. 429/5xx는 Retry-After와 최소 60초 냉각, 403/CAPTCHA/차단 화면은 수동 점검 전 중단합니다. 상태는 DB에 유지됩니다. 계정·프록시 교체 우회는 없습니다.
+
+예약 API는 `/v1/intake/reservations`, `/v1/intake/reservations/:id/start`, `.../cancel`, `/v1/intake/clips/:clip_id`, `/v1/intake`입니다. 예약은 client·clip_id·attempt_id·URL·브랜드·경로·작업 종류·정책 버전에 결속됩니다. 바뀐 결속/멱등 payload는 409입니다. held는 10분/KST 자정까지만 유지하며 시작 시 spent로 옮기고 실패해도 환급하지 않습니다. 새 URL을 recheck로 요청할 수 없습니다. dry-run도 본문 시도 예산과 도메인 제한·중단 상태를 사용하지만 레코드·셀러·업무 큐·outbox는 저장하지 않습니다. 실행 허용 2분, 저장된 payload 제출 유예 7일입니다. ACK는 레코드·근거·셀러 이벤트·중복/충돌·검토 무효화·receipt·집계/outbox의 단일 트랜잭션 commit 뒤 반환합니다. 같은 접수 재전송은 기존 receipt를 반환합니다.
+
+기본 저장은 구조화 사실과 근거당 300자 인용입니다. 공식 MSRP는 브랜드·시장 권한이 설정된 제조사/수입사가 명시한 권장소비자가만 인정합니다. 다른 가격은 clue_price입니다. 다른 조건의 옵션 가격은 별도로 보존하고, 같은 조건의 서로 다른 값이나 비교 조건이 불명확하면 충돌을 보존하여 공개 검토를 막습니다. 알려진 모델 계보는 `config/model-families.json`로 색상·재질·구성 옵션을 묶고 target_model_id를 지우지 않습니다. 명시적인 원문 관계와 정제된 장문 지문으로 문서 중복을 묶으며 추정 번역/불명확한 세대를 자동 병합하지 않습니다.
+
+자료 읽기 단계에서는 입력/폼/편집·비공개 영역·사진을 제외하고, 확장 저장 전·로컬 저장 전·AI 전달 전에 같은 순수 개인정보 필터를 적용합니다. 전화/이메일/주소/주민번호, 아이 신상·개인 건강/금융·비밀 문자열을 지우거나 해당 줄을 버립니다. 필터는 정규식만으로 완전한 익명화를 보장하지 않으므로 필요한 영역·정형 라벨로 제한하고 판별 불가한 본문은 저장하지 않습니다. 인젝션 문장은 제외하고, 나머지 자료도 항상 untrusted_source_data로 취급합니다. 자료에서 명령 실행·임의 도구 호출·상태 승격·게시는 하지 않습니다. 전문은 허가 플래그와 허가 근거가 모두 있을 때만 별도 저장합니다. 신규 경로는 사진/영상·원문 오류/URL 로그를 저장하지 않습니다.
+
+검토는 `/v1/groups`와 `/v1/groups/:id`에서 전체 묶음을 확인합니다. 변경 API는 `.../review`, `.../resolve`, `.../merge`, `.../split`, `.../representative`, `.../withdraw`, `.../link`입니다. 모두 expected_group_version·expected_evidence_version·review_scope_digest를 요구합니다. merge는 other_expected도 필요합니다. 비대표의 새 근거·리콜도 근거 버전과 검토 범위를 바꾸며 기존 사실/공개 승인을 같은 트랜잭션에서 무효화합니다. 해소 내역·선택된 assertion·이유·철회 이력은 원래 근거와 함께 보존합니다. 만료와 정책 변경도 재검토 대상입니다.
+
+```sh
+npm run collector -- groups list
+npm run collector -- groups show <group-id>
+npm run collector -- review-group <group-id> <review-json-file>
+npm run collector -- sellers list --json
+npm run collector -- sellers show instagram:<handle>
+npm run collector -- sellers review instagram:<handle> manually_registered '수동 등록 확인'
+npm run collector -- sellers export-account instagram:<handle>
+npm run collector -- import-legacy-candidates --state <읽기전용-state.json-경로>
+```
+
+검토 JSON의 decision은 verify/ready이며 reviewer와 위 세 버전 필드를 넣습니다. ready에는 현재 근거 버전의 verify, 미해결 충돌 없음, 개인정보 검사·근거 위치·최신성이 필요합니다. 공개 대기는 게시하지 않습니다. 합계는 다섯 상태의 합이며 대표는 묶음마다 정확히 하나, 비대표는 dedup_excluded입니다. 예약/전달 대기·셀러는 레코드 건수에 더하지 않습니다.
+
+기존 state.json 후보는 읽기만 하여 멱등 가져옵니다. 최초 found_via·표본 URL·모델·최초/최근 시각을 보존하고 기존 hits는 legacy_hits로 분리합니다. 잃어버린 후속 출처는 legacy_imports에 복구 불가로 표시합니다. 새 발견은 source 행과 hits로 누적하되 ACK 재전송에는 증가하지 않습니다. export-account는 verified/follow/collect_images 모두 false인 검토용 조각만 출력합니다. accounts.json·실제 팔로잉은 변경하지 않습니다. Instagram 태그 발견은 기존 상태 파일을 계속 사용합니다.
+
+DB 디렉터리는 0700, DB/WAL/SHM/journal은 0600이고 심볼릭 링크·잘못된 권한·손상·쓰기 실패는 중단합니다. BEGIN IMMEDIATE·외래키·WAL·synchronous FULL을 사용합니다. 강제 종료로 `.lock`이 남으면 기존 프로세스가 종료되었음을 운영자가 확인한 뒤 lock만 제거하고 재시작하세요. DB 오류를 빈 DB로 바꾸지 않습니다.
+
+sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. 건수·보조 지표·작업기 ID·버전·시각만 포함하며 실패하면 유지/재전송합니다. 실제 수집함·근거는 Linux에 남습니다. 자세한 Chrome 권한/재클릭 경계는 [확장 README](../tools/chrome-clipper/README.md)를 참고하세요.
+
+로컬 DB를 새로 만들면 현황 버전은 1부터 다시 시작합니다. 같은 `worker_id`의 이전 높은 버전이 D1에 남아 있으면 새 현황은 반영되지 않습니다. DB 복구는 버전 메타데이터를 포함한 백업을 사용하세요. DB를 재구축할 때는 `COLLECTOR_CONFIG`의 `worker_id`를 새 식별자로 바꾸고, 관리자 화면에서 이전 작업기를 구분하세요. 서로 다른 작업기의 건수는 자동 합산하지 않습니다.
