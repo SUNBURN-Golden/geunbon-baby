@@ -60,3 +60,9 @@ test('확인 완료 dismisses through the admin API, after which the candidate d
   const html = renderToStaticMarkup(await Admin({ searchParams: Promise.resolve({}) }));
   expect(html).not.toContain('합성 후보 제목');
 });
+
+test('missing collector migration leaves the existing review queue available with 미동기화',async()=>{
+ await memory.db.prepare('DROP TABLE collector_status_snapshots').run();
+ const html=renderToStaticMarkup(await Admin({searchParams:Promise.resolve({})}));
+ expect(html).toContain('미동기화');expect(html).toContain('합성 후보 제목');expect(html).toContain('확인 완료');expect(html).toContain('게시 전 검수');
+});

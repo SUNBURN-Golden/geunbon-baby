@@ -10,3 +10,4 @@ crawler/.session/
 crawler/.cache/
 crawler/logs/
 *.tsbuildinfo
+tools/chrome-clipper/dist/

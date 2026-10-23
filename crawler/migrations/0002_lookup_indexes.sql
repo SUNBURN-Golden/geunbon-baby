@@ -1,0 +1,15 @@
+CREATE INDEX IF NOT EXISTS records_group ON collection_records(group_id);
+CREATE INDEX IF NOT EXISTS records_status ON collection_records(status);
+CREATE INDEX IF NOT EXISTS records_recheck ON collection_records(json_extract(data,'$.next_recheck_at'));
+CREATE INDEX IF NOT EXISTS evidence_record ON evidence_assertions(record_id);
+CREATE INDEX IF NOT EXISTS links_group ON group_evidence_links(group_id);
+CREATE INDEX IF NOT EXISTS links_assertion ON group_evidence_links(assertion_id);
+CREATE INDEX IF NOT EXISTS conflicts_group ON evidence_conflicts(group_id);
+CREATE INDEX IF NOT EXISTS groups_key ON dedup_groups(json_extract(data,'$.key'));
+CREATE TABLE IF NOT EXISTS dedup_keys (key TEXT NOT NULL, group_id TEXT NOT NULL REFERENCES dedup_groups(id), PRIMARY KEY(key,group_id));
+CREATE INDEX IF NOT EXISTS dedup_keys_group ON dedup_keys(group_id);
+INSERT OR IGNORE INTO dedup_keys SELECT json_extract(data,'$.key'),id FROM dedup_groups WHERE NOT coalesce(json_extract(data,'$.retired'),0);
+INSERT OR IGNORE INTO dedup_keys SELECT a.value,g.id FROM dedup_groups g,json_each(g.data,'$.aliases') a WHERE NOT coalesce(json_extract(g.data,'$.retired'),0);
+CREATE INDEX IF NOT EXISTS reservations_expiry ON intake_reservations(json_extract(data,'$.phase'),json_extract(data,'$.expires_at'));
+CREATE INDEX IF NOT EXISTS reservations_clip ON intake_reservations(json_extract(data,'$.client'),json_extract(data,'$.clip_id'));
+PRAGMA user_version=2;

@@ -58,3 +58,20 @@ test('selectors support tag, class, id, attribute, descendant and comma lists; u
   expect(selectAll(root, 'p[data-k=v], b').length).toBe(2);
   expect(() => selectAll(root, 'div:first-child')).toThrow();
 });
+
+test('void hidden tags preserve following content; nested private regions stay excluded inside a page-wide form', () => {
+  const html=fixture('privacy-regions.html');
+  const root=parseHtml(html);
+  expect(JSON.stringify(selectAll(root,'form').map(el=>el.attrs))).toContain('aspnetForm');
+  const items=parseItems(html,'https://09pangpang.com/','https://09pangpang.com','.card',now);
+  expect(items).toHaveLength(1);expect(items[0].price?.value).toBe(390000);
+  expect(items[0].source_url).toBe('https://09pangpang.com/deal/visible');
+  expect(linesOf(root).join('\n')).not.toContain('DO_NOT_KEEP');
+  expect(selectAll(root,'a').map(el=>el.attrs.href)).toEqual(['/deal/visible']);
+});
+import { linesOf } from '../crawler/lib/external/parse';
+
+test('closing-tag strings in raw-text descendants cannot expose a hidden region tail',()=>{
+ const root=parseHtml('<div hidden><script>const example="</div>";</script>PRIVATE_TAIL</div><main>VISIBLE</main>');
+ expect(linesOf(root)).toEqual(['VISIBLE']);
+});
