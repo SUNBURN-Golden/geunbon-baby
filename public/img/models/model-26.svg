@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-label="바운서 밸런스 소프트">
+<title>바운서 밸런스 소프트</title>
+<g fill="none" stroke="#334338" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+<g id="spring-frame">
+<path d="M307,718 L185,747 Q157,755 169,772 Q180,784 212,791 L676,912 Q752,933 796,908" stroke-width="5.7"/>
+<path d="M310,737 L211,759 Q199,764 216,769 L684,893 Q748,911 783,892" stroke-width="5.4"/>
+<path d="M177,777 Q176,791 194,798 L674,926 Q751,949 804,918 L810,904" stroke-width="6.0"/>
+<path d="M244,312 Q266,476 307,718" stroke-width="5.2"/>
+<path d="M256,310 Q276,477 319,714" stroke-width="5.6"/>
+<path d="M685,752 Q735,791 771,849" stroke-width="5.7"/>
+<path d="M695,741 Q748,785 783,844" stroke-width="5.4"/>
+<path d="M780,852 Q800,852 810,868 L815,891 Q809,903 797,899" stroke-width="6.0"/>
+<path d="M786,867 Q795,861 802,873 L804,886 Q799,892 792,886 Z" stroke-width="5.2"/>
+<path d="M311,714 Q327,712 334,726 L333,748 Q318,759 309,746 Z" stroke-width="5.6"/>
+<path d="M317,724 Q327,720 328,733 L322,742 L316,736 Z" stroke-width="5.7"/>
+<path d="M343,750 Q354,735 367,744 L386,771 Q384,785 370,788 Z" stroke-width="5.4"/>
+<path d="M355,750 Q369,755 375,774" stroke-width="6.0"/>
+<path d="M374,773 Q387,767 395,778 L410,798" stroke-width="5.2"/>
+<path d="M379,784 L388,782 L401,796" stroke-width="5.6"/>
+<path d="M415,802 Q439,806 455,817" stroke-width="5.7"/>
+<path d="M450,805 Q464,810 476,814" stroke-width="5.4"/>
+</g><g id="two-part-fabric-sling">
+<path d="M250,313 Q228,193 294,162 Q384,125 464,170 Q509,193 532,259 C592,425 634,611 697,787 Q724,858 691,883 Q658,901 606,890 L357,839 Q317,832 315,794 C305,651 276,451 250,313 Z" stroke-width="5.7"/>
+<path d="M261,312 Q242,206 300,179 Q381,145 458,187 Q493,208 519,265" stroke-width="5.4"/>
+<path d="M272,328 Q294,475 324,624" stroke-width="6.0"/>
+<path d="M537,299 Q591,452 639,638" stroke-width="5.2"/>
+<path d="M325,644 Q402,631 472,653 L636,686 Q662,694 674,719" stroke-width="5.6"/>
+<path d="M327,659 Q397,646 468,667 L632,700 Q651,705 662,722" stroke-width="5.7"/>
+<path d="M336,683 Q363,749 357,813" stroke-width="5.4"/>
+<path d="M669,743 Q691,815 681,858" stroke-width="6.0"/>
+<path d="M337,808 Q421,804 514,834 Q614,867 686,860" stroke-width="5.2"/>
+<path d="M341,825 Q428,819 514,850 Q619,885 694,875" stroke-width="5.6"/>
+<path d="M316,464 Q347,453 373,470 L497,483 Q526,478 546,461 L560,488 Q537,520 492,528 L468,650 L407,641 L381,520 Q346,518 321,495 Z" stroke-width="5.7"/>
+<path d="M371,478 Q372,506 400,520 Q446,538 492,528" stroke-width="5.4"/>
+<path d="M396,520 L419,635" stroke-width="6.0"/>
+<path d="M480,536 L459,645" stroke-width="5.2"/>
+<path d="M339,478 Q353,480 368,489" stroke-width="5.6"/>
+<path d="M404,488 Q451,510 500,498" stroke-width="5.7"/>
+<path d="M315,456 Q305,442 317,434 L334,440 Q344,455 333,468" stroke-width="5.4"/>
+<path d="M316,446 Q325,442 328,453 L322,459 Z" stroke-width="6.0"/>
+<path d="M541,456 Q535,442 546,434 L561,442 Q569,455 559,466" stroke-width="5.2"/>
+<path d="M546,446 Q554,443 558,452 L552,459 Z" stroke-width="5.6"/>
+<path d="M315,288 Q347,239 394,247 Q451,257 482,315" stroke-width="5.7"/>
+<path d="M324,302 Q353,264 393,271 Q440,282 470,325" stroke-width="5.4"/>
+<path d="M338,325 Q367,299 400,305 Q439,314 459,344" stroke-width="6.0"/>
+<path d="M350,348 Q377,331 401,335 Q433,344 446,363" stroke-width="5.2"/>
+<path d="M367,371 Q386,359 407,367" stroke-width="5.6"/>
+<path d="M374,699 Q399,726 413,759" stroke-width="5.7"/>
+<path d="M407,695 Q433,732 444,771" stroke-width="5.4"/>
+<path d="M448,705 Q473,743 481,782" stroke-width="6.0"/>
+<path d="M489,714 Q511,751 520,794" stroke-width="5.2"/>
+<path d="M530,723 Q552,763 558,805" stroke-width="5.6"/>
+<path d="M572,731 Q593,775 599,817" stroke-width="5.7"/>
+<path d="M608,743 Q628,785 635,827" stroke-width="5.4"/>
+</g>
+</g>
+</svg>
