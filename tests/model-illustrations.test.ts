@@ -71,8 +71,8 @@ async function pngPixels(file: URL) {
   return { width, height, pixels };
 }
 
-test('all thirty models have square, transparent, unclipped PNG pairs', async () => {
-  expect(SQUARE_MODEL_IDS).toEqual(Array.from({ length: 30 }, (_, i) => `model-${i + 1}`));
+test('all thirty-nine registered models have square, transparent, unclipped PNG pairs', async () => {
+  expect(SQUARE_MODEL_IDS).toEqual(Array.from({ length: 41 }, (_, i) => `model-${i + 1}`).filter(id => !['model-32', 'model-39'].includes(id)));
   for (const id of SQUARE_MODEL_IDS) {
     for (const size of [252, 540]) {
       const { width, height, pixels } = await pngPixels(new URL(`${id}-${size}x${size}.png`, dir));
@@ -185,7 +185,7 @@ test('set components keep distinct detailed groups rather than abstract stand-in
   }
 });
 
-test('only the ninety square illustration files remain', async () => {
+test('only the 117 registered square illustration files remain', async () => {
   const files = (await readdir(dir)).sort();
   const expected = SQUARE_MODEL_IDS.flatMap(id => [`${id}.svg`, `${id}-540x540.png`, `${id}-252x252.png`]).sort();
   expect(files).toEqual(expected);
@@ -206,7 +206,83 @@ test('single items and bundles retain different component structures', async () 
   expect(await svg(21)).toContain('id="isofix-base"');
   expect(await svg(20)).not.toContain('id="isofix-base"');
   const pathSet = (s: string) => [...new Set([...s.matchAll(/<path d="([^"]+)"/g)].map(m => m[1]))].sort();
-  for (const [a, b] of [[3, 4], [7, 8], [7, 9], [10, 11], [23, 24], [25, 26], [27, 28], [27, 29], [28, 29]]) expect(pathSet(await svg(a))).not.toEqual(pathSet(await svg(b)));
+  for (const [a, b] of [[3, 4], [7, 8], [7, 9], [10, 11], [23, 24], [25, 26], [27, 28], [27, 29], [28, 29], [30, 31], [33, 36], [34, 36], [35, 36], [27, 40], [28, 40], [29, 40]]) expect(pathSet(await svg(a))).not.toEqual(pathSet(await svg(b)));
+});
+
+// Confirmed scope and evidence are mirrored in docs/model-illustrations-batch-4.md.
+// Blocked models have no SVG: an unavailable thumbnail must never be replaced by invented art.
+const BATCH4: Record<string, {
+  status: 'confirmed-single' | 'confirmed-set' | 'unconfirmed' | 'blocked';
+  groups: string[];
+  absent?: string[];
+}> = {
+  'model-31': { status: 'confirmed-set', groups: ['chassis', 'seat', 'canopy', 'wheels', 'carrycot', 'footmuff', 'backpack', 'seat-liner', 'car-seat-adapters', 'deluxe-blanket', 'carrycot-sherpa-topper', 'carrycot-fitted-sheets', 'rain-covers'] },
+  'model-32': { status: 'blocked', groups: [] },
+  'model-33': { status: 'confirmed-set', groups: ['shell', 'harness', 'integral-rotating-base', 'newborn-insert'] },
+  'model-34': { status: 'confirmed-set', groups: ['shell', 'harness', 'integral-rotating-base', 'newborn-insert'] },
+  'model-35': { status: 'confirmed-set', groups: ['shell', 'harness', 'integral-rotating-base', 'newborn-insert'] },
+  'model-36': { status: 'confirmed-set', groups: ['shell', 'harness', 'integral-rotating-base', 'newborn-insert'] },
+  'model-37': { status: 'confirmed-single', groups: ['shell', 'harness', 'isofix-tether'], absent: ['newborn-insert', 'isofix-base'] },
+  'model-38': { status: 'confirmed-set', groups: ['chassis', 'seat', 'canopy', 'wheels', 'basket', 'rain-cover', 'newborn-apron'] },
+  'model-39': { status: 'blocked', groups: [] },
+  'model-40': { status: 'unconfirmed', groups: ['body-panel', 'shoulder-straps', 'waist-belt', 'buckle'] },
+  'model-41': { status: 'unconfirmed', groups: ['infant-carrier', 'integrated-wheels', 'handle'] },
+};
+
+function topLevelComponentIds(svg: string) {
+  let depth = 0;
+  const ids: string[] = [];
+  for (const m of svg.matchAll(/<g\b[^>]*>|<\/g>/g)) {
+    if (m[0] === '</g>') { depth--; continue; }
+    if (depth === 1) {
+      const id = /\bid="([^"]+)"/.exec(m[0])?.[1];
+      expect(id, 'each component must be named').toBeDefined();
+      ids.push(id!);
+    }
+    depth++;
+  }
+  expect(depth).toBe(0);
+  return ids;
+}
+
+test('batch 4 draws exactly the documented components with distinct detailed curves', async () => {
+  const files = await readdir(dir);
+  for (const [id, spec] of Object.entries(BATCH4)) {
+    if (spec.status === 'blocked') {
+      expect(modelIllustration(id), id).toBeNull();
+      expect(files.filter(f => f.startsWith(`${id}.`) || f.startsWith(`${id}-`)), id).toEqual([]);
+      continue;
+    }
+    const svg = await readFile(new URL(`${id}.svg`, dir), 'utf8');
+    expect(topLevelComponentIds(svg).sort(), id).toEqual([...spec.groups].sort());
+    expect(svg, id).not.toContain('transform=');
+    for (const group of spec.groups) {
+      const ds = pathData(component(svg, group));
+      expect(new Set(ds).size, `${id} ${group}: unique paths`).toBeGreaterThanOrEqual(20);
+      expect(new Set(ds.filter(d => /[CQ]/.test(d))).size, `${id} ${group}: curved paths`).toBeGreaterThanOrEqual(12);
+    }
+    for (const absent of spec.absent ?? []) expect(svg, `${id} ${absent}`).not.toContain(`id="${absent}"`);
+    for (const m of svg.matchAll(/<path\b[^>]*>/g)) {
+      const width = Number(/stroke-width="([^"]+)"/.exec(m[0])?.[1]);
+      expect(width, id).toBeGreaterThanOrEqual(5.2);
+      expect(width, id).toBeLessThanOrEqual(6);
+      expect(/\bd="([^"]+)"/.exec(m[0])?.[1], id).toMatch(/^(?:[MLCQZ\s,\d.\-])+$/);
+    }
+  }
+  // This is a structural assertion, independent of included accessories.
+  for (const n of [33, 34, 35, 36]) {
+    expect(await readFile(new URL(`model-${n}.svg`, dir), 'utf8')).toContain('id="integral-rotating-base"');
+  }
+  expect(await readFile(new URL('model-37.svg', dir), 'utf8')).not.toContain('id="integral-rotating-base"');
+});
+
+test('the DUALFIX trim variants preserve the same verified structure without invented textile details', async () => {
+  // The official <=300px photos do not establish different structural seams.
+  // Explicit design exception: omit [33,34], [33,35], [34,35] path-difference assertions.
+  const sets = await Promise.all([33, 34, 35].map(async n => pathData(await readFile(new URL(`model-${n}.svg`, dir), 'utf8'))));
+  expect(sets[0]).toEqual(sets[1]);
+  expect(sets[0]).toEqual(sets[2]);
+  // [38,39] cannot be compared until a compliant official Dune 2 thumbnail is available.
 });
 
 type Point = [number, number];
@@ -341,7 +417,7 @@ test('tray footprint hides rail and crotch guard without paint or masks', async 
 });
 
 test('all refined set ink, including transformed stroke widths, stays inside the safe square', async () => {
-  for (const n of [3, 4, 5, 8, 9, 21, 22]) {
+  for (const n of [3, 4, 5, 8, 9, 21, 22, 31, 33, 34, 35, 36, 37, 38, 40, 41]) {
     const svg = await readFile(new URL(`model-${n}.svg`, dir), 'utf8');
     const stack: { matrix: Matrix; stroke: number }[] = [{ matrix: [1,0,0,1,0,0], stroke: 5.5 }];
     for (const tag of svg.matchAll(/<g\b[^>]*>|<\/g>|<path\b[^>]*>/g)) {
@@ -354,7 +430,8 @@ test('all refined set ink, including transformed stroke widths, stays inside the
         const points = controlPoints(/\bd="([^"]+)"/.exec(tag[0])![1]).map(p => transformPoint(p, parent.matrix));
         const [a,b,c,d] = parent.matrix;
         // The transformed circular stroke has these exact horizontal/vertical radii.
-        const rx = parent.stroke * Math.hypot(a,c) / 2, ry = parent.stroke * Math.hypot(b,d) / 2;
+        const stroke = Number(/stroke-width="([^"]+)"/.exec(tag[0])?.[1] ?? parent.stroke);
+        const rx = stroke * Math.hypot(a,c) / 2, ry = stroke * Math.hypot(b,d) / 2;
         for (const [x,y] of points) {
           expect(Math.min(x-rx,y-ry), `model-${n} safe margin`).toBeGreaterThanOrEqual(32);
           expect(Math.max(x+rx,y+ry), `model-${n} safe margin`).toBeLessThanOrEqual(1048);
