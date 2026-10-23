@@ -127,12 +127,16 @@ npm run dev
 
 ## 가격 원칙
 
-최초 데이터는 **`seed/models.json`, `seed/tripp_trapp.json`만** 사용합니다. 시드 자체를 실시간 재검증했다는 의미는 아닙니다. 가격이 null이거나 수집되지 않았으면 **정보 없음**입니다. 시드에 공구가·일정이 없으므로 공구와 달력은 빈 화면이 정상입니다.
+최초 데이터는 **`seed/models.json`, `seed/tripp_trapp.json`만** 사용합니다. 41개 모델은 2026-10-23 공식 페이지 본문 확인을 시도하여, 읽은 정상가와 확인 불가 상태를 구분했습니다. 확인 로그는 [모델 근거 기록](docs/model-evidence-2026-10-23.md)에 있습니다. 가격이 null이거나 수집되지 않았으면 **정보 없음**입니다. 시드에 공구가·일정이 없으므로 공구와 달력은 빈 화면이 정상입니다.
 
 - 가격은 국내 공식가와 검수된 공구가만 보관·표시합니다. 해외가·환율·중고가·직구가·일반 판매처 할인가는 시드와 모델 메모에 보관하지 않습니다.
 - `kr_retailers`는 판매자 이름과 출처 URL만 보관하며 가격은 포함하지 않습니다.
-- `page_text`와 `search_summary`의 근거 차이를 보존합니다. 공식가 미확인 모델은 다른 판매가로 대체하지 않습니다.
+- `page_body`는 공식 제품 본문에서 정상가를 확인한 상태이고, `official_unpublished`는 동일 구성 미확인·접속 실패·수입사 미확인 등을 포함한 공식가 정보 없음 상태입니다. 제조사의 가격 비공개를 단정하지 않으며 `evidence.reason`으로 사유를 구분합니다. 기존 D1 행의 `page_text`·`search_summary` 표시 호환은 유지합니다. 공식가 미확인 모델은 다른 판매가나 부품 합산으로 대체하지 않습니다.
 - 모든 공구는 광고이며 구매·결제는 판매처 링크아웃만 제공합니다. 아가마중은 거래 당사자가 아닙니다.
+
+`seed/official-sources.json`의 브랜드별 공식 호스트·제품 경로 규칙과 차단 경로로 가격 출처를 제한합니다. 백화점·기사·리뷰·홈 페이지는 공식가 근거가 아닙니다. 모델별 `evidence`·`bundle`은 구성품·세대·호환·보증·설명서·인증 조사 기록이며, 미확인 항목은 추정하지 않습니다. 현재 D1/API/UI에는 조사 묶음을 추가하지 않습니다. 기존 모델 컬럼만 UPDATE 전용 `0008_official_evidence.sql`로 갱신합니다. **`lib/`·`app/`에서 시드를 import하지 마세요.** 큰 조사 기록과 로컬 네트워크 도구는 Workers 번들 밖에 둡니다.
+
+CPSC 공개 REST(키 불필요)는 로컬 Node `scripts/recall-check.ts`에서 기본 질의와 모든 대체 표기(예: BabyBjörn·Maxi Cosi·Dorel)를 각각 제목·제품명으로 질의 후 RecallID 중복 제거와 전체 단어 브랜드 필터를 적용합니다. 질의별 원시 행 수·채택 수·필터 제외 ID/제목·조회 실패를 `seed/recalls.json`에 기록합니다. **리콜 결과 없음 ≠ 안전 보장**이며 해외 리콜의 국내 모델·로트 적용은 별도 판단합니다. SafetyKorea는 API 키 발급 전 `not_connected`입니다. 공유 순수 파서와 기존 크롤러 파서는 패리티 테스트로 검증하며 크롤러의 공유 파서 전환은 후속 과제입니다.
 
 ## 크롤러
 
@@ -150,10 +154,13 @@ npm run typecheck
 npm test
 npm run build
 npm run build:worker
+npx tsx scripts/recall-check.ts --out seed/recalls.json  # 로컬 공식 리콜 조회, 외부 네트워크 필요
 npx tsx scripts/card-screenshots.ts --out <dir>   # /models 카드 모바일·데스크톱 × 라이트·다크 스크린샷 (서버·네트워크 불필요)
 ```
 
 `tests`는 Vitest와 메모리 SQLite로 가격 매핑·인증·검수 격리·중복 및 크롤러 추출·한도·지터·발견·셀렉터·OCR 실패 복구를 확인합니다. 테스트에서 소켓·실제 fetch·브라우저 실행을 차단하며 네트워크 접속 없이 검증합니다. Worker 빌드 후 `wrangler dev --local --test-scheduled`와 로컬 `/__scheduled` 요청으로 Cron stub을 수동 확인할 수 있습니다. 배포 스크립트는 의도적으로 제공하지 않습니다.
+
+리콜 도구는 `--fixture <json> --sources <json> --out <json>`으로 네트워크 없이 실행할 수 있습니다. fixture는 브랜드별 `queries: { "검색어": { "title": [...], "product": [...] } }`로 대체 질의 결과를 구분할 수 있습니다. 기본 fixture 형식은 브랜드별 `{ "title": [CPSC 원시 행], "product": [CPSC 원시 행] }`이며 `{ "error": "blocked" }`로 실패를 재현합니다. 고정 User-Agent·요청 간 5초·응답 2MB 상한·리디렉트 금지·요청 제한 시간을 적용합니다. 일부 브랜드 실패는 해당 브랜드에만 기록하고, 전체 실패 시 출력 파일을 덮어쓰지 않습니다. 재조회 파일과 모델별 검토 결과는 별도이므로, 갱신 후 `bundle.safety.recalls.cpsc`도 다시 검토해야 합니다. 교차 검증 테스트가 오래된 모델별 검토 기록을 감지합니다. 실시간 네트워크 조회는 단위 테스트에 포함하지 않습니다.
 
 ### 상품 손그림 에셋
 
@@ -183,3 +190,5 @@ npx tsx scripts/card-screenshots.ts --out .local/card-screenshots-batch2
 `ready_to_publish`는 현재 묶음의 근거 버전으로 사실 검토·공개 검토를 마친 상태입니다. 실제 게시를 실행하지 않습니다. 기존 Instagram ingest → 관리자 승인 → deals 경로와 과거 external_candidates는 별개로 유지합니다.
 
 추가 명령: `npm run collector:worker -- serve`, `npm run collector:worker -- discover --dry-run`, `npm run collector -- report --json`, `npm run build:clipper`. 검증 명령은 기존 lint·typecheck·test·build·build:worker와 build:clipper입니다. 테스트는 외부 네트워크/브라우저를 차단하며 실제 SQLite 파일 복구·트랜잭션 실패·자식 프로세스 종료·확장 재시작을 검증합니다.
+
+이번 근거 정리에서는 공식가 확인 12개, 미확보 29개(접속 실패 16개)로 공개 공식가가 줄어듭니다. 트립트랩 오크 정상가는 기존 470,000원에서 공식 본문 510,000원으로 바뀝니다. 접속 실패 URL은 시도 기록으로만 남기고 출처 링크를 비웁니다. 기존 수입사 정보는 접속 오류만으로 삭제하지 않고 재확인 실패를 표시합니다. 세대·국내 정식 구성도 본문에서 확정하지 못하면 명시적 미확인 객체로 기록합니다.

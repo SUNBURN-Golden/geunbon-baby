@@ -104,3 +104,16 @@ test('navigation preserves all four destinations and identifies the official-pri
   expect(html).toMatch(/<a(?=[^>]*href="\/models")(?=[^>]*aria-current="page")[^>]*>/);
   expect(html).not.toContain('기준가');
 });
+
+test('unavailable evidence has no empty official-source link and preserves importer recheck notice', async () => {
+  await memory.db.prepare("UPDATE models SET source_url = '', official_price = NULL, verify_level = 'official_unpublished', importer = '기존 수입사 (기존 정보, 재확인 실패)' WHERE id = ?").bind('model-1').run();
+  try {
+    const html = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
+    expect(html).toContain('정보 없음');
+    expect(html).toContain('기존 정보, 재확인 실패');
+    expect(html).not.toContain(`>${siteCopy.officialSource}</a>`);
+    expect(html).not.toContain('href=""');
+  } finally {
+    await memory.db.prepare("UPDATE models SET source_url = 'https://example.com/model', official_price = 430000, verify_level = 'page_text', importer = 'Importer' WHERE id = ?").bind('model-1').run();
+  }
+});

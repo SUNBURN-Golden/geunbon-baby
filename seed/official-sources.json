@@ -1,0 +1,380 @@
+{
+  "Stokke": {
+    "importer": "스토케코리아",
+    "hosts": {
+      "www.stokke.com": {
+        "product_path": "^/KOR/ko-kr/.+\\.html$"
+      }
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://www.stokke.com/KOR/ko-kr/home",
+      "checked_at": "2026-10-23T14:24:18+09:00",
+      "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+    },
+    "cpsc": {
+      "query": "Stokke",
+      "match_terms": [
+        "Stokke"
+      ],
+      "date_from": "2010-01-01"
+    }
+  },
+  "Bugaboo": {
+    "importer": "부가부코리아(유)",
+    "hosts": {
+      "www.bugaboo.com": {
+        "product_path": "^/kr-ko/.+(?:PM|PV)\\d+\\.html$"
+      }
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://www.bugaboo.com/kr-ko/folder-user_guides.html",
+      "checked_at": "2026-10-23T14:24:18+09:00",
+      "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+    },
+    "cpsc": {
+      "query": "Bugaboo",
+      "match_terms": [
+        "Bugaboo"
+      ],
+      "date_from": "2010-01-01"
+    }
+  },
+  "Cybex": {
+    "importer": "(주)싸이벡스코리아",
+    "hosts": {
+      "www.cybex-online.com": {},
+      "cybex-shop.co.kr": {},
+      "www.cybex-shop.co.kr": {}
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://www.cybex-online.com/ko/kr",
+      "checked_at": "2026-10-23T14:24:18+09:00",
+      "status": "recheck_failed",
+      "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+    },
+    "cpsc": {
+      "query": "Cybex",
+      "match_terms": [
+        "CYBEX Strollers",
+        "Regal Lager",
+        "CYBEX baby",
+        "CYBEX GmbH"
+      ],
+      "date_from": "2010-01-01"
+    },
+    "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+  },
+  "Nuna": {
+    "importer": "(주)에이원월드",
+    "hosts": {
+      "nunababy.com": {},
+      "aonebaby.co.kr": {
+        "product_path": "^/product/"
+      },
+      "www.aonebaby.co.kr": {
+        "product_path": "^/product/"
+      }
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://nunababy.com/kr/storelocator",
+      "checked_at": "2026-10-23T14:42:22+09:00",
+      "summary": "제조사 한국 사이트 하단: 접수 주문은 에이원에서 처리, 상호는 주식회사 에이원월드"
+    },
+    "cpsc": {
+      "query": "Nuna",
+      "match_terms": [
+        "Nuna"
+      ],
+      "date_from": "2010-01-01"
+    },
+    "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+  },
+  "Joie": {
+    "importer": "(주)에이원",
+    "hosts": {
+      "joiebaby.com": {},
+      "aonebaby.co.kr": {
+        "product_path": "^/product/"
+      },
+      "www.aonebaby.co.kr": {
+        "product_path": "^/product/"
+      },
+      "joiebaby.co.kr": {},
+      "www.joiebaby.co.kr": {}
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://joiebaby.com/en",
+      "checked_at": "2026-10-23T14:24:18+09:00",
+      "status": "recheck_failed",
+      "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+    },
+    "cpsc": {
+      "query": "Joie",
+      "match_terms": [
+        "Joie"
+      ],
+      "date_from": "2010-01-01"
+    },
+    "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+  },
+  "BabyBjorn": {
+    "importer": "베이비뵨㈜",
+    "hosts": {
+      "www.babybjorn.kr": {
+        "product_path": "^/products/[^/]+/[^/]+/"
+      },
+      "next.babybjorn.kr": {
+        "product_path": "^/products/[^/]+/[^/]+/"
+      }
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://www.babybjorn.kr/pages/general-warranty-policies/",
+      "checked_at": "2026-10-23T14:24:18+09:00",
+      "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+    },
+    "cpsc": {
+      "query": "BabyBjorn",
+      "match_terms": [
+        "BabyBjorn",
+        "Baby Bjorn",
+        "BabyBjörn"
+      ],
+      "date_from": "2010-01-01"
+    }
+  },
+  "Egg": {
+    "importer": "베이비스타일아시아홀딩스",
+    "hosts": {
+      "eggstroller.com": {},
+      "eggstroller.co.kr": {},
+      "www.eggstroller.co.kr": {}
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "status": "recheck_failed",
+      "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+      "attempted_url": "https://eggstroller.com/stockists/",
+      "attempted_at": "2026-10-23T14:24:18+09:00"
+    },
+    "cpsc": {
+      "query": "egg stroller",
+      "match_terms": [
+        "egg stroller",
+        "egg2",
+        "egg 2",
+        "BabyStyle"
+      ],
+      "date_from": "2010-01-01"
+    },
+    "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+  },
+  "D.THRONE": {
+    "importer": "디트로네 주식회사(국내 브랜드)",
+    "hosts": {
+      "www.dthrone.com": {
+        "product_path": "^/102/$"
+      }
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://www.dthrone.com/102/?idx=58",
+      "checked_at": "2026-10-23T14:24:18+09:00",
+      "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+    },
+    "cpsc": {
+      "query": "Dthrone",
+      "match_terms": [
+        "Dthrone",
+        "D.Throne"
+      ],
+      "date_from": "2010-01-01"
+    }
+  },
+  "Britax": {
+    "importer": "세피앙",
+    "hosts": {
+      "www.britax-roemer.com": {},
+      "britaxmall.co.kr": {},
+      "www.britaxmall.co.kr": {}
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "status": "recheck_failed",
+      "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+      "attempted_url": "https://www.britax-roemer.com/service-support/user-instructions",
+      "attempted_at": "2026-10-23T14:24:18+09:00"
+    },
+    "cpsc": {
+      "query": "Britax",
+      "match_terms": [
+        "Britax"
+      ],
+      "date_from": "2010-01-01"
+    },
+    "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+  },
+  "Maxi-Cosi": {
+    "importer": "엠베이비",
+    "hosts": {
+      "www.maxi-cosi.com": {},
+      "mbaby.co.kr": {},
+      "www.mbaby.co.kr": {}
+    },
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "status": "recheck_failed",
+      "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+      "attempted_url": "https://www.maxi-cosi.com/international/retailers",
+      "attempted_at": "2026-10-23T14:24:18+09:00"
+    },
+    "cpsc": {
+      "query": "Maxi-Cosi",
+      "match_terms": [
+        "Maxi-Cosi",
+        "Maxi Cosi",
+        "Dorel"
+      ],
+      "date_from": "2010-01-01"
+    },
+    "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+  },
+  "Silver Cross": {
+    "importer": null,
+    "hosts": {},
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://www.silvercrossbaby.com/",
+      "checked_at": "2026-10-23T14:24:18+09:00",
+      "status": "unconfirmed",
+      "reason": "제조사 본문에서 국내 수입사 관계를 확인하지 못함"
+    },
+    "cpsc": {
+      "query": "Silver Cross",
+      "match_terms": [
+        "Silver Cross"
+      ],
+      "date_from": "2010-01-01"
+    }
+  },
+  "Ergobaby": {
+    "importer": "(주)스엔코",
+    "hosts": {},
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "status": "recheck_failed",
+      "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+      "attempted_url": "https://ergobaby.com/en-us/pages/international-distributors",
+      "attempted_at": "2026-10-23T14:24:18+09:00"
+    },
+    "cpsc": {
+      "query": "Ergobaby",
+      "match_terms": [
+        "Ergobaby",
+        "Ergo Baby"
+      ],
+      "date_from": "2010-01-01"
+    }
+  },
+  "Doona": {
+    "importer": null,
+    "hosts": {},
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "importer_basis": {
+      "url": "https://www.doona.com/en/store-locator",
+      "checked_at": "2026-10-23T14:24:18+09:00",
+      "status": "unconfirmed",
+      "reason": "제조사 본문에서 국내 수입사 관계를 확인하지 못함"
+    },
+    "cpsc": {
+      "query": "Doona",
+      "match_terms": [
+        "Doona"
+      ],
+      "date_from": "2010-01-01"
+    }
+  }
+}

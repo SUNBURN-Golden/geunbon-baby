@@ -1,455 +1,3624 @@
 {
- "models": [
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "트립트랩 하이체어(너도밤나무)",
-   "category": "high_chair",
-   "kr_official_price_krw": 430000,
-   "source_url": "https://www.stokke.com/KOR/ko-kr/%ED%95%98%EC%9D%B4%EC%B2%B4%EC%96%B4/%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9/1001.html",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "트립트랩 하이체어(오크)",
-   "category": "high_chair",
-   "kr_official_price_krw": 470000,
-   "source_url": "https://www.stokke.com/KOR/ko-kr/%ED%95%98%EC%9D%B4%EC%B2%B4%EC%96%B4/%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9/4952.html",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "트립트랩+베이비세트",
-   "category": "high_chair",
-   "kr_official_price_krw": 590000,
-   "source_url": "https://economist.co.kr/article/view/ecn202609170042",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": "2026-02 인상 후 가격(기사)"
-  },
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "트립트랩+베이비세트+트레이(이유식세트)",
-   "category": "high_chair",
-   "kr_official_price_krw": 680000,
-   "source_url": "https://www.lotteon.com/csearch/search/search?mallId=3&platform=pc&q=%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9&render=search",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": "롯데백화점 판매가"
-  },
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "트립트랩 신생아&이유식 세트",
-   "category": "high_chair",
-   "kr_official_price_krw": 910000,
-   "source_url": "https://www.stokke.com/KOR/ko-kr/%ED%95%98%EC%9D%B4%EC%B2%B4%EC%96%B4/%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9/tripp-trapp-newborn-complete-sk.html",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "익스플로리 X",
-   "category": "stroller",
-   "kr_official_price_krw": 1920000,
-   "source_url": "https://www.stokke.com/KOR/ko-kr/571502.html",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "요요3 프레임",
-   "category": "stroller",
-   "kr_official_price_krw": 567000,
-   "source_url": "https://www.stokke.com/KOR/ko-kr/%EC%9C%A0%EB%AA%A8%EC%B0%A8/%EC%8A%A4%ED%86%A0%EC%BC%80-%EC%9A%94%EC%9A%94-%EC%9C%A0%EB%AA%A8%EC%B0%A8/6773.html",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "요요3 6+ (프레임+시트)",
-   "category": "stroller",
-   "kr_official_price_krw": 716000,
-   "source_url": "https://www.stokke.com/KOR/ko-kr/%EC%9C%A0%EB%AA%A8%EC%B0%A8/%EC%8A%A4%ED%86%A0%EC%BC%80-%EC%9A%94%EC%9A%94-%EC%9C%A0%EB%AA%A8%EC%B0%A8/yoyo-stroller-sk.html",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Stokke",
-   "kr_importer": "스토케코리아",
-   "model": "요요 뉴본 배시넷 구성",
-   "category": "stroller",
-   "kr_official_price_krw": 1036000,
-   "source_url": "https://www.stokke.com/KOR/ko-kr/last-chance/yoyo-strollers-last-chance/yoyo-bassinet-stroller.html",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": "last-chance 페이지"
-  },
-  {
-   "brand": "Bugaboo",
-   "kr_importer": "부가부코리아(유)",
-   "model": "폭스5 리뉴",
-   "category": "stroller",
-   "kr_official_price_krw": 2340000,
-   "source_url": "https://mobile.galleria.co.kr/dispctg/initShopLowCtg.action?disp_ctg_no=2406103398",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Bugaboo",
-   "kr_importer": "부가부코리아(유)",
-   "model": "폭스5 느와르 리미티드",
-   "category": "stroller",
-   "kr_official_price_krw": 2460000,
-   "source_url": "https://mobile.galleria.co.kr/dispctg/initShopLowCtg.action?disp_ctg_no=2406103398",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Bugaboo",
-   "kr_importer": "부가부코리아(유)",
-   "model": "버터플라이2(범퍼바 포함)",
-   "category": "stroller",
-   "kr_official_price_krw": 950000,
-   "source_url": "https://www.bugaboo.com/kr-ko/%EC%8A%A4%ED%8A%B8%EB%A1%A4%EB%9F%AC/bugaboo-butterfly-2/%EB%B6%80%EA%B0%80%EB%B6%80-%EB%B2%84%ED%84%B0%ED%94%8C%EB%9D%BC%EC%9D%B4-2-%ED%9C%B4%EB%8C%80%EC%9A%A9-%EC%8A%A4%ED%8A%B8%EB%A1%A4%EB%9F%AC-%EB%B2%94%ED%8D%BC%EB%B0%94-%ED%8F%AC%ED%95%A8-PM007649.html",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Bugaboo",
-   "kr_importer": "부가부코리아(유)",
-   "model": "드래곤플라이(배시넷 포함)",
-   "category": "stroller",
-   "kr_official_price_krw": 1950000,
-   "source_url": "https://mobile.galleria.co.kr/dispctg/initShopLowCtg.action?disp_ctg_no=2406103398",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": "공식몰: 드래곤플라이 단종, 드래곤플라이 플러스로 교체"
-  },
-  {
-   "brand": "Bugaboo",
-   "kr_importer": "부가부코리아(유)",
-   "model": "드래곤플라이 섀시(시트 구성)",
-   "category": "stroller",
-   "kr_official_price_krw": 1600000,
-   "source_url": "https://mobile.galleria.co.kr/dispctg/initShopLowCtg.action?disp_ctg_no=2406103398",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Cybex",
-   "kr_importer": "(주)싸이벡스코리아",
-   "model": "프리암 4.0",
-   "category": "stroller",
-   "kr_official_price_krw": 2020000,
-   "source_url": "https://www.cybex-shop.co.kr/goods/goods_view.php?goodsNo=1000000344",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Cybex",
-   "kr_importer": "(주)싸이벡스코리아",
-   "model": "미오스 3.0",
-   "category": "stroller",
-   "kr_official_price_krw": 1500000,
-   "source_url": "https://www.cybex-shop.co.kr/goods/goods_view.php?goodsNo=1000000343",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Cybex",
-   "kr_importer": "(주)싸이벡스코리아",
-   "model": "멜리오 카본 3.0",
-   "category": "stroller",
-   "kr_official_price_krw": 1020000,
-   "source_url": "https://www.cybex-shop.co.kr/goods/goods_main.php?sno=29",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Cybex",
-   "kr_importer": "(주)싸이벡스코리아",
-   "model": "제로나 Gi (회전형 카시트)",
-   "category": "car_seat",
-   "kr_official_price_krw": 905000,
-   "source_url": "https://cybex-shop.co.kr/goods/goods_view.php?goodsNo=1000000491",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Cybex",
-   "kr_importer": "(주)싸이벡스코리아",
-   "model": "제로나 T",
-   "category": "car_seat",
-   "kr_official_price_krw": 1180000,
-   "source_url": "https://www.cybex-shop.co.kr/goods/goods_main.php?sno=29",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Nuna",
-   "kr_importer": "(주)에이원",
-   "model": "피파 넥스트(바구니 카시트)",
-   "category": "car_seat",
-   "kr_official_price_krw": 670000,
-   "source_url": "https://aonebaby.co.kr/article/review/4/4828/",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Nuna",
-   "kr_importer": "(주)에이원",
-   "model": "넥스트 시스템(토들넥스트+피파넥스트+베이스)",
-   "category": "car_seat",
-   "kr_official_price_krw": 1340000,
-   "source_url": "https://aonebaby.co.kr/product/%EB%89%B4%EB%82%98-%EB%84%A5%EC%8A%A4%ED%8A%B8-%EC%8B%9C%EC%8A%A4%ED%85%9C%ED%86%A0%EB%93%A4%EB%84%A5%EC%8A%A4%ED%8A%B8%ED%94%BC%ED%8C%8C%EB%84%A5%EC%8A%A4%ED%8A%B8%EB%B2%A0%EC%9D%B4%EC%8A%A4-%EC%95%84%EC%9D%B4%EC%82%AC%EC%9D%B4%EC%A6%88-%EC%B9%B4%EC%8B%9C%ED%8A%B8-%EC%84%B8%ED%8A%B8-%EC%82%AC%EC%9D%80%ED%92%88-%EC%BF%A8%EC%8B%9C%ED%8A%B8-%ED%9B%84%EB%B0%A9%EA%B1%B0%EC%9A%B8/341/",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Nuna",
-   "kr_importer": "(주)에이원",
-   "model": "트리브 넥스트 트래블 시스템(+피파넥스트)",
-   "category": "stroller",
-   "kr_official_price_krw": 1800000,
-   "source_url": "https://m.lotteimall.com/goods/viewGoodsDetail.lotte?chl_dtl_no=&chl_no=17&goods_no=2610185441",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": "롯데홈쇼핑 판매가, 수입 (주)에이원"
-  },
-  {
-   "brand": "Joie",
-   "kr_importer": "(주)에이원",
-   "model": "아이스핀 360",
-   "category": "car_seat",
-   "kr_official_price_krw": 628000,
-   "source_url": "https://joiebaby.co.kr/product/%EC%A1%B0%EC%9D%B4-%EC%95%84%EC%9D%B4%EC%8A%A4%ED%95%80360-%EC%95%84%EC%9D%B4%EC%82%AC%EC%9D%B4%EC%A6%88-%ED%9A%8C%EC%A0%84%ED%98%95-%EC%8B%A0%EC%83%9D%EC%95%84-%EC%B9%B4%EC%8B%9C%ED%8A%B8/29/",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Joie",
-   "kr_importer": "(주)에이원",
-   "model": "아이스핀 360 메쉬",
-   "category": "car_seat",
-   "kr_official_price_krw": 728000,
-   "source_url": "https://aonebaby.co.kr/",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "BabyBjorn",
-   "kr_importer": "베이비뵨㈜",
-   "model": "바운서 블리스",
-   "category": "bouncer",
-   "kr_official_price_krw": 310000,
-   "source_url": "https://next.babybjorn.kr/",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "BabyBjorn",
-   "kr_importer": "베이비뵨㈜",
-   "model": "바운서 밸런스 소프트",
-   "category": "bouncer",
-   "kr_official_price_krw": 310000,
-   "source_url": "https://www.babybjorn.kr/selected/shop/",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "BabyBjorn",
-   "kr_importer": "베이비뵨㈜",
-   "model": "베이비 캐리어 하모니",
-   "category": "carrier",
-   "kr_official_price_krw": 360000,
-   "source_url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-harmony/",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "BabyBjorn",
-   "kr_importer": "베이비뵨㈜",
-   "model": "베이비 캐리어 원 에어",
-   "category": "carrier",
-   "kr_official_price_krw": 330000,
-   "source_url": "https://www.babybjorn.kr/selected/shop/",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "BabyBjorn",
-   "kr_importer": "베이비뵨㈜",
-   "model": "베이비 캐리어 미니",
-   "category": "carrier",
-   "kr_official_price_krw": 180000,
-   "source_url": "https://www.babybjorn.kr/selected/shop/",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Egg",
-   "kr_importer": "베이비스타일아시아홀딩스",
-   "model": "에그3 디럭스",
-   "category": "stroller",
-   "kr_official_price_krw": 2390000,
-   "source_url": "https://www.eggstroller.co.kr/goods/view?no=78",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Egg",
-   "kr_importer": "베이비스타일아시아홀딩스",
-   "model": "애스턴마틴 에그3",
-   "category": "stroller",
-   "kr_official_price_krw": 3290000,
-   "source_url": "https://www.eggstroller.co.kr/goods/view?no=128",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "D.THRONE",
-   "kr_importer": "디트로네 주식회사(국내 브랜드)",
-   "model": "이니셜 신생아 디럭스 유모차",
-   "category": "stroller",
-   "kr_official_price_krw": 1090000,
-   "source_url": "https://www.dthrone.com/102/?idx=58",
-   "checked": "2026-10-20",
-   "verify_level": "page_text",
-   "note": ""
-  },
-  {
-   "brand": "Britax",
-   "kr_importer": "세피앙",
-   "model": "듀얼픽스 프로 LUX",
-   "category": "car_seat",
-   "kr_official_price_krw": 1380000,
-   "source_url": "http://britaxmall.co.kr/lg_main/index.php",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Britax",
-   "kr_importer": "세피앙",
-   "model": "듀얼픽스 프로 STYLE",
-   "category": "car_seat",
-   "kr_official_price_krw": 1350000,
-   "source_url": "http://britaxmall.co.kr/lg_main/index.php",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Britax",
-   "kr_importer": "세피앙",
-   "model": "듀얼픽스 프로 CLASSIC",
-   "category": "car_seat",
-   "kr_official_price_krw": 1220000,
-   "source_url": "http://britaxmall.co.kr/lg_main/index.php",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Maxi-Cosi",
-   "kr_importer": "엠베이비",
-   "model": "미카 360 프로",
-   "category": "car_seat",
-   "kr_official_price_krw": 970000,
-   "source_url": "http://www.mbaby.co.kr/shop/shopbrand.html?mcode=001&type=X&xcode=019",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Maxi-Cosi",
-   "kr_importer": "엠베이비",
-   "model": "타이탄 프로",
-   "category": "car_seat",
-   "kr_official_price_krw": 620000,
-   "source_url": "http://www.mbaby.co.kr/shop/shopbrand.html?mcode=001&type=X&xcode=019",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Silver Cross",
-   "kr_importer": "엘리프(elephbaby.kr) - 공식 여부 확인 필요",
-   "model": "리프2",
-   "category": "stroller",
-   "kr_official_price_krw": 1810000,
-   "source_url": "https://elephbaby.kr/category/%EC%8B%A4%EB%B2%84%ED%81%AC%EB%A1%9C%EC%8A%A4/64/",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Silver Cross",
-   "kr_importer": "엘리프(elephbaby.kr) - 공식 여부 확인 필요",
-   "model": "듄2",
-   "category": "stroller",
-   "kr_official_price_krw": 1490000,
-   "source_url": "https://elephbaby.kr/category/%EC%8B%A4%EB%B2%84%ED%81%AC%EB%A1%9C%EC%8A%A4/64/",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": ""
-  },
-  {
-   "brand": "Ergobaby",
-   "kr_importer": "(주)스엔코",
-   "model": "옴니 브리즈",
-   "category": "carrier",
-   "kr_official_price_krw": null,
-   "source_url": "http://www.elandmall.co.kr/i/item?itemNo=2311738425&lowerVendNo=LV23004866",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": "단일 공식가 미확인"
-  },
-  {
-   "brand": "Doona",
-   "kr_importer": "미확인",
-   "model": "두나 카시트 겸용 유모차",
-   "category": "car_seat",
-   "kr_official_price_krw": null,
-   "source_url": "https://funiz.com/goods/85946208",
-   "checked": "2026-10-20",
-   "verify_level": "search_summary",
-   "note": "국내 공식 수입사·공식가 미확인."
-  }
- ]
+  "models": [
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "트립트랩 하이체어(너도밤나무)",
+      "category": "high_chair",
+      "kr_official_price_krw": 430000,
+      "source_url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/1001.html",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:19+09:00",
+        "quote": "트립트랩 하이체어(너도밤나무) / 가격 (VAT 포함): 430,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "가격 (VAT 포함)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "트립트랩 하이체어(너도밤나무) 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "트립트랩 하이체어(너도밤나무) 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "하이체어 본체",
+            "source_url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/1001.html",
+            "checked_at": "2026-10-23T13:41:19+09:00"
+          }
+        ],
+        "compatible": [
+          {
+            "part": "트립트랩 신생아 세트 / 베이비 세트",
+            "note": "별도 판매. 본문에서 장착 사용 안내 확인; 구형 제조 로트와의 호환 미확인",
+            "source_url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/1001.html",
+            "checked_at": "2026-10-23T13:41:19+09:00"
+          }
+        ],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "트립트랩 하이체어(오크)",
+      "category": "high_chair",
+      "kr_official_price_krw": 510000,
+      "source_url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/4952.html",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:22+09:00",
+        "quote": "트립트랩 하이체어(오크) / 가격 (VAT 포함): 510,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "가격 (VAT 포함)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "트립트랩 하이체어(오크) 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "트립트랩 하이체어(오크) 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "오크 하이체어 본체",
+            "source_url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/4952.html",
+            "checked_at": "2026-10-23T13:41:22+09:00"
+          }
+        ],
+        "compatible": [
+          {
+            "part": "트립트랩 신생아 세트 / 베이비 세트",
+            "note": "별도 판매. 본문에서 장착 사용 안내 확인; 구형 제조 로트와의 호환 미확인",
+            "source_url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/4952.html",
+            "checked_at": "2026-10-23T13:41:22+09:00"
+          }
+        ],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "트립트랩+베이비세트",
+      "category": "high_chair",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "공식몰에서 동일 베이비세트 묶음의 정상가 확인 불가",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:25+09:00",
+        "quote": "공식몰에서 동일 베이비세트 묶음의 정상가 확인 불가",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_attempt": {
+          "url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/tripp-trapp-chair-baby-set.html",
+          "attempted_at": "2026-10-23T13:41:25+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "트립트랩+베이비세트+트레이(이유식세트)",
+      "category": "high_chair",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "공식몰에서 동일 이유식 구성 상품을 확인하지 못해 개별 부품 가격을 합산하지 않음",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:30+09:00",
+        "quote": "공식몰에서 동일 이유식 구성 상품을 확인하지 못해 개별 부품 가격을 합산하지 않음",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_attempt": {
+          "url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/tripp-trapp-chair-baby-set.html",
+          "attempted_at": "2026-10-23T13:41:30+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "트립트랩 신생아&이유식 세트",
+      "category": "high_chair",
+      "kr_official_price_krw": 910000,
+      "source_url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/tripp-trapp-newborn-complete-sk.html",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:34+09:00",
+        "quote": "트립트랩 신생아&이유식 세트 / 가격 (VAT 포함): 910,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "가격 (VAT 포함)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "트립트랩 신생아&이유식 세트 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "트립트랩 신생아&이유식 세트 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "신생아 & 이유식 세트(세부 구성품 미확인)",
+            "source_url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/tripp-trapp-newborn-complete-sk.html",
+            "checked_at": "2026-10-23T13:41:34+09:00",
+            "status": "unconfirmed",
+            "reason": "번들 명칭은 확인했으나 상세 구성 목록이 동적으로 로드되어 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "익스플로리 X",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.stokke.com/KOR/ko-kr/유모차/스토케-익스플로리/5715.html",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "기존 제품 주소는 찾을 수 없으며 대체 제품 페이지는 재고 없음과 무료 표기여서 정상가로 채택하지 않음",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:38+09:00",
+        "quote": "기존 제품 주소는 찾을 수 없으며 대체 제품 페이지는 재고 없음과 무료 표기여서 정상가로 채택하지 않음",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "요요3 프레임",
+      "category": "stroller",
+      "kr_official_price_krw": 567000,
+      "source_url": "https://www.stokke.com/KOR/ko-kr/last-chance/yoyo-strollers-last-chance/6773.html",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:44+09:00",
+        "quote": "요요3 프레임 / 가격 (VAT 포함): 567,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "가격 (VAT 포함)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "요요3 프레임 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "요요3 프레임 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "요요³ 프레임",
+            "source_url": "https://www.stokke.com/KOR/ko-kr/last-chance/yoyo-strollers-last-chance/6773.html",
+            "checked_at": "2026-10-23T13:41:44+09:00"
+          }
+        ],
+        "compatible": [
+          {
+            "part": "뉴본 옵션 / 6+ 컬러 팩",
+            "note": "별도 판매; 요요³ 프레임 본문에서 사용 가능 안내 확인",
+            "source_url": "https://www.stokke.com/KOR/ko-kr/last-chance/yoyo-strollers-last-chance/6773.html",
+            "checked_at": "2026-10-23T13:41:44+09:00"
+          }
+        ],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "unknown",
+                  "note": "동일 모델 계열이나 국내 모델·제조 로트 적용 여부 미확인"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "요요3 6+ (프레임+시트)",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.stokke.com/KOR/ko-kr/유모차/스토케-요요-유모차/yoyo-stroller-sk.html",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "묶음 페이지에서 프레임 합계가 확인되지 않고 시트 가격만 표시되어 전체 공식가 미확인",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:47+09:00",
+        "quote": "묶음 페이지에서 프레임 합계가 확인되지 않고 시트 가격만 표시되어 전체 공식가 미확인",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "unknown",
+                  "note": "동일 모델 계열이나 국내 모델·제조 로트 적용 여부 미확인"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Stokke",
+      "kr_importer": "스토케코리아",
+      "model": "요요 뉴본 배시넷 구성",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.stokke.com/KOR/ko-kr/last-chance/yoyo-strollers-last-chance/yoyo-bassinet-stroller.html",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "묶음 페이지에서 프레임 합계가 확인되지 않고 뉴본 쉘 가격만 표시되어 전체 공식가 미확인",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:52+09:00",
+        "quote": "묶음 페이지에서 프레임 합계가 확인되지 않고 뉴본 쉘 가격만 표시되어 전체 공식가 미확인",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.stokke.com/KOR/ko-kr/customer-service/user-guides.html",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Stokke",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 5,
+              "match_count": 4,
+              "reviewed": [
+                {
+                  "recall_id": "10092",
+                  "kr_applicability": "unknown",
+                  "note": "동일 모델 계열이나 국내 모델·제조 로트 적용 여부 미확인"
+                },
+                {
+                  "recall_id": "9276",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "8622",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6356",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Bugaboo",
+      "kr_importer": "부가부코리아(유)",
+      "model": "폭스5 리뉴",
+      "category": "stroller",
+      "kr_official_price_krw": 2340000,
+      "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:44:09+09:00",
+        "quote": "폭스5 리뉴 / Original price: 2,340,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "Original price",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "폭스5 리뉴 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "폭스5 리뉴 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "스트롤러 베이스",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          },
+          {
+            "item": "시트",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          },
+          {
+            "item": "배시넷 패브릭",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          },
+          {
+            "item": "퓨어브리즈 매트리스",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          },
+          {
+            "item": "썬 캐노피",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          },
+          {
+            "item": "언더시트 바스켓",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          }
+        ],
+        "compatible": [
+          {
+            "part": "카시트 어댑터",
+            "note": "어댑터 사용 시 카시트 호환 안내. 카시트별 조합과 타 세대 호환은 별도 확인 필요",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          }
+        ],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "summary": "공식몰 구매 시 보증 연장 안내. 기본 보증은 구매 지역·최초 구매자 조건 적용; 순정 또는 승인 부품만 사용",
+          "source_url": "https://www.bugaboo.com/kr-ko/품질-보증/",
+          "checked_at": "2026-10-23T13:44:09+09:00"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.bugaboo.com/kr-ko/folder-user_guides.html",
+          "checked_at": "2026-10-23T13:44:09+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Bugaboo",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 11,
+              "match_count": 6,
+              "reviewed": [
+                {
+                  "recall_id": "10309",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9792",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1343",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1289",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "937",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "938",
+                  "kr_applicability": "unknown",
+                  "note": "카시트 어댑터 리콜; 호환 어댑터의 모델·로트 대조 전에는 국내 적용 여부를 배제할 수 없음"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Bugaboo",
+      "kr_importer": "부가부코리아(유)",
+      "model": "폭스5 느와르 리미티드",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "폭스 리뉴 일반 제품만 확인되어 느와르 한정판 가격으로 대체하지 않음",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:22+09:00",
+        "quote": "폭스 리뉴 일반 제품만 확인되어 느와르 한정판 가격으로 대체하지 않음",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.bugaboo.com/kr-ko/folder-user_guides.html",
+          "checked_at": "2026-10-23T13:44:09+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Bugaboo",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 11,
+              "match_count": 6,
+              "reviewed": [
+                {
+                  "recall_id": "10309",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9792",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1343",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1289",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "937",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "938",
+                  "kr_applicability": "unknown",
+                  "note": "카시트 어댑터 리콜; 호환 어댑터의 모델·로트 대조 전에는 국내 적용 여부를 배제할 수 없음"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Bugaboo",
+      "kr_importer": "부가부코리아(유)",
+      "model": "버터플라이2(범퍼바 포함)",
+      "category": "stroller",
+      "kr_official_price_krw": 950000,
+      "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-butterfly-2/부가부-버터플라이-2-휴대용-스트롤러-범퍼바-포함-PM007649.html",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:24+09:00",
+        "quote": "버터플라이2(범퍼바 포함) / 상품 가격(할인 표기 없음): 950,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "상품 가격(할인 표기 없음)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "버터플라이2(범퍼바 포함) 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "버터플라이2(범퍼바 포함) 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "스트롤러 베이스",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-butterfly-2/부가부-버터플라이-2-휴대용-스트롤러-범퍼바-포함-PM007649.html",
+            "checked_at": "2026-10-23T13:41:24+09:00"
+          },
+          {
+            "item": "시트",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-butterfly-2/부가부-버터플라이-2-휴대용-스트롤러-범퍼바-포함-PM007649.html",
+            "checked_at": "2026-10-23T13:41:24+09:00"
+          },
+          {
+            "item": "썬 캐노피",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-butterfly-2/부가부-버터플라이-2-휴대용-스트롤러-범퍼바-포함-PM007649.html",
+            "checked_at": "2026-10-23T13:41:24+09:00"
+          },
+          {
+            "item": "언더시트 바스켓",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-butterfly-2/부가부-버터플라이-2-휴대용-스트롤러-범퍼바-포함-PM007649.html",
+            "checked_at": "2026-10-23T13:41:24+09:00"
+          },
+          {
+            "item": "범퍼바",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-butterfly-2/부가부-버터플라이-2-휴대용-스트롤러-범퍼바-포함-PM007649.html",
+            "checked_at": "2026-10-23T13:41:24+09:00"
+          }
+        ],
+        "compatible": [
+          {
+            "part": "카시트 어댑터",
+            "note": "어댑터 사용 시 카시트 호환 안내. 카시트별 조합과 타 세대 호환은 별도 확인 필요",
+            "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-butterfly-2/부가부-버터플라이-2-휴대용-스트롤러-범퍼바-포함-PM007649.html",
+            "checked_at": "2026-10-23T13:41:24+09:00"
+          }
+        ],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "summary": "공식몰 구매 시 보증 연장 안내. 기본 보증은 구매 지역·최초 구매자 조건 적용; 순정 또는 승인 부품만 사용",
+          "source_url": "https://www.bugaboo.com/kr-ko/품질-보증/",
+          "checked_at": "2026-10-23T13:44:09+09:00"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.bugaboo.com/kr-ko/folder-user_guides.html",
+          "checked_at": "2026-10-23T13:44:09+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Bugaboo",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 11,
+              "match_count": 6,
+              "reviewed": [
+                {
+                  "recall_id": "10309",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9792",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1343",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1289",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "937",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "938",
+                  "kr_applicability": "unknown",
+                  "note": "카시트 어댑터 리콜; 호환 어댑터의 모델·로트 대조 전에는 국내 적용 여부를 배제할 수 없음"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Bugaboo",
+      "kr_importer": "부가부코리아(유)",
+      "model": "드래곤플라이(배시넷 포함)",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-dragonfly-plus-seat/부가부-드래곤플라이-플러스-절충형-스트롤러-PM007941.html",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "현행 드래곤플라이 플러스만 확인됨, 기존 배시넷 구성 및 단종 고지 본문은 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:26+09:00",
+        "quote": "현행 드래곤플라이 플러스만 확인됨, 기존 배시넷 구성 및 단종 고지 본문은 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.bugaboo.com/kr-ko/folder-user_guides.html",
+          "checked_at": "2026-10-23T13:44:09+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Bugaboo",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 11,
+              "match_count": 6,
+              "reviewed": [
+                {
+                  "recall_id": "10309",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9792",
+                  "kr_applicability": "unknown",
+                  "note": "동일 모델 계열이나 국내 모델·제조 로트 적용 여부 미확인"
+                },
+                {
+                  "recall_id": "1343",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1289",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "937",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "938",
+                  "kr_applicability": "unknown",
+                  "note": "카시트 어댑터 리콜; 호환 어댑터의 모델·로트 대조 전에는 국내 적용 여부를 배제할 수 없음"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Bugaboo",
+      "kr_importer": "부가부코리아(유)",
+      "model": "드래곤플라이 섀시(시트 구성)",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-dragonfly-plus-seat/부가부-드래곤플라이-플러스-절충형-스트롤러-PM007941.html",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "현행 드래곤플라이 플러스 가격을 기존 시트 구성에 대입하지 않음",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:28+09:00",
+        "quote": "현행 드래곤플라이 플러스 가격을 기존 시트 구성에 대입하지 않음",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.bugaboo.com/kr-ko/folder-user_guides.html",
+          "checked_at": "2026-10-23T13:44:09+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Bugaboo",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 11,
+              "match_count": 6,
+              "reviewed": [
+                {
+                  "recall_id": "10309",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "9792",
+                  "kr_applicability": "unknown",
+                  "note": "동일 모델 계열이나 국내 모델·제조 로트 적용 여부 미확인"
+                },
+                {
+                  "recall_id": "1343",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1289",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "937",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "938",
+                  "kr_applicability": "unknown",
+                  "note": "카시트 어댑터 리콜; 호환 어댑터의 모델·로트 대조 전에는 국내 적용 여부를 배제할 수 없음"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Cybex",
+      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "model": "프리암 4.0",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.cybex-online.com/ko/kr",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:19+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.cybex-online.com/ko/kr",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Cybex",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 13,
+              "match_count": 2,
+              "reviewed": [
+                {
+                  "recall_id": "121",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "261",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Cybex",
+      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "model": "미오스 3.0",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.cybex-online.com/ko/kr",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:28+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.cybex-online.com/ko/kr",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Cybex",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 13,
+              "match_count": 2,
+              "reviewed": [
+                {
+                  "recall_id": "121",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "261",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Cybex",
+      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "model": "멜리오 카본 3.0",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.cybex-online.com/ko/kr",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:37+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.cybex-online.com/ko/kr",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Cybex",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 13,
+              "match_count": 2,
+              "reviewed": [
+                {
+                  "recall_id": "121",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "261",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Cybex",
+      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "model": "제로나 Gi (회전형 카시트)",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.cybex-online.com/ko/kr",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:46+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.cybex-online.com/ko/kr",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Cybex",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 13,
+              "match_count": 2,
+              "reviewed": [
+                {
+                  "recall_id": "121",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "261",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Cybex",
+      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "model": "제로나 T",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.cybex-online.com/ko/kr",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:56+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.cybex-online.com/ko/kr",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Cybex",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 13,
+              "match_count": 2,
+              "reviewed": [
+                {
+                  "recall_id": "121",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "261",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Nuna",
+      "kr_importer": "(주)에이원월드",
+      "model": "피파 넥스트(바구니 카시트)",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "https://nunababy.com/kr/storelocator",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:19+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://nunababy.com/kr",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Nuna",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 1,
+              "match_count": 1,
+              "reviewed": [
+                {
+                  "recall_id": "6654",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Nuna",
+      "kr_importer": "(주)에이원월드",
+      "model": "넥스트 시스템(토들넥스트+피파넥스트+베이스)",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "https://nunababy.com/kr/storelocator",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:28+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://nunababy.com/kr",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Nuna",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 1,
+              "match_count": 1,
+              "reviewed": [
+                {
+                  "recall_id": "6654",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Nuna",
+      "kr_importer": "(주)에이원월드",
+      "model": "트리브 넥스트 트래블 시스템(+피파넥스트)",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://nunababy.com/kr/storelocator",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "동일 트리브 트래블 시스템 국내 공식 묶음 정상가 미확인",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:37+09:00",
+        "quote": "동일 트리브 트래블 시스템 국내 공식 묶음 정상가 미확인",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "not_listed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://nunababy.com/kr",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Nuna",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 1,
+              "match_count": 1,
+              "reviewed": [
+                {
+                  "recall_id": "6654",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Joie",
+      "kr_importer": "(주)에이원 (기존 정보, 재확인 실패)",
+      "model": "아이스핀 360",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "https://joiebaby.com/en",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:19+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://joiebaby.com/en/manuals",
+          "checked_at": "2026-10-23T14:42:22+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Joie",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Joie",
+      "kr_importer": "(주)에이원 (기존 정보, 재확인 실패)",
+      "model": "아이스핀 360 메쉬",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "https://joiebaby.com/en",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:28+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://joiebaby.com/en/manuals",
+          "checked_at": "2026-10-23T14:42:22+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Joie",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "BabyBjorn",
+      "kr_importer": "베이비뵨㈜",
+      "model": "바운서 블리스",
+      "category": "bouncer",
+      "kr_official_price_krw": 310000,
+      "source_url": "https://www.babybjorn.kr/products/baby-bouncers/bouncer-bliss/",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:44:09+09:00",
+        "quote": "바운서 블리스 / 상품 가격(할인 표기 없음): 310,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "상품 가격(할인 표기 없음)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "바운서 블리스 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "바운서 블리스 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "바운서 본체와 패브릭 시트",
+            "source_url": "https://www.babybjorn.kr/products/baby-bouncers/bouncer-bliss/",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          }
+        ],
+        "compatible": [
+          {
+            "part": "교체용 패브릭 시트",
+            "note": "탈부착·교체 가능 안내 확인; 다른 모델·세대와의 공용 여부는 미확인",
+            "source_url": "https://www.babybjorn.kr/products/baby-bouncers/bouncer-bliss/",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          }
+        ],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "summary": "국내 정식 수입품 정품등록·구매증빙 필요. 제조 결함 기본 보증은 최초 구매 후 2년, 플러스 유상 서비스는 10년 내 조건부 제공",
+          "source_url": "https://www.babybjorn.kr/pages/general-warranty-policies/",
+          "checked_at": "2026-10-23T13:44:10+09:00"
+        },
+        "manual": {
+          "status": "confirmed",
+          "url": "https://www.babybjorn.kr/customer-service/manuals/",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "locator": "바운서 공용 설명서(Soft / Bliss)"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "BabyBjorn",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "BabyBjorn",
+      "kr_importer": "베이비뵨㈜",
+      "model": "바운서 밸런스 소프트",
+      "category": "bouncer",
+      "kr_official_price_krw": 310000,
+      "source_url": "https://www.babybjorn.kr/products/baby-bouncers/bouncer-balance-soft/",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:44:09+09:00",
+        "quote": "바운서 밸런스 소프트 / 상품 가격(할인 표기 없음): 310,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "상품 가격(할인 표기 없음)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "바운서 밸런스 소프트 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "바운서 밸런스 소프트 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "바운서 본체와 패브릭 시트",
+            "source_url": "https://www.babybjorn.kr/products/baby-bouncers/bouncer-balance-soft/",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          }
+        ],
+        "compatible": [
+          {
+            "part": "교체용 패브릭 시트",
+            "note": "탈부착·교체 가능 안내 확인; 다른 모델·세대와의 공용 여부는 미확인",
+            "source_url": "https://www.babybjorn.kr/products/baby-bouncers/bouncer-balance-soft/",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          }
+        ],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "summary": "국내 정식 수입품 정품등록·구매증빙 필요. 제조 결함 기본 보증은 최초 구매 후 2년, 플러스 유상 서비스는 10년 내 조건부 제공",
+          "source_url": "https://www.babybjorn.kr/pages/general-warranty-policies/",
+          "checked_at": "2026-10-23T13:44:10+09:00"
+        },
+        "manual": {
+          "status": "confirmed",
+          "url": "https://www.babybjorn.kr/customer-service/manuals/",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "locator": "바운서 공용 설명서(Soft / Bliss)"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "BabyBjorn",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "BabyBjorn",
+      "kr_importer": "베이비뵨㈜",
+      "model": "베이비 캐리어 하모니",
+      "category": "carrier",
+      "kr_official_price_krw": 360000,
+      "source_url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-harmony/",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:25+09:00",
+        "quote": "베이비 캐리어 하모니 / 상품 가격(할인 표기 없음): 360,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "상품 가격(할인 표기 없음)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "베이비 캐리어 하모니 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "베이비 캐리어 하모니 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "베이비 캐리어 하모니 본체",
+            "source_url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-harmony/",
+            "checked_at": "2026-10-23T13:41:25+09:00"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "summary": "국내 정식 수입품 정품등록·구매증빙 필요. 제조 결함 기본 보증은 최초 구매 후 2년, 플러스 유상 서비스는 10년 내 조건부 제공",
+          "source_url": "https://www.babybjorn.kr/pages/general-warranty-policies/",
+          "checked_at": "2026-10-23T13:44:10+09:00"
+        },
+        "manual": {
+          "status": "confirmed",
+          "url": "https://www.babybjorn.kr/customer-service/manuals/",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "locator": "베이비 캐리어 하모니"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "BabyBjorn",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "BabyBjorn",
+      "kr_importer": "베이비뵨㈜",
+      "model": "베이비 캐리어 원 에어",
+      "category": "carrier",
+      "kr_official_price_krw": 330000,
+      "source_url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-one-air/",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:44:09+09:00",
+        "quote": "베이비 캐리어 원 에어 / 상품 가격(할인 표기 없음): 330,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "상품 가격(할인 표기 없음)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "베이비 캐리어 원 에어 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "베이비 캐리어 원 에어 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "베이비 캐리어 원 에어 본체",
+            "source_url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-one-air/",
+            "checked_at": "2026-10-23T13:44:09+09:00"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "summary": "국내 정식 수입품 정품등록·구매증빙 필요. 제조 결함 기본 보증은 최초 구매 후 2년, 플러스 유상 서비스는 10년 내 조건부 제공",
+          "source_url": "https://www.babybjorn.kr/pages/general-warranty-policies/",
+          "checked_at": "2026-10-23T13:44:10+09:00"
+        },
+        "manual": {
+          "status": "confirmed",
+          "url": "https://www.babybjorn.kr/customer-service/manuals/",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "locator": "베이비 캐리어 원(원 에어의 소재별 차이는 별도 확인)"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "BabyBjorn",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "BabyBjorn",
+      "kr_importer": "베이비뵨㈜",
+      "model": "베이비 캐리어 미니",
+      "category": "carrier",
+      "kr_official_price_krw": 180000,
+      "source_url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-mini/",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:44:10+09:00",
+        "quote": "베이비 캐리어 미니 / 상품 가격(할인 표기 없음): 180,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "상품 가격(할인 표기 없음)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "베이비 캐리어 미니 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "베이비 캐리어 미니 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "베이비 캐리어 미니 본체",
+            "source_url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-mini/",
+            "checked_at": "2026-10-23T13:44:10+09:00"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "summary": "국내 정식 수입품 정품등록·구매증빙 필요. 제조 결함 기본 보증은 최초 구매 후 2년, 플러스 유상 서비스는 10년 내 조건부 제공",
+          "source_url": "https://www.babybjorn.kr/pages/general-warranty-policies/",
+          "checked_at": "2026-10-23T13:44:10+09:00"
+        },
+        "manual": {
+          "status": "confirmed",
+          "url": "https://www.babybjorn.kr/customer-service/manuals/",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "locator": "베이비 캐리어 미니"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "BabyBjorn",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Egg",
+      "kr_importer": "베이비스타일아시아홀딩스 (기존 정보, 재확인 실패)",
+      "model": "에그3 디럭스",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:19+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_attempt": {
+          "url": "https://eggstroller.com/stockists/",
+          "attempted_at": "2026-10-23T13:41:19+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://eggstroller.com/",
+          "checked_at": "2026-10-23T14:59:21+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "egg stroller",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Egg",
+      "kr_importer": "베이비스타일아시아홀딩스 (기존 정보, 재확인 실패)",
+      "model": "애스턴마틴 에그3",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:28+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_attempt": {
+          "url": "https://eggstroller.com/stockists/",
+          "attempted_at": "2026-10-23T13:41:28+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://eggstroller.com/",
+          "checked_at": "2026-10-23T14:59:21+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "egg stroller",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "D.THRONE",
+      "kr_importer": "디트로네 주식회사(국내 브랜드)",
+      "model": "이니셜 신생아 디럭스 유모차",
+      "category": "stroller",
+      "kr_official_price_krw": 1090000,
+      "source_url": "https://www.dthrone.com/102/?idx=58",
+      "checked": "2026-10-23",
+      "verify_level": "page_body",
+      "note": "",
+      "evidence": {
+        "kind": "official_msrp",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:30+09:00",
+        "quote": "이니셜 신생아 디럭스 유모차 / 상품 가격(할인 표기 없음): 1,090,000원",
+        "locator": "제품명과 상품 상세 가격 영역(통화 기호를 원 단위로 정규화)",
+        "price_label": "상품 가격(할인 표기 없음)",
+        "reason": null,
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "이니셜 신생아 디럭스 유모차 제품명만 확인; 제조 연도·부품 개정별 세대 구분은 확인하지 못함"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "이니셜 신생아 디럭스 유모차 페이지의 포함품은 별도 기록했으나 국내 판매 옵션별 정식 구성 범위는 확인하지 못함"
+        },
+        "included": [
+          {
+            "item": "이니셜 유모차 본체",
+            "source_url": "https://www.dthrone.com/102/?idx=58",
+            "checked_at": "2026-10-23T13:41:30+09:00"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.dthrone.com/FAQ",
+          "checked_at": "2026-10-23T13:44:11+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Dthrone",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Britax",
+      "kr_importer": "세피앙 (기존 정보, 재확인 실패)",
+      "model": "듀얼픽스 프로 LUX",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:30+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_attempt": {
+          "url": "https://www.britax-roemer.com/service-support/user-instructions",
+          "attempted_at": "2026-10-23T13:41:30+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.britax-roemer.com/support/user-instructions",
+          "checked_at": "2026-10-23T14:59:21+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Britax",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 12,
+              "match_count": 8,
+              "reviewed": [
+                {
+                  "recall_id": "8625",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "7979",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6630",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6631",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1614",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "703",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "500",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "135",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Britax",
+      "kr_importer": "세피앙 (기존 정보, 재확인 실패)",
+      "model": "듀얼픽스 프로 STYLE",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:42:01+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_attempt": {
+          "url": "https://www.britax-roemer.com/service-support/user-instructions",
+          "attempted_at": "2026-10-23T13:42:01+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.britax-roemer.com/support/user-instructions",
+          "checked_at": "2026-10-23T14:59:21+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Britax",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 12,
+              "match_count": 8,
+              "reviewed": [
+                {
+                  "recall_id": "8625",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "7979",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6630",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6631",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1614",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "703",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "500",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "135",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Britax",
+      "kr_importer": "세피앙 (기존 정보, 재확인 실패)",
+      "model": "듀얼픽스 프로 CLASSIC",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:43:46+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_attempt": {
+          "url": "https://www.britax-roemer.com/service-support/user-instructions",
+          "attempted_at": "2026-10-23T13:43:46+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.britax-roemer.com/support/user-instructions",
+          "checked_at": "2026-10-23T14:59:21+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Britax",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 12,
+              "match_count": 8,
+              "reviewed": [
+                {
+                  "recall_id": "8625",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "7979",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6630",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "6631",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "1614",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "703",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "500",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                },
+                {
+                  "recall_id": "135",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Maxi-Cosi",
+      "kr_importer": "엠베이비 (기존 정보, 재확인 실패)",
+      "model": "미카 360 프로",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:33+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_attempt": {
+          "url": "https://www.maxi-cosi.com/international/retailers",
+          "attempted_at": "2026-10-23T13:41:33+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.maxi-cosi.com/",
+          "checked_at": "2026-10-23T14:59:22+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Maxi-Cosi",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 10,
+              "match_count": 8,
+              "reviewed": [
+                {
+                  "recall_id": "10364",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "10097",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "9742",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "8628",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "7836",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "1226",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "668",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "111",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Maxi-Cosi",
+      "kr_importer": "엠베이비 (기존 정보, 재확인 실패)",
+      "model": "타이탄 프로",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:42:04+09:00",
+        "quote": "국내 공식몰 재시도 후에도 본문을 읽지 못해 정상가·국내 구성을 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "fetch_failed",
+        "source_attempt": {
+          "url": "https://www.maxi-cosi.com/international/retailers",
+          "attempted_at": "2026-10-23T13:42:04+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.maxi-cosi.com/",
+          "checked_at": "2026-10-23T14:59:22+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Maxi-Cosi",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 10,
+              "match_count": 8,
+              "reviewed": [
+                {
+                  "recall_id": "10364",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "10097",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "9742",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "8628",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "7836",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "1226",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "668",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                },
+                {
+                  "recall_id": "111",
+                  "kr_applicability": "unknown",
+                  "note": "대체 표기·모회사 질의에서 추가된 해외 리콜; 해당 국내 모델·호환 부품·로트와의 관계는 별도 확인 필요"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Silver Cross",
+      "kr_importer": "미확인",
+      "model": "리프2",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.silvercrossbaby.com/",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "제조사 안내에서 국내 공식 수입사와 동일 국내 구성의 공식가를 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:37+09:00",
+        "quote": "제조사 안내에서 국내 공식 수입사와 동일 국내 구성의 공식가를 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "importer_unconfirmed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.silvercrossbaby.com/pages/instruction-manuals",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Silver Cross",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Silver Cross",
+      "kr_importer": "미확인",
+      "model": "듄2",
+      "category": "stroller",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.silvercrossbaby.com/",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "제조사 안내에서 국내 공식 수입사와 동일 국내 구성의 공식가를 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:41:39+09:00",
+        "quote": "제조사 안내에서 국내 공식 수입사와 동일 국내 구성의 공식가를 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "importer_unconfirmed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.silvercrossbaby.com/pages/instruction-manuals",
+          "checked_at": "2026-10-23T13:44:10+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Silver Cross",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Ergobaby",
+      "kr_importer": "(주)스엔코 (기존 정보, 재확인 실패)",
+      "model": "옴니 브리즈",
+      "category": "carrier",
+      "kr_official_price_krw": null,
+      "source_url": "",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "제조사 안내에서 국내 공식 수입사와 동일 국내 구성의 공식가를 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T13:44:10+09:00",
+        "quote": "제조사 안내에서 국내 공식 수입사와 동일 국내 구성의 공식가를 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "importer_unconfirmed",
+        "source_attempt": {
+          "url": "https://ergobaby.com/en-us/pages/international-distributors",
+          "attempted_at": "2026-10-23T13:44:10+09:00",
+          "status": "fetch_failed",
+          "reason": "본문 미확보; 실패 상세는 모델 확인 로그 참조"
+        },
+        "source_status": "unavailable"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://ergobaby.com/en-us/pages/instructions",
+          "checked_at": "2026-10-23T13:44:11+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Ergobaby",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 1,
+              "match_count": 1,
+              "reviewed": [
+                {
+                  "recall_id": "9073",
+                  "kr_applicability": "not_this_model",
+                  "note": "공식 리콜 제목·제품명이 이 조사 묶음과 다름; 국내 안전 판정은 아님"
+                }
+              ],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    },
+    {
+      "brand": "Doona",
+      "kr_importer": "미확인",
+      "model": "두나 카시트 겸용 유모차",
+      "category": "car_seat",
+      "kr_official_price_krw": null,
+      "source_url": "https://www.doona.com/en/store-locator",
+      "checked": "2026-10-23",
+      "verify_level": "official_unpublished",
+      "note": "제조사 안내에서 국내 공식 수입사와 동일 국내 구성의 공식가를 확인하지 못함",
+      "evidence": {
+        "kind": "unpublished",
+        "source_kind": "manufacturer",
+        "checked_at": "2026-10-23T14:59:21+09:00",
+        "quote": "제조사 안내에서 국내 공식 수입사와 동일 국내 구성의 공식가를 확인하지 못함",
+        "locator": "제품 또는 공식 지원 페이지 확인 시도; 가격 근거 미확보",
+        "price_label": null,
+        "reason": "importer_unconfirmed",
+        "source_status": "read"
+      },
+      "bundle": {
+        "generation": {
+          "status": "unconfirmed",
+          "reason": "제조 연도·부품 개정별 세대 구분 미확인"
+        },
+        "kr_configuration": {
+          "status": "unconfirmed",
+          "reason": "국내 정식 기본 구성 상세 미확인"
+        },
+        "included": [
+          {
+            "item": "국내 기본 포함 구성품 미확인",
+            "status": "unconfirmed",
+            "reason": "공식 본문에서 기본 포함 목록을 확인하지 못함"
+          }
+        ],
+        "compatible": [],
+        "compatibility_note": "세대별 부품 호환은 확인 전까지 추정하지 않음",
+        "warranty": {
+          "status": "unconfirmed",
+          "reason": "해당 국내 구성의 보증 조건 본문 미확인"
+        },
+        "manual": {
+          "status": "not_found",
+          "searched_url": "https://www.doona.com/en-us/support/user-guides",
+          "checked_at": "2026-10-23T13:44:11+09:00",
+          "reason": "확인한 지원 페이지에서 해당 모델 설명서 링크를 확보하지 못함"
+        },
+        "safety": {
+          "certifications": [],
+          "certifications_note": "확인 가능한 공식 텍스트에서 해당 국내 구성의 KC 인증번호를 확보하지 못함; 인증 부재를 뜻하지 않음",
+          "recalls": {
+            "cpsc": {
+              "status": "ok",
+              "brand_query": "Doona",
+              "checked_at": "2026-10-23T15:25:16.978+09:00",
+              "raw_count": 0,
+              "match_count": 0,
+              "reviewed": [],
+              "result_note": "브랜드 필터를 통과한 해외 리콜을 검토함. 검색 결과 없음은 안전을 보장하지 않으며 국내 모델·로트 적용 여부는 별도 확인 필요"
+            },
+            "safetykorea": {
+              "status": "not_connected",
+              "reason": "SafetyKorea API 키 발급 전"
+            }
+          }
+        }
+      }
+    }
+  ]
 }

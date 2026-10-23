@@ -1,0 +1,764 @@
+{
+  "endpoint": "https://www.saferproducts.gov/RestWebServices/Recall",
+  "checked_at": "2026-10-23T15:25:16.978+09:00",
+  "empty_result_is_not_safety_guarantee": true,
+  "brands": {
+    "Stokke": {
+      "status": "ok",
+      "query": "Stokke",
+      "queries": [
+        "Stokke"
+      ],
+      "raw_count": 5,
+      "kept": [
+        {
+          "recall_id": "10092",
+          "title": "Stokke Recalls YOYO³ Strollers Due to Injury Hazard",
+          "recall_date": "2024-11-14T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2025/Stokke-Recalls-YOYO3-Strollers-Due-to-Injury-Hazard",
+          "product_names": [
+            "YOYO³ strollers"
+          ],
+          "matched_term": "Stokke"
+        },
+        {
+          "recall_id": "9276",
+          "title": "Stokke Recalls Clikk High Chairs Due to Fall and Injury Hazards",
+          "recall_date": "2022-04-07T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2022/Stokke-Recalls-Clikk-High-Chairs-Due-to-Fall-and-Injury-Hazards",
+          "product_names": [
+            "Clikk high chairs"
+          ],
+          "matched_term": "Stokke"
+        },
+        {
+          "recall_id": "8622",
+          "title": "Stokke Recalls Infant Steps Bouncers Due to Fall Hazard",
+          "recall_date": "2019-07-25T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2019/Stokke-Recalls-Infant-Steps-Bouncers-Due-to-Fall-Hazard",
+          "product_names": [
+            "Stokke® Steps™ Bouncers"
+          ],
+          "matched_term": "Stokke"
+        },
+        {
+          "recall_id": "6356",
+          "title": "Stokke Recalls Trailz Strollers Due to Fall Hazard (Recall Alert)",
+          "recall_date": "2015-04-01T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2015/Stokke-Recalls-Trailz-Strollers-Due-to-Fall-Hazard",
+          "product_names": [
+            "Trailz Strollers"
+          ],
+          "matched_term": "Stokke"
+        }
+      ],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Stokke",
+          "field": "RecallTitle",
+          "row_count": 4
+        },
+        {
+          "query": "Stokke",
+          "field": "ProductName",
+          "row_count": 1
+        }
+      ]
+    },
+    "Bugaboo": {
+      "status": "ok",
+      "query": "Bugaboo",
+      "queries": [
+        "Bugaboo"
+      ],
+      "raw_count": 11,
+      "kept": [
+        {
+          "recall_id": "10309",
+          "title": "Bugaboo North America Recalls Giraffe High Chairs Due to Risk of Serious Injury or Death from Fall Hazard",
+          "recall_date": "2025-06-12T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2025/Bugaboo-North-America-Recalls-Giraffe-High-Chairs-Due-to-Risk-of-Serious-Injury-or-Death-from-Fall-Hazard",
+          "product_names": [
+            "Giraffe highchairs"
+          ],
+          "matched_term": "Bugaboo"
+        },
+        {
+          "recall_id": "9792",
+          "title": "Bugaboo Recalls Dragonfly Seat Strollers Due to Injury Hazard (Recall Alert)",
+          "recall_date": "2023-12-07T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2024/Bugaboo-Recalls-Dragonfly-Seat-Strollers-Due-to-Injury-Hazard-Recall-Alert",
+          "product_names": [
+            "Bugaboo Dragonfly Seat Strollers"
+          ],
+          "matched_term": "Bugaboo"
+        },
+        {
+          "recall_id": "1343",
+          "title": "Bugaboo Recalls Cameleon3 Strollers Due to Fall Hazard",
+          "recall_date": "2013-03-27T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2013/Bugaboo-Recalls-Cameleon3-Strollers",
+          "product_names": [
+            "Bugaboo Americas Cameleon3 Strollers"
+          ],
+          "matched_term": "Bugaboo"
+        },
+        {
+          "recall_id": "1289",
+          "title": "Bugaboo Recalls Strollers Due to Fall and Choking Hazards",
+          "recall_date": "2013-01-15T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2013/Bugaboo-Recalls-Strollers-Due-to-Fall-and-Choking-Hazards",
+          "product_names": [
+            "Bugaboo Cameleon and Bugaboo Donkey Model Strollers"
+          ],
+          "matched_term": "Bugaboo"
+        },
+        {
+          "recall_id": "937",
+          "title": "Bugaboo Bee Strollers Recalled by Bugaboo Americas Due to Fall Hazard",
+          "recall_date": "2011-12-22T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2012/Bugaboo-Bee-Strollers-Recalled-by-Bugaboo-Americas-Due-to-Fall-Hazard",
+          "product_names": [
+            "Bugaboo Bee Strollers"
+          ],
+          "matched_term": "Bugaboo"
+        },
+        {
+          "recall_id": "938",
+          "title": "Bugaboo Car Seat Adapter Recalled Due to Fall Hazard",
+          "recall_date": "2011-12-22T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2012/Bugaboo-Car-Seat-Adapter-Recalled-Due-to-Fall-Hazard",
+          "product_names": [
+            "Bugaboo Car Seat Adapters"
+          ],
+          "matched_term": "Bugaboo"
+        }
+      ],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Bugaboo",
+          "field": "RecallTitle",
+          "row_count": 6
+        },
+        {
+          "query": "Bugaboo",
+          "field": "ProductName",
+          "row_count": 5
+        }
+      ]
+    },
+    "Cybex": {
+      "status": "ok",
+      "query": "Cybex",
+      "queries": [
+        "Cybex",
+        "CYBEX Strollers",
+        "Regal Lager",
+        "CYBEX baby",
+        "CYBEX GmbH"
+      ],
+      "raw_count": 13,
+      "kept": [
+        {
+          "recall_id": "121",
+          "title": "Regal Lager Announces Recall to Repair CYBEX Strollers; Risk of Fingertip Amputation and Laceration Hazards",
+          "recall_date": "2010-01-27T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2010/Regal-Lager-Announces-Recall-to-Repair-CYBEX-Strollers-Risk-of-Fingertip-Amputation-and-Laceration-Hazards",
+          "product_names": [
+            "CYBEX Strollers"
+          ],
+          "matched_term": "CYBEX Strollers"
+        },
+        {
+          "recall_id": "261",
+          "title": "Regal Lager Recalls Infant Carriers Due to Fall Hazard",
+          "recall_date": "2010-06-17T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2010/Regal-Lager-Recalls-Infant-Carriers-Due-to-Fall-Hazard",
+          "product_names": [
+            "CYBEX 2.GO Infant Carriers"
+          ],
+          "matched_term": "Regal Lager"
+        }
+      ],
+      "rejected": [
+        {
+          "recall_id": "8386",
+          "title": "Cybex Recalls Weight-Lifting Equipment Due to Serious Injury Hazards"
+        },
+        {
+          "recall_id": "6724",
+          "title": "Cybex International Recalls Decline Free Weight Benches Due to Impact Injury Hazard (Recall Alert)"
+        },
+        {
+          "recall_id": "6488",
+          "title": "Cybex International Recalls Arm Curl Machines Due to Impact Injury Hazard (Recall Alert) "
+        },
+        {
+          "recall_id": "1787",
+          "title": "Cybex International Recalls Decline Free Weight Benches Due to Fall and Injury Hazards (Recall Alert)"
+        },
+        {
+          "recall_id": "1481",
+          "title": "Cybex International Recalls Leg Press Due to Risk of Injury"
+        }
+      ],
+      "requests": [
+        {
+          "query": "Cybex",
+          "field": "RecallTitle",
+          "row_count": 6
+        },
+        {
+          "query": "Cybex",
+          "field": "ProductName",
+          "row_count": 3
+        },
+        {
+          "query": "CYBEX Strollers",
+          "field": "RecallTitle",
+          "row_count": 1
+        },
+        {
+          "query": "CYBEX Strollers",
+          "field": "ProductName",
+          "row_count": 1
+        },
+        {
+          "query": "Regal Lager",
+          "field": "RecallTitle",
+          "row_count": 2
+        },
+        {
+          "query": "Regal Lager",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "CYBEX baby",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "CYBEX baby",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "CYBEX GmbH",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "CYBEX GmbH",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    },
+    "Nuna": {
+      "status": "ok",
+      "query": "Nuna",
+      "queries": [
+        "Nuna"
+      ],
+      "raw_count": 1,
+      "kept": [
+        {
+          "recall_id": "6654",
+          "title": "Nuna Baby Essentials Recalls High Chairs Due to Fall Hazard",
+          "recall_date": "2016-02-11T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2016/Nuna-Baby-Essentials-Recalls-High-Chairs",
+          "product_names": [
+            "High chairs"
+          ],
+          "matched_term": "Nuna"
+        }
+      ],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Nuna",
+          "field": "RecallTitle",
+          "row_count": 1
+        },
+        {
+          "query": "Nuna",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    },
+    "Joie": {
+      "status": "ok",
+      "query": "Joie",
+      "queries": [
+        "Joie"
+      ],
+      "raw_count": 0,
+      "kept": [],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Joie",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "Joie",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    },
+    "BabyBjorn": {
+      "status": "ok",
+      "query": "BabyBjorn",
+      "queries": [
+        "BabyBjorn",
+        "Baby Bjorn",
+        "BabyBjörn"
+      ],
+      "raw_count": 0,
+      "kept": [],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "BabyBjorn",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "BabyBjorn",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "Baby Bjorn",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "Baby Bjorn",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "BabyBjörn",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "BabyBjörn",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    },
+    "Egg": {
+      "status": "ok",
+      "query": "egg stroller",
+      "queries": [
+        "egg stroller",
+        "egg2",
+        "egg 2",
+        "BabyStyle"
+      ],
+      "raw_count": 0,
+      "kept": [],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "egg stroller",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "egg stroller",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "egg2",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "egg2",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "egg 2",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "egg 2",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "BabyStyle",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "BabyStyle",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    },
+    "D.THRONE": {
+      "status": "ok",
+      "query": "Dthrone",
+      "queries": [
+        "Dthrone",
+        "D.Throne"
+      ],
+      "raw_count": 0,
+      "kept": [],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Dthrone",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "Dthrone",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "D.Throne",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "D.Throne",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    },
+    "Britax": {
+      "status": "ok",
+      "query": "Britax",
+      "queries": [
+        "Britax"
+      ],
+      "raw_count": 12,
+      "kept": [
+        {
+          "recall_id": "8625",
+          "title": "Britax Recalls Modified Thru-Bolt Axles for Use with BOB Jogging Strollers Distributed Through the BOB Information Campaign Due to Fall and Injury Hazards (Recall Alert)",
+          "recall_date": "2019-07-25T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2019/Britax-Recalls-Modified-Thru-Bolt-Axles-for-Use-with-BOB-Jogging-Strollers-Distributed-Through-the-BOB-Information-Campaign-Due-to-Fall-and-Injury-Hazards-Recall-Alert",
+          "product_names": [
+            "Modified thru-bolt axles for use with BOB Jogging Strollers distributed through the BOB Information Campaign from January 10, 2019 to April 26, 2019"
+          ],
+          "matched_term": "Britax"
+        },
+        {
+          "recall_id": "7979",
+          "title": "Britax Recalls Strollers Due to Fall Hazard",
+          "recall_date": "2017-02-16T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2017/Britax-Recalls-Strollers",
+          "product_names": [
+            "Britax B-Agile and BOB Motion Strollers with Click & Go receivers"
+          ],
+          "matched_term": "Britax"
+        },
+        {
+          "recall_id": "6630",
+          "title": "Britax Recalls Strollers and Replacement Top Seats Due to Choking Hazard",
+          "recall_date": "2016-01-21T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2016/Britax-Recalls-Strollers-and-Replacement-Top-Seats",
+          "product_names": [
+            "Britax B-Ready strollers"
+          ],
+          "matched_term": "Britax"
+        },
+        {
+          "recall_id": "6631",
+          "title": "CPSC, NHTSA and Britax Announce Recall of Infant Car Seats Due to Fall Hazard",
+          "recall_date": "2016-01-21T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2016/CPSC-NHTSA-and-Britax-Announce-Recall-of-Infant-Car-Seats",
+          "product_names": [
+            "Britax B-Safe 35 and B-Safe 35 Elite infant car seats and travel systems"
+          ],
+          "matched_term": "Britax"
+        },
+        {
+          "recall_id": "1614",
+          "title": "Strollers Recalled by Britax Due to Partial Fingertip Amputation Hazard",
+          "recall_date": "2014-01-30T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2014/Strollers-Recalled-by-Britax",
+          "product_names": [
+            "B-Agile, B-Agile Double and BOB Motion strollers"
+          ],
+          "matched_term": "Britax"
+        },
+        {
+          "recall_id": "703",
+          "title": "Britax Recalls B-Nimble Strollers Due to Risk of Brake Failure",
+          "recall_date": "2011-06-23T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2011/Britax-Recalls-B-Nimble-Strollers-Due-to-Risk-of-Brake-Failure",
+          "product_names": [
+            "B-Nimble Strollers"
+          ],
+          "matched_term": "Britax"
+        },
+        {
+          "recall_id": "500",
+          "title": "Infant Car Seats Recalled by Britax Due to Laceration and Choking Hazards",
+          "recall_date": "2010-11-04T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2010/Infant-Car-Seats-Recalled-by-Britax-Due-to-Laceration-and-Choking-Hazards",
+          "product_names": [
+            "Chaperone Infant car seats"
+          ],
+          "matched_term": "Britax"
+        },
+        {
+          "recall_id": "135",
+          "title": "Britax Recalls Strollers Due to Risk of Fingertip Amputations and Lacerations",
+          "recall_date": "2010-02-10T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2010/Britax-Recalls-Strollers-Due-to-Risk-of-Fingertip-Amputations-and-Lacerations",
+          "product_names": [
+            "Britax \"Blink\" Umbrella Strollers"
+          ],
+          "matched_term": "Britax"
+        }
+      ],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Britax",
+          "field": "RecallTitle",
+          "row_count": 8
+        },
+        {
+          "query": "Britax",
+          "field": "ProductName",
+          "row_count": 4
+        }
+      ]
+    },
+    "Maxi-Cosi": {
+      "status": "ok",
+      "query": "Maxi-Cosi",
+      "queries": [
+        "Maxi-Cosi",
+        "Maxi Cosi",
+        "Dorel"
+      ],
+      "raw_count": 10,
+      "kept": [
+        {
+          "recall_id": "10364",
+          "title": "Dorel Home Furnishings Recalls Cosco 2-Step Kitchen Steppers Due to Fall and Injury Hazards",
+          "recall_date": "2025-07-31T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2025/Dorel-Home-Furnishings-Recalls-Cosco-2-Step-Kitchen-Steppers-Due-to-Fall-and-Injury-Hazards",
+          "product_names": [
+            "Cosco 2-Step Kitchen Stepper"
+          ],
+          "matched_term": "Dorel"
+        },
+        {
+          "recall_id": "10097",
+          "title": "Dorel Home Furnishings Recalls Dorel Wall Beds Due to Serious Impact and Crush Hazards",
+          "recall_date": "2024-11-21T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2025/Dorel-Home-Furnishings-Recalls-Dorel-Wall-Beds-Due-to-Serious-Impact-and-Crush-Hazards",
+          "product_names": [
+            "Dorel Wall Beds"
+          ],
+          "matched_term": "Dorel"
+        },
+        {
+          "recall_id": "9742",
+          "title": "Dorel Juvenile Group Recalls Cosco Jump, Spin & Play Activity Centers Due to Fall and Injury Hazards; Sold Exclusively at Walmart",
+          "recall_date": "2023-10-26T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2024/Dorel-Juvenile-Group-Recalls-Cosco-Jump-Spin-Play-Activity-Centers-Due-to-Fall-and-Injury-Hazards-Sold-Exclusively-at-Walmart",
+          "product_names": [
+            "Cosco Jump, Spin & Play Activity Centers"
+          ],
+          "matched_term": "Dorel"
+        },
+        {
+          "recall_id": "8628",
+          "title": "Dorel Juvenile Group USA Recalls Inclined Sleepers Due to Safety Concerns About Inclined Sleep Products",
+          "recall_date": "2019-07-31T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2019/Dorel-Juvenile-Group-USA-Recalls-Inclined-Sleepers-Due-to-Safety-Concerns-About-Inclined-Sleep-Products",
+          "product_names": [
+            "Eddie Bauer Slumber and Soothe Rock Bassinet; Disney Baby Doze and Dream Bassinet"
+          ],
+          "matched_term": "Dorel"
+        },
+        {
+          "recall_id": "7836",
+          "title": "Dorel Juvenile Recalls Safety 1st Strollers Due to Fall Hazard",
+          "recall_date": "2016-08-24T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2016/Dorel-Juvenile-Recalls-Safety-1st-Strollers",
+          "product_names": [
+            "Safety 1st Step and Go Travel Systems"
+          ],
+          "matched_term": "Dorel"
+        },
+        {
+          "recall_id": "1226",
+          "title": "Dorel Juvenile Group Recalls Eddie Bauer Rocking Wood Bassinets Due to Infant Suffocation Hazard",
+          "recall_date": "2012-10-23T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2013/Dorel-Juvenile-Group-Recalls-Eddie-Bauer-Rocking-Wood-Bassinets-Due-to-Infant-Suffocation-Hazard",
+          "product_names": [
+            "Eddie Bauer Rocking Wood Bassinets"
+          ],
+          "matched_term": "Dorel"
+        },
+        {
+          "recall_id": "668",
+          "title": "Dorel Asia Recalls to Repair Bunk Beds Due to Collapse and Fall Hazards",
+          "recall_date": "2011-05-05T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2011/Dorel-Asia-Recalls-to-Repair-Bunk-Beds-Due-to-Collapse-and-Fall-Hazards",
+          "product_names": [
+            "Wooden bunk beds"
+          ],
+          "matched_term": "Dorel"
+        },
+        {
+          "recall_id": "111",
+          "title": "Dorel Asia Recalls To Replace Cribs; Pose Strangulation and Suffocation Hazards: One infant death reported, 10 injuries to infants",
+          "recall_date": "2010-01-19T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2010/Dorel-Asia-Recalls-To-Replace-Cribs-Pose-Strangulation-and-Suffocation-Hazards",
+          "product_names": [
+            "Dorel Asia cribs"
+          ],
+          "matched_term": "Dorel"
+        }
+      ],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Maxi-Cosi",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "Maxi-Cosi",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "Maxi Cosi",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "Maxi Cosi",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "Dorel",
+          "field": "RecallTitle",
+          "row_count": 8
+        },
+        {
+          "query": "Dorel",
+          "field": "ProductName",
+          "row_count": 2
+        }
+      ]
+    },
+    "Silver Cross": {
+      "status": "ok",
+      "query": "Silver Cross",
+      "queries": [
+        "Silver Cross"
+      ],
+      "raw_count": 0,
+      "kept": [],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Silver Cross",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "Silver Cross",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    },
+    "Ergobaby": {
+      "status": "ok",
+      "query": "Ergobaby",
+      "queries": [
+        "Ergobaby",
+        "Ergo Baby"
+      ],
+      "raw_count": 1,
+      "kept": [
+        {
+          "recall_id": "9073",
+          "title": "Ergobaby Recalls METROUS Strollers Due to Choking Hazard",
+          "recall_date": "2021-05-26T00:00:00",
+          "url": "https://www.cpsc.gov/Recalls/2021/Ergobaby-Recalls-METROUS-Strollers-Due-to-Choking-Hazard",
+          "product_names": [
+            "METROUS1, METROUS2 and METROUS4 Compact City Strollers"
+          ],
+          "matched_term": "Ergobaby"
+        }
+      ],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Ergobaby",
+          "field": "RecallTitle",
+          "row_count": 1
+        },
+        {
+          "query": "Ergobaby",
+          "field": "ProductName",
+          "row_count": 0
+        },
+        {
+          "query": "Ergo Baby",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "Ergo Baby",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    },
+    "Doona": {
+      "status": "ok",
+      "query": "Doona",
+      "queries": [
+        "Doona"
+      ],
+      "raw_count": 0,
+      "kept": [],
+      "rejected": [],
+      "requests": [
+        {
+          "query": "Doona",
+          "field": "RecallTitle",
+          "row_count": 0
+        },
+        {
+          "query": "Doona",
+          "field": "ProductName",
+          "row_count": 0
+        }
+      ]
+    }
+  }
+}

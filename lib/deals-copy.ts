@@ -34,6 +34,8 @@ export const dealsCopy = {
   officialChecked: "공식가격을 확인했어요",
   unknownChecked: "확인일을 알아보고 있어요",
   qualification: "확인일 기준 공식가격과 공동구매 가격이에요. 구성품·소재·보증 조건을 살펴봐 주세요.",
+  pageBody: '공식 원문 본문을 확인했어요',
+  officialUnpublished: '공식가 미공개 · 정보 없음',
   pageText: '상세 페이지 본문을 확인했어요',
   searchSummary: '검색 요약본 기준이라 원문 확인이 필요해요',
   seedUnspecified: '정보 출처를 살펴보고 있어요',
