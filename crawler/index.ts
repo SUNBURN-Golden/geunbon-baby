@@ -20,11 +20,23 @@ import { QuietWindowError } from './lib/quiet-window';
 import { captureHalt } from './lib/halt';
 import { pathToFileURL } from 'node:url';
 import { failureDetails } from './lib/failure';
+
+// Legacy flag only: dry-run never reaches Instagram. Reject unknown values.
+export function externalDryRun(env: Record<string, string | undefined> = process.env): boolean {
+  const value = env.AGAMAJUNG_EXTERNAL_DRY_RUN;
+  if (value === undefined || value === '' || value === '0') return false;
+  if (value === '1') return true;
+  throw new Error('AGAMAJUNG_EXTERNAL_DRY_RUN은 0 또는 1이어야 합니다.');
+}
+
+const DRY_RUN_NOTICE = '외부 수집은 npm run collector:worker -- discover --dry-run 으로 이관되었습니다.';
+
 export async function main() {
-  if(process.env.AGAMAJUNG_EXTERNAL_DRY_RUN==='1'){console.error('외부 수집은 npm run collector:worker -- discover --dry-run 으로 이관되었습니다.');return;}
+  if (externalDryRun()) { console.error(DRY_RUN_NOTICE); return; }
   const crawlerDir = import.meta.dirname;
   await initHealth(crawlerDir);
   loadEnvironment(crawlerDir);
+  if (externalDryRun()) { console.error(DRY_RUN_NOTICE); return; }
   const endpoint = process.env.AGAMAJUNG_API_URL;
   const token = process.env.INGEST_TOKEN;
   if (!endpoint || !token) throw new Error('AGAMAJUNG_API_URL과 INGEST_TOKEN이 필요합니다.');
