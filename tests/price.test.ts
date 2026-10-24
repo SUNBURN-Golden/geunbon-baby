@@ -1,12 +1,28 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { models } from '../seed/models.json';
-import { comparison, money, type Model, type Deal } from '../lib/data';
+import { comparison, displayableOfficialPrice, money, type Model, type Deal } from '../lib/data';
 
 const model = (i: number): Model => {
   const m = models[i - 1];
   return { id: `model-${i}`, brand: m.brand, name: m.model, category: m.category, importer: m.kr_importer, official_price: m.kr_official_price_krw, source_url: m.source_url, checked: m.checked, verify_level: m.verify_level, note: m.note };
 };
+
+test.each([430000, 0])('page_body official price %s is displayable', official_price => {
+  assert.equal(displayableOfficialPrice({ official_price, verify_level: 'page_body' }), official_price);
+});
+
+test.each([null, NaN, Infinity, -Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('invalid official price %s is hidden', official_price => {
+  assert.equal(displayableOfficialPrice({ official_price, verify_level: 'page_body' }), null);
+});
+
+test.each(['page_text', 'search_summary', 'official_unpublished', 'manual', '', null])('official price with level %s is hidden', verify_level => {
+  assert.equal(displayableOfficialPrice({ official_price: 430000, verify_level }), null);
+  const result = comparison({ ...model(1), official_price: 430000, verify_level: verify_level ?? '' }, []);
+  assert.deepEqual(result.official, {
+    price: null, source: model(1).source_url, checked: model(1).checked, verify_level: verify_level ?? '',
+  });
+});
 
 test('missing prices are never zero or inferred from notes', () => {
   assert.equal(money(null), '정보 없음');

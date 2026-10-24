@@ -33,7 +33,7 @@ beforeAll(async () => {
     for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
   }
   const insertModel = (id: string, price: number | null) => memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, 'Stokke', names[id as keyof typeof names], 'high_chair', 'Importer', price, 'https://example.com/model', '2026-10-18', 'page_text', note).run();
+    .bind(id, 'Stokke', names[id as keyof typeof names], 'high_chair', 'Importer', price, 'https://example.com/model', '2026-10-18', 'page_body', note).run();
   await insertModel('model-1', 430000);
   await insertModel('model-42', 430000);
   await insertModel('model-20', 670000);
@@ -58,6 +58,27 @@ const cardOf = (html: string, id: string) => {
   expect(match, id).not.toBeNull();
   return match![0];
 };
+
+test.each(['page_text', 'search_summary'])('%s prices do not appear on cards or produce strikethroughs', async level => {
+  await memory.db.prepare('UPDATE models SET verify_level = ? WHERE id IN (?, ?)').bind(level, 'model-1', 'model-20').run();
+  try {
+    const html = await render('2026-10-21T03:00:00Z');
+    expect(html.match(/<a class="model-card"/g)).toHaveLength(4);
+    expect([...html.matchAll(/class="model-card" href="([^"]+)"/g)].map(m => m[1]))
+      .toEqual(['/models/model-1', '/models/model-3', '/models/model-42', '/models/model-20']);
+    for (const id of ['model-1', 'model-20']) {
+      const card = cardOf(html, id);
+      expect(card).toContain('정보 없음');
+      expect(card).not.toContain('430,000');
+      expect(card).not.toContain('670,000');
+      expect(card).not.toContain('<s>');
+      expect(card).not.toContain('%');
+    }
+    expect(cardOf(html, 'model-1')).toContain('390,000');
+  } finally {
+    await memory.db.prepare("UPDATE models SET verify_level = 'page_body' WHERE id IN (?, ?)").bind('model-1', 'model-20').run();
+  }
+});
 
 test('cards show name, art or placeholder, official price and the lowest active deal only', async () => {
   const html = await render('2026-10-21T03:00:00Z');

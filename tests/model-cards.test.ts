@@ -4,10 +4,27 @@ import { ILLUSTRATED_MODEL_IDS, modelIllustration } from '../lib/model-illustrat
 import type { Gap } from '../lib/deals';
 
 const NOW = Date.parse('2026-10-21T03:00:00Z');
-const model = (id: string, official: number | null = 430000) => ({ id, name: `name-${id}`, brand: 'Stokke', official_price: official });
+const model = (id: string, official: number | null = 430000) => ({ id, name: `name-${id}`, brand: 'Stokke', official_price: official, verify_level: 'page_body' });
 const deal = (model_id: string, price: number | null, starts_at: string, ends_at: string) => ({ model_id, price, starts_at, ends_at });
 const ACTIVE = ['2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z'] as const;
 const gap = (relation: Gap['relation'], percent: number): Gap => ({ relation, won: 1, percent });
+
+test.each(['page_text', 'search_summary'])('gates %s prices before calculating model card discounts', verify_level => {
+  const [card] = buildModelCards([{ ...model('model-1', 500000), verify_level }], [deal('model-1', 400000, ...ACTIVE)], NOW);
+  expect(card.official_price).toBeNull();
+  expect(card.gap).toBeNull();
+  expect(card.deal).toEqual({ price: 400000 });
+  expect(showStrike(card.gap)).toBe(false);
+  expect(discountLabel(card.gap)).toBeNull();
+});
+
+test('page_body prices retain model card discounts and strikethroughs', () => {
+  const [card] = buildModelCards([model('model-1', 500000)], [deal('model-1', 400000, ...ACTIVE)], NOW);
+  expect(card.official_price).toBe(500000);
+  expect(card.gap).toEqual({ relation: 'below', won: 100000, percent: 20 });
+  expect(showStrike(card.gap)).toBe(true);
+  expect(discountLabel(card.gap)).toBe('-20%');
+});
 
 test('uses the lowest active price and ignores ended, upcoming and unknown deals', () => {
   const [card] = buildModelCards([model('model-1')], [

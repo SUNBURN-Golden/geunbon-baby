@@ -1,4 +1,4 @@
-import type { Deal, Model } from './data';
+import { displayableOfficialPrice, type Deal, type Model } from './data';
 import { dealTiming, priceGap, type Gap } from './deals';
 
 export type ModelCardData = {
@@ -11,7 +11,7 @@ export type ModelCardData = {
 };
 
 export function buildModelCards(
-  models: readonly Pick<Model, 'id' | 'name' | 'brand' | 'official_price'>[],
+  models: readonly Pick<Model, 'id' | 'name' | 'brand' | 'official_price' | 'verify_level'>[],
   deals: readonly Pick<Deal, 'model_id' | 'price' | 'starts_at' | 'ends_at'>[],
   nowMs: number,
 ): ModelCardData[] {
@@ -25,9 +25,10 @@ export function buildModelCards(
   const cards = models.map((m): ModelCardData => {
     const price = best.get(m.id);
     const deal = price === undefined ? null : { price };
+    const official = displayableOfficialPrice(m);
     return {
-      id: m.id, name: m.name, brand: m.brand, official_price: m.official_price, deal,
-      gap: deal && deal.price !== null ? priceGap(deal.price, m.official_price) : null,
+      id: m.id, name: m.name, brand: m.brand, official_price: official, deal,
+      gap: deal && deal.price !== null ? priceGap(deal.price, official) : null,
     };
   });
   return [...cards.filter(c => c.deal !== null), ...cards.filter(c => c.deal === null)];

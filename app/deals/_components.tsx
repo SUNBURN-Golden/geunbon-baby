@@ -1,7 +1,7 @@
 import { sellerTrustHref, type Deal } from '../../lib/data';
 import { DealImage } from './_image';
 import Link from 'next/link';
-import { dealTiming, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
+import { dealOfficialPrice, dealTiming, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
 import { dealsCopy } from '../../lib/deals-copy';
 
 function verificationCopy(level: string | null) {
@@ -17,9 +17,10 @@ function verificationCopy(level: string | null) {
 }
 
 const knownDealPrice = (price: number | null) => price !== null && Number.isFinite(price) && price >= 0;
-const confirmedOfficial = (deal: DealWithContext) =>
-  deal.model_official_price !== null && Number.isFinite(deal.model_official_price) &&
-  deal.model_official_price > 0 && deal.model_verify_level !== 'official_unpublished';
+const confirmedOfficial = (deal: DealWithContext) => {
+  const official = dealOfficialPrice(deal);
+  return official !== null && official > 0;
+};
 
 export function CheckedDate({ value }: { value: string | null }) {
   const formatted = formatDealDate(value);
@@ -56,10 +57,12 @@ export function DealPrice({ deal, timing }: { deal: DealWithContext; timing: Tim
 
 export function PriceGap({ deal, gap, showContext = true }: { deal: DealWithContext; gap: Gap | null; showContext?: boolean }) {
   if (!deal.model_joined_id) return null;
-  if (!gap) return deal.model_official_price === null ? <p className="deal-context">{dealsCopy.unknownOfficial}</p> : null;
+  const official = dealOfficialPrice(deal);
+  if (official === null) return <p className="deal-context">{dealsCopy.unknownOfficial}</p>;
+  if (!gap) return null;
   return (
     <div className="deal-comparison">
-      <p className="deal-context">{dealsCopy.officialPrice} · {deal.model_official_price!.toLocaleString('ko-KR')}{dealsCopy.won}</p>
+      <p className="deal-context">{dealsCopy.officialPrice} · {official.toLocaleString('ko-KR')}{dealsCopy.won}</p>
       <p className="deal-gap">{gapChunks(formatGap(gap)).map((chunk, i) => <span className="deal-gap-chunk" key={i}>{i > 0 ? ` · ${chunk}` : chunk}</span>)}</p>
       {showContext && <>
         <p className="deal-context">{dealsCopy.qualification}</p>
@@ -84,7 +87,7 @@ export function DealDisclaimer() {
 
 export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number }) {
   const timing = dealTiming(deal.starts_at, deal.ends_at, nowMs);
-  const gap = priceGap(deal.price, deal.model_joined_id ? deal.model_official_price : null);
+  const gap = priceGap(deal.price, dealOfficialPrice(deal));
   return (
     <article className="deal-card">
       <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
@@ -146,7 +149,7 @@ export function DealActions({ deal }: { deal: DealWithContext }) {
 
 export function DealDetail({ deal, nowMs }: { deal: DealWithContext; nowMs: number }) {
   const timing = dealTiming(deal.starts_at, deal.ends_at, nowMs);
-  const gap = priceGap(deal.price, deal.model_joined_id ? deal.model_official_price : null);
+  const gap = priceGap(deal.price, dealOfficialPrice(deal));
   return (
     <main className="page deals-page">
       <Link className="deal-back" href="/deals">{dealsCopy.back}</Link>

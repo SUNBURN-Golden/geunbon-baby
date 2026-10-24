@@ -10,7 +10,7 @@ import { NavLinks } from '../app/nav';
 import { DealCard } from '../app/shared';
 import { dealsCopy } from '../lib/deals-copy';
 import { siteCopy } from '../lib/site-copy';
-import { verification, type Deal } from '../lib/data';
+import { verification, verificationLabel, type Deal } from '../lib/data';
 import { memoryD1 } from './helpers/sqlite';
 
 const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined }));
@@ -35,7 +35,7 @@ beforeAll(async () => {
     for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
   }
   await memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind('model-1', 'Stokke', 'Test chair', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-21', 'page_text', note).run();
+    .bind('model-1', 'Stokke', 'Test chair', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-21', 'page_body', note).run();
   await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at, status) VALUES ('deal-1', 'https://example.com/deal', 'example', 'Reviewed deal', 'post', '2026-10-21', 'approved')").run();
   await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -96,6 +96,25 @@ test('missing official prices stay unknown even when seed notes contain other pr
   }
 });
 
+test.each(['page_text', 'search_summary'])('models and model detail hide a stored %s price and retain evidence', async level => {
+  await memory.db.prepare('UPDATE models SET official_price = 430000, verify_level = ? WHERE id = ?').bind(level, 'model-1').run();
+  try {
+    const models = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
+    const detail = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
+    for (const html of [models, detail]) {
+      expect(html).toContain('정보 없음');
+      expect(html).not.toContain('430,000');
+      excludesOtherPrices(html);
+    }
+    expect(detail).toContain(verificationLabel(level));
+    expect(detail).toContain('2026-10-21');
+    expect(detail).toContain('Importer');
+    expect(detail).toContain('href="https://example.com/model"');
+  } finally {
+    await memory.db.prepare("UPDATE models SET official_price = 430000, verify_level = 'page_body' WHERE id = ?").bind('model-1').run();
+  }
+});
+
 test('navigation includes the calendar and identifies the official-price tab', () => {
   const html = renderToStaticMarkup(createElement(NavLinks, { activeHref: '/models' }));
   expect([...html.matchAll(/href="([^"]+)"/g)].map(match => match[1]))
@@ -116,6 +135,6 @@ test.each(['기존 수입사 (기존 정보, 재확인 실패)', '미확인'])('
     expect(html).not.toContain(`>${siteCopy.officialSource}</a>`);
     expect(html).not.toContain('href=""');
   } finally {
-    await memory.db.prepare("UPDATE models SET source_url = 'https://example.com/model', official_price = 430000, verify_level = 'page_text', importer = 'Importer' WHERE id = ?").bind('model-1').run();
+    await memory.db.prepare("UPDATE models SET source_url = 'https://example.com/model', official_price = 430000, verify_level = 'page_body', importer = 'Importer' WHERE id = ?").bind('model-1').run();
   }
 });

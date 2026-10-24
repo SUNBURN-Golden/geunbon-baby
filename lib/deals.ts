@@ -1,4 +1,4 @@
-import type { Deal } from './data';
+import { displayableOfficialPrice, type Deal } from './data';
 import { dealsCopy } from './deals-copy';
 
 export type Timing = {
@@ -20,6 +20,9 @@ export type DealWithContext = Deal & {
   seller_joined_id: string | null;
   seller_name: string | null;
 };
+
+export const dealOfficialPrice = (deal: DealWithContext) =>
+  deal.model_joined_id ? displayableOfficialPrice({ official_price: deal.model_official_price, verify_level: deal.model_verify_level }) : null;
 
 // Public reads exclude withdrawn deals and all lifecycle metadata.
 export const PUBLIC_DEAL_COLUMNS = 'id, model_id, seller_id, title, price, source_url, image_url, verify_level, checked, starts_at, ends_at';

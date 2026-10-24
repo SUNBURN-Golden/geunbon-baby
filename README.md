@@ -35,7 +35,7 @@
 - 해외가·당근 중고 시세·직구가·일반 판매처/백화점 행사가는 비교에서 제외합니다(`migrations/0004_official_groupbuy_only.sql`). 검색 요약·블로그·기사·legacy `external_listing`의 가격도 공식가 근거가 아닙니다.
 - **가격을 절대 만들어 내지 않습니다 (never invent prices).** 공식가가 없으면 다른 판매처 가격이나 구성품 가격 합계로 대체하지 않습니다.
 - `kr_retailers`는 판매자 이름과 출처 URL만 보관하며 가격은 포함하지 않습니다.
-- `page_body`는 공식 제품 본문에서 정상가를 확인한 상태이고, `official_unpublished`는 동일 구성 미확인·접속 실패·수입사 미확인 등을 포함한 공식가 정보 없음 상태입니다. UI에는 "공식가 미확인 · 정보 없음"으로 표시합니다. 제조사의 가격 비공개를 단정하지 않으며 `evidence.reason`으로 사유를 구분합니다. 기존 D1 행의 `page_text`·`search_summary` 표시 호환은 유지합니다. 공식가 미확인 모델은 다른 판매가나 부품 합산으로 대체하지 않습니다.
+- `page_body`는 공식 제품 본문에서 정상가를 확인한 상태이고, `official_unpublished`는 동일 구성 미확인·접속 실패·수입사 미확인 등을 포함한 공식가 정보 없음 상태입니다. UI에는 "공식가 미확인 · 정보 없음"으로 표시합니다. 제조사의 가격 비공개를 단정하지 않으며 `evidence.reason`으로 사유를 구분합니다. 공식가는 `verify_level: "page_body"`인 가격만 표시합니다. `page_text`·`search_summary` 등 다른 수준의 기존 D1 행은 검증 수준과 확인일은 유지하되 페이지에서는 "정보 없음", API(`/api/v1/models`, `/api/v1/models/:id`의 `official_price`, `comparison.official.price`)에서는 `null`로 반환합니다. 공식가 미확인 모델은 다른 판매가나 부품 합산으로 대체하지 않습니다.
 - 모든 공구는 광고이며 구매·결제는 판매처 링크아웃만 제공합니다. 아가 마중은 거래 당사자가 아닙니다.
 
 `seed/official-sources.json`의 브랜드별 공식 호스트·제품 경로 규칙과 차단 경로로 가격 출처를 제한합니다. 백화점·기사·리뷰·홈 페이지는 공식가 근거가 아닙니다. 모델별 `evidence`·`bundle`은 구성품·세대·호환·보증·설명서·인증 조사 기록이며, 미확인 항목은 추정하지 않습니다. 현재 D1/API/UI에는 조사 묶음을 추가하지 않습니다. 공식 근거 마이그레이션 `0008_official_evidence.sql`은 기존 모델 컬럼만 UPDATE합니다. **`lib/`·`app/`에서 시드를 import하지 마세요.** 큰 조사 기록과 로컬 네트워크 도구는 Workers 번들 밖에 둡니다.

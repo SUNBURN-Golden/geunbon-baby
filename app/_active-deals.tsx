@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { dealTiming, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
+import { dealOfficialPrice, dealTiming, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
 import { DealImage } from './deals/_image';
 
@@ -10,8 +10,8 @@ export function ActiveDealCount({ count }: { count: number }) {
 function ActiveDealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number }) {
   const timing = dealTiming(deal.starts_at, deal.ends_at, nowMs);
   const productName = (deal.model_joined_id && deal.model_name) || deal.title;
-  const official = deal.model_joined_id ? deal.model_official_price : null;
-  const validOfficial = official !== null && Number.isFinite(official) && official >= 0;
+  const official = dealOfficialPrice(deal);
+  const validOfficial = official !== null;
   const validPrice = deal.price !== null && Number.isFinite(deal.price) && deal.price >= 0;
   const gap = priceGap(deal.price, official);
   const percent = Math.abs(gap?.percent ?? 0);
