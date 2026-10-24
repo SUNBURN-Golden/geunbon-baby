@@ -33,7 +33,7 @@ npm run dev
 - `/deals`, `/calendar`: 검수 완료 공구 및 일정 (전부 **광고** 표시)
 - `/sellers`: 통신판매업 신고·청약철회 7일·정식수입 증빙. 시드에 증빙이 없으므로 미확인으로 표시
 - `/login`, `/me`: 구글·카카오 소셜 로그인 가입(자체 가입폼 없음)과 내 계정(뉴스레터 해지·재구독, 로그아웃). 아래 "소셜 로그인" 참고
-- `/admin`: ADMIN_TOKEN 로그인 후 검수 대기 원문 승인/반려. 크롤러가 보낸 자동 추출 제안(모델·가격·일정·링크 후보와 근거)은 참고용으로만 함께 표시. httpOnly·SameSite strict 1시간 쿠키, Next.js Server Actions의 동일 origin 검증 사용. 공개 화면에는 대기 원문을 전달하지 않음
+- `/admin`: ADMIN_TOKEN 로그인 후 검수 대기 원문 승인/반려. 크롤러가 보낸 자동 추출 제안(모델·가격·일정·링크 후보와 근거)은 참고용으로만 함께 표시. httpOnly·SameSite strict 1시간 쿠키, Next.js Server Actions의 동일 origin 검증 사용. 로그아웃은 발급 시와 같은 Path=/admin·HttpOnly·SameSite=strict·Secure(프로덕션에서만) 속성으로 쿠키를 만료시킴. 공개 화면에는 대기 원문을 전달하지 않음
 
 로컬 HTTP의 localhost는 브라우저 secure cookie 예외가 적용됩니다. 관리자 접속은 localhost를 사용하세요. 공유/운영 환경은 HTTPS가 필수입니다. 토큰을 URL에 넣지 마세요. 운영 공개 전 관리자 경로와 ingest에 Cloudflare Access/WAF 등의 접근통제·레이트리밋을 별도로 설정하는 것을 권장합니다.
 
@@ -160,6 +160,7 @@ npm run build
 npm run build:worker
 npx tsx scripts/recall-check.ts --out seed/recalls.json  # 로컬 공식 리콜 조회, 외부 네트워크 필요
 npx tsx scripts/card-screenshots.ts --out <dir>   # /models 카드 모바일·데스크톱 × 라이트·다크 스크린샷 (서버·네트워크 불필요)
+ADMIN_TOKEN=… INGEST_TOKEN=… npx tsx scripts/admin-logout-check.ts  # 수동 로컬 전용(기본 localhost:8787, --base로 변경): .dev.vars에 같은 토큰 설정, npm run db:migrate → npm run db:seed → npm run dev 및 Playwright Chromium 설치 필요
 ```
 
 `tests`는 Vitest와 메모리 SQLite로 가격 매핑·인증·검수 격리·중복 및 크롤러 추출·한도·지터·발견·셀렉터·OCR 실패 복구를 확인합니다. 테스트에서 소켓·실제 fetch·브라우저 실행을 차단하며 네트워크 접속 없이 검증합니다. Worker 빌드 후 `wrangler dev --local --test-scheduled`와 로컬 `/__scheduled` 요청으로 Cron stub을 수동 확인할 수 있습니다. 배포 스크립트는 의도적으로 제공하지 않습니다.
