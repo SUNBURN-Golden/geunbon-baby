@@ -27,7 +27,7 @@ beforeEach(async () => {
   ctx = { account: 'stokke', crawlerDir: dir, state: await CrawlerState.open(join(dir, '.cache', 'state.json')), settings: parseSettings(settingsJson), api: new URL('https://ingest.invalid/api/v1/ingest'), token: 'test-ingest-token', scanPosts: true, scanStories: false };
   vi.mocked(promisify(execFile)).mockResolvedValue({ stdout: '스토케 트립트랩 공구 39만원', stderr: '' });
   vi.mocked(sleep).mockImplementation(async () => {});
-  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 202 })));
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { id: 'item-1', status: 'pending' } }, { status: 202 })));
 });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 test('unprocessed profile posts remain eligible after per-tick limit and restart', async () => {

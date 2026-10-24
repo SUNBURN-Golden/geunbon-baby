@@ -56,7 +56,7 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 ## 수집·팔로우·발견
 
 1. 캡션과 스토리 이미지·영상 프레임 OCR에서 시드 모델/브랜드, 원화 가격, KST 공구 기간, URL·프로필 링크 안내를 추출합니다. 원문과 `suggestions`를 Bearer 인증 POST로 전송합니다. `collect_images: false` 계정은 개인정보를 마스킹한 텍스트와 그 텍스트에서 추출한 `suggestions`만 전송하고 이미지 URL은 보내지 않습니다. 추정값은 `/admin`에서만 표시하며 승인 전에 공개하지 않습니다. tesseract 실패·빈 캡션은 전송 완료로 기록하지 않습니다. 스토리는 처음 열 때와 다음 스토리로 이동할 때마다 미디어 준비를 기다려 즉시 일시 정지한 뒤 행동 지연과 OCR을 수행합니다. 이미 일시 정지된 스토리는 재생하지 않으며, 정지 컨트롤이 없으면 캡처를 건너뜁니다.
-2. 게시물 URL은 추적 쿼리를 제거하고 정규화해 중복을 막습니다. 사이클 상한 때문에 처리하지 못한 게시물은 다음 스캔에서 다시 대상이 됩니다. API도 URL별 중복을 막으므로 응답 유실 후 재전송해도 큐 항목이 늘지 않습니다.
+2. 게시물 URL은 추적 쿼리를 제거하고 정규화해 중복을 막습니다. 사이클 상한 때문에 처리하지 못한 게시물은 다음 스캔에서 다시 대상이 됩니다. URL은 리디렉트 없는 `202 application/json {data:{id,status}}` 응답에서 유효한 문자열 id와 해당 kind의 status를 확인한 뒤에만 전송 완료로 기록합니다. 잘못된 receipt·리디렉트·응답 유실은 사이클을 중단하고 다음 실행에서 재시도합니다. API도 URL별 중복을 막으므로 응답 유실 후 재전송해도 큐 항목이 늘지 않습니다.
 3. 자동 팔로우는 설정의 `follow: true` 계정 중 기본 verified 계정만 한 사이클에 최대 1개 처리합니다. 기본 **일 20회·시간 8회**, **120~420초 무작위 최소 간격**입니다. 요청 전에 시도 횟수와 다음 허용 시각을 저장하므로 실패·재시작으로 한도가 초기화되지 않습니다. 요청됨(Requested)도 팔로우 상태로 취급하며, 버튼 미발견 계정은 90분 뒤 다시 확인합니다. `allow_unverified`로 미확인 시드의 팔로우를 명시적으로 허용할 수 있습니다.
 4. 발견 탐색은 기본 최소 6시간 간격으로 태그 1개·게시물 최대 2개를 확인합니다. 태그 커서를 저장해 재시작 후에도 전체 목록을 순환합니다. 공구 문구나 모델이 있는 작성자를 `candidates`에 기록합니다. 발견 이력과 전송 이력은 별도여서 발견한 게시물도 이후 수집할 수 있습니다. 후보는 자동 팔로우하지 않으며, 운영자가 검수 후 accounts.json에 등록합니다.
 
@@ -227,6 +227,6 @@ npm run collector -- import-legacy-candidates --state <읽기전용-state.json-�
 
 DB 디렉터리는 0700, DB/WAL/SHM/journal은 0600이고 심볼릭 링크·잘못된 권한·손상·쓰기 실패는 중단합니다. BEGIN IMMEDIATE·외래키·WAL·synchronous FULL을 사용합니다. 강제 종료로 `.lock`이 남으면 기존 프로세스가 종료되었음을 운영자가 확인한 뒤 lock만 제거하고 재시작하세요. DB 오류를 빈 DB로 바꾸지 않습니다.
 
-sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. 건수·보조 지표·작업기 ID·버전·시각만 포함하며 실패하면 유지/재전송합니다. 실제 수집함·근거는 Linux에 남습니다. 자세한 Chrome 권한/재클릭 경계는 [확장 README](../tools/chrome-clipper/README.md)를 참고하세요.
+sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. 건수·보조 지표·작업기 ID·버전·시각만 포함하며 실패하면 유지/재전송합니다. outbox는 리디렉트 없는 `200 application/json {data:{worker_id,version}}` 응답에서 일치하는 문자열 worker_id와 전송 버전 이상의 안전한 정수 version을 확인한 뒤에만 삭제합니다. 잘못된 receipt·본문 초과·본문 읽기 실패·응답 유실은 재전송 대상으로 남습니다. 사이트 버전이 로컬 카운터보다 높아도 삭제와 후속 전송을 계속하며 sync CLI JSON에 `site_version_ahead: true, site_version`으로 보고합니다. 카운터 자체는 바꾸지 않습니다. 오류 진단은 고정 코드만 사용하고 토큰·응답 본문·원래 전송 오류는 출력하지 않습니다. 실제 수집함·근거는 Linux에 남습니다. 자세한 Chrome 권한/재클릭 경계는 [확장 README](../tools/chrome-clipper/README.md)를 참고하세요.
 
 로컬 DB를 새로 만들면 현황 버전은 1부터 다시 시작합니다. 같은 `worker_id`의 이전 높은 버전이 D1에 남아 있으면 새 현황은 반영되지 않습니다. DB 복구는 버전 메타데이터를 포함한 백업을 사용하세요. DB를 재구축할 때는 `COLLECTOR_CONFIG`의 `worker_id`를 새 식별자로 바꾸고, 관리자 화면에서 이전 작업기를 구분하세요. 서로 다른 작업기의 건수는 자동 합산하지 않습니다.
