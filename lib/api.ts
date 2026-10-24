@@ -1,9 +1,9 @@
-import { normalizeTimestamp } from './deals';
+import { normalizeTimestamp, parseDate, PUBLISHED_DEALS } from './deals';
 import { receiveStatus, collectionStatus } from './collection-status';
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
 import { dealsCopy } from './deals-copy';
-import { comparison, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal, type Seller } from './data';
+import { comparison, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal, type Seller, type AdminDeal, type DealRevision } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
 export const MIN_SERVICE_TOKEN_LENGTH = 24;
 // Header values are trimmed in transit; surrounding whitespace usually means a paste error.
@@ -107,6 +107,116 @@ async function manageSeller(request: Request, parts: string[], env: Env) {
     return json({ data: { id } });
   }
   return json({ error: '지원하지 않는 판매자 작업' }, 400);
+}
+
+// Admin lifecycle reads intentionally include private evidence and audit history.
+const REVISION_COLUMNS = 'id,deal_id,version,action,request_id,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at';
+type DealState = { id: string; status: 'published' | 'withdrawn'; version: number };
+type DealPageOptions = { status?: string; limit?: number; cursor?: string | null };
+function encodeCursor(checked: string, id: string) {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(`${checked}|${id}`))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function pageOptions({ status = 'published', limit = 20, cursor = null }: DealPageOptions) {
+  if (!['published', 'withdrawn', 'all'].includes(status) || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('deal_page');
+  let checked: string | null = null, id: string | null = null;
+  if (cursor !== null) {
+    if (!/^[A-Za-z0-9_-]{1,4096}$/.test(cursor)) throw new Error('deal_cursor');
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(cursor.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
+    const separator = decoded.indexOf('|');
+    checked = decoded.slice(0, separator); id = decoded.slice(separator + 1);
+    if (separator < 1 || !id || !Number.isFinite(parseDate(checked)) || encodeCursor(checked, id) !== cursor) throw new Error('deal_cursor');
+  }
+  return { status, limit, checked, id };
+}
+async function hydrateAdminDeals(db: D1Database, rows: Omit<AdminDeal, 'evidence' | 'revisions'>[]): Promise<AdminDeal[]> {
+  if (!rows.length) return [];
+  const marks = rows.map(() => '?').join(',');
+  const ids = rows.map(row => row.id);
+  const revisions = await all<DealRevision>(db, `SELECT ${REVISION_COLUMNS} FROM deal_revisions WHERE deal_id IN (${marks}) ORDER BY version`, ...ids);
+  const evidence = await all<NonNullable<AdminDeal['evidence']> & { id: string }>(db, `SELECT id,source_url,account,text,captured_at,image_url,attribution,attribution_note,reviewed_at FROM ingested_items WHERE id IN (${marks})`, ...ids);
+  return rows.map(row => {
+    const original = evidence.find(item => item.id === row.id);
+    const preserved = original ? { source_url: original.source_url, account: original.account, text: original.text, captured_at: original.captured_at, image_url: original.image_url, attribution: original.attribution, attribution_note: original.attribution_note, reviewed_at: original.reviewed_at } : null;
+    return { ...row, evidence: preserved, revisions: revisions.filter(revision => revision.deal_id === row.id) };
+  });
+}
+export async function adminDealsPage(db: D1Database, options: DealPageOptions = {}) {
+  const { status, limit, checked, id } = pageOptions(options);
+  const result = await db.prepare(`SELECT * FROM deals
+    WHERE (? = 'all' OR status = ?) AND (? IS NULL OR checked < ? OR (checked = ? AND id < ?))
+    ORDER BY checked DESC, id DESC LIMIT ?`).bind(status, status, checked, checked, checked, id, limit + 1).all<Omit<AdminDeal, 'evidence' | 'revisions'>>();
+  const rows = result.results;
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return { data: await hydrateAdminDeals(db, page), next_cursor: rows.length > limit && last ? encodeCursor(last.checked, last.id) : null };
+}
+export async function adminDeal(db: D1Database, id: string): Promise<AdminDeal | null> {
+  const row = await db.prepare('SELECT * FROM deals WHERE id = ?').bind(id).first<Omit<AdminDeal, 'evidence' | 'revisions'>>();
+  return row ? (await hydrateAdminDeals(db, [row]))[0] : null;
+}
+async function requestHash(tuple: unknown[]) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(tuple)));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+async function classifyReplay(db: D1Database, dealId: string, requestId: string, action: string, hash: string, expectedVersion: number) {
+  const revision = await db.prepare('SELECT action,request_hash,version FROM deal_revisions WHERE deal_id = ? AND request_id = ?')
+    .bind(dealId, requestId).first<{ action: string; request_hash: string; version: number }>();
+  if (!revision) return 'none';
+  return revision.action === action && revision.request_hash === hash && revision.version === expectedVersion + 1 ? 'replay' : 'conflict';
+}
+async function manageDeal(request: Request, id: string, env: Env) {
+  let b: Record<string, unknown>;
+  try { b = await body(request); } catch { return json({ error: 'invalid_deal' }, 400); }
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return json({ error: 'invalid_deal' }, 400);
+  const reason = typeof b.reason === 'string' ? b.reason.trim() : '';
+  const action = b.action;
+  const expected = b.expected_version as number;
+  const key = b.request_id;
+  if ((action !== 'correct' && action !== 'withdraw') || !Number.isSafeInteger(expected) || expected < 1 ||
+      typeof key !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(key) || key.startsWith('review-') ||
+      reason.length < 10 || reason.length > 300 ||
+      ['source_url','verify_level','checked','image_url','seller_id','status','version','id'].some(field => field in b)) return json({ error: 'invalid_deal' }, 400);
+  const title = typeof b.title === 'string' ? b.title.trim() : '';
+  const starts = normalizeTimestamp(b.starts_at), ends = normalizeTimestamp(b.ends_at);
+  if (action === 'correct') {
+    if (typeof b.model_id !== 'string' || !title || title.length > 200 ||
+        !(b.price === null || (Number.isSafeInteger(b.price) && (b.price as number) >= 0)) ||
+        !starts || !ends || ends <= starts || typeof b.include_image !== 'boolean') return json({ error: 'invalid_deal' }, 400);
+    if (!await env.DB.prepare('SELECT id FROM models WHERE id = ?').bind(b.model_id).first()) return json({ error: 'invalid_model' }, 400);
+  }
+  const hash = await requestHash(action === 'correct' ? [action, expected, b.model_id, title, b.price, starts, ends, b.include_image, reason] : [action, expected, reason]);
+  const state = () => env.DB.prepare('SELECT id,status,version FROM deals WHERE id = ?').bind(id).first<DealState>();
+  const current = await state();
+  if (!current) return json({ error: 'deal_not_found' }, 404);
+  const replay = async () => {
+    const classification = await classifyReplay(env.DB, id, key, action, hash, expected);
+    if (classification === 'conflict') return json({ error: 'request_id_reused' }, 409);
+    if (classification === 'replay') return json({ data: { ...await state(), replayed: true } });
+    return null;
+  };
+  const previous = await replay();
+  if (previous) return previous;
+  const conflict = (row: DealState) => json({ error: row.status === 'withdrawn' ? 'withdrawn' : 'stale_version', current_version: row.version }, 409);
+  if (current.status === 'withdrawn' || current.version !== expected) return conflict(current);
+  const now = new Date().toISOString();
+  const correct = action === 'correct';
+  const values = correct ? '?,d.seller_id,?,?,?,?,CASE WHEN ? THEN i.image_url ELSE NULL END,?' : 'd.model_id,d.seller_id,d.title,d.price,d.starts_at,d.ends_at,d.image_url,d.checked';
+  const snapshotBindings = [crypto.randomUUID(), action, key, hash, reason,
+    ...(correct ? [b.model_id as string, title, b.price as number | null, starts, ends, b.include_image ? 1 : 0, now] : []),
+    correct ? 'published' : 'withdrawn', now, id, expected];
+  const results = await env.DB.batch([
+    env.DB.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at)
+      SELECT ?,d.id,d.version + 1,?,?,?,?,${values},?,? FROM deals AS d JOIN ingested_items AS i ON i.id = d.id
+      WHERE d.id = ? AND d.version = ? AND d.status = 'published' ON CONFLICT DO NOTHING`).bind(...snapshotBindings),
+    env.DB.prepare(`UPDATE deals SET (model_id,title,price,starts_at,ends_at,image_url,checked,status) =
+      (SELECT model_id,title,price,starts_at,ends_at,image_url,checked,status FROM deal_revisions WHERE deal_id = deals.id AND request_id = ?),
+      version = version + 1, updated_at = ?, withdrawn_at = CASE WHEN ? = 'withdraw' THEN ? ELSE withdrawn_at END
+      WHERE id = ? AND version = ? AND status = 'published'
+      AND EXISTS (SELECT 1 FROM deal_revisions WHERE deal_id = ? AND request_id = ? AND request_hash = ? AND action = ? AND version = ? + 1)`)
+      .bind(key, now, action, now, id, expected, id, key, hash, action, expected),
+  ]);
+  if (results[1].meta.changes === 1) return json({ data: { id, status: correct ? 'published' : 'withdrawn', version: expected + 1 } });
+  return await replay() ?? conflict((await state())!);
 }
 
 // ── 크롤러 자동 추출 제안(검수 보조용, 승인 전까지 게시 데이터와 무관) ─────────────
@@ -267,15 +377,26 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     if (parts[0] === 'models' && parts.length === 2) {
       const model = await env.DB.prepare(`SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE id = ?`).bind(parts[1]).first<Omit<Model, 'note'>>();
       if (!model) return json({ error: '모델을 찾을 수 없습니다' }, 404);
-      const deals = await all<Deal>(env.DB, 'SELECT * FROM deals WHERE model_id = ? ORDER BY starts_at, id', model.id);
+      const deals = await all<Deal>(env.DB, `${PUBLISHED_DEALS} AND model_id = ? ORDER BY starts_at, id`, model.id);
       return json({ data: { ...model, comparison: comparison(model, deals) } });
     }
-    if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, 'SELECT * FROM deals ORDER BY starts_at, id')).map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })) });
+    if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, `${PUBLISHED_DEALS} ORDER BY starts_at, id`)).map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })) });
     if (path === 'sellers') return json({ data: await all(env.DB, `SELECT ${PUBLIC_SELLER_COLUMNS} FROM sellers ORDER BY name`) });
+    if (path === 'admin/deals') {
+      const params = new URL(request.url).searchParams;
+      const options = { status: params.get('status') ?? 'published', limit: params.has('limit') ? Number(params.get('limit')) : 20, cursor: params.get('cursor') };
+      try { pageOptions(options); } catch { return json({ error: 'invalid_deal_page' }, 400); }
+      return json(await adminDealsPage(env.DB, options));
+    }
+    if (admin && parts[1] === 'deals' && parts.length === 3) {
+      const deal = await adminDeal(env.DB, parts[2]);
+      return deal ? json({ data: deal }) : json({ error: 'deal_not_found' }, 404);
+    }
     if (path === 'admin/sellers') return json({ data: await adminSellersData(env.DB) });
     if (path === 'admin/candidates') return json({ data: await all(env.DB, "SELECT * FROM external_candidates WHERE status = 'candidate' ORDER BY captured_at LIMIT 200") });
     if (path === 'admin/queue') return json({ data: await all(env.DB, "SELECT * FROM ingested_items WHERE status = 'pending' ORDER BY captured_at LIMIT 100") });
   }
+  if (request.method === 'POST' && admin && parts[1] === 'deals' && parts.length === 3) return manageDeal(request, parts[2], env);
   if (request.method === 'POST' && admin && parts[1] === 'sellers' && (parts.length === 2 || parts.length === 3)) return manageSeller(request, parts, env);
   if (request.method === 'POST' && admin && parts.length === 3 && parts[1] === 'candidates') {
     let b;
@@ -334,6 +455,9 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     const results = await env.DB.batch([
       env.DB.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) SELECT id, ?, ?, ?, ?, source_url, 'manual', ?, ?, ?, CASE WHEN ? THEN image_url ELSE NULL END FROM ingested_items WHERE id = ? AND status = 'pending' AND (? = 'explicit' OR EXISTS (SELECT 1 FROM seller_accounts WHERE account = ? AND seller_id = ?)) ON CONFLICT(id) DO NOTHING").bind(b.model_id, b.seller_id, b.title, b.price, now, startsAt, endsAt, b.include_image === false ? 0 : 1, parts[2], b.attribution, account, b.seller_id),
       env.DB.prepare("UPDATE ingested_items SET status = 'approved', reviewed_at = ?, attribution = ?, attribution_note = ? WHERE id = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM deals WHERE id = ?)").bind(now, b.attribution, b.attribution === 'explicit' ? b.attribution_note.trim() : null, parts[2], parts[2]),
+      env.DB.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at)
+        SELECT ?,id,1,'publish','review-' || id,'review',NULL,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,?
+        FROM deals WHERE id = ? AND NOT EXISTS (SELECT 1 FROM deal_revisions WHERE deal_id = ?) ON CONFLICT DO NOTHING`).bind(crypto.randomUUID(), now, parts[2], parts[2]),
     ]);
     if (results[0].meta.changes) return json({ data: { status: 'approved' } });
     const current = await env.DB.prepare('SELECT status FROM ingested_items WHERE id = ?').bind(parts[2]).first<{ status: string }>();

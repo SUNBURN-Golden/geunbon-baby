@@ -21,8 +21,11 @@ export type DealWithContext = Deal & {
   seller_name: string | null;
 };
 
-// Both routes use the same projection; joined IDs distinguish missing rows
-// from rows whose price is still unknown.
+// Public reads exclude withdrawn deals and all lifecycle metadata.
+export const PUBLIC_DEAL_COLUMNS = 'id, model_id, seller_id, title, price, source_url, image_url, verify_level, checked, starts_at, ends_at';
+export const PUBLISHED_DEALS = `SELECT ${PUBLIC_DEAL_COLUMNS} FROM deals WHERE status = 'published'`;
+
+// Joined IDs distinguish missing rows from rows whose price is unknown.
 export const DEAL_SELECT = `
   SELECT d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.image_url,
          d.verify_level, d.checked, d.starts_at, d.ends_at,
@@ -32,7 +35,8 @@ export const DEAL_SELECT = `
          s.id AS seller_joined_id, s.name AS seller_name
   FROM deals AS d
   LEFT JOIN models AS m ON m.id = d.model_id
-  LEFT JOIN sellers AS s ON s.id = d.seller_id`;
+  LEFT JOIN sellers AS s ON s.id = d.seller_id
+  WHERE d.status = 'published'`;
 
 export function priceGap(price: number | null, official: number | null): Gap | null {
   if (price === null || official === null || !Number.isFinite(price) ||

@@ -27,3 +27,15 @@ export type ExternalCandidate = {
   category: string | null; model_match: number; suggestions: string | null;
   captured_at: string; last_seen_at: string; status: 'candidate' | 'dismissed'; reviewed_at: string | null;
 };
+
+// Lifecycle metadata and original evidence are exclusively for authenticated administrators.
+export type DealRevision = Pick<Deal, 'model_id' | 'seller_id' | 'title' | 'price' | 'starts_at' | 'ends_at' | 'image_url' | 'checked'> & {
+  id: string; deal_id: string; version: number; action: 'publish' | 'correct' | 'withdraw';
+  request_id: string; reason: string | null; status: 'published' | 'withdrawn'; created_at: string;
+};
+export type AdminDeal = Deal & {
+  status: 'published' | 'withdrawn'; version: number; updated_at: string | null; withdrawn_at: string | null;
+  revisions: DealRevision[];
+  evidence: { source_url: string; account: string; text: string; captured_at: string; image_url: string | null;
+    attribution: string | null; attribution_note: string | null; reviewed_at: string | null } | null;
+};

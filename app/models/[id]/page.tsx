@@ -1,3 +1,4 @@
+import { PUBLISHED_DEALS } from '../../../lib/deals';
 import { notFound } from 'next/navigation';
 import { all, environment } from '../../../lib/db';
 import { categories, comparison, money, verification, type Model, type Deal } from '../../../lib/data';
@@ -11,7 +12,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
   const { id } = await params; const db = environment().DB;
   const m = await db.prepare('SELECT * FROM models WHERE id = ?').bind(id).first<Model>();
   if (!m) notFound();
-  const prices = comparison(m, await all<Deal>(db, 'SELECT * FROM deals WHERE model_id = ? ORDER BY starts_at, id', id));
+  const prices = comparison(m, await all<Deal>(db, `${PUBLISHED_DEALS} AND model_id = ? ORDER BY starts_at, id`, id));
   return (
     <main className="page">
       <p className="eyebrow">{m.brand} / {categories[m.category]}</p>

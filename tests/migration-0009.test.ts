@@ -88,8 +88,10 @@ test('migrated extreme offsets and newly approved rows sort together in API and 
   const start = '2026-10-24T01:00:00+15:00';
   await legacy(memory.db, 'migrated', start, '2026-10-24T02:00:00+15:00');
   await execute(memory.db, migration);
-  // Current approval code also needs the additive seller review schema.
-  await execute(memory.db, await readFile(new URL('../migrations/0010_seller_onboarding.sql', import.meta.url), 'utf8'));
+  // Current routes need the additive seller review and deal lifecycle schemas.
+  for (const file of ['0010_seller_onboarding.sql', '0011_deal_lifecycle.sql']) {
+    await execute(memory.db, await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
+  }
   await pending(memory.db, 'new');
   const call = api(memory.db);
   expect((await call('admin/review/new', approval('2026-10-23T20:00:00Z', '2026-10-24T00:00:00Z', 'New fixture'))).status).toBe(200);
@@ -111,6 +113,7 @@ test.each(['dateonly', 'feb30', 'reversed'])('unchanged %s schedules remain unkn
   const fixture = fixtures.find(([key]) => key === id)!;
   await legacy(memory.db, ...fixture);
   await execute(memory.db, migration);
+  await execute(memory.db, await readFile(new URL('../migrations/0011_deal_lifecycle.sql', import.meta.url), 'utf8'));
   for (const node of [await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }), await DealDetail({ params: Promise.resolve({ id }) })]) {
     const html = renderToStaticMarkup(node);
     expect(html).toContain(dealsCopy.unknownSchedule);
