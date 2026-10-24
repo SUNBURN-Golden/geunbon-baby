@@ -30,7 +30,7 @@ beforeAll(async () => {
     for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
   }
   await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
-  await memory.db.prepare("INSERT INTO models VALUES ('model', 'Brand', 'Chair', 'high_chair', 'Importer', 500000, 'https://example.com/model', '2026-10-20', 'page_body', '')").run();
+  await memory.db.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model', 'Brand', 'Chair', 'high_chair', 'Importer', 500000, 'https://example.com/model', '2026-10-20', 'page_body', '')").run();
   // Deliberately insert in an order different from the required closing order.
   for (const [id, start, end] of [
     ['later', '2026-10-20T00:00:00Z', '2026-10-25T00:00:00Z'],

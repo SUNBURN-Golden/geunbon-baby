@@ -397,7 +397,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     }
     // Model/seller deletion and old incomplete records must not hide a deal.
     await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
-    await memory.db.prepare("INSERT INTO models VALUES ('model-1', 'Brand', 'Model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'search_summary', 'Retailer 123,456원; overseas $799; used 234,567원')").run();
+    await memory.db.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model-1', 'Brand', 'Model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'search_summary', 'Retailer 123,456원; overseas $799; used 234,567원')").run();
     await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
     for (const d of [fixture, { ...fixture, id: 'missing-joins', model_id: 'absent-model', seller_id: 'absent-seller' }]) {
       await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')

@@ -32,7 +32,7 @@ const date = (v: unknown) => normalizeTimestamp(v) !== null;
 
 // Seed notes can contain retailer, discount, overseas and used prices.
 // Keep them out of every public model response, including comparisons.
-const PUBLIC_MODEL_COLUMNS = 'id, brand, name, category, importer, official_price, source_url, checked, verify_level';
+const PUBLIC_MODEL_COLUMNS = 'id, brand, name, category, importer, importer_status, official_price, source_url, checked, verify_level';
 const PUBLIC_SELLER_COLUMNS = 'id, name, source_url, registration_source, withdrawal_source, official_import_source';
 
 export function normalizeAccount(value: unknown): string | null {

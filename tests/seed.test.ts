@@ -29,7 +29,7 @@ async function execute(db: D1Database, sql: string) {
 }
 
 async function schema(db: D1Database) {
-  for (const name of ['0001_initial.sql', '0002_suggestions.sql', '0003_image_url.sql']) {
+  for (const name of ['0001_initial.sql', '0002_suggestions.sql', '0003_image_url.sql', '0012_importer_status.sql']) {
     await execute(db, await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
   }
 }
@@ -51,12 +51,15 @@ test('seed SQL can be rerun without replacing existing models, sellers or group 
   try {
     await schema(memory.db);
     const seed = buildSeedSql();
+    expect(seed.sql).toContain('importer_status');
     await execute(memory.db, seed.sql);
     expect((await memory.db.prepare('SELECT * FROM models').all()).results).toHaveLength(models.length);
     expect((await memory.db.prepare('SELECT name, source_url FROM sellers ORDER BY id').all()).results)
       .toEqual(tripp.kr_retailers.map(s => ({ name: s.retailer, source_url: s.source })));
     const official = (await memory.db.prepare('SELECT official_price FROM models ORDER BY CAST(SUBSTR(id, 7) AS INTEGER)').all()).results;
     expect(official.map(row => row.official_price)).toEqual(models.map(m => m.kr_official_price_krw));
+    expect((await memory.db.prepare('SELECT importer, importer_status FROM models ORDER BY CAST(SUBSTR(id, 7) AS INTEGER)').all()).results)
+      .toEqual(models.map(m => ({ importer: m.kr_importer, importer_status: m.kr_importer_status })));
     await memory.db.prepare("UPDATE models SET note = 'Reviewed note' WHERE id = 'model-1'").run();
     await memory.db.prepare("UPDATE sellers SET registration_source = 'Verified seller' WHERE id = 'seller-1'").run();
     await memory.db.prepare("INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at) VALUES ('deal-1','https://example.com/deal','seller','Group buy','post','2026-10-21')").run();

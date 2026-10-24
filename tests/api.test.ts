@@ -20,7 +20,7 @@ beforeAll(async () => {
     const migration = await readFile(new URL(file, dir), 'utf8');
     for (const sql of migration.split(';').filter(s => s.trim())) await env.DB.prepare(sql).run();
   }
-  await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','Other retailer 123,456 KRW; used 98,765 KRW')").run();
+  await env.DB.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','Other retailer 123,456 KRW; used 98,765 KRW')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','test','https://www.stokke.com/')").run();
 });
 afterAll(() => { memory.close(); });
@@ -52,6 +52,9 @@ test.each(['page_text', 'search_summary', 'page_body'])('model APIs gate %s offi
       assert.equal(row.verify_level, verify_level);
       assert.equal(row.checked, '2026-10-20');
       assert.equal(row.source_url, 'https://www.stokke.com/');
+      assert.equal(row.importer, 'test');
+      assert.equal(row.importer_status, 'unconfirmed');
+      assert.ok(!Object.hasOwn(row, 'note'));
       if (path === 'models/model-1') {
         assert.deepEqual(row.comparison?.official, {
           price: expected, verify_level, checked: '2026-10-20', source: 'https://www.stokke.com/',

@@ -26,7 +26,7 @@ test('0008 updates all reviewed columns including importer, is idempotent and pr
     await execute(migration);
     for (const [i, m] of models.entries()) {
       expect(await memory.db.prepare('SELECT importer,official_price,source_url,checked,verify_level,note FROM models WHERE id = ?').bind(`model-${i+1}`).first())
-        .toEqual({ importer: m.kr_importer, official_price: m.kr_official_price_krw, source_url: m.source_url, checked: m.checked, verify_level: m.verify_level, note: m.note });
+        .toEqual({ importer: m.kr_importer_status === 'recheck_failed' ? `${m.kr_importer} (기존 정보, 재확인 실패)` : m.kr_importer, official_price: m.kr_official_price_krw, source_url: m.source_url, checked: m.checked, verify_level: m.verify_level, note: m.note });
     }
     const once = await memory.db.prepare('SELECT * FROM models ORDER BY id').all();
     await execute(migration);

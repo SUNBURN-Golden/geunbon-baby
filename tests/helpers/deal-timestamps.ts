@@ -10,7 +10,7 @@ export async function migrate(db: D1Database, through = '9999') {
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql') && f.slice(0, 4) <= through).sort()) {
     await execute(db, await readFile(new URL(file, dir), 'utf8'));
   }
-  await db.prepare("INSERT INTO models VALUES ('model-1','Test brand','Test model','high_chair','Test importer',NULL,'https://example.com/model','2026-10-20','manual','')").run();
+  await db.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model-1','Test brand','Test model','high_chair','Test importer',NULL,'https://example.com/model','2026-10-20','manual','')").run();
   await db.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','Test seller','https://example.com/seller')").run();
 }
 export function api(db: D1Database) {

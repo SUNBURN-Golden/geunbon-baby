@@ -23,7 +23,7 @@ beforeEach(async () => {
     const sql = await readFile(new URL(file, dir), 'utf8');
     for (const statement of sql.split(';').filter(s => s.trim())) await memory.db.prepare(statement).run();
   }
-  await memory.db.prepare("INSERT INTO models VALUES ('model-1','Stokke','fixture','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
+  await memory.db.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model-1','Stokke','fixture','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
   await memory.db.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','fixture','https://example.com/')").run();
   await memory.db.prepare("INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,image_url) VALUES ('fixture','https://instagram.com/p/fixture/','fixture','fixture caption','post','2026-10-21T00:00:00Z',?)").bind(image).run();
 });

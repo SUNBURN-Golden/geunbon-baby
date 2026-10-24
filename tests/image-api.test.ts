@@ -26,7 +26,7 @@ beforeEach(async () => {
   memory = memoryD1();
   env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'fixture-admin-token-separation-0001', INGEST_TOKEN: 'fixture-ingest-token-separation-0002' };
   await migrate();
-  await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','fixture','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
+  await env.DB.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model-1','Stokke','fixture','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','fixture','https://example.com/')").run();
 });
 afterEach(() => memory.close());
@@ -132,7 +132,7 @@ test('add-only image migration preserves populated pre-change rows with NULL ima
   const dir = new URL('../migrations/', import.meta.url);
   const previous = (await readdir(dir)).filter(f => f.endsWith('.sql') && f < '0003').sort();
   await migrate(previous);
-  await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','fixture','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
+  await env.DB.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model-1','Stokke','fixture','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','fixture','https://example.com/')").run();
   for (const status of ['pending', 'rejected', 'approved']) {
     await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,status,suggestions) VALUES (?,?,?,?,?,?,?,?)')

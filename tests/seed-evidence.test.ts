@@ -219,6 +219,12 @@ test('41 stable model IDs and authoritative source policies', () => {
   }
 });
 
+test('seed importer statuses retain the reviewed counts', () => {
+  for (const [status, count] of Object.entries({ confirmed: 23, recheck_failed: 15, unconfirmed: 3 })) {
+    expect(models.filter((m: { kr_importer_status: string }) => m.kr_importer_status === status)).toHaveLength(count);
+  }
+});
+
 for (const [index, m] of models.entries()) {
   test(`model-${index + 1}: official price, bundle, manual and recall evidence`, () => {
     const e = m.evidence, b = m.bundle, source = sources[m.brand];
@@ -229,7 +235,9 @@ for (const [index, m] of models.entries()) {
     expect(e.locator).toBeTruthy();
     checkDate(e.checked_at);
     expect(e.checked_at.slice(0, 10)).toBe(m.checked);
-    expect(m.kr_importer).toBe(source.importer_basis.status === 'recheck_failed' ? `${source.importer} (기존 정보, 재확인 실패)` : source.importer ?? '미확인');
+    expect(m.kr_importer).toBe(source.importer ?? '미확인');
+    expect(m.kr_importer_status).toBe(source.importer_basis.status ?? 'confirmed');
+    expect(m.kr_importer).not.toMatch(/\(기존 정보/);
     if (m.kr_official_price_krw !== null) {
       expect(m.verify_level).toBe('page_body');
       expect(e.kind).toBe('official_msrp');

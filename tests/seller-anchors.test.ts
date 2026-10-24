@@ -48,7 +48,7 @@ test('deal and calendar target the same seller evidence across a rename and reor
     await memory.db.prepare('INSERT INTO sellers (id, name, source_url, registration_source, withdrawal_source, official_import_source) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(id, name, `https://${host}.example/shop`, `https://${host}.example/reg`, `https://${host}.example/withdrawal`, `https://${host}.example/import`).run();
   }
-  await memory.db.prepare("INSERT INTO models VALUES ('model-1', 'Stokke', 'Test model', 'high_chair', 'Importer', NULL, 'https://example.com/model', '2026-10-18', 'official_unpublished', '')").run();
+  await memory.db.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model-1', 'Stokke', 'Test model', 'high_chair', 'Importer', NULL, 'https://example.com/model', '2026-10-18', 'official_unpublished', '')").run();
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at) VALUES ('deal-1', 'https://example.com/deal', 'example', 'Test fixture', 'post', '2026-10-20')").run();
   await memory.db.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES ('deal-1', 'model-1', ?, 'Test deal', NULL, 'https://example.com/deal', 'manual', '2026-10-20', '2026-10-20T00:00:00Z', '2026-10-22T14:59:59Z')").bind(secondId).run();
 
