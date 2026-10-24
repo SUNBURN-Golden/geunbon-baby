@@ -68,10 +68,11 @@ test('home has the verified-products description and no deleted phrases or empty
   for (const forbidden of ['모르', '모릅', '해외가', '중고', 'class="note"']) expect(html).not.toContain(forbidden);
 });
 
-test('layout, metadata and sharing use the spaced brand and new description, retaining wordmark and nav hrefs', () => {
+test('layout, metadata and sharing use the 아가마중 brand and new description, retaining wordmark and nav hrefs', () => {
   const html = renderToStaticMarkup(createElement(Layout, null, createElement('main')));
-  expect(html).toContain(siteCopy.brand);
-  expect(html).not.toContain('아가마중');
+  expect(siteCopy.brand).toBe('아가마중');
+  expect(html).toContain('아가마중');
+  expect(html).not.toContain('아가 마중');
   expect(html).toContain('AGAMAJUNG');
   expect(html).toContain(`aria-label="${siteCopy.homeLabel}"`);
   expect(html).toContain(siteCopy.tagline);
@@ -86,7 +87,7 @@ test('layout, metadata and sharing use the spaced brand and new description, ret
   expect(html).not.toContain('기준가');
   expect(metadata.title).toEqual({ default: siteCopy.title, template: siteCopy.titleTemplate });
   expect(metadata.description).toBe(siteCopy.description);
-  expect(metadata.openGraph).toMatchObject({ title: siteCopy.title, siteName: siteCopy.brand, description: siteCopy.description });
+  expect(metadata.openGraph).toMatchObject({ title: siteCopy.title, siteName: '아가마중', description: siteCopy.description });
   expect(metadata.twitter).toMatchObject({ title: siteCopy.title, description: siteCopy.description });
 });
 
