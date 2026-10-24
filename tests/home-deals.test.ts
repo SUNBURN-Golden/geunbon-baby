@@ -1,11 +1,13 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterAll, beforeAll, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest';
 import Home, { dynamic } from '../app/page';
 import DealsPage from '../app/deals/page';
+import Calendar from '../app/calendar/page';
+import ModelDetail from '../app/models/[id]/page';
 import { ActiveDeals } from '../app/_active-deals';
-import { DEAL_SELECT, type DealWithContext } from '../lib/deals';
+import { DEAL_SELECT, formatGap, priceGap, type DealWithContext } from '../lib/deals';
 import { all } from '../lib/db';
 import { dealsCopy } from '../lib/deals-copy';
 import { memoryD1 } from './helpers/sqlite';
@@ -15,6 +17,8 @@ vi.mock('../lib/db', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/db')>(),
   environment: () => ({ DB: context.db }),
 }));
+
+vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NEXT_NOT_FOUND'); } }));
 
 const nowMs = Date.parse('2026-10-21T03:00:00Z');
 const memory = memoryD1();
@@ -42,6 +46,7 @@ beforeAll(async () => {
   }
 });
 afterAll(() => memory.close());
+afterEach(() => vi.restoreAllMocks());
 
 function detailLinks(html: string) {
   return [...html.matchAll(/href="\/deals\/([^"]+)"/g)].map(match => match[1]);
@@ -58,16 +63,20 @@ test('dynamic home queries D1 and renders only active deals before the hero, soo
   for (const inactive of ['upcoming deal', 'ended deal', 'unknown deal']) expect(html).not.toContain(inactive);
   expect(html).toContain(dealsCopy.activeHeading);
   expect(html).toContain('class="active-deal-count" aria-label="3개 진행 중이에요">3</span>');
-  expect(html.match(/class="active-deal-card"/g)).toHaveLength(3);
-  // Each card has just one link, encompassing the title, price and comparison.
-  const cards = [...html.matchAll(/<a class="active-deal-card"[^>]*>([\s\S]*?)<\/a>/g)].map(match => match[1]);
+  const cards = [...html.matchAll(/<article class="deal-card">([\s\S]*?)<\/article>/g)].map(match => match[1]);
   expect(cards).toHaveLength(3);
   for (const card of cards) {
-    expect(card).not.toContain('<a');
-    expect(card).toContain('<h3>');
-    expect(card).toContain('400,000');
+    expect(card).toContain('<h2><a class="deal-title-link"');
+    expect(card).toContain('400,000<span>원</span>');
     expect(card).toContain('500,000원');
-    expect(card).toContain('20.0% 낮아요');
+    expect(card.replace(/<[^>]*>/g, '')).toContain(formatGap(priceGap(400000, 500000)!));
+    expect(card).toContain('rel="sponsored noopener noreferrer"');
+    expect(card).not.toContain('/sellers#');
+    expect(card.match(/class="deal-disclaimer"/g)).toHaveLength(1);
+    // An opening anchor must be closed before another one opens.
+    const anchors = card.match(/<a\b[^>]*>|<\/a>/g);
+    expect(anchors).toHaveLength(4);
+    expect(anchors?.map(anchor => anchor === '</a>' ? 'close' : 'open')).toEqual(['open', 'close', 'open', 'close']);
     expect(card).toContain(dealsCopy.ad);
   }
   expect(cards[0]).toContain('<img');
@@ -76,7 +85,7 @@ test('dynamic home queries D1 and renders only active deals before the hero, soo
   expect(cards[0]).toContain('referrerPolicy="no-referrer"');
   expect(cards[0]).not.toContain('class="active-deal-mark"');
   for (const card of cards.slice(1)) {
-    expect(card).toContain('<span class="active-deal-mark" aria-hidden="true">C</span>');
+    expect(card).not.toContain('class="active-deal-mark"');
     expect(card).not.toContain('<img');
   }
   expect(cards[0]).toContain(dealsCopy.endsToday);
@@ -94,18 +103,18 @@ test('home image alt prefers the joined model name and falls back to the deal ti
   ] as const) {
     const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], nowMs }));
     expect(html).toContain(`alt="${name} 상품 이미지"`);
-    expect(html).not.toContain('class="active-deal-mark"');
+    expect(html.match(/<img /g)).toHaveLength(1);
     expect(html).not.toContain('/_next/image');
   }
 });
 
 test.each([null, '', 'http://cdninstagram.com/chair.jpg', 'https://example.com/chair.jpg', 'javascript:alert(1)'])(
-  'home keeps the letter placeholder for missing or unsafe image %s', async image_url => {
+  'home keeps text-only cards for missing or unsafe image %s', async image_url => {
     const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
     const base = rows.find(deal => deal.id === 'today')!;
-    for (const [patch, letter] of [[{}, 'C'], [{ model_joined_id: null }, 't']] as const) {
+    for (const patch of [{}, { model_joined_id: null }]) {
       const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch, image_url }], nowMs }));
-      expect(html).toContain(`<span class="active-deal-mark" aria-hidden="true">${letter}</span>`);
+      expect(html).not.toContain('class="active-deal-mark"');
       expect(html).not.toContain('<img');
       expect(html).toContain(base.title);
       expect(html).toContain('400,000');
@@ -129,24 +138,25 @@ test('active cards preserve unknown prices, zero prices and comparison direction
   const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
   const base = rows.find(deal => deal.id === 'soon')!;
   const render = (patch: Partial<DealWithContext>) => renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], nowMs }));
-  expect(render({ price: 600000 })).toContain('20.0% 높아요');
-  expect(render({ price: 500000 })).toContain(dealsCopy.compactEqual);
-  expect(render({ price: 499999 })).toContain('&lt;0.1% 낮아요');
+  expect(render({ price: 600000 })).toContain('높아요');
+  expect(render({ price: 500000 })).toContain(formatGap(priceGap(500000, 500000)!));
+  expect(render({ price: 499999 })).toContain('낮아요');
+  expect(render({ price: 499999 }).replace(/<[^>]*>/g, '').replace(/&lt;/g, '<')).toContain(formatGap(priceGap(499999, 500000)!));
   expect(render({ price: 0 })).toContain(`>0<span>${dealsCopy.won}</span>`);
   const unknown = render({ price: null });
   expect(unknown).toContain(dealsCopy.unknownPrice);
   expect(unknown).toContain('정보 없음');
   expect(unknown).toContain('500,000원');
-  expect(unknown).not.toContain('class="active-deal-gap"');
+  expect(unknown).not.toContain('class="deal-gap"');
   const zeroOfficial = render({ model_official_price: 0 });
   expect(zeroOfficial).toContain(`${dealsCopy.officialPrice} · 0원`);
-  expect(zeroOfficial).not.toContain('class="active-deal-gap"');
+  expect(zeroOfficial).not.toContain('class="deal-gap"');
   for (const patch of [{ model_official_price: null }, { model_joined_id: null }]) {
     const html = render(patch);
     expect(html).toContain('400,000');
     expect(html).toContain(dealsCopy.unknownOfficial);
     expect(html).toContain('정보 없음');
-    expect(html).not.toContain('class="active-deal-gap"');
+    expect(html).not.toContain('class="deal-gap"');
   }
 });
 
@@ -157,7 +167,7 @@ test.each(['page_text', 'search_summary'])('home active cards hide %s prices and
   expect(html).toContain(dealsCopy.unknownOfficial);
   expect(html).toContain('400,000');
   expect(html).not.toContain('500,000');
-  expect(html).not.toContain('class="active-deal-gap"');
+  expect(html).not.toContain('class="deal-gap"');
 });
 
 test('/deals keeps active deals first and displays their count near the h1', async () => {
@@ -165,4 +175,17 @@ test('/deals keeps active deals first and displays their count near the h1', asy
   const html = renderToStaticMarkup(await DealsPage());
   expect(detailLinks(html)).toEqual(['today', 'soon', 'later', 'upcoming', 'ended', 'unknown']);
   expect(html).toMatch(/<h1>[^<]+<\/h1><p>지금 진행 중 <span class="active-deal-count" aria-label="3개 진행 중이에요">3<\/span><\/p>/);
+});
+
+test('the same deal without a seller renders byte-identical cards on all four routes', async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(nowMs);
+  const cards = [];
+  for (const page of [await Home(), await DealsPage(), await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model' }) })]) {
+    const html = renderToStaticMarkup(page);
+    const card = [...html.matchAll(/<article class="deal-card">[\s\S]*?<\/article>/g)]
+      .map(match => match[0]).find(article => article.includes('href="/deals/today"'));
+    expect(card).toBeDefined();
+    cards.push(card);
+  }
+  expect(new Set(cards).size).toBe(1);
 });

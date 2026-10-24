@@ -1,12 +1,13 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterAll, beforeAll, expect, test, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from 'vitest';
 import Home from '../app/page';
 import Layout, { metadata } from '../app/layout';
 import Models from '../app/models/page';
 import Detail from '../app/models/[id]/page';
 import Calendar from '../app/calendar/page';
+import DealsPage from '../app/deals/page';
 import Nav, { NavLinks } from '../app/nav';
 import { usePathname } from 'next/navigation';
 import { siteCopy } from '../lib/site-copy';
@@ -36,9 +37,10 @@ beforeAll(async () => {
     .bind('model-1', 'Stokke', 'Example model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'page_body', note).run();
   await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at) VALUES ('deal-1', 'https://example.com/deal', 'example', 'Example', 'post', '2026-10-20')").run();
-  await memory.db.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES ('deal-1', 'model-1', 'seller-1', 'Example deal', 390000, 'https://example.com/deal', 'manual', '2026-10-20', '2026-10-21', '2026-10-22')").run();
+  await memory.db.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES ('deal-1', 'model-1', 'seller-1', 'Example deal', 390000, 'https://example.com/deal', 'manual', '2026-10-20', '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z')").run();
 });
-afterAll(() => memory.close());
+beforeEach(() => { vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00Z')); });
+afterAll(() => { vi.restoreAllMocks(); memory.close(); });
 
 test('model list, detail and calendar show only supported prices with explicit labels', async () => {
   const list = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
@@ -51,6 +53,8 @@ test('model list, detail and calendar show only supported prices with explicit l
   expect(detail).toContain(siteCopy.officialPrice);
   expect(detail).toContain('430,000');
   for (const html of [detail, calendar]) {
+    expect(html).toContain('rel="sponsored noopener noreferrer"');
+    expect(html).toContain('class="deal-card"');
     expect(html).toContain(dealsCopy.groupBuyPrice);
     expect(html).toContain('390,000');
     expect(html).toContain(dealsCopy.disclaimer);
@@ -62,6 +66,9 @@ test('model list, detail and calendar show only supported prices with explicit l
 
 test('home has the verified-products description and no deleted phrases or empty note block', async () => {
   const html = renderToStaticMarkup(await Home());
+  expect(html).toContain('class="deal-card"');
+  expect(html).toContain(dealsCopy.disclaimer);
+  expect(html).toContain('href="/sellers#trust-seller-1"');
   expect(html).toContain(siteCopy.heroLead);
   expect(html).toContain(siteCopy.pricePromise);
   expect(html).toContain('href="/deals"');
@@ -99,4 +106,17 @@ test('calendar alone is current on its route and the server fallback has all fiv
   const fallback = renderToStaticMarkup(createElement(NavLinks));
   expect(fallback.match(/<a /g)).toHaveLength(5);
   expect(fallback).toContain('href="/calendar"');
+});
+
+test('the same deal with a seller renders an identical card on all four routes', async () => {
+  const cards = [];
+  for (const page of [await Home(), await DealsPage(), await Calendar(), await Detail({ params: Promise.resolve({ id: 'model-1' }) })]) {
+    const html = renderToStaticMarkup(page);
+    const card = html.match(/<article class="deal-card">[\s\S]*?<\/article>/)?.[0];
+    expect(card).toBeDefined();
+    expect(card).toContain('href="/deals/deal-1"');
+    expect(card).toContain('href="/sellers#trust-seller-1"');
+    cards.push(card);
+  }
+  expect(new Set(cards).size).toBe(1);
 });

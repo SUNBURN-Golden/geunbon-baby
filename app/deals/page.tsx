@@ -1,7 +1,7 @@
 import { all, environment } from '../../lib/db';
 import { DEAL_SELECT, dealTiming, sortDeals, type DealWithContext } from '../../lib/deals';
 import { dealsCopy } from '../../lib/deals-copy';
-import { DealDisclaimer, DealList } from './_components';
+import { DealList } from './_components';
 import { ActiveDealCount } from '../_active-deals';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +15,6 @@ export default async function DealsPage() {
     <main className="page deals-page">
       <div className="deals-heading"><h1>{dealsCopy.title}</h1><p>{dealsCopy.activeHeading} <ActiveDealCount count={activeCount} /></p></div>
       <DealList deals={sortDeals(deals, nowMs)} nowMs={nowMs} />
-      <DealDisclaimer />
     </main>
   );
 }

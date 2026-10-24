@@ -4,8 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { DEAL_SELECT, dealTiming, formatDealDate, formatGap, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
-import { DealActions, DealCard, DealDetail, DealList, DealStateChip, PriceGap } from '../app/deals/_components';
-import { DealCard as CalendarDealCard } from '../app/shared';
+import { DealActions, DealCard, DealCardLinks, DealDetail, DealList, DealStateChip, PriceGap } from '../app/deals/_components';
 import DealNotFound from '../app/deals/[id]/not-found';
 import DealsPage, { dynamic as listDynamic } from '../app/deals/page';
 import DealDetailPage, { dynamic as detailDynamic } from '../app/deals/[id]/page';
@@ -165,7 +164,7 @@ describe('server rendered deals UI', () => {
     expect(html).not.toContain(dealsCopy.sellerTrust);
   });
 
-  test('detail and calendar seller links use native anchors for fragment focus', () => {
+  test('detail and card seller links use native anchors for fragment focus', () => {
     function sellerLinks(node: ReactNode): ReactElement<{ href?: string; children?: ReactNode }>[] {
       const found: ReactElement<{ href?: string; children?: ReactNode }>[] = [];
       Children.forEach(node, child => {
@@ -175,15 +174,17 @@ describe('server rendered deals UI', () => {
       });
       return found;
     }
-    for (const tree of [DealActions({ deal: fixture }), CalendarDealCard({ deal: fixture, nowMs })]) {
+    for (const tree of [DealActions({ deal: fixture }), DealCardLinks({ deal: fixture })]) {
       const links = sellerLinks(tree);
       expect(links).toHaveLength(1);
       expect(links[0].type).toBe('a');
       expect(links[0].props.href).toBe('/sellers#trust-seller-1');
     }
+    const parts = Children.toArray(DealCard({ deal: fixture, nowMs }).props.children);
+    expect(parts.filter(part => isValidElement(part) && part.type === DealCardLinks)).toHaveLength(1);
   });
 
-  test('list articles advertise and link their h2 to detail without purchase CTAs', () => {
+  test('list articles advertise, link their h2 to detail and include source, seller and disclaimer', () => {
     const html = card();
     expect(html).toContain('<article class="deal-card">');
     expect(html).toMatch(/<h2><a[^>]+href="\/deals\/deal-1"/);
@@ -197,9 +198,20 @@ describe('server rendered deals UI', () => {
     expect(html.replace(/<[^>]+>/g, "")).toContain(formatGap(priceGap(fixture.price, fixture.model_official_price)!));
     expect(html).toMatch(/<span class="deal-gap-chunk"> · [^<]*(낮아요|높아요)<\/span>/);
     expect(html).toContain(dealsCopy.good);
-    expect(html).not.toContain(dealsCopy.disclaimer);
-    expect(html).not.toContain(fixture.source_url);
+    expect(html).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer"`);
+    expect(html).toContain('href="/sellers#trust-seller-1"');
+    expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
+    expect(html.endsWith(`<p class="deal-disclaimer">${dealsCopy.disclaimer}</p></article>`)).toBe(true);
+    expect(html).not.toContain('id="deal-new-tab"');
     expect(html).not.toContain('/models/');
+  });
+
+  test('cards without a joined seller retain the source and disclaimer without a dangling trust link', () => {
+    const html = card({ seller_joined_id: null, seller_name: null });
+    expect(html).not.toContain('/sellers#');
+    expect(html).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer"`);
+    expect(html).toContain(dealsCopy.newTab);
+    expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
   });
 
   test('list cards omit qualification, verification, model notes and confirmation dates', () => {
@@ -209,7 +221,8 @@ describe('server rendered deals UI', () => {
       dealsCopy.pageBody, dealsCopy.manual, fixture.model_note!, '2026.10.21', '2026.10.18']) {
       expect(html).not.toContain(copy);
     }
-    expect(html).not.toContain('<time');
+    expect(html.match(/<time /g)).toHaveLength(2);
+    expect(html).not.toMatch(/<time[^>]*>2026\.10\.18/);
   });
 
   test('detail preserves qualification, verification, both dates and disclaimer while hiding price-bearing notes', () => {
@@ -250,12 +263,12 @@ describe('server rendered deals UI', () => {
       expect(html).not.toContain(dealsCopy.remaining.replace('{n}', '0'));
     }
     const endedCard = card(patch);
-    expect(endedCard.match(/<time /g)).toHaveLength(1);
+    expect(endedCard.match(/<time /g)).toHaveLength(3);
     expect(endedCard).not.toContain(dealsCopy.qualification);
     expect(endedCard).not.toContain(dealsCopy.dealChecked);
     expect(endedCard).not.toContain(dealsCopy.officialChecked);
     expect(endedCard).not.toContain('2026.10.18');
-    expect(endedCard).not.toContain(dealsCopy.disclaimer);
+    expect(endedCard.match(/class="deal-disclaimer"/g)).toHaveLength(1);
     expect(detail(patch)).toContain(dealsCopy.officialChecked);
     expect(detail(patch)).toContain('2026.10.18');
     expect(detail(patch)).toContain(fixture.source_url);
@@ -428,11 +441,11 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     expect(clock).toHaveBeenCalledTimes(1);
   });
 
-  test('list page renders its disclaimer once at the bottom, outside all cards', async () => {
+  test('list page renders one disclaimer at the end of each card', async () => {
     const html = renderToStaticMarkup(await DealsPage());
     expect(html.match(/class="deal-card"/g)).toHaveLength(2);
-    expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
-    expect(html.endsWith(`</article></div><p class="deal-disclaimer">${dealsCopy.disclaimer}</p></main>`)).toBe(true);
+    expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(2);
+    expect(html.endsWith('</article></div></main>')).toBe(true);
   });
 
   test('awaits params, binds IDs literally, and calls notFound for missing records', async () => {

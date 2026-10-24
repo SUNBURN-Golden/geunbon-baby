@@ -1,10 +1,10 @@
-import { PUBLISHED_DEALS } from '../../../lib/deals';
+import { DEAL_SELECT, type DealWithContext } from '../../../lib/deals';
 import { notFound } from 'next/navigation';
 import { all, environment } from '../../../lib/db';
-import { categories, comparison, money, verificationLabel, type Model, type Deal } from '../../../lib/data';
+import { categories, displayableOfficialPrice, money, verificationLabel, type Model } from '../../../lib/data';
 import { siteCopy } from '../../../lib/site-copy';
 import { dealsCopy } from '../../../lib/deals-copy';
-import { DealCard } from '../../shared';
+import { DealList } from '../../deals/_components';
 export const dynamic = 'force-dynamic';
 export default async function Detail({ params }: { params: Promise<{ id: string }> }) {
   // eslint-disable-next-line react-hooks/purity -- Dynamic Server Component captures request time once for all deal statuses.
@@ -12,7 +12,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
   const { id } = await params; const db = environment().DB;
   const m = await db.prepare('SELECT * FROM models WHERE id = ?').bind(id).first<Model>();
   if (!m) notFound();
-  const prices = comparison(m, await all<Deal>(db, `${PUBLISHED_DEALS} AND model_id = ? ORDER BY starts_at, id`, id));
+  const deals = await all<DealWithContext>(db, `${DEAL_SELECT} AND d.model_id = ? ORDER BY d.starts_at, d.id`, id);
   return (
     <main className="page">
       <p className="eyebrow">{m.brand} / {categories[m.category]}</p>
@@ -23,12 +23,12 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
         <section>
           <p className="eyebrow">01 / GROUP BUY</p>
           <h2>{dealsCopy.groupBuyPrice}</h2>
-          {prices.gonggu.length ? prices.gonggu.map(d => <DealCard key={d.id} deal={d} nowMs={nowMs} showModelLink={false}/>) : <p>{dealsCopy.modelEmpty}</p>}
+          {deals.length ? <DealList deals={deals} nowMs={nowMs} /> : <p>{dealsCopy.modelEmpty}</p>}
         </section>
         <section>
           <p className="eyebrow">02 / OFFICIAL</p>
           <h2>{siteCopy.officialPrice}</h2>
-          <h3>{money(prices.official.price)}</h3>
+          <h3>{money(displayableOfficialPrice(m))}</h3>
           <p>{m.importer}</p>
           <p className="muted">{m.checked} · {verificationLabel(m.verify_level)}</p>
           {m.source_url && <a href={m.source_url} target="_blank" rel="noopener noreferrer">{siteCopy.officialSource}</a>}

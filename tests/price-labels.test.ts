@@ -3,9 +3,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import ModelDetail from '../app/models/[id]/page';
-import { DealCard as SharedDealCard } from '../app/shared';
 import { DealCard, DealDetail } from '../app/deals/_components';
-import { verification, verificationLabel, unknownVerification, type Deal } from '../lib/data';
+import { verification, verificationLabel, unknownVerification } from '../lib/data';
 import { DEAL_SELECT, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
 import { memoryD1 } from './helpers/sqlite';
@@ -83,13 +82,14 @@ describe('D1-backed price and evidence rendering', () => {
     for (const text of [note, '123,456', '654,321', '234,567', '$799']) expect(html).not.toContain(text);
   };
 
-  test.each(levels)('model and shared deal card render stored level "%s" safely', async (level, label) => {
+  test.each(levels)('model and deal card render stored level "%s" safely', async (level, label) => {
     // NOT NULL columns accept strings, including unknown legacy codes and the empty string.
     await memory.db.prepare('UPDATE models SET verify_level = ?').bind(level).run();
     await memory.db.prepare('UPDATE deals SET verify_level = ?').bind(level).run();
-    const deal = (await memory.db.prepare('SELECT * FROM deals WHERE id = ?').bind('deal-1').first<Deal>())!;
-    for (const html of [await modelPage(), renderToStaticMarkup(createElement(SharedDealCard, { deal, nowMs }))]) {
-      expect(html).toContain(label);
+    const deal = await joinedDeal();
+    const modelHtml = await modelPage();
+    expect(modelHtml).toContain(label);
+    for (const html of [modelHtml, renderToStaticMarkup(createElement(DealCard, { deal, nowMs }))]) {
       if (level) expect(html).not.toContain(`>${level}<`);
       excludesPrivatePrices(html);
     }

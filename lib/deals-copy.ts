@@ -53,7 +53,4 @@ export const dealsCopy = {
   activeHeading: "지금 진행 중",
   activeCount: "{count}개 진행 중이에요",
   activeEmpty: "지금 진행 중인 공동구매가 없어요.",
-  compactBelow: "{percent}% 낮아요",
-  compactAbove: "{percent}% 높아요",
-  compactEqual: "0% · 공식가격과 같아요",
 } as const;
