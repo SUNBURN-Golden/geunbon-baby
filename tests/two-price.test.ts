@@ -96,10 +96,10 @@ test('missing official prices stay unknown even when seed notes contain other pr
   }
 });
 
-test('navigation preserves all four destinations and identifies the official-price tab', () => {
+test('navigation includes the calendar and identifies the official-price tab', () => {
   const html = renderToStaticMarkup(createElement(NavLinks, { activeHref: '/models' }));
   expect([...html.matchAll(/href="([^"]+)"/g)].map(match => match[1]))
-    .toEqual(['/deals', '/models?by=brand', '/models', '/#letter']);
+    .toEqual(['/deals', '/calendar', '/models?by=brand', '/models', '/#letter']);
   expect(html).toContain(siteCopy.modelsNav);
   expect(html).toMatch(/<a(?=[^>]*href="\/models")(?=[^>]*aria-current="page")[^>]*>/);
   expect(html).not.toContain('기준가');
