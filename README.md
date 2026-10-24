@@ -1,4 +1,4 @@
-# 아가 마중
+# 아가마중
 
 > 너는 건강하게만 와 주렴. 좋은 것은 우리가 골라 둘게.
 
@@ -6,7 +6,7 @@
 
 ### 이름과 표기
 
-화면 브랜드는 `lib/site-copy.ts`의 **아가 마중**, 영문 워드마크는 **AGAMAJUNG**입니다(`tests/site.test.ts`에서 확인). 이전 블루프린트의 “아가마중” 표기와 다릅니다. 도메인은 `agamajoong.soulbound.co.kr`처럼 **agamajoong**, 패키지·Worker·D1·쿠키·PM2 앱과 Instagram 기본 사용자명 등 코드 식별자는 **agamajung**을 사용합니다.
+화면 브랜드는 블루프린트와 같은 `lib/site-copy.ts`의 **아가마중**, 영문 워드마크는 **AGAMAJUNG**입니다(`tests/site.test.ts`에서 확인). 도메인은 `agamajoong.soulbound.co.kr`처럼 **agamajoong**, 패키지·Worker·D1·쿠키·PM2 앱과 Instagram 기본 사용자명 등 코드 식별자는 **agamajung**을 사용합니다.
 
 ## 시스템 구성과 경계
 
@@ -36,7 +36,7 @@
 - **가격을 절대 만들어 내지 않습니다 (never invent prices).** 공식가가 없으면 다른 판매처 가격이나 구성품 가격 합계로 대체하지 않습니다.
 - `kr_retailers`는 판매자 이름과 출처 URL만 보관하며 가격은 포함하지 않습니다.
 - `page_body`는 공식 제품 본문에서 정상가를 확인한 상태이고, `official_unpublished`는 동일 구성 미확인·접속 실패·수입사 미확인 등을 포함한 공식가 정보 없음 상태입니다. UI에는 "공식가 미확인 · 정보 없음"으로 표시합니다. 제조사의 가격 비공개를 단정하지 않으며 `evidence.reason`으로 사유를 구분합니다. 공식가는 `verify_level: "page_body"`인 가격만 표시합니다. `page_text`·`search_summary` 등 다른 수준의 기존 D1 행은 검증 수준과 확인일은 유지하되 페이지에서는 "정보 없음", API(`/api/v1/models`, `/api/v1/models/:id`의 `official_price`, `comparison.official.price`)에서는 `null`로 반환합니다. 공식가 미확인 모델은 다른 판매가나 부품 합산으로 대체하지 않습니다.
-- 모든 공구는 광고이며 구매·결제는 판매처 링크아웃만 제공합니다. 아가 마중은 거래 당사자가 아닙니다.
+- 모든 공구는 광고이며 구매·결제는 판매처 링크아웃만 제공합니다. 아가마중은 거래 당사자가 아닙니다.
 
 `seed/official-sources.json`의 브랜드별 공식 호스트·제품 경로 규칙과 차단 경로로 가격 출처를 제한합니다. 백화점·기사·리뷰·홈 페이지는 공식가 근거가 아닙니다. 모델별 `evidence`·`bundle`은 구성품·세대·호환·보증·설명서·인증 조사 기록이며, 미확인 항목은 추정하지 않습니다. 현재 D1/API/UI에는 조사 묶음을 추가하지 않습니다. 공식 근거 마이그레이션 `0008_official_evidence.sql`은 기존 모델 컬럼만 UPDATE합니다. **`lib/`·`app/`에서 시드를 import하지 마세요.** 큰 조사 기록과 로컬 네트워크 도구는 Workers 번들 밖에 둡니다.
 
@@ -244,13 +244,12 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 ## 블루프린트와 다른 점
 
 1. Google과 함께 **Kakao 로그인**을 구현했습니다. Naver·자체 가입폼은 없고 뉴스레터는 기본 체크입니다.
-2. 표시 브랜드는 **아가 마중**이며 영문 워드마크는 AGAMAJUNG, 도메인은 agamajoong, 코드 식별자는 agamajung입니다.
-3. collector-status는 **POST `/api/v1/collector/status`**(현황 토큰)와 **GET `/api/v1/admin/collection-status`**(관리자)로 나뉘며 건수 스냅샷만 저장합니다.
-4. `/brands` 페이지는 없고 `/models?by=brand`와 `GET /api/v1/brands`가 브랜드 탐색을 담당합니다.
-5. `/me`, `/sellers`, `/api/v1/images/:key`(R2 `public/`만), 관리자 판매자·공구 정정/철회·후보 API가 추가되어 있습니다.
-6. legacy **`kind: "external_listing"` ingest는 여전히 쓰기 가능**합니다. 새 external_candidates 삽입과 candidate 갱신만 하며 dismissed는 보존합니다. 관리자는 조회·dismiss만 할 수 있고 후보를 공구로 승격하는 경로는 없습니다. price_hint/price_raw는 공구가나 공식가로 표시되지 않습니다.
-7. Workers Cron은 **로그 전용 stub**입니다. 모든 수집은 Linux에서 실행합니다.
-8. 블루프린트의 **SVG 카드**와 달리 SVG는 편집 원본이고 실제 표시 에셋은 투명 PNG입니다. `public/img/models/model-N.svg`는 1080×1080이며 `lib/model-illustrations.ts`는 540×540 `src`와 252×252·540×540 `srcSet`을 반환합니다. 등록 모델은 39개이며 model-32·model-39는 null을 반환해 자리표시를 표시합니다.
+2. collector-status는 **POST `/api/v1/collector/status`**(현황 토큰)와 **GET `/api/v1/admin/collection-status`**(관리자)로 나뉘며 건수 스냅샷만 저장합니다.
+3. `/brands` 페이지는 없고 `/models?by=brand`와 `GET /api/v1/brands`가 브랜드 탐색을 담당합니다.
+4. `/me`, `/sellers`, `/api/v1/images/:key`(R2 `public/`만), 관리자 판매자·공구 정정/철회·후보 API가 추가되어 있습니다.
+5. legacy **`kind: "external_listing"` ingest는 여전히 쓰기 가능**합니다. 새 external_candidates 삽입과 candidate 갱신만 하며 dismissed는 보존합니다. 관리자는 조회·dismiss만 할 수 있고 후보를 공구로 승격하는 경로는 없습니다. price_hint/price_raw는 공구가나 공식가로 표시되지 않습니다.
+6. Workers Cron은 **로그 전용 stub**입니다. 모든 수집은 Linux에서 실행합니다.
+7. 블루프린트의 **SVG 카드**와 달리 SVG는 편집 원본이고 실제 표시 에셋은 투명 PNG입니다. `public/img/models/model-N.svg`는 1080×1080이며 `lib/model-illustrations.ts`는 540×540 `src`와 252×252·540×540 `srcSet`을 반환합니다. 등록 모델은 39개이며 model-32·model-39는 null을 반환해 자리표시를 표시합니다.
 
 ## 검증
 
