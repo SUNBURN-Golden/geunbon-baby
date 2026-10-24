@@ -88,6 +88,8 @@ test('migrated extreme offsets and newly approved rows sort together in API and 
   const start = '2026-10-24T01:00:00+15:00';
   await legacy(memory.db, 'migrated', start, '2026-10-24T02:00:00+15:00');
   await execute(memory.db, migration);
+  // Current approval code also needs the additive seller review schema.
+  await execute(memory.db, await readFile(new URL('../migrations/0010_seller_onboarding.sql', import.meta.url), 'utf8'));
   await pending(memory.db, 'new');
   const call = api(memory.db);
   expect((await call('admin/review/new', approval('2026-10-23T20:00:00Z', '2026-10-24T00:00:00Z', 'New fixture'))).status).toBe(200);

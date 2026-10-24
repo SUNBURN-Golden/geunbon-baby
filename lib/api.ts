@@ -3,7 +3,7 @@ import { receiveStatus, collectionStatus } from './collection-status';
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
 import { dealsCopy } from './deals-copy';
-import { comparison, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal } from './data';
+import { comparison, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal, type Seller } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
 export const MIN_SERVICE_TOKEN_LENGTH = 24;
 // Header values are trimmed in transit; surrounding whitespace usually means a paste error.
@@ -33,6 +33,81 @@ const date = (v: unknown) => normalizeTimestamp(v) !== null;
 // Seed notes can contain retailer, discount, overseas and used prices.
 // Keep them out of every public model response, including comparisons.
 const PUBLIC_MODEL_COLUMNS = 'id, brand, name, category, importer, official_price, source_url, checked, verify_level';
+const PUBLIC_SELLER_COLUMNS = 'id, name, source_url, registration_source, withdrawal_source, official_import_source';
+
+export function normalizeAccount(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const account = value.trim().replace(/^@/, '').toLowerCase();
+  return /^[a-z0-9._]{1,30}$/.test(account) ? account : null;
+}
+function evidenceUrl(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (!safeUrl(value) || new URL(value).protocol !== 'https:') throw new Error('evidence');
+  return value;
+}
+function accountLink(b: Record<string, unknown>): string | null {
+  if (b.account === undefined || (typeof b.account === 'string' && !b.account.trim())) return null;
+  const account = normalizeAccount(b.account);
+  if (!account || b.account_reviewed !== true) throw new Error('account');
+  return account;
+}
+export async function adminSellersData(db: D1Database) {
+  const sellers = await all<Seller>(db, `SELECT ${PUBLIC_SELLER_COLUMNS} FROM sellers ORDER BY name`);
+  const links = await all<{ account: string; seller_id: string }>(db, 'SELECT account, seller_id FROM seller_accounts ORDER BY account');
+  const linked = new Set(links.map(link => link.account));
+  const pending = await all<{ account: string; pending: number }>(db, "SELECT account, COUNT(*) AS pending FROM ingested_items WHERE status = 'pending' GROUP BY account ORDER BY account");
+  return {
+    sellers: sellers.map(seller => ({ ...seller, accounts: links.filter(link => link.seller_id === seller.id).map(link => link.account) })),
+    unlinked_accounts: pending.map(row => ({ ...row, normalized: normalizeAccount(row.account) })).filter(row => !row.normalized || !linked.has(row.normalized)),
+  };
+}
+async function manageSeller(request: Request, parts: string[], env: Env) {
+  let b: Record<string, unknown>;
+  try { b = await body(request); } catch { return json({ error: '32KB 이하 JSON 필요' }, 400); }
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return json({ error: '잘못된 입력' }, 400);
+  const create = parts.length === 2;
+  const id = create ? `seller-${crypto.randomUUID()}` : parts[2];
+  if (!create && !await env.DB.prepare('SELECT id FROM sellers WHERE id = ?').bind(id).first()) return json({ error: '판매자 없음' }, 404);
+  let account: string | null = null;
+  if (create || b.action === 'link_account') {
+    try { account = accountLink(b); } catch { return json({ error: '계정 연결은 Instagram handle 및 검수 확인 필요' }, 400); }
+    if (!create && !account) return json({ error: '계정 연결은 Instagram handle 및 검수 확인 필요' }, 400);
+  }
+  if (create || b.action === 'update') {
+    if (!text(b.name, 100) || !safeUrl(b.source_url) || new URL(b.source_url).protocol !== 'https:') return json({ error: '판매자 이름 및 HTTPS 출처 필요' }, 400);
+    let evidence: (string | null)[];
+    try { evidence = [evidenceUrl(b.registration_source), evidenceUrl(b.withdrawal_source), evidenceUrl(b.official_import_source)]; }
+    catch { return json({ error: '증빙은 HTTPS URL 필요' }, 400); }
+    if (!create) {
+      await env.DB.prepare('UPDATE sellers SET name = ?, source_url = ?, registration_source = ?, withdrawal_source = ?, official_import_source = ? WHERE id = ?').bind(b.name, b.source_url, ...evidence, id).run();
+      return json({ data: { id } });
+    }
+    const statements = [env.DB.prepare('INSERT INTO sellers (id,name,source_url,registration_source,withdrawal_source,official_import_source) VALUES (?,?,?,?,?,?)').bind(id, b.name, b.source_url, ...evidence)];
+    if (account) {
+      if (await env.DB.prepare('SELECT seller_id FROM seller_accounts WHERE account = ?').bind(account).first()) return json({ error: '이미 연결된 계정' }, 409);
+      statements.push(env.DB.prepare('INSERT INTO seller_accounts (account,seller_id,reviewed_at) VALUES (?,?,?)').bind(account, id, new Date().toISOString()));
+    }
+    try { await env.DB.batch(statements); }
+    catch (error) {
+      // A concurrent link must roll back registration too. Never return database errors or input URLs.
+      if (account && await env.DB.prepare('SELECT seller_id FROM seller_accounts WHERE account = ?').bind(account).first()) return json({ error: '이미 연결된 계정' }, 409);
+      throw error;
+    }
+    return json({ data: { id } }, 201);
+  }
+  if (b.action === 'link_account' && account) {
+    await env.DB.prepare('INSERT INTO seller_accounts (account,seller_id,reviewed_at) VALUES (?,?,?) ON CONFLICT(account) DO NOTHING').bind(account, id, new Date().toISOString()).run();
+    const link = await env.DB.prepare('SELECT seller_id FROM seller_accounts WHERE account = ?').bind(account).first<{ seller_id: string }>();
+    return link?.seller_id === id ? json({ data: { id } }) : json({ error: '이미 연결된 계정' }, 409);
+  }
+  if (b.action === 'unlink_account') {
+    const normalized = normalizeAccount(b.account);
+    if (!normalized) return json({ error: 'Instagram handle 필요' }, 400);
+    await env.DB.prepare('DELETE FROM seller_accounts WHERE seller_id = ? AND account = ?').bind(id, normalized).run();
+    return json({ data: { id } });
+  }
+  return json({ error: '지원하지 않는 판매자 작업' }, 400);
+}
 
 // ── 크롤러 자동 추출 제안(검수 보조용, 승인 전까지 게시 데이터와 무관) ─────────────
 export type Suggestions = {
@@ -196,10 +271,12 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       return json({ data: { ...model, comparison: comparison(model, deals) } });
     }
     if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, 'SELECT * FROM deals ORDER BY starts_at, id')).map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })) });
-    if (path === 'sellers') return json({ data: await all(env.DB, 'SELECT * FROM sellers ORDER BY name') });
+    if (path === 'sellers') return json({ data: await all(env.DB, `SELECT ${PUBLIC_SELLER_COLUMNS} FROM sellers ORDER BY name`) });
+    if (path === 'admin/sellers') return json({ data: await adminSellersData(env.DB) });
     if (path === 'admin/candidates') return json({ data: await all(env.DB, "SELECT * FROM external_candidates WHERE status = 'candidate' ORDER BY captured_at LIMIT 200") });
     if (path === 'admin/queue') return json({ data: await all(env.DB, "SELECT * FROM ingested_items WHERE status = 'pending' ORDER BY captured_at LIMIT 100") });
   }
+  if (request.method === 'POST' && admin && parts[1] === 'sellers' && (parts.length === 2 || parts.length === 3)) return manageSeller(request, parts, env);
   if (request.method === 'POST' && admin && parts.length === 3 && parts[1] === 'candidates') {
     let b;
     try { b = await body(request); } catch { return json({ error: '32KB 이하 JSON 필요' }, 400); }
@@ -234,7 +311,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     }
     if (!['approve', 'reject'].includes(b.action)) return json({ error: 'approve 또는 reject 필요' }, 400);
     if ((b.include_image !== undefined && typeof b.include_image !== 'boolean') || 'image_url' in b) return json({ error: '잘못된 입력' }, 400);
-    const item = await env.DB.prepare('SELECT * FROM ingested_items WHERE id = ?').bind(parts[2]).first<{ status: string; source_url: string }>();
+    const item = await env.DB.prepare('SELECT * FROM ingested_items WHERE id = ?').bind(parts[2]).first<{ status: string; source_url: string; account: string }>();
     if (!item) return json({ error: '항목 없음' }, 404);
     if (item.status !== 'pending') return json({ error: '이미 검수된 항목' }, 409);
     const now = new Date().toISOString();
@@ -248,11 +325,19 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     const model = await env.DB.prepare('SELECT id FROM models WHERE id = ?').bind(b.model_id).first();
     const seller = await env.DB.prepare('SELECT id FROM sellers WHERE id = ?').bind(b.seller_id).first();
     if (!model || !seller) return json({ error: '등록된 모델·판매자만 게시할 수 있습니다' }, 400);
+    const account = normalizeAccount(item.account);
+    if (b.attribution === 'account') {
+      if (!account || !await env.DB.prepare('SELECT account FROM seller_accounts WHERE account = ? AND seller_id = ?').bind(account, b.seller_id).first()) return json({ error: '원문 계정과 판매자 연결 검수 필요' }, 400);
+    } else if (b.attribution === 'explicit') {
+      if (!text(b.attribution_note, 300) || b.attribution_note.trim().length < 10) return json({ error: '명시 귀속 사유 10–300자 필요' }, 400);
+    } else return json({ error: '판매자 귀속 방식 선택 필요' }, 400);
     const results = await env.DB.batch([
-      env.DB.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) SELECT id, ?, ?, ?, ?, source_url, 'manual', ?, ?, ?, CASE WHEN ? THEN image_url ELSE NULL END FROM ingested_items WHERE id = ? AND status = 'pending' ON CONFLICT(id) DO NOTHING").bind(b.model_id, b.seller_id, b.title, b.price, now, startsAt, endsAt, b.include_image === false ? 0 : 1, parts[2]),
-      env.DB.prepare("UPDATE ingested_items SET status = 'approved', reviewed_at = ? WHERE id = ? AND status = 'pending'").bind(now, parts[2]),
+      env.DB.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) SELECT id, ?, ?, ?, ?, source_url, 'manual', ?, ?, ?, CASE WHEN ? THEN image_url ELSE NULL END FROM ingested_items WHERE id = ? AND status = 'pending' AND (? = 'explicit' OR EXISTS (SELECT 1 FROM seller_accounts WHERE account = ? AND seller_id = ?)) ON CONFLICT(id) DO NOTHING").bind(b.model_id, b.seller_id, b.title, b.price, now, startsAt, endsAt, b.include_image === false ? 0 : 1, parts[2], b.attribution, account, b.seller_id),
+      env.DB.prepare("UPDATE ingested_items SET status = 'approved', reviewed_at = ?, attribution = ?, attribution_note = ? WHERE id = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM deals WHERE id = ?)").bind(now, b.attribution, b.attribution === 'explicit' ? b.attribution_note.trim() : null, parts[2], parts[2]),
     ]);
-    return results[0].meta.changes ? json({ data: { status: 'approved' } }) : json({ error: '이미 검수된 항목' }, 409);
+    if (results[0].meta.changes) return json({ data: { status: 'approved' } });
+    const current = await env.DB.prepare('SELECT status FROM ingested_items WHERE id = ?').bind(parts[2]).first<{ status: string }>();
+    return current?.status !== 'pending' ? json({ error: '이미 검수된 항목' }, 409) : json({ error: '원문 계정과 판매자 연결 검수 필요' }, 400);
   }
   return json({ error: '지원하지 않는 경로 또는 메서드' }, request.method === 'GET' ? 404 : 405);
 }

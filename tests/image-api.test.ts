@@ -7,7 +7,7 @@ import { memoryD1 } from './helpers/sqlite';
 
 const image = 'https://scontent.cdninstagram.com/product.jpg?sig=synthetic%2B%2F&x=1&x=2';
 const ingest = { source_url: 'https://www.instagram.com/p/image/', account: 'fixture', kind: 'post', text: 'fixture caption', captured_at: '2026-10-21T00:00:00Z' };
-const approval = { action: 'approve', model_id: 'model-1', seller_id: 'seller-1', title: '검증 전용', price: 123, starts_at: '2026-10-21T00:00:00Z', ends_at: '2026-10-22T00:00:00Z' };
+const approval = { action: 'approve', attribution: 'explicit', attribution_note: 'Synthetic fixture attribution reviewed offline', model_id: 'model-1', seller_id: 'seller-1', title: '검증 전용', price: 123, starts_at: '2026-10-21T00:00:00Z', ends_at: '2026-10-22T00:00:00Z' };
 let memory: ReturnType<typeof memoryD1>;
 let env: Env;
 const call = (path: string, body?: unknown) => handleApi(new Request(`https://local.invalid/${path}`, {

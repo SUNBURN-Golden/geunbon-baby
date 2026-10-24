@@ -55,7 +55,7 @@ test.each([true, false])('review form submits explicit include_image=%s from che
   const page = await Admin({ searchParams: Promise.resolve({}) });
   const action = reviewAction(page);
   const form = new FormData();
-  const values = { id: 'fixture', action: 'approve', model_id: 'model-1', seller_id: 'seller-1', title: 'fixture', price: '', starts_at: '2026-10-21T00:00:00Z', ends_at: '2026-10-22T00:00:00Z' };
+  const values = { id: 'fixture', action: 'approve', attribution: 'explicit', attribution_note: 'Synthetic fixture attribution reviewed offline', model_id: 'model-1', seller_id: 'seller-1', title: 'fixture', price: '', starts_at: '2026-10-21T00:00:00Z', ends_at: '2026-10-22T00:00:00Z' };
   for (const [key, value] of Object.entries(values)) form.set(key, value);
   if (include) form.set('include_image', 'on');
   await expect(action(form)).rejects.toThrow('NEXT_REDIRECT');

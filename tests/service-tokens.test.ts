@@ -65,7 +65,7 @@ beforeEach(async () => {
 afterEach(() => memory.close());
 
 const ingest = { source_url: 'https://www.instagram.com/p/separation-ingest/', account: 'fixture', kind: 'post', text: 'synthetic fixture', captured_at: '2026-10-22T00:00:00.000Z' };
-const approval = { action: 'approve', model_id: 'model-1', seller_id: 'seller-1', title: 'synthetic fixture', price: null, starts_at: '2026-10-26T00:00:00Z', ends_at: '2026-10-28T00:00:00Z' };
+const approval = { action: 'approve', attribution: 'explicit', attribution_note: 'Synthetic fixture attribution reviewed offline', model_id: 'model-1', seller_id: 'seller-1', title: 'synthetic fixture', price: null, starts_at: '2026-10-26T00:00:00Z', ends_at: '2026-10-28T00:00:00Z' };
 function call(path: string, token?: string, body?: unknown) {
   return handleApi(new Request(`https://site.invalid/api/v1/${path}`, {
     method: body === undefined ? 'GET' : 'POST',

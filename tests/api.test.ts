@@ -46,7 +46,7 @@ test('ingest stays private; canonical URL is idempotent; approval publishes atom
   assert.equal(one.data.id, two.data.id); assert.equal(one.data.status, 'pending');
   assert.equal((await (await call('deals')).json<ListResponse>()).data.length, 0);
   assert.equal((await (await call('admin/queue', 'GET', undefined, env.ADMIN_TOKEN)).json<ListResponse>()).data.length, 1);
-  const approval = { action: 'approve', model_id: 'model-1', seller_id: 'seller-1', title: '로컬 테스트 전용', price: null, starts_at: '2026-10-21T00:00:00Z', ends_at: '2026-10-22T00:00:00Z' };
+  const approval = { action: 'approve', attribution: 'explicit', attribution_note: 'Synthetic fixture attribution reviewed offline', model_id: 'model-1', seller_id: 'seller-1', title: '로컬 테스트 전용', price: null, starts_at: '2026-10-21T00:00:00Z', ends_at: '2026-10-22T00:00:00Z' };
   assert.equal((await call(`admin/review/${one.data.id}`, 'POST', { ...approval, price: -1 }, env.ADMIN_TOKEN)).status, 400);
   assert.equal((await call(`admin/review/${one.data.id}`, 'POST', { ...approval, seller_id: 'missing' }, env.ADMIN_TOKEN)).status, 400);
   assert.equal((await call(`admin/review/${one.data.id}`, 'POST', approval, env.ADMIN_TOKEN)).status, 200);
