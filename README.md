@@ -1,10 +1,48 @@
-# 아가마중
+# 아가 마중
 
 > 너는 건강하게만 와 주렴. 좋은 것은 우리가 골라 둘게.
 
-오래 곁에 둘 프리미엄 근본 육아용품 가격 비교·공구 정보 MVP입니다. Next.js App Router + TypeScript, OpenNext Cloudflare Workers, D1, R2를 사용합니다. 기저귀·분유·결제·주문 기능은 없습니다.
+오래 곁에 둘 프리미엄 근본 육아용품 가격 비교·공구 정보 MVP입니다. Stokke, Bugaboo, Cybex, BabyBjorn, Nuna 등 유모차·하이체어·카시트·바운서·아기띠를 다룹니다. 기저귀·분유·결제·주문 기능은 없습니다. 사이트는 Next.js App Router + TypeScript, OpenNext Cloudflare Workers, D1, R2를 사용합니다.
 
-## 로컬 실행 (Workers/Miniflare 전용)
+### 이름과 표기
+
+화면 브랜드는 `lib/site-copy.ts`의 **아가 마중**, 영문 워드마크는 **AGAMAJUNG**입니다(`tests/site.test.ts`에서 확인). 이전 블루프린트의 “아가마중” 표기와 다릅니다. 도메인은 `agamajoong.soulbound.co.kr`처럼 **agamajoong**, 패키지·Worker·D1·쿠키·PM2 앱과 Instagram 기본 사용자명 등 코드 식별자는 **agamajung**을 사용합니다.
+
+## 시스템 구성과 경계
+
+| 시스템 | 진입점·실행 위치 | 저장소 | 자격 증명·사이트 접점 |
+| --- | --- | --- | --- |
+| 사이트 | `worker.ts`, `app/**` · Cloudflare Workers. 로컬은 `wrangler dev --local` | D1 `DB`(사이트 `/migrations`), R2 `IMAGES` | ADMIN_TOKEN(관리), INGEST_TOKEN(수집 접수), COLLECTOR_STATUS_TOKEN(건수 접수), 선택 OAuth 키. 아래 API 제공 |
+| Instagram worker | `crawler/index.ts`, PM2용 `crawler/run.mjs` · Linux Node 22 + Playwright | `crawler/.session/`, `crawler/.cache/state.json` | AGAMAJUNG_IG_USER(기본 `agamajung`)·AGAMAJUNG_IG_PASSWORD 또는 저장 세션, AGAMAJUNG_API_URL·INGEST_TOKEN. `POST /api/v1/ingest`로 post/story를 pending 접수. 호환 external_listing은 별도 external_candidates에 저장 |
+| 독립 로컬 수집함 | `crawler/src/local-worker.ts`의 serve/discover, CLI `crawler/collector.mjs`, Chrome MV3 `tools/chrome-clipper/` · Linux, serve는 `127.0.0.1:4318` | `crawler/.cache/collector.sqlite`, 전용 `crawler/migrations/` | serve는 COLLECTOR_INTAKE_TOKEN·COLLECTOR_REVIEW_TOKEN·COLLECTOR_EXTENSION_ORIGIN, 확장은 인테이크 토큰, CLI는 검토 토큰. discover 자체에는 사이트·Instagram 자격 증명 불필요. 수집 자료를 사이트로 보내지 않음 |
+| 건수 동기화 | `npm run collector:worker -- sync` → `crawler/src/local-worker.ts`, `crawler/src/status-sync.ts` · Linux | 위 SQLite의 트랜잭션 outbox → 사이트 D1 건수 스냅샷 | COLLECTOR_SITE_URL(HTTPS)·전용 COLLECTOR_STATUS_TOKEN. `POST /api/v1/collector/status`에 건수·보조 집계·작업기 ID·버전·시각만 전송 |
+
+**Workers Cron은 수집기를 실행하지 않는 로그 stub입니다. Playwright와 OCR은 Linux에서만 실행합니다.** 사이트는 로컬 수집 레코드·URL·원문·셀러·근거를 가져오지 않습니다. 로컬 `seller_candidates`를 사이트 판매자로 자동 등록하지도 않습니다. 수집함의 `ready_to_publish`는 사람의 공개 검토를 마친 로컬 상태이며 실제 게시 동작이 아닙니다. Instagram pending → 사이트 관리자 승인 → deals 경로와 별개입니다.
+
+3경로는 자동 RSS/API/사이트맵/링크 발견(`auto_discovery`), 승인된 공개 브라우저 추출(`browser_extract`), Chrome 수동 담기(`manual_clip`)입니다. 저장 전·AI 전달 전 공통 개인정보 필터(`shared/privacy-rules.ts`)를 적용하고 자료를 `untrusted_source_data`로 격리합니다. AI는 필수가 아니며 자료 속 지시로 도구 실행·상태 승격·게시를 하지 않습니다.
+
+설치·운영은 [Linux 수집 시스템](crawler/README.md), [독립 로컬 수집함](crawler/README.md#독립-로컬-수집함), [건수 동기화](crawler/README.md#건수-동기화), [외부 공구 모음 이관](crawler/README.md#외부-공구-모음-이관), [Chrome 확장 안내](tools/chrome-clipper/README.md)를 참고하세요. 개발 작업 데몬 [tools/dev-daemon](tools/dev-daemon/README.md)과 PM2 앱 `agamajung-dev-daemon`은 위 수집·사이트 운영과 무관한 별도 도구입니다.
+
+### 사이트에 표시하는 수집 현황
+
+`/admin`은 후보(`discovered`)·원문 확인(`source_check_needed`)·중복 제외(`dedup_excluded`)·검증 완료(`verified_waiting`)·공개 대기(`ready_to_publish`)의 건수만 표시합니다. 미수신은 **미동기화**이며 0건으로 간주하지 않습니다. 생성 후 60분을 넘긴 현황은 **동기화 지연**입니다. 여러 작업기는 각각 표시하고 고유 자료량으로 합산하지 않습니다. 같은 버전의 다른 payload는 409이고 이전 버전은 최신 현황을 바꾸지 않습니다.
+
+## 가격 원칙
+
+최초 데이터는 **`seed/models.json`, `seed/tripp_trapp.json`만** 사용합니다. 공식 본문 확인 근거와 확인 불가 사유는 [모델 근거 기록](docs/model-evidence-2026-10-23.md)에 있습니다. 가격이 null이거나 수집되지 않았으면 **정보 없음**입니다. 시드에 공구가·일정이 없으므로 공구와 달력은 빈 화면이 정상입니다.
+
+- 비교·표시하는 가격은 **공식가**와 **공구가** 두 종류뿐입니다. 공식가는 제조사·공식 수입사의 동일 구성 공식 페이지 본문에서 확인한 `verify_level: "page_body"` 가격만 사용하며, 공구가는 관리자가 원문 검수 후 승인한 공구 가격입니다.
+- 해외가·당근 중고 시세·직구가·일반 판매처/백화점 행사가는 비교에서 제외합니다(`migrations/0004_official_groupbuy_only.sql`). 검색 요약·블로그·기사·legacy `external_listing`의 가격도 공식가 근거가 아닙니다.
+- **가격을 절대 만들어 내지 않습니다 (never invent prices).** 공식가가 없으면 다른 판매처 가격이나 구성품 가격 합계로 대체하지 않습니다.
+- `kr_retailers`는 판매자 이름과 출처 URL만 보관하며 가격은 포함하지 않습니다.
+- `page_body`는 공식 제품 본문에서 정상가를 확인한 상태이고, `official_unpublished`는 동일 구성 미확인·접속 실패·수입사 미확인 등을 포함한 공식가 정보 없음 상태입니다. UI에는 "공식가 미확인 · 정보 없음"으로 표시합니다. 제조사의 가격 비공개를 단정하지 않으며 `evidence.reason`으로 사유를 구분합니다. 기존 D1 행의 `page_text`·`search_summary` 표시 호환은 유지합니다. 공식가 미확인 모델은 다른 판매가나 부품 합산으로 대체하지 않습니다.
+- 모든 공구는 광고이며 구매·결제는 판매처 링크아웃만 제공합니다. 아가 마중은 거래 당사자가 아닙니다.
+
+`seed/official-sources.json`의 브랜드별 공식 호스트·제품 경로 규칙과 차단 경로로 가격 출처를 제한합니다. 백화점·기사·리뷰·홈 페이지는 공식가 근거가 아닙니다. 모델별 `evidence`·`bundle`은 구성품·세대·호환·보증·설명서·인증 조사 기록이며, 미확인 항목은 추정하지 않습니다. 현재 D1/API/UI에는 조사 묶음을 추가하지 않습니다. 공식 근거 마이그레이션 `0008_official_evidence.sql`은 기존 모델 컬럼만 UPDATE합니다. **`lib/`·`app/`에서 시드를 import하지 마세요.** 큰 조사 기록과 로컬 네트워크 도구는 Workers 번들 밖에 둡니다.
+
+CPSC 공개 REST(키 불필요)는 로컬 Node `scripts/recall-check.ts`에서 기본 질의와 모든 대체 표기(예: BabyBjörn·Maxi Cosi·Dorel)를 각각 제목·제품명으로 질의 후 RecallID 중복 제거와 전체 단어 브랜드 필터를 적용합니다. 질의별 원시 행 수·채택 수·필터 제외 ID/제목·조회 실패를 `seed/recalls.json`에 기록합니다. **리콜 결과 없음 ≠ 안전 보장**이며 해외 리콜의 국내 모델·로트 적용은 별도 판단합니다. SafetyKorea는 API 키 발급 전 `not_connected`입니다. 공유 순수 파서와 기존 크롤러 파서는 패리티 테스트로 검증하며 크롤러의 공유 파서 전환은 후속 과제입니다.
+
+## 로컬 실행 (Wrangler 로컬 전용)
 
 Node.js **22 이상**, npm이 필요합니다. 실제 Cloudflare 리소스를 생성하거나 배포할 필요가 없습니다.
 
@@ -21,21 +59,49 @@ npm run db:seed
 npm run dev
 ```
 
-`npm run dev`는 OpenNext 빌드 후 `wrangler dev --local`로 로컬 workerd/Miniflare만 실행합니다. 기본 접속 주소는 `http://localhost:8787`입니다. `next dev`는 사용하지 않습니다. 소스 수정 후 빌드를 다시 실행하세요. 시드는 `.local/seed.sql`로 생성되며 재실행해도 기존 검수·수집 데이터는 지우지 않습니다. 데이터 구조 변경은 `/migrations`에 추가합니다.
+`npm run db:migrate`와 `npm run db:seed`는 모두 D1 `--local`만 사용합니다. `npm run dev`는 `build:worker`로 OpenNext 빌드 후 `wrangler dev --local`로 로컬 workerd/Miniflare만 실행합니다. 기본 접속 주소는 `http://localhost:8787`입니다. Next.js 자체 개발 서버는 사용하지 않습니다. 배포 스크립트는 제공하지 않으며 이 절차는 원격 리소스를 만들거나 배포하지 않습니다. 소스 수정 후 빌드를 다시 실행하세요. 시드는 `.local/seed.sql`로 생성되며 재실행해도 기존 검수·수집 데이터는 지우지 않습니다. 데이터 구조 변경은 `/migrations`에 추가합니다.
 
-`wrangler.jsonc`의 D1 UUID는 **로컬용 자리표시자**입니다. 실제 배포 시 운영자가 이미 준비한 리소스 ID/버킷명과 비밀 바인딩을 별도로 설정해야 합니다. 이 MVP 작업에서는 리소스 생성, 업로드, 배포를 수행하지 않습니다. Cron은 6시간 간격의 로그 stub일 뿐 크롤러를 Workers에서 실행하지 않습니다. R2는 `IMAGES` 바인딩이며 `/api/v1/images/:key`가 `public/` 아래 검수된 jpg/png/webp/avif 파일만 읽습니다. 시드에 사진이 없어 제품 사진을 만들거나 임의 외부 이미지를 가져오지 않습니다.
+## Cloudflare 설정 (`wrangler.jsonc`)
+
+저장소에 체크인된 운영 설정값은 다음과 같습니다. 식별자 문자열을 여기에 복사하지 않습니다.
+
+| 설정 | 체크인된 내용 |
+| --- | --- |
+| Worker·진입점 | `name: agamajung`, `main: worker.ts`, `compatibility_date: 2026-10-01` |
+| 계정·라우트 | `account_id` 및 `zone_id` 필드, custom domain `agamajoong.soulbound.co.kr` |
+| D1 | `DB` → 데이터베이스 `agamajung`, `database_id` 필드, `migrations_dir: migrations` |
+| R2 | `IMAGES` → 버킷 `agamajung-images` |
+| 정적 파일 | `ASSETS` → `.open-next/assets` |
+| 서비스 | `WORKER_SELF_REFERENCE` → `agamajung` |
+| Cron | `0 */6 * * *` · `worker.ts`의 로그 stub |
+| 호환·관측 | `nodejs_compat`, `global_fetch_strictly_public`, `observability.enabled: true` |
+
+저장소는 이 값들이 가리키는 리소스의 존재·상태를 검증하거나 생성하지 않습니다. 운영 D1 마이그레이션·비밀 바인딩·배포는 운영자가 별도로 수행합니다.
+
+R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파일만 제공합니다. 시드에 사진이 없어 제품 사진을 만들거나 임의 외부 이미지를 가져오지 않습니다. Instagram ingest는 R2 업로드를 지원하지 않습니다.
 
 ## 화면
 
-- `/`: 브랜드 소개
-- `/models`: 종류·브랜드·모델명 검색. 카드에는 상품명·손그림·공식가·진행 중 공구가만 표시하고 진행 중인 공구가 있는 모델을 먼저 보여줌. 손그림은 `public/img/models/` 정적 에셋이며 `lib/model-illustrations.ts` 목록으로 연결하고, 없는 모델은 자리표시를 씀
-- `/models/:id`: 공구가 / 공식가 / 해외가 / 당근 중고 시세, 출처·확인일·검증 수준
-- `/deals`, `/calendar`: 검수 완료 공구 및 일정 (전부 **광고** 표시)
-- `/sellers`: 통신판매업 신고·청약철회 7일·정식수입 증빙. 시드에 증빙이 없으므로 미확인으로 표시
-- `/login`, `/me`: 구글·카카오 소셜 로그인 가입(자체 가입폼 없음)과 내 계정(뉴스레터 해지·재구독, 로그아웃). 아래 "소셜 로그인" 참고
-- `/admin`: ADMIN_TOKEN 로그인 후 검수 대기 원문 승인/반려. ADMIN_TOKEN·INGEST_TOKEN은 각각 24자 이상·앞뒤 공백 없이 설정하고 COLLECTOR_STATUS_TOKEN을 포함한 세 토큰은 모두 달라야 함. 관리자·수집 토큰 설정이 유효하지 않으면 기존 쿠키가 있어도 인증 설정 안내만 표시하고 로그인·검수 작업을 차단함. 크롤러가 보낸 자동 추출 제안(모델·가격·일정·링크 후보와 근거)은 참고용으로만 함께 표시. httpOnly·SameSite strict 1시간 쿠키, Next.js Server Actions의 동일 origin 검증 사용. 로그아웃은 발급 시와 같은 Path=/admin·HttpOnly·SameSite=strict·Secure(프로덕션에서만) 속성으로 쿠키를 만료시킴. 공개 화면에는 대기 원문을 전달하지 않음
+다음은 `app/**/page.tsx`의 전체 경로입니다. `:id`는 소스의 `[id]` 동적 세그먼트를 뜻합니다.
 
-로컬 HTTP의 localhost는 브라우저 secure cookie 예외가 적용됩니다. 관리자 접속은 localhost를 사용하세요. 공유/운영 환경은 HTTPS가 필수입니다. 토큰을 URL에 넣지 마세요. 운영 공개 전 관리자 경로와 ingest에 Cloudflare Access/WAF 등의 접근통제·레이트리밋을 별도로 설정하는 것을 권장합니다.
+| 경로 | 현재 기능·진입점 |
+| --- | --- |
+| `/` | 브랜드 소개·진행 중 공구·카테고리 링크. 로고로 진입. 소식지 메뉴는 이 페이지의 `/#letter`로 이동 |
+| `/models` | 종류·브랜드·모델명 검색(`category`, `brand`, `q`). 공식가 메뉴. 브랜드 메뉴는 `/models?by=brand`. 진행 중 공구가 있는 모델 우선 |
+| `/models/:id` | 공구가와 공식가만 비교. 공식가 출처·확인일·검증 수준·수입사 표시. 모델 카드로 진입, 없는 모델은 404 |
+| `/deals` | 검수·게시된 공구 목록, 예정·진행·종료 상태 및 광고·거래 안내. 공구 메뉴·홈에서 진입 |
+| `/deals/:id` | 게시 공구 상세·판매자 증빙·광고·판매처 링크. 목록에서 진입. 없거나 철회된 공구는 전용 not-found 화면(404) |
+| `/calendar` | 검수된 공구를 시작일순으로 표시, 광고 표시. 달력 메뉴·푸터 공구 달력 링크 |
+| `/sellers` | 판매자 출처와 통신판매업 신고·청약철회 7일·정식수입 증빙. 없으면 미확인. 푸터 판매자 안내 및 공구의 신뢰 안내 링크 |
+| `/login` | 구글·카카오 로그인, 뉴스레터 기본 체크. 미설정 공급자는 숨김, 로그인된 사용자는 `/me`로 이동 |
+| `/me` | 내 계정·뉴스레터 해지/재구독·로그아웃. 헤더 내 계정 링크. 비로그인 시 `/login`으로 이동 |
+| `/admin` | ADMIN_TOKEN 인증 후 Instagram 원문 승인/반려, 판매자 관리, 공구 정정/철회, 외부 후보 조회/dismiss, 건수 현황 |
+
+별도 `/brands` 페이지는 없습니다. `/models?by=brand`와 `GET /api/v1/brands`를 사용합니다.
+
+`/models` 카드(`app/models/_card.tsx`)는 **상품명(브랜드+모델), 1:1 손그림, 공식가, 현재 공구가** 네 항목만 표시합니다. 공구가 없으면 **진행 중인 공구 없음**입니다. 광고·검증 배지·확인 시각·추가 메타데이터를 붙이지 않습니다. 출처 링크와 확인일(`checked_at`에 해당하는 현재 필드 `checked`)·검증 수준은 모델 상세에 표시합니다. 광고 표시는 `/deals`·`/deals/:id` 및 모델 상세·달력의 공구 뷰에 둡니다.
+
+`/admin`은 httpOnly·SameSite strict·1시간 쿠키와 Server Actions 동일 origin 검증을 사용합니다. 로그아웃은 발급 시와 같은 Path=/admin·HttpOnly·SameSite=strict·Secure(프로덕션에서만) 속성으로 쿠키를 만료시킵니다. 서비스 토큰 설정이 잘못되면 기존 쿠키가 있어도 설정 안내만 표시하고 로그인·검수를 차단합니다. 공개 화면에는 대기 원문을 전달하지 않습니다. 로컬 관리자 접속은 localhost를 사용하고 공유/운영 환경은 HTTPS를 사용합니다. 토큰을 URL에 넣지 마세요.
 
 ## 소셜 로그인
 
@@ -46,9 +112,9 @@ npm run dev
 - 운영자가 등록할 리디렉트 URI(Google Cloud Console, Kakao Developers):
   - `https://agamajoong.soulbound.co.kr/api/auth/callback/google`
   - `https://agamajoong.soulbound.co.kr/api/auth/callback/kakao`
-  - 카카오는 동의항목에서 카카오계정(이메일)을 켜야 합니다. 이 작업에서는 공급자 콘솔 설정을 하지 않았습니다.
+  - 카카오는 동의항목에서 카카오계정(이메일)을 켜야 합니다.
 - 수집 정보: 이메일과 공급자 id뿐입니다. 액세스·리프레시 토큰, 이름, 프로필은 저장하지 않습니다. 구글은 `email_verified`, 카카오는 `is_email_valid`·`is_email_verified`가 참인 이메일만 받습니다.
-- 마이그레이션 `0005_users.sql`(users, user_identities, sessions)은 CREATE만 있는 add-only입니다. **로컬(`npm run db:migrate`)에만 적용했고 운영 D1 적용은 운영자가 따로 합니다.** 세션 토큰은 해시만 저장합니다(30일).
+- 세션 토큰은 해시만 저장합니다(30일).
 - 뉴스레터: 신규 가입 때만 체크박스 값과 동의 시각을 기록하고 재로그인은 값을 바꾸지 않습니다. `/me`에서 해지·재구독할 수 있습니다.
 - 이메일이 같아도 공급자가 다르면 별도 계정입니다(자동 연결 없음). 따라서 **뉴스레터 발송 시 이메일 기준 중복 제거가 필요**합니다. **계정 삭제는 후속 과제**입니다. 레이트리밋은 Cloudflare 운영 설정에 맡깁니다.
 
@@ -59,12 +125,14 @@ npm run dev
 | 메서드 | 경로 | 설명 |
 | --- | --- | --- |
 | GET | `/api/v1/brands` | 브랜드·모델 수 |
-| GET | `/api/v1/models?brand=Stokke&category=high_chair` | 모델 목록 |
-| GET | `/api/v1/models/model-1` | 모델과 가격 비교 |
+| GET | `/api/v1/models` | 모델 목록. 선택 쿼리 `brand`, `category` |
+| GET | `/api/v1/models/:id` | 모델과 공식가·공구가 비교, 없으면 404 |
 | GET | `/api/v1/deals` | 검수 완료 공구 (예정·진행·종료 포함) |
 | GET | `/api/v1/sellers` | 판매자 및 배지 증빙 URL |
 | GET | `/api/v1/calendar` | 시작일순 검수 완료 공구 |
-| POST | `/api/v1/ingest` | `Authorization: Bearer INGEST_TOKEN` |
+| POST | `/api/v1/ingest` | INGEST_TOKEN. Instagram pending 접수 또는 쓰기 가능한 legacy 외부 후보 접수 |
+| POST | `/api/v1/collector/status` | COLLECTOR_STATUS_TOKEN. 건수 스냅샷만 접수 |
+| GET | `/api/v1/admin/collection-status` | ADMIN_TOKEN. 작업기별 다섯 상태·생성/수신 시각·지연 여부 |
 | GET | `/api/v1/admin/queue` | `Authorization: Bearer ADMIN_TOKEN`, 최대 100건 |
 | POST | `/api/v1/admin/review/:id` | 관리자 승인/반려, 승인 시 모델·판매자·귀속 근거 필수 |
 | GET | `/api/v1/admin/sellers` | ADMIN_TOKEN 전용, 등록 판매자·검수된 연결 계정·미연결 수집 계정 |
@@ -75,6 +143,15 @@ npm run dev
 | POST | `/api/v1/admin/deals/:id` | ADMIN_TOKEN 전용, action correct/withdraw, expected_version·request_id·reason 필수 |
 | GET | `/api/v1/admin/candidates` | `Authorization: Bearer ADMIN_TOKEN`, 외부 공구 모음 후보(candidate) 최대 200건 |
 | POST | `/api/v1/admin/candidates/:id` | `{ "action": "dismiss" }`만 허용(그 외 400, 이미 처리됨 409, 없는 id 404) |
+| GET | `/api/v1/images/:key` | R2 `IMAGES`의 `public/` 아래 jpg/jpeg/png/webp/avif. 허용 파일명·존재 여부 검사, 없으면 404 |
+| GET | `/api/auth/login/google` | Google OAuth 시작. 공급자 미설정 시 404 |
+| GET | `/api/auth/login/kakao` | Kakao OAuth 시작. 공급자 미설정 시 404 |
+| GET | `/api/auth/callback/google` | Google OAuth 콜백 |
+| GET | `/api/auth/callback/kakao` | Kakao OAuth 콜백 |
+
+v1 분기는 `lib/api.ts`, 이미지 라우트는 `app/api/v1/images/[key]/route.ts`, OAuth는 `app/api/auth/[[...path]]/route.ts`와 `lib/auth.ts`에 있습니다. OAuth는 v1 밖의 별도 경로입니다. 공개 공구 상세 GET API는 없으며 모델 비교나 공구 목록을 사용합니다. 관리자 행은 모두 ADMIN_TOKEN이 필요합니다.
+
+### Instagram 수집과 검수
 
 수집 JSON (최대 32KB, text 최대 20,000자):
 
@@ -115,19 +192,13 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 
 `/admin`의 철회(`action: "withdraw"`) 폼은 공개 화면에서 내림 확인과 사유를 요구합니다. 철회는 최종 상태로 복원할 수 없으며, 모든 공개 목록·모델 비교·현재 공구가 카드·달력에서 사라지고 직접 상세 접근도 404가 됩니다. 동일 URL 재수집은 기존 approved 상태만 반환하고 원문이나 게시 내용을 바꾸지 않습니다. 재승인은 409이며 수집/현황 토큰으로 정정·철회 API를 호출할 수 없습니다. 이 기능은 사이트에만 속하며 Linux 수집기의 저장소나 게시 권한을 연결하지 않습니다.
 
-`0011_deal_lifecycle.sql`은 추가 전용 마이그레이션으로 기존 공구도 v1 publish 이력을 보존합니다. **로컬 D1에만 `npm run db:migrate`로 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
-
-`0010_seller_onboarding.sql`은 추가 전용 마이그레이션입니다. **로컬(`npm run db:migrate`)에만 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
-
 승인·수집의 타임스탬프는 시간대 오프셋을 허용하며 UTC `YYYY-MM-DDTHH:MM:SS.SSSZ`로 정규화해 저장합니다. 존재하지 않는 날짜(예: 2월 30일)와 종료 ≤ 시작인 일정은 400으로 거부합니다. 제안 일정은 같은 엄격한 검증을 거치되 원문 값을 보존하며, 공개 화면의 일정·확인일은 KST로 표시합니다.
-
-`0009_normalize_deal_timestamps.sql`은 기존 공구의 유효한 시작·종료를 함께 UTC로 바꾸는 전진 마이그레이션입니다. 잘못된 날짜나 역전된 일정은 원문 그대로 남겨 화면에 일정 미확인으로 표시합니다(이 행의 SQL 정렬은 기존 문자열 기준). **로컬(`npm run db:migrate`)에만 적용하고 운영 D1 적용은 운영자가 따로 합니다.**
 
 승인된 이미지는 공구 카드·상세 화면에서 브라우저가 직접 불러옵니다(`referrerPolicy="no-referrer"`, 지연 로딩, 서버 프록시·최적화 요청 없음). 이미지가 없거나 로딩에 실패해도 텍스트·가격·광고 및 거래 안내는 유지됩니다. **Instagram CDN URL은 만료될 수 있으므로 영구 보관을 보장하지 않습니다.** 현재 ingest는 R2 업로드를 지원하지 않습니다. R2 영구 저장은 업로드와 검수 후 공개 계약을 별도로 설계해야 합니다.
 
 ### 외부 공구 모음 후보 (`kind: "external_listing"`)
 
-아래는 과거 external_candidates와의 호환 API이며 신규 수집기는 사용하지 않습니다. 기존 후보 조회·dismiss는 유지합니다. 공구팡팡·맘캘린더·BUYG·스냅업 같은 외부 공구 모음 사이트의 가격은 지난 가격이거나 AI 요약일 수 있어 **후보로만** 저장합니다. 같은 `POST /api/v1/ingest`에 `kind: "external_listing"`을 보내면 `ingested_items`가 아니라 별도 테이블 `external_candidates`(마이그레이션 `0006`)에만 저장됩니다. 승인 API(`admin/review`)는 이 테이블을 읽지 않으므로 외부 후보는 공구가로 게시될 수 없고, 공개 GET API·화면은 이 테이블을 읽지 않습니다. 인스타 원문으로 확인된 항목만 기존 경로로 공구가가 됩니다. `/admin`에는 참고용 목록과 “확인 완료”(dismiss) 버튼만 있습니다.
+이 호환 ingest는 **현재도 쓰기 가능**합니다. INGEST_TOKEN으로 새 후보를 삽입하고, 같은 URL의 `candidate` 행은 제목·본문·판매자 단서·가격·일정·`last_seen_at` 등을 갱신합니다. `dismissed` 행은 그대로 두며 두 경우 모두 202와 저장된 id/status를 반환합니다. `crawler/lib/ingest.ts`도 이 종류의 전송과 `candidate`/`dismissed` 응답을 지원하지만, 현재 Instagram 실행부와 독립 로컬 수집함은 외부 후보를 이 경로로 보내지 않습니다. 관리자 권한은 목록 조회와 dismiss뿐입니다. 공구팡팡·맘캘린더·BUYG·스냅업 같은 외부 공구 모음 사이트의 가격은 지난 가격이거나 AI 요약일 수 있어 **후보로만** 저장합니다. 같은 `POST /api/v1/ingest`에 `kind: "external_listing"`을 보내면 `ingested_items`가 아니라 별도 테이블 `external_candidates`(마이그레이션 `0006`)에만 저장됩니다. 승인 API(`admin/review`)는 이 테이블을 읽지 않으므로 외부 후보는 공구가로 게시될 수 없고, 공개 GET API·화면은 이 테이블을 읽지 않습니다. `price_hint`·`price_raw`는 공구가나 공식가로 표시되지 않습니다. 후보를 공구로 승격하는 경로는 없습니다. Instagram 원문을 별도로 수집하고 사람이 승인한 경우에만 기존 게시 경로를 사용할 수 있습니다. `/admin`에는 참고용 목록과 “확인 완료”(dismiss) 버튼만 있습니다.
 
 ```json
 {
@@ -153,28 +224,37 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 - 길이 상한: `title` 200자, `text` 2,000자, `price_raw`·`dates_raw`·`seller_name` 100자(요청 전체 32KB). `image_url` 키가 있으면 400입니다. `model_match`는 boolean만 받습니다(누락 시 false).
 - 같은 URL을 다시 보내면 `candidate` 상태일 때만 `last_seen_at`과 가격·일정·제목을 갱신하고, `dismissed`는 갱신하지 않고 같은 202로 응답합니다.
 
-## 가격 원칙
+## 운영 일정
 
-최초 데이터는 **`seed/models.json`, `seed/tripp_trapp.json`만** 사용합니다. 41개 모델은 2026-10-23 공식 페이지 본문 확인을 시도하여, 읽은 정상가와 확인 불가 상태를 구분했습니다. 확인 로그는 [모델 근거 기록](docs/model-evidence-2026-10-23.md)에 있습니다. 가격이 null이거나 수집되지 않았으면 **정보 없음**입니다. 시드에 공구가·일정이 없으므로 공구와 달력은 빈 화면이 정상입니다.
+아래 값은 체크인된 기본값이며 실시간 실행 상태를 보증하지 않습니다. 수집 상세는 [설정과 주기](crawler/README.md#설정과-주기), [운영](crawler/README.md#운영)을 참고하세요.
 
-- 가격은 국내 공식가와 검수된 공구가만 보관·표시합니다. 해외가·환율·중고가·직구가·일반 판매처 할인가는 시드와 모델 메모에 보관하지 않습니다.
-- `kr_retailers`는 판매자 이름과 출처 URL만 보관하며 가격은 포함하지 않습니다.
-- `page_body`는 공식 제품 본문에서 정상가를 확인한 상태이고, `official_unpublished`는 동일 구성 미확인·접속 실패·수입사 미확인 등을 포함한 공식가 정보 없음 상태입니다. UI에는 "공식가 미확인 · 정보 없음"으로 표시합니다. 제조사의 가격 비공개를 단정하지 않으며 `evidence.reason`으로 사유를 구분합니다. 기존 D1 행의 `page_text`·`search_summary` 표시 호환은 유지합니다. 공식가 미확인 모델은 다른 판매가나 부품 합산으로 대체하지 않습니다.
-- 모든 공구는 광고이며 구매·결제는 판매처 링크아웃만 제공합니다. 아가마중은 거래 당사자가 아닙니다.
+| 시스템·모드 | 일정·제한 | 설정 근거 |
+| --- | --- | --- |
+| Instagram PM2 | `30 9,20 * * *`: 매일 KST 09:30·20:30, `AGAMAJUNG_ONCE=1`로 한 사이클 후 종료. `autorestart: false`, `stop_exit_codes: [75]` | `crawler/ecosystem.config.cjs`. cron은 **PM2 데몬**의 시간대이므로 데몬도 Asia/Seoul이어야 함. 자식 `TZ`만으로는 바뀌지 않음 |
+| Instagram 공유 계정 휴식 | `06:45-08:00,13:00-14:00` KST(시작 포함·끝 제외). 브라우저·로그인·팔로우·스캔 중단, 실행 중에도 브라우저를 닫고 종료 후 지터 대기 | `quiet_windows`, `AGAMAJUNG_QUIET_WINDOWS`. 공유 계정에서 로그아웃하지 않음 |
+| Instagram 직접 연속 모드 | 알림·홈 스토리 트레이 1–2분 지터, 프로필 재확인 최소 90분·스토리 최소 30분, 태그 발견 최소 6시간 간격. 작업 시간·행동 한도·휴식에 따라 지연 | `crawler/config/settings.json`, `crawler/index.ts` |
+| Instagram systemd 대안 | 연속 모드, 실패 시 600초 뒤 재시작. `RestartPreventExitStatus=75`로 차단·챌린지 시 자동 재시작 금지 | `crawler/agamajung-crawler.service`. PM2와 동시 실행 금지 |
+| Workers Cron | `0 */6 * * *`(UTC, 6시간 간격), 로그만 기록 | `wrangler.jsonc`, `worker.ts`. Linux 수집을 호출하지 않음 |
+| 독립 discover | 제공되는 timer 없음. 운영자가 Linux timer/cron으로 예약 | `crawler/src/local-worker.ts`. 같은 DB의 serve/discover/sync는 순차 실행 |
+| 건수 sync | heartbeat 15분(`STATUS_HEARTBEAT_MS`). sync 호출 때 새 스냅샷 필요 여부 확인, 내장 timer 없음. 운영자는 15분 이하 간격으로 순차 실행 | `crawler/src/status-sync.ts`, [동기화 운영](crawler/README.md#건수-동기화) |
+| 사이트 현황 | 스냅샷 **생성** 후 60분 초과 시 동기화 지연 | `lib/collection-status.ts`. 수신 시각 기준이 아님 |
 
-`seed/official-sources.json`의 브랜드별 공식 호스트·제품 경로 규칙과 차단 경로로 가격 출처를 제한합니다. 백화점·기사·리뷰·홈 페이지는 공식가 근거가 아닙니다. 모델별 `evidence`·`bundle`은 구성품·세대·호환·보증·설명서·인증 조사 기록이며, 미확인 항목은 추정하지 않습니다. 현재 D1/API/UI에는 조사 묶음을 추가하지 않습니다. 기존 모델 컬럼만 UPDATE 전용 `0008_official_evidence.sql`로 갱신합니다. **`lib/`·`app/`에서 시드를 import하지 마세요.** 큰 조사 기록과 로컬 네트워크 도구는 Workers 번들 밖에 둡니다.
+`pm2 start crawler/ecosystem.config.cjs`는 등록 즉시 한 번 실행합니다. 예약만 등록하는 절차와 보안 중단 후 수동 확인은 수집기 운영 문서를 따르세요. discover/sync 타이머는 저장소에 포함되어 있지 않습니다.
 
-CPSC 공개 REST(키 불필요)는 로컬 Node `scripts/recall-check.ts`에서 기본 질의와 모든 대체 표기(예: BabyBjörn·Maxi Cosi·Dorel)를 각각 제목·제품명으로 질의 후 RecallID 중복 제거와 전체 단어 브랜드 필터를 적용합니다. 질의별 원시 행 수·채택 수·필터 제외 ID/제목·조회 실패를 `seed/recalls.json`에 기록합니다. **리콜 결과 없음 ≠ 안전 보장**이며 해외 리콜의 국내 모델·로트 적용은 별도 판단합니다. SafetyKorea는 API 키 발급 전 `not_connected`입니다. 공유 순수 파서와 기존 크롤러 파서는 패리티 테스트로 검증하며 크롤러의 공유 파서 전환은 후속 과제입니다.
+## 블루프린트와 다른 점
 
-## 크롤러
-
-별도 Linux Node+Playwright worker의 설치·보안·제약은 [crawler/README.md](crawler/README.md)를 참고하세요. Workers Cron에서 Instagram에 접속하지 않습니다. v2 크롤러는 검수 가능한 설정 파일(`crawler/config/`)로 시드 계정·속도 한도를 관리하고, 알림·스토리 트레이 신호로 수집 우선순위를 정하며, 캡션·스토리 OCR에서 모델·가격·공구 일정·링크를 자동 추출해 **제안**으로만 검수 대기열에 함께 전송합니다. 사람 승인 전까지 게시되지 않습니다. 자동 팔로우는 일일 상한·무작위 간격을 지키고 차단·챌린지 감지 시 즉시 중단합니다. 공개 외부 수집은 독립 Linux local-worker로 이관했습니다. Instagram 실행부는 외부 수집을 호출하지 않으며 신규 수집함을 사이트 ingest로 보내지 않습니다. 자세한 내용과 운영 전 dry-run 절차는 [crawler/README.md](crawler/README.md)의 “외부 공구 모음 사이트” 절을 참고하세요. 공유 계정을 쓰는 다른 두 봇을 위해 매일 **06:45~08:00, 13:00~14:00 Asia/Seoul**에는 브라우저·로그인·팔로우·스캔을 쉬고, 실행 중에도 다음 휴식 시작에 브라우저를 닫고 각 Instagram 행동 전에 확인합니다. `quiet_windows` 배열 설정이나 `AGAMAJUNG_QUIET_WINDOWS='06:45-08:00,13:00-14:00'` 환경변수로 여러 시간을 지정하며 자정 통과도 지원합니다. 겹치거나 맞닿은 시간은 합친 종료 후 지터를 한 번 더해 재개하고 건강 로그에 진입·종료를 남깁니다. 이전 `quiet_window` 설정과 `AGAMAJUNG_QUIET_WINDOW` 환경변수도 읽으며 각각 복수형이 우선합니다.
-
-## 개발 작업 데몬
-
-박스의 작업 큐·모델 폴백·독립 worktree·검수 후 PR squash merge 자동화는 [tools/dev-daemon/README.md](tools/dev-daemon/README.md)를 참고하세요. 사이트·크롤러와 별도 PM2 앱 `agamajung-dev-daemon`으로 실행합니다.
+1. Google과 함께 **Kakao 로그인**을 구현했습니다. Naver·자체 가입폼은 없고 뉴스레터는 기본 체크입니다.
+2. 표시 브랜드는 **아가 마중**이며 영문 워드마크는 AGAMAJUNG, 도메인은 agamajoong, 코드 식별자는 agamajung입니다.
+3. collector-status는 **POST `/api/v1/collector/status`**(현황 토큰)와 **GET `/api/v1/admin/collection-status`**(관리자)로 나뉘며 건수 스냅샷만 저장합니다.
+4. `/brands` 페이지는 없고 `/models?by=brand`와 `GET /api/v1/brands`가 브랜드 탐색을 담당합니다.
+5. `/me`, `/sellers`, `/api/v1/images/:key`(R2 `public/`만), 관리자 판매자·공구 정정/철회·후보 API가 추가되어 있습니다.
+6. legacy **`kind: "external_listing"` ingest는 여전히 쓰기 가능**합니다. 새 external_candidates 삽입과 candidate 갱신만 하며 dismissed는 보존합니다. 관리자는 조회·dismiss만 할 수 있고 후보를 공구로 승격하는 경로는 없습니다. price_hint/price_raw는 공구가나 공식가로 표시되지 않습니다.
+7. Workers Cron은 **로그 전용 stub**입니다. 모든 수집은 Linux에서 실행합니다.
+8. 블루프린트의 **SVG 카드**와 달리 SVG는 편집 원본이고 실제 표시 에셋은 투명 PNG입니다. `public/img/models/model-N.svg`는 1080×1080이며 `lib/model-illustrations.ts`는 540×540 `src`와 252×252·540×540 `srcSet`을 반환합니다. 등록 모델은 39개이며 model-32·model-39는 null을 반환해 자리표시를 표시합니다.
 
 ## 검증
+
+저장소 루트의 검증 명령입니다.
 
 ```sh
 npm run lint
@@ -182,18 +262,18 @@ npm run typecheck
 npm test
 npm run build
 npm run build:worker
-npx tsx scripts/recall-check.ts --out seed/recalls.json  # 로컬 공식 리콜 조회, 외부 네트워크 필요
-npx tsx scripts/card-screenshots.ts --out <dir>   # /models 카드 모바일·데스크톱 × 라이트·다크 스크린샷 (서버·네트워크 불필요)
-ADMIN_TOKEN=… INGEST_TOKEN=… npx tsx scripts/admin-logout-check.ts  # 수동 로컬 전용(기본 localhost:8787, --base로 변경): .dev.vars에 같은 토큰 설정, npm run db:migrate → npm run db:seed → npm run dev 및 Playwright Chromium 설치 필요
+npm run build:clipper
 ```
 
-`tests`는 Vitest와 메모리 SQLite로 가격 매핑·인증·검수 격리·중복 및 크롤러 추출·한도·지터·발견·셀렉터·OCR 실패 복구를 확인합니다. 테스트에서 소켓·실제 fetch·브라우저 실행을 차단하며 네트워크 접속 없이 검증합니다. Worker 빌드 후 `wrangler dev --local --test-scheduled`와 로컬 `/__scheduled` 요청으로 Cron stub을 수동 확인할 수 있습니다. 배포 스크립트는 의도적으로 제공하지 않습니다.
+Vitest는 메모리 SQLite 및 로컬 파일로 가격 매핑·인증·검수 격리·중복·수집 일정·전송·복구·확장 동작을 검증하며 실제 소켓·fetch·브라우저 실행을 차단합니다. 문서 정확성은 `package.json`, `wrangler.jsonc`, `app/**/page.tsx`·`route.ts`, `lib/api.ts`, 수집기 진입점·CLI·PM2/systemd 설정과 링크를 읽기 전용으로 대조해 확인합니다. 코드 테스트만으로 문서가 정확해지지는 않습니다.
+
+Worker 빌드 후 `wrangler dev --local --test-scheduled`와 로컬 `/__scheduled` 요청으로 Cron stub을 수동 확인할 수 있습니다. 이 확인도 원격 리소스를 사용하지 않습니다.
 
 리콜 도구는 `--fixture <json> --sources <json> --out <json>`으로 네트워크 없이 실행할 수 있습니다. fixture는 브랜드별 `queries: { "검색어": { "title": [...], "product": [...] } }`로 대체 질의 결과를 구분할 수 있습니다. 기본 fixture 형식은 브랜드별 `{ "title": [CPSC 원시 행], "product": [CPSC 원시 행] }`이며 `{ "error": "blocked" }`로 실패를 재현합니다. 고정 User-Agent·요청 간 5초·응답 2MB 상한·리디렉트 금지·요청 제한 시간을 적용합니다. 일부 브랜드 실패는 해당 브랜드에만 기록하고, 전체 실패 시 출력 파일을 덮어쓰지 않습니다. 재조회 파일과 모델별 검토 결과는 별도이므로, 갱신 후 `bundle.safety.recalls.cpsc`도 다시 검토해야 합니다. 교차 검증 테스트가 오래된 모델별 검토 기록을 감지합니다. 실시간 네트워크 조회는 단위 테스트에 포함하지 않습니다.
 
-### 상품 손그림 에셋
+## 상품 손그림 에셋
 
-`lib/model-illustrations.ts`가 모델별 이미지 규격을 반환합니다. model-1–41 중 등록된 39개(model-32·39 제외)는 모두 편집 가능한 `1080×1080` SVG와 투명 `540×540`·`252×252` PNG를 사용합니다. 신규 선화에는 제품 경로만 넣고 글자·로고·종이 배경·액자·그림자를 넣지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다.
+`lib/model-illustrations.ts`가 모델별 이미지 규격을 반환합니다. model-1–41 중 등록된 39개(model-32·39 제외)의 편집 원본은 `public/img/models/model-N.svg`(`1080×1080`)입니다. 사이트의 카드에는 SVG를 표시하지 않으며 `model-N-540x540.png`를 `src`로, `model-N-252x252.png 252w, model-N-540x540.png 540w`를 `srcSet`으로 사용합니다. 표시 파일은 투명 PNG입니다. 이는 블루프린트의 “SVG 카드” 표현과 의도적으로 다릅니다. 신규 에셋은 1:1 정사각 순수 선화로 만들고 세트 구성품을 구별할 수 있도록 그립니다. 제품 경로만 넣고 글자·로고·종이 배경·액자·그림자를 넣지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다.
 
 ```sh
 npx tsx scripts/render-model-illustrations.ts            # 등록된 39개 전부 두 크기로 재생성
@@ -201,23 +281,24 @@ npx tsx scripts/render-model-illustrations.ts model-13   # 특정 모델만
 npx tsx scripts/card-screenshots.ts --out .local/card-qa
 ```
 
-렌더링·스크린샷은 기존 Playwright를 쓰며 서버나 네트워크가 필요 없습니다. 스크린샷은 등록된 39개 모델과 미등록 자리표시 1개를 모바일 390px·데스크톱 1280px × 라이트·다크에서 확인하며 이미지 디코딩 완료 후 전체 화면 4장과 기본 model-31–41 중 등록된 9개 카드 36장(`--cards model-31,model-33`으로 선택 가능)을 저장합니다. 모든 공구가 행의 높이(40px 이하), 정사각 이미지 디코딩, 같은 행 카드 높이, 자리표시와 가로 넘침을 검사합니다. 공식 참조·구성품·세부 경로·시각 검수 기록은 [배치 1 제작 기록](docs/model-illustrations-batch-1.md), [배치 2 제작 기록](docs/model-illustrations-batch-2.md), [배치 3 제작 기록](docs/model-illustrations-batch-3.md), [배치 4 제작 기록](docs/model-illustrations-batch-4.md)을 참고하세요. model-32·39는 기준 내 공식 썸네일을 확보하지 못해 자리표시를 유지합니다. 참조 사진은 임시 확인 후 삭제하며 저장소에 보관하지 않습니다. 서버 축소 요청의 제한은 배치 1 제작 기록에 남겼습니다.
+렌더링·스크린샷은 기존 Playwright를 쓰며 서버나 네트워크가 필요 없습니다. 스크린샷은 등록된 39개 모델과 미등록 자리표시 1개를 모바일 390px·데스크톱 1280px × 라이트·다크에서 확인하며 이미지 디코딩 완료 후 전체 화면 4장과 기본 model-31–41 중 등록된 9개 카드 36장(`--cards model-31,model-33`으로 선택 가능)을 저장합니다. 모든 공구가 행의 높이(40px 이하), 정사각 이미지 디코딩, 같은 행 카드 높이, 자리표시와 가로 넘침을 검사합니다. model-32·39는 기준 내 공식 썸네일을 확보하지 못해 자리표시를 유지합니다. 참조 사진은 임시 확인 후 삭제하며 저장소에 보관하지 않습니다. 서버 축소 요청의 제한은 배치 1 제작 기록에 남겼습니다.
 
-## Linux 로컬 수집함과 사이트 현황
+## 구현 기록 (참고용)
 
-신규 3경로(auto_discovery / browser_extract / manual_clip)는 [독립 작업기](crawler/README.md#독립-로컬-수집함)가 소유합니다. Chrome 수동 담기는 [확장 안내](tools/chrome-clipper/README.md)를 따릅니다. 로컬 SQLite와 마이그레이션은 `crawler/` 아래에 있고 Workers 번들에 포함하지 않습니다. AI는 필수 의존성이 아니며 공개 API나 게시 테이블과 연결하지 않습니다.
+아래는 과거 구현·조사 시점의 기록입니다. 현재 설정·리소스 상태나 이번 문서 정리에서 실행한 작업을 뜻하지 않습니다. 현재 로컬 절차는 위의 로컬 실행 절을 따릅니다.
 
-사이트에는 **건수 스냅샷만** 저장합니다. `migrations/0007_collector_status.sql` 적용과 COLLECTOR_STATUS_TOKEN 바인딩은 운영자가 별도로 수행합니다. URL·원문·셀러·근거는 사이트로 보내지 않습니다.
+마이그레이션 `0005_users.sql`(users, user_identities, sessions)은 CREATE만 있는 add-only입니다. **로컬(`npm run db:migrate`)에만 적용했고 운영 D1 적용은 운영자가 따로 합니다.** 세션 토큰은 해시만 저장합니다(30일).
 
-| API | 권한 | 동작 |
-| --- | --- | --- |
-| POST `/api/v1/collector/status` | 별도의 COLLECTOR_STATUS_TOKEN | 작업기별 단조 버전 스냅샷 접수 |
-| GET `/api/v1/admin/collection-status` | ADMIN_TOKEN | 다섯 상태·생성/수신 시각·지연 여부 |
+`0011_deal_lifecycle.sql`은 추가 전용 마이그레이션으로 기존 공구도 v1 publish 이력을 보존합니다. **로컬 D1에만 `npm run db:migrate`로 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
 
-`/admin`은 후보(discovered)·원문 확인(source_check_needed)·중복 제외(dedup_excluded)·검증 완료(verified_waiting)·공개 대기(ready_to_publish)를 표시합니다. 미수신은 **미동기화**, 생성 후 1시간이 지난 현황은 **동기화 지연**으로 표시합니다. 미수신을 0건으로 보이지 않습니다. 여러 작업기는 각각 표시하며 고유 자료량으로 합산하지 않습니다. 같은 버전의 다른 payload는 409, 이전 버전은 최신 현황을 바꾸지 않습니다.
+`0010_seller_onboarding.sql`은 추가 전용 마이그레이션입니다. **로컬(`npm run db:migrate`)에만 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
 
-`ready_to_publish`는 현재 묶음의 근거 버전으로 사실 검토·공개 검토를 마친 상태입니다. 실제 게시를 실행하지 않습니다. 기존 Instagram ingest → 관리자 승인 → deals 경로와 과거 external_candidates는 별개로 유지합니다.
+`0009_normalize_deal_timestamps.sql`은 기존 공구의 유효한 시작·종료를 함께 UTC로 바꾸는 전진 마이그레이션입니다. 잘못된 날짜나 역전된 일정은 원문 그대로 남겨 화면에 일정 미확인으로 표시합니다(이 행의 SQL 정렬은 기존 문자열 기준). **로컬(`npm run db:migrate`)에만 적용하고 운영 D1 적용은 운영자가 따로 합니다.**
 
-추가 명령: `npm run collector:worker -- serve`, `npm run collector:worker -- discover --dry-run`, `npm run collector -- report --json`, `npm run build:clipper`. 검증 명령은 기존 lint·typecheck·test·build·build:worker와 build:clipper입니다. 테스트는 외부 네트워크/브라우저를 차단하며 실제 SQLite 파일 복구·트랜잭션 실패·자식 프로세스 종료·확장 재시작을 검증합니다.
+`0007_collector_status.sql` 적용과 COLLECTOR_STATUS_TOKEN 운영 바인딩은 운영자가 별도로 수행하도록 안내했습니다. 로컬 수집함 DB와 사이트 D1을 연결하는 작업이 아닙니다.
 
-이번 근거 정리에서는 공식가 확인 12개, 미확보 29개(접속 실패 16개)로 공개 공식가가 줄어듭니다. 트립트랩 오크 정상가는 기존 470,000원에서 공식 본문 510,000원으로 바뀝니다. 접속 실패 URL은 시도 기록으로만 남기고 출처 링크를 비웁니다. 기존 수입사 정보는 접속 오류만으로 삭제하지 않고 재확인 실패를 표시합니다. 세대·국내 정식 구성도 본문에서 확정하지 못하면 명시적 미확인 객체로 기록합니다.
+41개 모델은 2026-10-23 공식 페이지 본문 확인을 시도하여 읽은 정상가와 확인 불가 상태를 구분했습니다. 이번 근거 정리에서는 공식가 확인 12개, 미확보 29개(접속 실패 16개)로 공개 공식가가 줄어듭니다. 트립트랩 오크 정상가는 기존 470,000원에서 공식 본문 510,000원으로 바뀝니다. 접속 실패 URL은 시도 기록으로만 남기고 출처 링크를 비웁니다. 기존 수입사 정보는 접속 오류만으로 삭제하지 않고 재확인 실패를 표시합니다. 세대·국내 정식 구성도 본문에서 확정하지 못하면 명시적 미확인 객체로 기록합니다. 세부 근거는 [모델 근거 기록](docs/model-evidence-2026-10-23.md)에 있습니다.
+
+OAuth 구현 때 공급자 콘솔 설정은 수행하지 않았습니다. Instagram 상품 이미지 URL 구현은 R2에 저장하지 않았으며, 현재도 ingest 업로드 계약이 없습니다. CDN 직접 표시 계약은 현재 API 설명을 따릅니다.
+
+공식 참조·구성품·세부 경로·시각 검수와 서버 축소 요청 제한은 [배치 1 제작 기록](docs/model-illustrations-batch-1.md), [배치 2 제작 기록](docs/model-illustrations-batch-2.md), [배치 3 제작 기록](docs/model-illustrations-batch-3.md), [배치 4 제작 기록](docs/model-illustrations-batch-4.md)에 있습니다.
