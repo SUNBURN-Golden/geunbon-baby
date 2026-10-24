@@ -1,6 +1,12 @@
-# 아가마중 Instagram 수집 worker v2
+# 아가 마중 Linux 수집 시스템
 
-별도 Linux 머신에서 **Node.js 22 이상 + Playwright**로 실행합니다. 실제 Instagram 접속·로그인·수집은 이번 작업에서 실행하지 않았습니다. 본인 계정으로 접근이 허용된 콘텐츠를 수집해 `/api/v1/ingest` 검수 대기열로 보내며, 게시에는 관리자 승인이 필요합니다.
+사이트와 분리된 Linux 시스템의 운영 안내입니다. 저장소 루트의 [시스템 구성과 경계](../README.md#시스템-구성과-경계), [가격 원칙](../README.md#가격-원칙), [운영 일정](../README.md#운영-일정)을 현재 공통 기준으로 사용합니다. 화면 브랜드는 **아가 마중**, 워드마크는 **AGAMAJUNG**, 도메인은 **agamajoong**, 코드·기본 Instagram 사용자명은 **agamajung**입니다.
+
+- A. Instagram 수집 worker → [설치와 환경변수](#설치와-환경변수), [설정과 주기](#설정과-주기), [수집·팔로우·발견](#수집팔로우발견), [셀렉터 폴백과 진단](#셀렉터-폴백과-진단), [외부 공구 모음 이관](#외부-공구-모음-이관), [상태·건강 로그](#상태건강-로그), [운영](#운영), [검증](#검증), [상품 이미지 URL 계약](#상품-이미지-url-계약).
+- B. 독립 로컬 수집함 → [독립 로컬 수집함](#독립-로컬-수집함), [수집 건강 요약](#수집-건강-요약), [외부 출처 활성화 절차](#외부-출처-활성화-절차), [어댑터와 수집 제한](#어댑터와-수집-제한).
+- B-3. 건수 전송 전용 프로세스 → [건수 동기화](#건수-동기화). 과거 작업 기록은 [구현 기록 (참고용)](#구현-기록-참고용).
+
+Instagram worker는 **Node.js 22 이상 + Playwright**로 본인 계정에서 접근이 허용된 콘텐츠를 수집해 `/api/v1/ingest`의 pending 검수 대기열로 보냅니다. 게시에는 관리자 승인이 필요합니다. 독립 수집함은 자체 SQLite에 저장하고, sync만 건수 스냅샷을 사이트에 보냅니다. **가격을 절대 만들어 내지 않습니다 (never invent prices).** 수집한 단서를 공식가나 공구가로 자동 승격하지 않습니다. Workers Cron은 로그 stub이며 Playwright/OCR을 실행하지 않습니다. 사이트는 로컬 레코드·근거를 가져오지 않습니다. `tools/dev-daemon`·PM2 `agamajung-dev-daemon`은 별도 개발 도구입니다.
 
 ## 설치와 환경변수
 
@@ -12,7 +18,7 @@ OCR은 **기본 켜짐**이므로 tesseract와 한국어·영어 언어팩을 �
 
 | 변수 | 설명 |
 | --- | --- |
-| `AGAMAJUNG_IG_USER` | 로그인 사용자명. 기본값 `agamajung`. 핸들 사용을 권장합니다. 이메일이면 스토리 신호에서 본인 제외와 프로필 링크의 핸들 폴백이 동작하지 않습니다. |
+| `AGAMAJUNG_IG_USER` | 로그인 사용자명. 기본값 `agamajung`. 이메일 대신 핸들을 사용하세요. 이메일이면 스토리 신호에서 본인 제외와 프로필 링크의 핸들 폴백이 동작하지 않습니다. |
 | `AGAMAJUNG_IG_PASSWORD` | 로그인 비밀번호. 저장된 세션이 유효하면 생략 가능 |
 | `AGAMAJUNG_API_URL` | API origin. localhost 외에는 HTTPS 필수 |
 | `INGEST_TOKEN` | 수집 전용 Bearer 토큰. ADMIN_TOKEN과 분리 |
@@ -43,7 +49,7 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 
 불리언은 문자열이 아닌 JSON `true`/`false`만 허용하며, 계정 객체의 알 수 없는 키는 거부합니다. 선택 필드는 키를 생략한 경우에만 `collect_images`는 true, `follow.allow_unverified`는 false, `brand`/`note`는 빈 문자열, `ocr.langs`는 `kor+eng`을 적용합니다(`null`은 오류). 계정의 `handle`·`scope`·`verified`·`follow`와 설정의 `discovery.enabled`·`ocr.enabled`는 필수입니다. `export-account` 조각을 붙여 넣을 때는 `scope`(`global` 또는 `kr`)를 추가하세요. `AGAMAJUNG_OCR`은 미설정·빈 값이면 파일 값을 유지하고 `0`·`1` 외의 값은 거부합니다.
 
-- `config/accounts.json`: Stokke, BabyBjorn, Bugaboo, Nuna, Joie, Cybex, egg, D.THRONE 시드와 `#공구`, `#육아템공구`, `#스토케공구`, `#팔이피플` 등의 발견 태그. 기존 설정의 `verified: true` 계정만 기본 방문·팔로우 대상입니다. 미확인 한국 계정은 운영자가 핸들을 확인한 뒤 활성화합니다. 이번 작업에서 핸들을 실시간 검증하지 않았습니다. 공구 셀러 계정(`brand`가 빈 문자열)은 `collect_images: false`로 등록해 아이 얼굴이 담길 수 있는 이미지 URL을 보내지 않습니다. `collect_images`를 생략하면 기본값은 true이며, 시드에 없이 손으로 팔로우한 셀러도 이미지가 수집되므로 시드에 등록해야 합니다. 핸들은 대소문자를 구분하지 않고 중복이면 실행 전에 오류로 거부합니다.
+- `config/accounts.json`: Stokke, BabyBjorn, Bugaboo, Nuna, Joie, Cybex, egg, D.THRONE 시드와 `#공구`, `#육아템공구`, `#스토케공구`, `#팔이피플` 등의 발견 태그. 기존 설정의 `verified: true` 계정만 기본 방문·팔로우 대상입니다. 미확인 한국 계정은 운영자가 핸들을 확인한 뒤 활성화합니다. 공구 셀러 계정(`brand`가 빈 문자열)은 `collect_images: false`로 등록해 아이 얼굴이 담길 수 있는 이미지 URL을 보내지 않습니다. `collect_images`를 생략하면 기본값은 true이며, 시드에 없이 손으로 팔로우한 셀러도 이미지가 수집되므로 시드에 등록해야 합니다. 핸들은 대소문자를 구분하지 않고 중복이면 실행 전에 오류로 거부합니다.
 - `config/settings.json`: 속도·한도·OCR·재확인 주기·공유 계정 휴식 시간을 관리합니다. 상한은 0으로 설정해 해당 행동을 끌 수 있습니다. 지연 범위는 양수이며 최솟값 ≤ 최댓값이어야 합니다.
 - `quiet_windows`: 휴식 시간 객체의 배열입니다. 공유 계정을 쓰는 다른 두 봇을 위해 매일 **06:45 포함 ~ 08:00 제외, 13:00 포함 ~ 14:00 제외(KST)** 동안 브라우저 실행·로그인·팔로우·모든 스캔을 멈춥니다. 각 객체는 `{ "start": "06:45", "end": "08:00", "timezone": "Asia/Seoul", "jitter_ms": [1000, 30000] }` 형식이며 두 기본 시간 모두 지터는 1~30초입니다. 키가 없으면 이전 `quiet_window` 객체를 하나짜리 배열로 읽고, 두 키 모두 없으면 위 두 시간을 적용합니다. 두 키가 함께 있으면 `quiet_windows`가 우선하며, 빈 배열 `[]`은 휴식을 끕니다.
 - 겹치거나 맞닿은 시간은 자정 경계를 포함해 하나로 합칩니다. 합친 시간의 마지막 종료까지 기다린 뒤, 구성 시간들의 지터 최솟값 중 가장 큰 값과 최댓값 중 가장 큰 값 사이에서 한 번만 지터를 뽑아 더합니다. 합친 시간이 하루 전체를 덮으면 재개하지 않고 종료 요청을 기다립니다. 실행 중에는 **다음 합친 시간의 시작**에 타이머로 브라우저를 닫고, 각 페이지/셀렉터 호출 직전에도 시각을 확인합니다. 휴식 후 새 브라우저에서 로그인하고 사이클을 다시 시작하며, 중단된 사이클은 `AGAMAJUNG_ONCE=1`에서도 완료된 사이클로 세지 않습니다.
@@ -62,18 +68,18 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 
 ## 셀렉터 폴백과 진단
 
-- 게시물 링크는 `/p/CODE/`, `/reel/CODE/` 및 `/handle/p/CODE/`, `/handle/reel/CODE/`를 같은 원문 URL로 정규화합니다. 예약 경로·잘못된 핸들은 제외합니다. 프로필 그리드의 핸들 포함 URL이 기존 미스 원인이라는 설명은 가설이며, 다음 실행의 `anchors`로 확인해야 합니다.
+- 게시물 링크는 `/p/CODE/`, `/reel/CODE/` 및 `/handle/p/CODE/`, `/handle/reel/CODE/`를 같은 원문 URL로 정규화합니다. 예약 경로·잘못된 핸들은 제외합니다. 실제 URL 형태와 `anchors` 진단을 함께 확인하세요.
 - 캡션은 `article h1` → JSON-LD의 `articleBody`/`caption` → `article` 본문 → `main` 본문 → `meta[name="description"]`/`og:description` 순서로 최대 6,000자를 읽습니다. 잘릴 수 있는 meta는 마지막 대안입니다. JSON-LD 객체·배열·`@graph`를 지원하며 잘못된 JSON은 무시합니다.
 - 작성자는 기존 DOM 링크 세 후보 → JSON-LD `author.url`(검증된 Instagram 프로필), `author.alternateName`(선행 `@` 제거), `author.identifier.value` → description의 `- handle on ` 순서입니다. identifier는 `propertyID`가 `username` 또는 `handle`인 경우만 사용해 내부 `User ID` 오인을 막습니다. 모든 결과를 프로필 핸들로 검증합니다.
 - 스토리 트레이는 기존 `/stories/` 링크를 먼저 읽습니다. 유효한 링크가 하나라도 있으면 alt·aria-label 대안을 읽지 않습니다. 링크가 없으면 `main`의 버튼/목록 이미지 alt → 버튼 aria-label에서 한국어·영어 프로필 사진 이름을 읽으며, `article` 안의 피드 아바타는 제외합니다. 컨테이너 후보에서도 `article` 내부를 제외하고 이미지 alt가 3개 이상인 첫 `main ul`로 제한하며, 없으면 `main` 전체를 사용합니다. 로그인 핸들은 제외하고 중복 없이 최대 30개를 반환합니다.
 - 로그인 프로필 링크는 접근성 이름 → 프로필 SVG가 있는 앵커 → 로그인 핸들과 일치하는 href → 로그인 핸들의 프로필 사진이 있는 nav 앵커 순서입니다. 모두 실패해도 로그인 식별자가 유효한 핸들이면 그 프로필로 진행하고 `following_profile_fallback`(`via: username`)을 기록합니다. 이메일이면 이 핸들 기반 대안과 본인 스토리 제외를 생략하므로 `AGAMAJUNG_IG_USER`에는 핸들을 권장합니다.
 - 새 셀렉터 폴백은 속성·본문만 읽으며 클릭·탐색·입력을 하지 않습니다. 기존 탐색 뒤 보안확인 검사와 즉시 중단 정책은 유지합니다.
 - `selector_miss`는 발견 캡션/작성자 누락을 각각 `discovery_caption`/`discovery_author`로 기록합니다(둘 다 없으면 두 이벤트). `profile_posts`/`discovery_posts`에는 조회한 앵커 수 `anchors`가 붙습니다. `anchors > 0`이면 CSS가 앵커를 찾았으므로 URL 형태를, `0`이면 CSS 자체를 점검합니다. 정규화 가설의 확인에는 이후 실제 수집 결과도 함께 확인해야 합니다.
-- 전송 성공 이벤트 `post_sent`/`story_seen`은 가격 제안 존재 여부인 `price_found` boolean만 추가합니다. 캡션·가격 값은 건강 로그에 남기지 않습니다. 다음 예약 실행에서 `queue.size`와 `account_visit`, `post_sent.price_found` 및 남은 미스 스코프를 확인하세요. 현재 기본 설정은 verified 12계정을 한 사이클에 큐에 넣습니다. 실제 방문 수는 시간당 한도·휴식·보안 중단의 영향을 받습니다.
+- 전송 성공 이벤트 `post_sent`/`story_seen`은 가격 제안 존재 여부인 `price_found` boolean만 추가합니다. 캡션·가격 값은 건강 로그에 남기지 않습니다. 다음 예약 실행에서 `queue.size`와 `account_visit`, `post_sent.price_found` 및 남은 미스 스코프를 확인하세요. 기본 설정의 verified 계정이 사이클 큐 대상입니다. 실제 방문 수는 시간당 한도·휴식·보안 중단의 영향을 받습니다.
 
 ## 외부 공구 모음 이관
 
-공개 외부 수집은 아래 독립 로컬 작업기로 이관했습니다. Instagram 프로세스는 외부 수집을 실행하지 않습니다. 구형 `AGAMAJUNG_EXTERNAL_DRY_RUN=1`은 주입 환경변수·`.env.crawler` 모두 이관 안내 후 설정/인증/Instagram 접근 전에 종료하며, `0`·`1`·빈 값 외에는 시작 전 종료코드 1로 거부합니다. 기존 `config/external-sources.json`은 구형 파서의 호환 자료이며 실행 설정은 `config/collector.json`입니다. 검토 전 사이트는 disabled로 출하합니다. 기존 사이트 D1 external_candidates는 과거 조회·dismiss만 유지하며 신규 건수에 합산하지 않습니다.
+공개 외부 수집은 아래 독립 로컬 작업기로 이관했습니다. Instagram 프로세스는 외부 수집을 실행하지 않습니다. 구형 `AGAMAJUNG_EXTERNAL_DRY_RUN=1`은 주입 환경변수·`.env.crawler` 모두 이관 안내 후 설정/인증/Instagram 접근 전에 종료하며, `0`·`1`·빈 값 외에는 시작 전 종료코드 1로 거부합니다. 기존 `config/external-sources.json`은 구형 파서의 호환 자료이며 실행 설정은 `config/collector.json`입니다. 검토 전 사이트는 disabled로 출하합니다. 사이트의 legacy `POST /api/v1/ingest` + `kind: "external_listing"`은 INGEST_TOKEN으로 **현재도 쓰기 가능**합니다. `lib/api.ts`는 새 `external_candidates` 후보를 삽입하거나 정규화 URL이 같은 `candidate` 행의 제목·본문·판매자 단서·가격·일정·최근 확인 시각을 갱신합니다. `dismissed` 행은 바꾸지 않으며 둘 다 202와 id/status를 반환합니다. `crawler/lib/ingest.ts`는 이 전송과 candidate/dismissed 응답을 계속 지원하지만 현재 Instagram 실행부·신규 로컬 수집함은 이 경로로 외부 후보를 보내지 않습니다. 관리자는 GET `/api/v1/admin/candidates`와 POST `/api/v1/admin/candidates/:id`의 `{ "action": "dismiss" }`만 사용할 수 있습니다. 후보를 공구로 승격하는 경로는 없고 **price_hint/price_raw는 공구가나 공식가로 표시되지 않습니다.** 공개 API/화면은 후보 테이블을 읽지 않으며 신규 로컬 건수에도 합산하지 않습니다.
 
 ## 상태·건강 로그
 
@@ -94,6 +100,8 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 
 ## 운영
 
+전체 기본 일정은 루트의 [운영 일정](../README.md#운영-일정)을 따릅니다. PM2 예약 실행과 systemd 연속 실행은 **둘 중 하나만** 선택합니다. 공유 계정은 브라우저에서 로그아웃하지 않습니다.
+
 `agamajung-crawler.service` 주석대로 전용 사용자·비밀 환경파일·Node 22·브라우저를 준비한 뒤 단위 파일을 설치합니다. systemd는 ProtectHome을 사용하므로 주석에 지정한 `PLAYWRIGHT_BROWSERS_PATH`에 브라우저를 설치해야 합니다. 쓰기 경로는 crawler 아래로 제한합니다.
 
 ```sh
@@ -101,7 +109,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now agamajung-crawler
 ```
 
-pm2를 사용할 때도 같은 환경변수를 비밀 저장소에서 주입하거나 루트 `.env.crawler`를 준비합니다. pm2 자체는 파일을 읽지 않지만 크롤러가 시작 시 읽습니다. 주입된 환경변수 변경 후 `pm2 restart agamajung-crawler --update-env`를 실행하세요. 주입된 값은 파일보다 우선하므로 기존 이메일 아이디도 `agamajung`으로 수정해야 합니다.
+pm2를 사용할 때도 같은 환경변수를 비밀 저장소에서 주입하거나 루트 `.env.crawler`를 준비합니다. pm2 자체는 파일을 읽지 않지만 크롤러가 시작 시 읽습니다. 주입된 환경변수 변경 후 `pm2 restart agamajung-crawler --update-env`를 실행하세요. 주입된 값은 파일보다 우선하므로 `AGAMAJUNG_IG_USER`가 의도한 핸들인지 확인하세요. 기본값은 `agamajung`입니다.
 
 ```sh
 pm2 start crawler/ecosystem.config.cjs
@@ -109,9 +117,9 @@ pm2 start crawler/ecosystem.config.cjs
 
 pm2는 JavaScript 진입점 `crawler/run.mjs`를 저장소의 Node 22 인터프리터와 `node_args: '--import tsx'`로 실행합니다. TypeScript 자동 인터프리터 감지를 피하면서 로컬 `tsx`로 `index.ts`를 불러옵니다. 설정 변경을 적용할 때도 위 ecosystem 파일을 사용하세요.
 
-pm2 설정은 `cron_restart: '30 9,20 * * *'`, `autorestart: false`, `AGAMAJUNG_ONCE=1`입니다. 성공·실패·차단 후 모두 다음 예약까지 종료 상태를 유지합니다. 메모리/파일 변경 재시작도 사용하지 않습니다. 두 공유 계정 휴식 시간은 `AGAMAJUNG_QUIET_WINDOWS=06:45-08:00,13:00-14:00`으로 고정합니다.
+pm2 설정은 `cron_restart: '30 9,20 * * *'`, `autorestart: false`, `AGAMAJUNG_ONCE=1`, `stop_exit_codes: [75]`입니다. 성공·실패·차단 후 모두 다음 예약까지 종료 상태를 유지합니다. 메모리/파일 변경 재시작도 사용하지 않습니다. 두 공유 계정 휴식 시간은 `AGAMAJUNG_QUIET_WINDOWS=06:45-08:00,13:00-14:00`으로 고정합니다.
 
-**cron은 pm2 데몬의 시간대**를 사용합니다. 이 Linux 박스의 데몬 시간대는 `Asia/Seoul`이어야 합니다. 자식 환경의 `TZ`만 바꾸어서는 cron 시간대가 바뀌지 않습니다. 위 `pm2 start` 명령은 즉시 한 번 실행하므로, 다음 예약까지 기다려야 하는 최초 등록에는 사용하지 마세요. 그 경우 PM2 API의 `prepare`에 `status: 'stopped'`, `autostart: true`, `instances` 생략으로 등록하면 프로세스를 시작하지 않고 cron만 등록합니다. `autostart: false`는 이후 cron 실행까지 막으므로 사용하지 않습니다. 등록 후 `pm2 save`로 보존하세요. systemd 예시는 별도 연속 운영 방식이며 pm2와 함께 실행하지 않습니다.
+**cron은 pm2 데몬의 시간대**를 사용합니다. 이 Linux 박스의 데몬 시간대는 `Asia/Seoul`이어야 합니다. 자식 환경의 `TZ`만 바꾸어서는 cron 시간대가 바뀌지 않습니다. 위 `pm2 start` 명령은 즉시 한 번 실행하므로, 다음 예약까지 기다려야 하는 최초 등록에는 사용하지 마세요. 그 경우 PM2 API의 `prepare`에 `status: 'stopped'`, `autostart: true`, `instances` 생략으로 등록하면 프로세스를 시작하지 않고 cron만 등록합니다. `autostart: false`는 이후 cron 실행까지 막으므로 사용하지 않습니다. 등록 후 `pm2 save`로 보존하세요. systemd 예시는 `crawler/index.ts`를 직접 실행하는 연속 운영 방식이며 `Restart=on-failure`, `RestartSec=600`, `RestartPreventExitStatus=75`입니다. PM2와 함께 실행하지 않습니다. 독립 수집함의 discover/sync 타이머는 운영자가 별도로 관리하며 저장소에 포함되어 있지 않습니다.
 
 ## 검증
 
@@ -130,13 +138,13 @@ Linux 크롤러는 이미 열린 게시물·스토리에서 선택한 상품 이
 
 URL은 최대 4,096자의 HTTPS Instagram CDN(`cdninstagram.com`, `fbcdn.net` 및 실제 하위 도메인)만 허용하며 서명 쿼리를 그대로 유지합니다. 이미지 누락·잘못된 URL·선택 실패는 정상 캡션 전송을 막지 않고, OCR 가능한 영상 프레임·이미지도 URL 없이 수집할 수 있습니다. 휴식·halt 오류는 계속 전파합니다. 이미지 다운로드·추가 Instagram 탐색은 하지 않으며 URL·원시 미디어 오류를 로그에 남기지 않습니다. 기존 OCR 필수 조건·속도 제한·중복 처리·API 전달 성공 후 완료 기록을 유지합니다.
 
-이미지는 승인 전까지 비공개입니다. 관리자는 미리보기를 확인하고 “이미지 포함”을 해제해 텍스트만 게시할 수 있습니다(`include_image: false`, 기본 true). 공개 화면은 브라우저 직접 로딩과 `no-referrer`를 사용하며 실패한 이미지를 숨깁니다. **CDN URL은 만료될 수 있습니다.** ingest에 업로드 지원이 없어 이번 구현은 R2에 저장하지 않습니다. 영구 저장은 별도의 업로드·검수 후 공개 계약이 필요합니다. Playwright/OCR은 Linux에서만 실행하며 사이트·Workers로 옮기지 않습니다.
+이미지는 승인 전까지 비공개입니다. 관리자는 미리보기를 확인하고 “이미지 포함”을 해제해 텍스트만 게시할 수 있습니다(`include_image: false`, 기본 true). 공개 화면은 브라우저 직접 로딩과 `no-referrer`를 사용하며 실패한 이미지를 숨깁니다. **CDN URL은 만료될 수 있습니다.** 현재 ingest는 업로드를 지원하지 않아 R2에 저장하지 않습니다. 영구 저장은 별도의 업로드·검수 후 공개 계약이 필요합니다. Playwright/OCR은 Linux에서만 실행하며 사이트·Workers로 옮기지 않습니다.
 
 ## 독립 로컬 수집함
 
 DNS가 프록시 가상 IP를 반환하는 박스에서는 `private_network`로 실패할 수 있습니다. 기본 DNS 검사는 엄격하게 유지하며 운영자가 `COLLECTOR_TRUSTED_EGRESS_CIDRS="198.18.0.0/15"`처럼 신뢰 egress CIDR을 명시한 경우에만 해당 대역을 허용합니다(쉼표로 여러 개, 기본 빈 값). 루프백·링크로컬·멀티캐스트 등 금지 대역과 겹치는 설정은 거부하고, 모든 DNS 응답 주소와 리디렉트마다 재검사합니다. 신뢰 대역을 지정하면 그 대역 안에서는 주소 고정이 더 이상 보호하지 않으며, 프록시가 호스트명을 다시 해석하므로 DNS 리바인딩과 내부 호스트명 차단은 프록시 정책에 의존한다. 출처별 실패 원인은 `npm run collector -- jobs [--json]`, discover stdout의 `jobs`, stderr의 `discover source=` 출처별 종료 요약에서 확인합니다. 시도한 출처는 성공·실패 모두 한 줄씩 출력하며, `source_blocked`는 403/CAPTCHA 등 차단, `source_cooldown`은 429/5xx 냉각을 뜻합니다. 실패 작업은 `limits.failure_backoff_ms`(기본 300000, 5분) 후 다시 discover하면 재시도합니다. 이 설정이 없는 기존 운영 설정에도 기본값이 적용됩니다. job 요약은 로컬에만 남으며 사이트 스냅샷에 포함하지 않습니다.
 
-Node 22.20 이상 Linux에서 `src/local-worker.ts`를 실행합니다. Instagram 자격 증명·사이트 INGEST_TOKEN 없이 수집과 로컬 검토가 가능합니다. Playwright는 이 프로세스에서만 사용합니다. Cron/Workers에서 실행하지 않습니다. `.cache/collector.sqlite`와 전용 `migrations/0001_collection.sql`은 사이트 D1과 분리됩니다.
+Node 22.20 이상 Linux에서 `src/local-worker.ts`를 실행합니다. Instagram 자격 증명·사이트 INGEST_TOKEN 없이 수집과 로컬 검토가 가능합니다. 공개 브라우저 추출용 Playwright도 Linux의 독립 프로세스에서 실행합니다. Cron/Workers에서 실행하지 않습니다. `crawler/.cache/collector.sqlite`와 전용 `crawler/migrations/0001_collection.sql`은 사이트 D1과 분리됩니다. 세 경로는 auto_discovery(RSS/API/사이트맵/링크), browser_extract(승인된 공개 브라우저), manual_clip(Chrome MV3 확장)입니다. CLI 진입점은 `crawler/collector.mjs` → `crawler/src/cli.ts`이고, 확장은 [Chrome clipper README](../tools/chrome-clipper/README.md)를 따릅니다.
 
 ```sh
 npm run collector:worker -- serve
@@ -149,7 +157,7 @@ npm run collector:worker -- sync
 
 `serve`는 loopback 127.0.0.1:4318만 엽니다. COLLECTOR_INTAKE_TOKEN·COLLECTOR_REVIEW_TOKEN은 서로 다른 24자 이상의 비밀로 주입하고 COLLECTOR_EXTENSION_ORIGIN에는 등록한 Chrome 확장 origin을 넣습니다. Host·Origin·토큰·JSON 형식·32KB 크기 제한을 검사합니다. 인테이크 토큰은 예약/조회/시작/취소/제출만 가능하고, CLI·검토 API는 별도 검토 토큰이 필요합니다. 토큰을 인자로 넘기거나 로그로 남기지 마세요. COLLECTOR_DB/COLLECTOR_CONFIG로 전용 경로를 바꿀 수 있습니다. 예시 환경 파일은 값의 목록일 뿐 자동 로드하지 않습니다. 환경을 프로세스에 주입하세요.
 
-동일 DB를 쓰는 작업기는 하나만 실행합니다. 위 `discover`와 `sync`는 serve를 중지한 상태에서 실행하거나 운영 스케줄에서 순차 실행하세요. 수집을 자동 운영하려면 운영자가 Linux timer/cron으로 discover와 sync를 예약합니다. 이 저장소 변경은 운영 스케줄을 수정하지 않습니다. CLI 변경 명령은 실행 중인 serve API를 거치며 DB를 직접 수정하지 않습니다.
+동일 DB를 쓰는 작업기는 하나만 실행합니다. 위 `discover`와 `sync`는 serve를 중지한 상태에서 실행하거나 운영 스케줄에서 순차 실행하세요. 수집을 자동 운영하려면 운영자가 Linux timer/cron으로 discover와 sync를 예약합니다. 저장소는 해당 타이머를 제공하지 않습니다. CLI 변경 명령은 실행 중인 serve API를 거치며 DB를 직접 수정하지 않습니다.
 
 설정의 sources에는 출처 종류·브랜드 예산·origin/경로/쿼리 범위·시작점·어댑터·브라우저 승인/selector·공식 근거 권한·전문 보관 허가·재확인 간격·페이지 상한이 있습니다. 기본 소스는 모두 disabled입니다. 사이트별 robots/DOM과 범위를 운영자가 확인하고 아래 활성화 절차를 통과한 뒤 활성화하세요. 언론·인터뷰·블로그·행사·검색 링크도 발견 후보로 수용하지만 등록되지 않은 호스트를 방문하지 않습니다. 검색 쿼리를 생성하지 않으며 달력·페이지 조합을 제한합니다. 수동 담기에서 등록되지 않은 사이트는 선택한 공개 영역과 제한된 정형 사실만 받습니다.
 
@@ -227,8 +235,21 @@ npm run collector -- import-legacy-candidates --state <읽기전용-state.json-�
 
 DB 디렉터리는 0700, DB/WAL/SHM/journal은 0600이고 심볼릭 링크·잘못된 권한·손상·쓰기 실패는 중단합니다. BEGIN IMMEDIATE·외래키·WAL·synchronous FULL을 사용합니다. 강제 종료로 `.lock`이 남으면 기존 프로세스가 종료되었음을 운영자가 확인한 뒤 lock만 제거하고 재시작하세요. DB 오류를 빈 DB로 바꾸지 않습니다.
 
+### 건수 동기화
+
+전송 진입점은 `npm run collector:worker -- sync`(`crawler/src/local-worker.ts` → `crawler/src/status-sync.ts`)이며 사이트의 `POST /api/v1/collector/status`만 호출합니다. 별도 동기화 프로세스로 실행하고 같은 DB의 serve/discover와 동시에 실행하지 않습니다.
+
 sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. 전송 전에 검토 만료와 재확인 건수를 갱신하고, 최신 스냅샷을 만든 지 15분 이상 지났으면 더 높은 버전의 새 스냅샷을 추가합니다. 빈 수집함의 첫 sync도 0건인 버전 1을 만듭니다. 운영 타이머는 `npm run collector:worker -- sync`를 15분 이하 간격으로 실행하세요. 사이트는 스냅샷 생성 후 60분을 넘기면 동기화 지연으로 표시합니다. 대기 중인 항목은 변경하지 않고 새 버전만 추가하므로 응답 유실 후에도 같은 payload를 재전송합니다.
 
 스냅샷은 건수·보조 지표·작업기 ID·버전·시각만 포함하며 실패하면 유지/재전송합니다. outbox는 리디렉트 없는 `200 application/json {data:{worker_id,version}}` 응답에서 일치하는 문자열 worker_id와 전송 버전 이상의 안전한 정수 version을 확인한 뒤에만 삭제합니다. 잘못된 receipt·본문 초과·본문 읽기 실패·응답 유실은 재전송 대상으로 남습니다. 사이트 버전이 로컬 카운터보다 높아도 삭제와 후속 전송을 계속하며 sync CLI JSON에 `site_version_ahead: true, site_version`으로 보고합니다. 카운터 자체는 바꾸지 않습니다. 오류 진단은 고정 코드만 사용하고 토큰·응답 본문·원래 전송 오류는 출력하지 않습니다. 실제 수집함·근거는 Linux에 남습니다. 자세한 Chrome 권한/재클릭 경계는 [확장 README](../tools/chrome-clipper/README.md)를 참고하세요.
 
 로컬 DB를 새로 만들면 현황 버전은 1부터 다시 시작합니다. 같은 `worker_id`의 이전 높은 버전이 D1에 남아 있으면 새 현황은 반영되지 않습니다. DB 복구는 버전 메타데이터를 포함한 백업을 사용하세요. DB를 재구축할 때는 `COLLECTOR_CONFIG`의 `worker_id`를 새 식별자로 바꾸고, 관리자 화면에서 이전 작업기를 구분하세요. 서로 다른 작업기의 건수는 자동 합산하지 않습니다.
+
+## 구현 기록 (참고용)
+
+다음 문장은 과거 구현 당시의 기록이며 현재 운영·접속 상태를 증명하지 않습니다.
+
+- 실제 Instagram 접속·로그인·수집은 이번 작업에서 실행하지 않았습니다.
+- 이번 작업에서 시드 계정 핸들을 실시간 검증하지 않았습니다. 기존 환경의 이메일 사용자명을 핸들로 바꾸도록 안내했습니다. 현재 기본값은 `agamajung`입니다.
+- 프로필 그리드의 핸들 포함 URL이 기존 selector 미스 원인이라는 설명은 가설이었으며, 이후 실제 실행의 anchors와 수집 결과로 확인하도록 했습니다.
+- 이미지 URL 전달 당시 기록: “업로드 지원이 없어 이번 구현은 R2에 저장하지 않습니다.” 현재 계약도 CDN URL 직접 표시이며 영구 저장은 별도 설계 대상입니다.
