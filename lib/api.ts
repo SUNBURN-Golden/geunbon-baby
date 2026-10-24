@@ -3,7 +3,7 @@ import { receiveStatus, collectionStatus } from './collection-status';
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
 import { dealsCopy } from './deals-copy';
-import { comparison, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal, type Seller, type AdminDeal, type DealRevision } from './data';
+import { comparison, displayableOfficialPrice, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal, type Seller, type AdminDeal, type DealRevision } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
 export const MIN_SERVICE_TOKEN_LENGTH = 24;
 // Header values are trimmed in transit; surrounding whitespace usually means a paste error.
@@ -372,13 +372,14 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     if (path === 'brands') return json({ data: await all(env.DB, 'SELECT brand AS name, COUNT(*) AS model_count FROM models GROUP BY brand ORDER BY brand') });
     if (path === 'models') {
       const u = new URL(request.url); const brand = u.searchParams.get('brand'); const category = u.searchParams.get('category');
-      return json({ data: await all(env.DB, `SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE (? = '' OR brand = ?) AND (? = '' OR category = ?) ORDER BY rowid`, brand ?? '', brand ?? '', category ?? '', category ?? '') });
+      const models = await all<Omit<Model, 'note'>>(env.DB, `SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE (? = '' OR brand = ?) AND (? = '' OR category = ?) ORDER BY rowid`, brand ?? '', brand ?? '', category ?? '', category ?? '');
+      return json({ data: models.map(model => ({ ...model, official_price: displayableOfficialPrice(model) })) });
     }
     if (parts[0] === 'models' && parts.length === 2) {
       const model = await env.DB.prepare(`SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE id = ?`).bind(parts[1]).first<Omit<Model, 'note'>>();
       if (!model) return json({ error: '모델을 찾을 수 없습니다' }, 404);
       const deals = await all<Deal>(env.DB, `${PUBLISHED_DEALS} AND model_id = ? ORDER BY starts_at, id`, model.id);
-      return json({ data: { ...model, comparison: comparison(model, deals) } });
+      return json({ data: { ...model, official_price: displayableOfficialPrice(model), comparison: comparison(model, deals) } });
     }
     if (path === 'deals' || path === 'calendar') return json({ data: (await all<Deal>(env.DB, `${PUBLISHED_DEALS} ORDER BY starts_at, id`)).map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })) });
     if (path === 'sellers') return json({ data: await all(env.DB, `SELECT ${PUBLIC_SELLER_COLUMNS} FROM sellers ORDER BY name`) });

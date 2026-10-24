@@ -28,7 +28,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
         <section>
           <p className="eyebrow">02 / OFFICIAL</p>
           <h2>{siteCopy.officialPrice}</h2>
-          <h3>{money(m.official_price)}</h3>
+          <h3>{money(prices.official.price)}</h3>
           <p>{m.importer}</p>
           <p className="muted">{m.checked} · {verificationLabel(m.verify_level)}</p>
           {m.source_url && <a href={m.source_url} target="_blank" rel="noopener noreferrer">{siteCopy.officialSource}</a>}

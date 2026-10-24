@@ -18,6 +18,12 @@ const legacy0004Result: Record<string, string> = {
 };
 const cleanup = new URL('../migrations/0004_official_groupbuy_only.sql', import.meta.url);
 
+test('every non-null seeded official price has page_body verification', () => {
+  for (const model of models) {
+    if (model.kr_official_price_krw !== null) expect(model.verify_level, model.model).toBe('page_body');
+  }
+});
+
 async function execute(db: D1Database, sql: string) {
   for (const statement of sql.split(';').filter(s => s.trim())) await db.prepare(statement).run();
 }

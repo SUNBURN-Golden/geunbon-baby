@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { DEAL_SELECT, dealTiming, formatDealDate, formatGap, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
-import { DealActions, DealCard, DealDetail, DealList, DealStateChip } from '../app/deals/_components';
+import { DealActions, DealCard, DealDetail, DealList, DealStateChip, PriceGap } from '../app/deals/_components';
 import { DealCard as CalendarDealCard } from '../app/shared';
 import DealNotFound from '../app/deals/[id]/not-found';
 import DealsPage, { dynamic as listDynamic } from '../app/deals/page';
@@ -27,11 +27,36 @@ const fixture: DealWithContext & { model_note: string } = {
   verify_level: 'manual', checked: '2026-10-20T16:00:00Z',
   starts_at: '2026-10-20T00:00:00Z', ends_at: '2026-10-22T14:59:59Z',
   model_joined_id: 'model-1', model_name: 'Example model', model_official_price: 430000,
-  model_checked: '2026-10-18', model_verify_level: 'search_summary', model_note: 'Other retailer: 123,456 KRW; used: 98,765 KRW.',
+  model_checked: '2026-10-18', model_verify_level: 'page_body', model_note: 'Other retailer: 123,456 KRW; used: 98,765 KRW.',
   seller_joined_id: 'seller-1', seller_name: 'Example seller',
 };
 const card = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealCard, { deal: { ...fixture, ...patch }, nowMs }));
 const detail = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealDetail, { deal: { ...fixture, ...patch }, nowMs }));
+
+test.each(['page_text', 'search_summary'])('deal cards and details hide %s prices and all comparisons', model_verify_level => {
+  for (const render of [card, detail]) {
+    const html = render({ model_verify_level });
+    expect(html).toContain(dealsCopy.unknownOfficial);
+    expect(html).not.toContain('430,000');
+    expect(html).not.toContain('class="deal-gap');
+    expect(html).not.toContain('class="deal-tone');
+    expect(html).toContain('390,000');
+  }
+  const html = detail({ model_verify_level });
+  expect(html).toContain(dealsCopy.officialEvidence);
+  expect(html).not.toContain(dealsCopy.officialChecked);
+  expect(html).toContain('2026.10.18');
+  expect(html).toContain(model_verify_level === 'page_text' ? dealsCopy.pageText : dealsCopy.searchSummary);
+});
+
+test.each(['page_text', 'search_summary'])('PriceGap gates %s prices even when a caller supplies a gap', model_verify_level => {
+  const html = renderToStaticMarkup(createElement(PriceGap, {
+    deal: { ...fixture, model_verify_level }, gap: priceGap(400000, 430000),
+  }));
+  expect(html).toContain(dealsCopy.unknownOfficial);
+  expect(html).not.toContain('430,000');
+  expect(html).not.toContain('class="deal-gap');
+});
 
 describe('price comparisons', () => {
   test.each([
@@ -181,7 +206,7 @@ describe('server rendered deals UI', () => {
     const html = card();
     for (const copy of [dealsCopy.qualification, dealsCopy.dealChecked, dealsCopy.officialChecked,
       dealsCopy.dealEvidence, dealsCopy.officialEvidence,
-      dealsCopy.searchSummary, dealsCopy.manual, fixture.model_note!, '2026.10.21', '2026.10.18']) {
+      dealsCopy.pageBody, dealsCopy.manual, fixture.model_note!, '2026.10.21', '2026.10.18']) {
       expect(html).not.toContain(copy);
     }
     expect(html).not.toContain('<time');
@@ -192,7 +217,7 @@ describe('server rendered deals UI', () => {
     expect(html).toContain(dealsCopy.qualification);
     expect(html).toContain(dealsCopy.dealChecked);
     expect(html).toContain(dealsCopy.officialChecked);
-    expect(html).toContain(dealsCopy.searchSummary);
+    expect(html).toContain(dealsCopy.pageBody);
     expect(html).toContain(dealsCopy.manual);
     expect(html).not.toContain(fixture.model_note);
     expect(html).toContain('2026.10.21');
@@ -383,11 +408,20 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     expect(listDynamic).toBe('force-dynamic');
     expect(detailDynamic).toBe('force-dynamic');
     const clock = vi.spyOn(Date, 'now').mockReturnValue(nowMs);
-    expect(renderToStaticMarkup(await DealsPage())).toContain('/deals/deal-1');
+    const list = renderToStaticMarkup(await DealsPage());
+    expect(list).toContain('/deals/deal-1');
+    expect(list).toContain(dealsCopy.unknownOfficial);
+    expect(list).not.toContain('430,000');
+    expect(list).not.toContain('class="deal-gap');
+    expect(list).not.toContain('class="deal-tone');
     expect(clock).toHaveBeenCalledTimes(1);
     clock.mockClear();
     const html = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) }));
     expect(html).toContain(fixture.title);
+    expect(html).toContain(dealsCopy.unknownOfficial);
+    expect(html).not.toContain('430,000');
+    expect(html).not.toContain('class="deal-gap');
+    expect(html).not.toContain('class="deal-tone');
     expect(html).not.toContain('123,456');
     expect(html).not.toContain('234,567');
     expect(html).not.toContain('$799');

@@ -4,7 +4,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { memoryD1 } from './helpers/sqlite';
 import { handleApi } from '../lib/api';
 import { dealsCopy } from '../lib/deals-copy';
-import type { Model } from '../lib/data';
+import type { Model, comparison } from '../lib/data';
 import type { Env } from '../lib/db';
 const memory = memoryD1();
 let env: Env;
@@ -34,6 +34,34 @@ test('read API lists brands, models, comparison, sellers and calendar', async ()
   for (const path of ['brands', 'models', 'models/model-1', 'sellers', 'calendar']) assert.equal((await call(path)).status, 200);
   assert.equal((await call('models/not-found')).status, 404);
   assert.deepEqual((await (await call('models?brand=not-known')).json<ListResponse>()).data, []);
+});
+
+test.each(['page_text', 'search_summary', 'page_body'])('model APIs gate %s official prices and preserve verification metadata', async verify_level => {
+  await env.DB.prepare('UPDATE models SET official_price = 430000, verify_level = ? WHERE id = ?').bind(verify_level, 'model-1').run();
+  try {
+    type PublicModel = Omit<Model, 'note'> & { comparison?: ReturnType<typeof comparison> };
+    const expected = verify_level === 'page_body' ? 430000 : null;
+    for (const path of ['models', 'models?brand=Stokke', 'models?category=high_chair', 'models/model-1']) {
+      const response = await call(path);
+      assert.equal(response.status, 200);
+      const payload = await response.json<{ data: PublicModel | PublicModel[] }>();
+      const rows = Array.isArray(payload.data) ? payload.data : [payload.data];
+      assert.equal(rows.length, 1);
+      const row = rows[0];
+      assert.equal(row.official_price, expected);
+      assert.equal(row.verify_level, verify_level);
+      assert.equal(row.checked, '2026-10-20');
+      assert.equal(row.source_url, 'https://www.stokke.com/');
+      if (path === 'models/model-1') {
+        assert.deepEqual(row.comparison?.official, {
+          price: expected, verify_level, checked: '2026-10-20', source: 'https://www.stokke.com/',
+        });
+      }
+      if (expected === null) assert.ok(!JSON.stringify(payload).includes('430000'));
+    }
+  } finally {
+    await env.DB.prepare("UPDATE models SET official_price = NULL, verify_level = 'page_text' WHERE id = ?").bind('model-1').run();
+  }
 });
 test('invalid JSON and unsafe URLs are rejected before insertion', async () => {
   assert.equal((await call('ingest', 'POST', { ...ingest, source_url: 'javascript:alert(1)' }, env.INGEST_TOKEN)).status, 400);

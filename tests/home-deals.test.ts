@@ -26,7 +26,7 @@ beforeAll(async () => {
     for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
   }
   await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
-  await memory.db.prepare("INSERT INTO models VALUES ('model', 'Brand', 'Chair', 'high_chair', 'Importer', 500000, 'https://example.com/model', '2026-10-20', 'manual', '')").run();
+  await memory.db.prepare("INSERT INTO models VALUES ('model', 'Brand', 'Chair', 'high_chair', 'Importer', 500000, 'https://example.com/model', '2026-10-20', 'page_body', '')").run();
   // Deliberately insert in an order different from the required closing order.
   for (const [id, start, end] of [
     ['later', '2026-10-20T00:00:00Z', '2026-10-25T00:00:00Z'],
@@ -148,6 +148,16 @@ test('active cards preserve unknown prices, zero prices and comparison direction
     expect(html).toContain('정보 없음');
     expect(html).not.toContain('class="active-deal-gap"');
   }
+});
+
+test.each(['page_text', 'search_summary'])('home active cards hide %s prices and comparisons', async model_verify_level => {
+  const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+  const base = rows.find(deal => deal.id === 'soon')!;
+  const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, model_verify_level }], nowMs }));
+  expect(html).toContain(dealsCopy.unknownOfficial);
+  expect(html).toContain('400,000');
+  expect(html).not.toContain('500,000');
+  expect(html).not.toContain('class="active-deal-gap"');
 });
 
 test('/deals keeps active deals first and displays their count near the h1', async () => {

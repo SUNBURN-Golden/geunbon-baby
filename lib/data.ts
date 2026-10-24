@@ -9,10 +9,13 @@ export const unknownVerification = '확인 수준 정보 없음';
 export const verificationLabel = (level: string | null | undefined) =>
   level && Object.hasOwn(verification, level) ? verification[level] : unknownVerification;
 export const money = (value: number | null | undefined) => value == null ? '정보 없음' : `${value.toLocaleString('ko-KR')}원`;
+export const displayableOfficialPrice = (model: { official_price: number | null; verify_level: string | null }) =>
+  model.verify_level === 'page_body' && model.official_price !== null &&
+  Number.isSafeInteger(model.official_price) && model.official_price >= 0 ? model.official_price : null;
 export function comparison(model: Omit<Model, 'note'>, deals: Deal[]) {
   return {
     gonggu: deals.filter(d => d.model_id === model.id).map(d => ({ ...d, advertisement: true })),
-    official: { price: model.official_price, source: model.source_url, checked: model.checked, verify_level: model.verify_level },
+    official: { price: displayableOfficialPrice(model), source: model.source_url, checked: model.checked, verify_level: model.verify_level },
   };
 }
 // 외부 공구 모음 사이트. 허용 소스·호스트의 단일 출처(서버 검증, 관리자 화면, 크롤러 설정 검증이 함께 쓴다). 표시 순서가 곧 수집 순서다.
