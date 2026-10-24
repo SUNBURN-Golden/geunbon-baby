@@ -20,6 +20,7 @@ export const dealsCopy = {
   archived: "마지막으로 확인한 공동구매 가격이에요",
   primary: '원문에서 보기',
   secondary: "공식가격을 살펴봐요",
+  sellerTrust: '판매처 신뢰 정보를 살펴봐요',
   disclaimer: "아가 마중은 직접 판매하지 않아요. 최종 가격·조건은 판매처에서 확인해 주세요.",
   empty: "아직 등록된 공동구매가 없어요",
   missing: "찾으시는 공동구매 정보가 없어요",

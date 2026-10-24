@@ -31,6 +31,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <h2 id="letter-title">가격 소식지</h2>
             <p>{siteCopy.newsletterLead}</p>
           </section>
+          <nav aria-label="사이트 안내" className="footer-nav">
+            <Link href="/calendar">{siteCopy.calendarFooter}</Link>
+            <Link href="/sellers">{siteCopy.sellersFooter}</Link>
+          </nav>
           <div className="logo">{siteCopy.brand}</div>
           <p>{siteCopy.tagline}</p>
           <p>{siteCopy.transactionNotice}<br />{siteCopy.transactionTerms}</p>

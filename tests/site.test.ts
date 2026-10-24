@@ -7,6 +7,8 @@ import Layout, { metadata } from '../app/layout';
 import Models from '../app/models/page';
 import Detail from '../app/models/[id]/page';
 import Calendar from '../app/calendar/page';
+import Nav, { NavLinks } from '../app/nav';
+import { usePathname } from 'next/navigation';
 import { siteCopy } from '../lib/site-copy';
 import { dealsCopy } from '../lib/deals-copy';
 import { memoryD1 } from './helpers/sqlite';
@@ -18,7 +20,7 @@ vi.mock('../lib/db', async importOriginal => ({
 }));
 vi.mock('next/navigation', () => ({
   notFound: () => { throw new Error('NEXT_NOT_FOUND'); },
-  usePathname: () => '/models',
+  usePathname: vi.fn(() => '/models'),
   useSearchParams: () => new URLSearchParams(),
 }));
 const memory = memoryD1();
@@ -42,6 +44,7 @@ test('model list, detail and calendar show only supported prices with explicit l
   const list = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
   const detail = renderToStaticMarkup(await Detail({ params: Promise.resolve({ id: 'model-1' }) }));
   const calendar = renderToStaticMarkup(await Calendar());
+  expect(calendar).toContain('href="/sellers#trust-seller-1"');
   expect(list).toContain(siteCopy.officialLabel);
   expect(list).toContain('430,000');
   expect(detail.match(/<section>/g)).toHaveLength(2);
@@ -75,9 +78,24 @@ test('layout, metadata and sharing use the spaced brand and new description, ret
   expect(html).toMatch(/<a(?=[^>]*href="\/models")(?=[^>]*aria-current="page")[^>]*>/);
   expect(html).toContain('href="/models?by=brand"');
   expect(html).toContain(siteCopy.modelsNav);
+  const primaryNav = html.match(/<nav[^>]*aria-label="주요 메뉴"[\s\S]*?<\/nav>/)?.[0];
+  expect(primaryNav).toContain('href="/calendar"');
+  const footerNav = html.match(/<nav[^>]*aria-label="사이트 안내"[\s\S]*?<\/nav>/)?.[0];
+  expect(footerNav).toContain('href="/calendar"');
+  expect(footerNav).toContain('href="/sellers"');
   expect(html).not.toContain('기준가');
   expect(metadata.title).toEqual({ default: siteCopy.title, template: siteCopy.titleTemplate });
   expect(metadata.description).toBe(siteCopy.description);
   expect(metadata.openGraph).toMatchObject({ title: siteCopy.title, siteName: siteCopy.brand, description: siteCopy.description });
   expect(metadata.twitter).toMatchObject({ title: siteCopy.title, description: siteCopy.description });
+});
+
+test('calendar alone is current on its route and the server fallback has all five links', () => {
+  vi.mocked(usePathname).mockReturnValueOnce('/calendar');
+  const html = renderToStaticMarkup(createElement(Nav));
+  expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+  expect(html).toMatch(/<a(?=[^>]*href="\/calendar")(?=[^>]*aria-current="page")[^>]*>/);
+  const fallback = renderToStaticMarkup(createElement(NavLinks));
+  expect(fallback.match(/<a /g)).toHaveLength(5);
+  expect(fallback).toContain('href="/calendar"');
 });

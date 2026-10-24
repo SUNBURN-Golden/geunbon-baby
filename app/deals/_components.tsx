@@ -1,4 +1,4 @@
-import type { Deal } from '../../lib/data';
+import { sellerTrustHref, type Deal } from '../../lib/data';
 import { DealImage } from './_image';
 import Link from 'next/link';
 import { dealTiming, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
@@ -138,6 +138,8 @@ export function DealActions({ deal }: { deal: DealWithContext }) {
         <small id="deal-new-tab">{dealsCopy.newTab}</small>
       </div>
       {deal.model_joined_id && <Link className="deal-secondary" href={`/models/${encodeURIComponent(deal.model_id)}`}>{dealsCopy.secondary}</Link>}
+      {/* Native navigation hands fragment focus to the seller so Tab continues at its evidence. */}
+      {deal.seller_joined_id && <a className="deal-secondary" href={sellerTrustHref(deal.seller_joined_id)}>{dealsCopy.sellerTrust}</a>}
     </div>
   );
 }

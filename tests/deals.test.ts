@@ -1,10 +1,11 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { createElement } from 'react';
+import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { DEAL_SELECT, dealTiming, formatDealDate, formatGap, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
-import { DealCard, DealDetail, DealList, DealStateChip } from '../app/deals/_components';
+import { DealActions, DealCard, DealDetail, DealList, DealStateChip } from '../app/deals/_components';
+import { DealCard as CalendarDealCard } from '../app/shared';
 import DealNotFound from '../app/deals/[id]/not-found';
 import DealsPage, { dynamic as listDynamic } from '../app/deals/page';
 import DealDetailPage, { dynamic as detailDynamic } from '../app/deals/[id]/page';
@@ -124,6 +125,39 @@ describe('schedule and ordering', () => {
 });
 
 describe('server rendered deals UI', () => {
+  test.each([
+    {},
+    { starts_at: '2026-10-25T00:00:00Z', ends_at: '2026-10-26T00:00:00Z' },
+    { ends_at: '2026-10-21T02:00:00Z' },
+  ])('detail links to its seller evidence regardless of schedule (%j)', patch => {
+    expect(detail(patch)).toContain('href="/sellers#trust-seller-1"');
+  });
+
+  test('a missing seller keeps the unknown label without a trust link', () => {
+    const html = detail({ seller_joined_id: null, seller_name: null });
+    expect(html).toContain(dealsCopy.unknownSeller);
+    expect(html).not.toContain('/sellers#');
+    expect(html).not.toContain(dealsCopy.sellerTrust);
+  });
+
+  test('detail and calendar seller links use native anchors for fragment focus', () => {
+    function sellerLinks(node: ReactNode): ReactElement<{ href?: string; children?: ReactNode }>[] {
+      const found: ReactElement<{ href?: string; children?: ReactNode }>[] = [];
+      Children.forEach(node, child => {
+        if (!isValidElement<{ href?: string; children?: ReactNode }>(child)) return;
+        if (child.props.href?.startsWith('/sellers#')) found.push(child);
+        found.push(...sellerLinks(child.props.children));
+      });
+      return found;
+    }
+    for (const tree of [DealActions({ deal: fixture }), CalendarDealCard({ deal: fixture, nowMs })]) {
+      const links = sellerLinks(tree);
+      expect(links).toHaveLength(1);
+      expect(links[0].type).toBe('a');
+      expect(links[0].props.href).toBe('/sellers#trust-seller-1');
+    }
+  });
+
   test('list articles advertise and link their h2 to detail without purchase CTAs', () => {
     const html = card();
     expect(html).toContain('<article class="deal-card">');
