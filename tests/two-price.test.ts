@@ -10,7 +10,7 @@ import { NavLinks } from '../app/nav';
 import { DealCard } from '../app/shared';
 import { dealsCopy } from '../lib/deals-copy';
 import { siteCopy } from '../lib/site-copy';
-import type { Deal } from '../lib/data';
+import { verification, type Deal } from '../lib/data';
 import { memoryD1 } from './helpers/sqlite';
 
 const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined }));
@@ -105,12 +105,14 @@ test('navigation preserves all four destinations and identifies the official-pri
   expect(html).not.toContain('기준가');
 });
 
-test('unavailable evidence has no empty official-source link and preserves importer recheck notice', async () => {
-  await memory.db.prepare("UPDATE models SET source_url = '', official_price = NULL, verify_level = 'official_unpublished', importer = '기존 수입사 (기존 정보, 재확인 실패)' WHERE id = ?").bind('model-1').run();
+test.each(['기존 수입사 (기존 정보, 재확인 실패)', '미확인'])('unavailable evidence has neutral labels and preserves importer %s', async importer => {
+  await memory.db.prepare("UPDATE models SET source_url = '', official_price = NULL, verify_level = 'official_unpublished', importer = ? WHERE id = ?").bind(importer, 'model-1').run();
   try {
     const html = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
     expect(html).toContain('정보 없음');
-    expect(html).toContain('기존 정보, 재확인 실패');
+    expect(html).toContain(verification.official_unpublished);
+    expect(html).toContain(importer);
+    for (const text of ['미공개', '비공개', '>official_unpublished<', '430,000원']) expect(html).not.toContain(text);
     expect(html).not.toContain(`>${siteCopy.officialSource}</a>`);
     expect(html).not.toContain('href=""');
   } finally {

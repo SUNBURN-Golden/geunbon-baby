@@ -7,13 +7,19 @@ import { dealsCopy } from '../../lib/deals-copy';
 function verificationCopy(level: string | null) {
   switch (level) {
     case 'page_body': return dealsCopy.pageBody;
-    case 'official_unpublished': return dealsCopy.officialUnpublished;
+    case 'official_unpublished': return dealsCopy.officialUnconfirmed;
     case 'page_text': return dealsCopy.pageText;
     case 'search_summary': return dealsCopy.searchSummary;
     case 'manual': return dealsCopy.manual;
-    default: return dealsCopy.seedUnspecified;
+    case 'seed_unspecified': return dealsCopy.seedUnspecified;
+    default: return dealsCopy.unknownVerification;
   }
 }
+
+const knownDealPrice = (price: number | null) => price !== null && Number.isFinite(price) && price >= 0;
+const confirmedOfficial = (deal: DealWithContext) =>
+  deal.model_official_price !== null && Number.isFinite(deal.model_official_price) &&
+  deal.model_official_price > 0 && deal.model_verify_level !== 'official_unpublished';
 
 export function CheckedDate({ value }: { value: string | null }) {
   const formatted = formatDealDate(value);
@@ -36,7 +42,7 @@ export function DealStateChip({ timing }: { timing: Timing }) {
 }
 
 export function DealPrice({ deal, timing }: { deal: DealWithContext; timing: Timing }) {
-  const validPrice = deal.price !== null && Number.isFinite(deal.price) && deal.price >= 0;
+  const validPrice = knownDealPrice(deal.price);
   return (
     <div className="deal-price-block">
       <p className="deal-context">{dealsCopy.groupBuyPrice}</p>
@@ -60,7 +66,7 @@ export function PriceGap({ deal, gap, showContext = true }: { deal: DealWithCont
         <p className="deal-context">
           <WithDate label={dealsCopy.dealChecked}><CheckedDate value={deal.checked} /></WithDate> · {verificationCopy(deal.verify_level)}
           <br />
-          <WithDate label={dealsCopy.officialChecked}><CheckedDate value={deal.model_checked} /></WithDate> · {verificationCopy(deal.model_verify_level)}
+          <WithDate label={confirmedOfficial(deal) ? dealsCopy.officialChecked : dealsCopy.officialEvidence}><CheckedDate value={deal.model_checked} /></WithDate> · {verificationCopy(deal.model_verify_level)}
         </p>
       </>}
     </div>
@@ -118,8 +124,8 @@ export function DealFacts({ deal, timing }: { deal: DealWithContext; timing: Tim
       <div><dt>{dealsCopy.seller}</dt><dd>{deal.seller_name || dealsCopy.unknownSeller}</dd></div>
       {deal.model_joined_id && <div><dt>{dealsCopy.model}</dt><dd>{deal.model_name}</dd></div>}
       <div><dt>{dealsCopy.period}</dt><dd><DealPeriod deal={deal} timing={timing} /></dd></div>
-      <div><dt>{dealsCopy.dealChecked}</dt><dd><CheckedDate value={deal.checked} /> · {verificationCopy(deal.verify_level)}</dd></div>
-      {deal.model_joined_id && <div><dt>{dealsCopy.officialChecked}</dt><dd><CheckedDate value={deal.model_checked} /> · {verificationCopy(deal.model_verify_level)}</dd></div>}
+      <div><dt>{knownDealPrice(deal.price) ? dealsCopy.dealChecked : dealsCopy.dealEvidence}</dt><dd><CheckedDate value={deal.checked} /> · {verificationCopy(deal.verify_level)}</dd></div>
+      {deal.model_joined_id && <div><dt>{confirmedOfficial(deal) ? dealsCopy.officialChecked : dealsCopy.officialEvidence}</dt><dd><CheckedDate value={deal.model_checked} /> · {verificationCopy(deal.model_verify_level)}</dd></div>}
     </dl>
   );
 }
