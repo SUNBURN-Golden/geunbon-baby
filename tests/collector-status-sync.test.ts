@@ -1,8 +1,13 @@
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { fixture } from './helpers/collector';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fixture, intake, price, ready, expected, source } from './helpers/collector';
+import { memoryD1 } from './helpers/sqlite';
+import { handleApi } from '../lib/api';
+import type { Env } from '../lib/db';
 import { CollectorError } from '../crawler/src/store';
-import { parseStatusAck, syncStatus } from '../crawler/src/status-sync';
+import { parseStatusAck, STATUS_HEARTBEAT_MS, syncStatus } from '../crawler/src/status-sync';
 import type { Snapshot } from '../shared/collection-schema';
+import { parseSnapshot } from '../shared/collection-status';
 
 const TOKEN = 'offline-collector-token-private';
 const MARKER = 'BODY_SECRET_MARKER';
@@ -12,6 +17,7 @@ let snapshot: Snapshot;
 const receipt = (worker_id: unknown = snapshot.worker_id, version: unknown = snapshot.version) => ({ data: { worker_id, version }, private: MARKER });
 const raw = (body: BodyInit | null, headers: HeadersInit = { 'content-type': 'application/json' }) => new Response(body, { headers });
 const flagged = (key: string, value: unknown) => Object.defineProperty(Response.json(receipt()), key, { value });
+describe('acknowledgments', () => {
 beforeEach(() => { f = fixture(); snapshot = f.store.report(); });
 afterEach(() => { f.close(); });
 
@@ -141,4 +147,193 @@ test('pure acknowledgment parser rejects invalid types and accepts any safe mono
     expectSafeError(error, 'sync_version_regressed');
   }
   for (const value of [null, [], {}, { data: null }, { data: [] }]) expect(() => parseStatusAck(value, snapshot)).toThrow('sync_receipt');
+});
+});
+
+describe('status heartbeat through the site API', () => {
+  let memory: ReturnType<typeof memoryD1>;
+  let env: Env;
+  let bodies: string[];
+  let send: typeof fetch;
+  const queued = () => f.store.list<Snapshot>('sync_outbox');
+  const persisted = () => f.store.db.prepare('SELECT id,data FROM sync_outbox ORDER BY id').all();
+  const sync = () => syncStatus(f.store, ENDPOINT, TOKEN, send);
+  async function adminStatus() {
+    const response = await handleApi(new Request(`${ENDPOINT}/api/v1/admin/collection-status`, {
+      headers: { authorization: `Bearer ${env.ADMIN_TOKEN}` },
+    }), ['admin', 'collection-status'], env);
+    expect(response.status).toBe(200);
+    return (await response.json() as { data: { synced: boolean; workers: { snapshot: Snapshot; stale: boolean }[] } }).data;
+  }
+  beforeEach(async () => {
+    f = fixture();
+    memory = memoryD1();
+    vi.spyOn(Date, 'now').mockImplementation(() => f.now());
+    for (const sql of readFileSync(new URL('../migrations/0007_collector_status.sql', import.meta.url), 'utf8').split(';').filter(v => v.trim())) {
+      await memory.db.prepare(sql).run();
+    }
+    env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'fixture-admin-token-separation-0001', INGEST_TOKEN: 'fixture-ingest-token-separation-0002', COLLECTOR_STATUS_TOKEN: TOKEN };
+    bodies = [];
+    send = async (url, init) => {
+      bodies.push(init!.body as string);
+      const body = JSON.parse(init!.body as string);
+      expect(Object.keys(body).sort()).toEqual(['worker_id', 'version', 'generated_at', 'counts', 'total', 'unique', 'groups', 'unresolved_conflicts', 'recheck_due'].sort());
+      expect(parseSnapshot(body)).toEqual(body);
+      return handleApi(new Request(url, init), ['collector', 'status'], env);
+    };
+  });
+  afterEach(() => { f.close(); memory.close(); });
+
+  test('first sync sends version 1 with zero counts without a report', async () => {
+    expect(queued()).toEqual([]);
+    expect(await adminStatus()).toEqual({ synced: false, workers: [] });
+    expect(await sync()).toEqual({ sent: 1 });
+    const result = await adminStatus();
+    expect(result.synced).toBe(true);
+    expect(result.workers).toHaveLength(1);
+    expect(result.workers[0]).toMatchObject({ stale: false, snapshot: { version: 1, total: 0, unique: 0, groups: 0, unresolved_conflicts: 0, recheck_due: 0 } });
+    expect(Object.values(result.workers[0].snapshot.counts)).toEqual([0, 0, 0, 0, 0]);
+    expect(queued()).toEqual([]);
+  });
+
+  test('unchanged counts refresh after an hour while syncs within the cadence do not create versions', async () => {
+    await sync();
+    const original = (await adminStatus()).workers[0].snapshot;
+    f.advance(5 * 60_000);
+    expect(await sync()).toEqual({ sent: 0 });
+    expect((await adminStatus()).workers[0].snapshot).toEqual(original);
+    f.advance(56 * 60_000);
+    // Reading the local status retains its cached version regardless of age.
+    expect(f.store.report()).toEqual(original);
+    expect(await sync()).toEqual({ sent: 1 });
+    const worker = (await adminStatus()).workers[0];
+    expect(worker.stale).toBe(false);
+    expect(worker.snapshot).toEqual({ ...original, version: original.version + 1, generated_at: new Date(f.now()).toISOString() });
+  });
+
+  test('periodic idle syncs remain fresh across multiple stale windows', async () => {
+    await sync();
+    for (let version = 2; version <= 10; version++) {
+      f.advance(STATUS_HEARTBEAT_MS);
+      expect(await sync()).toEqual({ sent: 1 });
+      expect((await adminStatus()).workers[0]).toMatchObject({ stale: false, snapshot: { version, total: 0 } });
+    }
+  });
+
+  test.each(['verified_waiting', 'ready_to_publish'] as const)('sync expires %s evidence without a report', async status => {
+    const url = `${source.origin}/approval`;
+    intake(f.store, url, price());
+    const group = f.store.recordByUrl(url)!.dedup_group_id;
+    if (status === 'ready_to_publish') ready(f.store, group);
+    else f.store.review(group, { ...expected(f.store, group), decision: 'verify', reviewer: 'fixture-reviewer' });
+    await sync();
+    expect((await adminStatus()).workers[0].snapshot.counts[status]).toBe(1);
+    f.advance(86_400_001);
+    expect(await sync()).toEqual({ sent: 1 });
+    expect((await adminStatus()).workers[0]).toMatchObject({ stale: false, snapshot: {
+      counts: { ready_to_publish: 0, verified_waiting: 0, source_check_needed: 1 }, recheck_due: 1,
+    } });
+  });
+
+  test('lost acknowledgment retries identical persisted bytes after restart before sending the heartbeat', async () => {
+    const original = f.store.report();
+    const before = persisted();
+    const error = await syncStatus(f.store, ENDPOINT, TOKEN, async (url, init) => {
+      const response = await send(url, init);
+      expect(response.status).toBe(200);
+      throw new Error('lost acknowledgment');
+    }).catch(error => error);
+    expect(error).toMatchObject({ code: 'sync_transport' });
+    expect(persisted()).toEqual(before);
+    expect((await adminStatus()).workers[0].snapshot).toEqual(original);
+    f.reopen();
+    f.advance(STATUS_HEARTBEAT_MS);
+    expect(await sync()).toEqual({ sent: 2 });
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(bodies.map(body => JSON.parse(body).version)).toEqual([1, 1, 2]);
+    expect(queued()).toEqual([]);
+    expect((await adminStatus()).workers[0]).toMatchObject({ stale: false, snapshot: { version: 2 } });
+  });
+
+  test('out-of-order delivery keeps the newer snapshot and acknowledges older entries within the local counter', async () => {
+    const older = f.store.report();
+    f.advance(STATUS_HEARTBEAT_MS);
+    const newer = f.store.heartbeat(STATUS_HEARTBEAT_MS);
+    const post = (snapshot: Snapshot) => send(ENDPOINT, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body: JSON.stringify(snapshot) });
+    expect((await post(newer)).status).toBe(200);
+    const response = await post(older);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { worker_id: newer.worker_id, version: newer.version } });
+    expect((await adminStatus()).workers[0].snapshot).toEqual(newer);
+    bodies.length = 0;
+    expect(await sync()).toEqual({ sent: 2 });
+    expect(bodies.map(body => JSON.parse(body).version)).toEqual([older.version, newer.version]);
+    expect(queued()).toEqual([]);
+    expect((await adminStatus()).workers[0].snapshot).toEqual(newer);
+  });
+
+  test('missed sync becomes stale after one hour and the next sync clears it', async () => {
+    await sync();
+    f.advance(61 * 60_000);
+    expect((await adminStatus()).workers[0].stale).toBe(true);
+    expect(await sync()).toEqual({ sent: 1 });
+    expect((await adminStatus()).workers[0].stale).toBe(false);
+  });
+
+  test('failed sync adds at most one immutable row per heartbeat interval', async () => {
+    const fail: typeof fetch = async () => { throw new Error('offline'); };
+    const failedSync = () => expect(syncStatus(f.store, ENDPOINT, TOKEN, fail)).rejects.toMatchObject({ code: 'sync_transport' });
+    await failedSync();
+    const first = persisted();
+    expect(first).toHaveLength(1);
+    f.advance(STATUS_HEARTBEAT_MS - 1);
+    await failedSync();
+    expect(persisted()).toEqual(first);
+    f.advance(1);
+    await failedSync();
+    const second = persisted();
+    expect(second).toHaveLength(2);
+    expect(second.slice(0, 1)).toEqual(first);
+    await failedSync();
+    expect(persisted()).toEqual(second);
+  });
+
+  test.each([
+    ['http://site.invalid', TOKEN],
+    [ENDPOINT, 'short'],
+  ])('invalid config %s creates no outbox rows even when a heartbeat is due', async (endpoint, token) => {
+    const transport = vi.fn(send);
+    for (const initialized of [false, true]) {
+      if (initialized) { f.store.report(); f.advance(STATUS_HEARTBEAT_MS); }
+      const before = persisted();
+      await expect(syncStatus(f.store, endpoint, token, transport)).rejects.toMatchObject({ code: 'sync_config' });
+      expect(persisted()).toEqual(before);
+    }
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  test.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('invalid heartbeat %s creates no snapshot', async heartbeatMs => {
+    await expect(syncStatus(f.store, ENDPOINT, TOKEN, send, heartbeatMs)).rejects.toMatchObject({ code: 'sync_config' });
+    expect(queued()).toEqual([]);
+    expect(bodies).toEqual([]);
+  });
+
+  test('an explicit cadence and a backwards clock each refresh the snapshot', async () => {
+    await sync();
+    f.advance(1000);
+    expect(await syncStatus(f.store, ENDPOINT, TOKEN, send, 1000)).toEqual({ sent: 1 });
+    f.advance(-1);
+    expect(await sync()).toEqual({ sent: 1 });
+    expect((await adminStatus()).workers[0].snapshot).toMatchObject({ version: 3, generated_at: new Date(f.now()).toISOString() });
+  });
+
+  test('a failed record invariant prevents heartbeat creation and sending', async () => {
+    f.store.discover(`${source.origin}/invalid`);
+    const before = persisted();
+    f.store.db.prepare("UPDATE collection_records SET status='dedup_excluded'").run();
+    f.advance(STATUS_HEARTBEAT_MS);
+    await expect(sync()).rejects.toMatchObject({ code: 'representative_invariant' });
+    expect(persisted()).toEqual(before);
+    expect(bodies).toEqual([]);
+  });
 });

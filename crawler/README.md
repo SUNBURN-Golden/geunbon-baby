@@ -227,6 +227,8 @@ npm run collector -- import-legacy-candidates --state <읽기전용-state.json-�
 
 DB 디렉터리는 0700, DB/WAL/SHM/journal은 0600이고 심볼릭 링크·잘못된 권한·손상·쓰기 실패는 중단합니다. BEGIN IMMEDIATE·외래키·WAL·synchronous FULL을 사용합니다. 강제 종료로 `.lock`이 남으면 기존 프로세스가 종료되었음을 운영자가 확인한 뒤 lock만 제거하고 재시작하세요. DB 오류를 빈 DB로 바꾸지 않습니다.
 
-sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. 건수·보조 지표·작업기 ID·버전·시각만 포함하며 실패하면 유지/재전송합니다. outbox는 리디렉트 없는 `200 application/json {data:{worker_id,version}}` 응답에서 일치하는 문자열 worker_id와 전송 버전 이상의 안전한 정수 version을 확인한 뒤에만 삭제합니다. 잘못된 receipt·본문 초과·본문 읽기 실패·응답 유실은 재전송 대상으로 남습니다. 사이트 버전이 로컬 카운터보다 높아도 삭제와 후속 전송을 계속하며 sync CLI JSON에 `site_version_ahead: true, site_version`으로 보고합니다. 카운터 자체는 바꾸지 않습니다. 오류 진단은 고정 코드만 사용하고 토큰·응답 본문·원래 전송 오류는 출력하지 않습니다. 실제 수집함·근거는 Linux에 남습니다. 자세한 Chrome 권한/재클릭 경계는 [확장 README](../tools/chrome-clipper/README.md)를 참고하세요.
+sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. 전송 전에 검토 만료와 재확인 건수를 갱신하고, 최신 스냅샷을 만든 지 15분 이상 지났으면 더 높은 버전의 새 스냅샷을 추가합니다. 빈 수집함의 첫 sync도 0건인 버전 1을 만듭니다. 운영 타이머는 `npm run collector:worker -- sync`를 15분 이하 간격으로 실행하세요. 사이트는 스냅샷 생성 후 60분을 넘기면 동기화 지연으로 표시합니다. 대기 중인 항목은 변경하지 않고 새 버전만 추가하므로 응답 유실 후에도 같은 payload를 재전송합니다.
+
+스냅샷은 건수·보조 지표·작업기 ID·버전·시각만 포함하며 실패하면 유지/재전송합니다. outbox는 리디렉트 없는 `200 application/json {data:{worker_id,version}}` 응답에서 일치하는 문자열 worker_id와 전송 버전 이상의 안전한 정수 version을 확인한 뒤에만 삭제합니다. 잘못된 receipt·본문 초과·본문 읽기 실패·응답 유실은 재전송 대상으로 남습니다. 사이트 버전이 로컬 카운터보다 높아도 삭제와 후속 전송을 계속하며 sync CLI JSON에 `site_version_ahead: true, site_version`으로 보고합니다. 카운터 자체는 바꾸지 않습니다. 오류 진단은 고정 코드만 사용하고 토큰·응답 본문·원래 전송 오류는 출력하지 않습니다. 실제 수집함·근거는 Linux에 남습니다. 자세한 Chrome 권한/재클릭 경계는 [확장 README](../tools/chrome-clipper/README.md)를 참고하세요.
 
 로컬 DB를 새로 만들면 현황 버전은 1부터 다시 시작합니다. 같은 `worker_id`의 이전 높은 버전이 D1에 남아 있으면 새 현황은 반영되지 않습니다. DB 복구는 버전 메타데이터를 포함한 백업을 사용하세요. DB를 재구축할 때는 `COLLECTOR_CONFIG`의 `worker_id`를 새 식별자로 바꾸고, 관리자 화면에서 이전 작업기를 구분하세요. 서로 다른 작업기의 건수는 자동 합산하지 않습니다.

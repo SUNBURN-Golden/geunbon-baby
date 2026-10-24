@@ -254,7 +254,20 @@ export class CollectorStore {
     }
     return {generated_at:new Date(this.now()).toISOString(),sources};
   }
-  report() {return this.transaction(()=>{this.reap();const expired=this.expireInside();this.validateRecords();const cached=this.get<Snapshot>('collector_meta','snapshot');if(expired||!cached||cached.recheck_due!==this.dueCount())return this.snapshotInside();return cached;});}
+  private refreshInside(maxAgeMs?: number): Snapshot {
+    this.reap();
+    const expired=this.expireInside();
+    this.validateRecords();
+    const cached=this.get<Snapshot>('collector_meta','snapshot');
+    const age=cached?this.now()-Date.parse(cached.generated_at):0;
+    if(expired||!cached||cached.recheck_due!==this.dueCount()||(maxAgeMs!==undefined&&(age>=maxAgeMs||age<0)))return this.snapshotInside();
+    return cached;
+  }
+  report() {return this.transaction(()=>this.refreshInside());}
+  heartbeat(maxAgeMs: number) {
+    requireThat(Number.isSafeInteger(maxAgeMs)&&maxAgeMs>0,'sync_config');
+    return this.transaction(()=>this.refreshInside(maxAgeMs));
+  }
   sellerObservation(handle:string,via:string,url:string,models:string[],event:string,legacyHits=0,legacy=false) {
     requireThat(/^[a-zA-Z0-9._]{1,30}$/.test(handle)&&filterText(handle)===handle,'seller_handle');handle=handle.toLowerCase();url=canonicalUrl(url);via=filterText(via,80);models=models.filter(m=>/^[\w-]{1,100}$/.test(m));
     const id=`instagram:${handle}`,key=digest([id,event,url]);if(this.get('seller_candidate_sources',key))return;

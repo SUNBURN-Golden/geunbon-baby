@@ -1,6 +1,8 @@
 import { CollectorError, CollectorStore, requireThat } from './store';
 import type { Snapshot } from '../../shared/collection-schema';
 
+export const STATUS_HEARTBEAT_MS = 15 * 60_000;
+
 export function parseStatusAck(value: unknown, snapshot: Snapshot): { worker_id: string; version: number } {
   requireThat(value && typeof value === 'object' && !Array.isArray(value), 'sync_receipt', 502);
   const data = (value as Record<string, unknown>).data;
@@ -40,9 +42,10 @@ async function readAck(response: Response): Promise<unknown> {
   catch { throw new CollectorError('sync_receipt', 502); }
 }
 
-export async function syncStatus(store: CollectorStore, endpoint: string, token: string, send: typeof fetch = fetch) {
+export async function syncStatus(store: CollectorStore, endpoint: string, token: string, send: typeof fetch = fetch, heartbeatMs = STATUS_HEARTBEAT_MS) {
   const url = new URL('/api/v1/collector/status', endpoint);
   requireThat(url.protocol === 'https:' && !url.username && !url.password && token.length >= 24, 'sync_config');
+  store.heartbeat(heartbeatMs);
   const snapshots = store.list<Snapshot>('sync_outbox').sort((a, b) => a.version - b.version);
   const result: { sent: number; site_version_ahead?: true; site_version?: number } = { sent: snapshots.length };
   for (const snapshot of snapshots) {
