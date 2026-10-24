@@ -30,7 +30,7 @@ export async function main(){
     }finally{store.close();}
     return;
   }
-  if(command==='sync'){try{await syncStatus(store,process.env.COLLECTOR_SITE_URL??'',process.env.COLLECTOR_STATUS_TOKEN??'');}finally{store.close();}return;}
+  if(command==='sync'){try{console.log(JSON.stringify(await syncStatus(store,process.env.COLLECTOR_SITE_URL??'',process.env.COLLECTOR_STATUS_TOKEN??'')));}finally{store.close();}return;}
   const server=createServer(async(req,res)=>{
     if(req.method==='OPTIONS'){
       if(req.headers.host!==auth.host||req.headers.origin!==auth.extensionOrigin){res.writeHead(403);res.end();return;}

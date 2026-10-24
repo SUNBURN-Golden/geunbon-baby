@@ -62,7 +62,7 @@ test('selector counts, price presence and profile fallback remain safe health fi
     health('selector_miss', { scope: 'profile_posts', anchors: 1, caption_text: 'private caption' });
     health('following_profile_fallback', { via: 'username' });
     const { sendItem } = await import('../crawler/lib/ingest');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 202 })));
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { id: 'item-1', status: 'pending' } }, { status: 202 })));
     for (const kind of ['post', 'story'] as const) {
       for (const price of [{ value: 390000 }, null]) {
         await sendItem(new URL('https://ingest.invalid/api/v1/ingest'), 'offline-token', {

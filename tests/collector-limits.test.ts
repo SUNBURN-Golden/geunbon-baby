@@ -30,7 +30,7 @@ test('review before mutation and mutation before review both leave only current 
 });
 test('outbox survives a site commit with lost response and reuses exactly the same version/payload',async()=>{
  const f=fixture();try{
-  f.store.report();const seen:Snapshot[]=[];const send:typeof fetch=async(_url,init)=>{seen.push(JSON.parse(String(init?.body)));if(seen.length===1)throw new Error('ack_lost');return Response.json({data:{}});};
-  await expect(syncStatus(f.store,'https://site.example.org','fixture-status-token-long-enough',send)).rejects.toThrow('ack_lost');expect(f.store.list('sync_outbox')).toHaveLength(1);f.reopen();await syncStatus(f.store,'https://site.example.org','fixture-status-token-long-enough',send);expect(seen[1]).toEqual(seen[0]);expect(f.store.list('sync_outbox')).toHaveLength(0);
+  f.store.report();const seen:Snapshot[]=[];const send:typeof fetch=async(_url,init)=>{seen.push(JSON.parse(String(init?.body)));if(seen.length===1)throw new Error('ack_lost');const s=seen[seen.length-1];return Response.json({data:{worker_id:s.worker_id,version:s.version}});};
+  await expect(syncStatus(f.store,'https://site.example.org','fixture-status-token-long-enough',send)).rejects.toMatchObject({code:'sync_transport'});expect(f.store.list('sync_outbox')).toHaveLength(1);f.reopen();await syncStatus(f.store,'https://site.example.org','fixture-status-token-long-enough',send);expect(seen[1]).toEqual(seen[0]);expect(f.store.list('sync_outbox')).toHaveLength(0);
  }finally{f.close();}
 });
