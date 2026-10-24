@@ -3,6 +3,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "트립트랩 하이체어(너도밤나무)",
       "category": "high_chair",
       "kr_official_price_krw": 430000,
@@ -100,6 +101,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "트립트랩 하이체어(오크)",
       "category": "high_chair",
       "kr_official_price_krw": 510000,
@@ -197,6 +199,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "트립트랩+베이비세트",
       "category": "high_chair",
       "kr_official_price_krw": null,
@@ -293,6 +296,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "트립트랩+베이비세트+트레이(이유식세트)",
       "category": "high_chair",
       "kr_official_price_krw": null,
@@ -389,6 +393,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "트립트랩 신생아&이유식 세트",
       "category": "high_chair",
       "kr_official_price_krw": 910000,
@@ -481,6 +486,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "익스플로리 X",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -571,6 +577,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "요요3 프레임",
       "category": "stroller",
       "kr_official_price_krw": 567000,
@@ -668,6 +675,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "요요3 6+ (프레임+시트)",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -758,6 +766,7 @@
     {
       "brand": "Stokke",
       "kr_importer": "스토케코리아",
+      "kr_importer_status": "confirmed",
       "model": "요요 뉴본 배시넷 구성",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -848,6 +857,7 @@
     {
       "brand": "Bugaboo",
       "kr_importer": "부가부코리아(유)",
+      "kr_importer_status": "confirmed",
       "model": "폭스5 리뉴",
       "category": "stroller",
       "kr_official_price_krw": 2340000,
@@ -981,6 +991,7 @@
     {
       "brand": "Bugaboo",
       "kr_importer": "부가부코리아(유)",
+      "kr_importer_status": "confirmed",
       "model": "폭스5 느와르 리미티드",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -1081,6 +1092,7 @@
     {
       "brand": "Bugaboo",
       "kr_importer": "부가부코리아(유)",
+      "kr_importer_status": "confirmed",
       "model": "버터플라이2(범퍼바 포함)",
       "category": "stroller",
       "kr_official_price_krw": 950000,
@@ -1209,6 +1221,7 @@
     {
       "brand": "Bugaboo",
       "kr_importer": "부가부코리아(유)",
+      "kr_importer_status": "confirmed",
       "model": "드래곤플라이(배시넷 포함)",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -1309,6 +1322,7 @@
     {
       "brand": "Bugaboo",
       "kr_importer": "부가부코리아(유)",
+      "kr_importer_status": "confirmed",
       "model": "드래곤플라이 섀시(시트 구성)",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -1408,7 +1422,8 @@
     },
     {
       "brand": "Cybex",
-      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "kr_importer": "(주)싸이벡스코리아",
+      "kr_importer_status": "recheck_failed",
       "model": "프리암 4.0",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -1488,7 +1503,8 @@
     },
     {
       "brand": "Cybex",
-      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "kr_importer": "(주)싸이벡스코리아",
+      "kr_importer_status": "recheck_failed",
       "model": "미오스 3.0",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -1568,7 +1584,8 @@
     },
     {
       "brand": "Cybex",
-      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "kr_importer": "(주)싸이벡스코리아",
+      "kr_importer_status": "recheck_failed",
       "model": "멜리오 카본 3.0",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -1648,7 +1665,8 @@
     },
     {
       "brand": "Cybex",
-      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "kr_importer": "(주)싸이벡스코리아",
+      "kr_importer_status": "recheck_failed",
       "model": "제로나 Gi (회전형 카시트)",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -1728,7 +1746,8 @@
     },
     {
       "brand": "Cybex",
-      "kr_importer": "(주)싸이벡스코리아 (기존 정보, 재확인 실패)",
+      "kr_importer": "(주)싸이벡스코리아",
+      "kr_importer_status": "recheck_failed",
       "model": "제로나 T",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -1809,6 +1828,7 @@
     {
       "brand": "Nuna",
       "kr_importer": "(주)에이원월드",
+      "kr_importer_status": "confirmed",
       "model": "피파 넥스트(바구니 카시트)",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -1884,6 +1904,7 @@
     {
       "brand": "Nuna",
       "kr_importer": "(주)에이원월드",
+      "kr_importer_status": "confirmed",
       "model": "넥스트 시스템(토들넥스트+피파넥스트+베이스)",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -1959,6 +1980,7 @@
     {
       "brand": "Nuna",
       "kr_importer": "(주)에이원월드",
+      "kr_importer_status": "confirmed",
       "model": "트리브 넥스트 트래블 시스템(+피파넥스트)",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -2033,7 +2055,8 @@
     },
     {
       "brand": "Joie",
-      "kr_importer": "(주)에이원 (기존 정보, 재확인 실패)",
+      "kr_importer": "(주)에이원",
+      "kr_importer_status": "recheck_failed",
       "model": "아이스핀 360",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -2102,7 +2125,8 @@
     },
     {
       "brand": "Joie",
-      "kr_importer": "(주)에이원 (기존 정보, 재확인 실패)",
+      "kr_importer": "(주)에이원",
+      "kr_importer_status": "recheck_failed",
       "model": "아이스핀 360 메쉬",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -2172,6 +2196,7 @@
     {
       "brand": "BabyBjorn",
       "kr_importer": "베이비뵨㈜",
+      "kr_importer_status": "confirmed",
       "model": "바운서 블리스",
       "category": "bouncer",
       "kr_official_price_krw": 310000,
@@ -2249,6 +2274,7 @@
     {
       "brand": "BabyBjorn",
       "kr_importer": "베이비뵨㈜",
+      "kr_importer_status": "confirmed",
       "model": "바운서 밸런스 소프트",
       "category": "bouncer",
       "kr_official_price_krw": 310000,
@@ -2326,6 +2352,7 @@
     {
       "brand": "BabyBjorn",
       "kr_importer": "베이비뵨㈜",
+      "kr_importer_status": "confirmed",
       "model": "베이비 캐리어 하모니",
       "category": "carrier",
       "kr_official_price_krw": 360000,
@@ -2396,6 +2423,7 @@
     {
       "brand": "BabyBjorn",
       "kr_importer": "베이비뵨㈜",
+      "kr_importer_status": "confirmed",
       "model": "베이비 캐리어 원 에어",
       "category": "carrier",
       "kr_official_price_krw": 330000,
@@ -2466,6 +2494,7 @@
     {
       "brand": "BabyBjorn",
       "kr_importer": "베이비뵨㈜",
+      "kr_importer_status": "confirmed",
       "model": "베이비 캐리어 미니",
       "category": "carrier",
       "kr_official_price_krw": 180000,
@@ -2535,7 +2564,8 @@
     },
     {
       "brand": "Egg",
-      "kr_importer": "베이비스타일아시아홀딩스 (기존 정보, 재확인 실패)",
+      "kr_importer": "베이비스타일아시아홀딩스",
+      "kr_importer_status": "recheck_failed",
       "model": "에그3 디럭스",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -2610,7 +2640,8 @@
     },
     {
       "brand": "Egg",
-      "kr_importer": "베이비스타일아시아홀딩스 (기존 정보, 재확인 실패)",
+      "kr_importer": "베이비스타일아시아홀딩스",
+      "kr_importer_status": "recheck_failed",
       "model": "애스턴마틴 에그3",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -2686,6 +2717,7 @@
     {
       "brand": "D.THRONE",
       "kr_importer": "디트로네 주식회사(국내 브랜드)",
+      "kr_importer_status": "confirmed",
       "model": "이니셜 신생아 디럭스 유모차",
       "category": "stroller",
       "kr_official_price_krw": 1090000,
@@ -2754,7 +2786,8 @@
     },
     {
       "brand": "Britax",
-      "kr_importer": "세피앙 (기존 정보, 재확인 실패)",
+      "kr_importer": "세피앙",
+      "kr_importer_status": "recheck_failed",
       "model": "듀얼픽스 프로 LUX",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -2870,7 +2903,8 @@
     },
     {
       "brand": "Britax",
-      "kr_importer": "세피앙 (기존 정보, 재확인 실패)",
+      "kr_importer": "세피앙",
+      "kr_importer_status": "recheck_failed",
       "model": "듀얼픽스 프로 STYLE",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -2986,7 +3020,8 @@
     },
     {
       "brand": "Britax",
-      "kr_importer": "세피앙 (기존 정보, 재확인 실패)",
+      "kr_importer": "세피앙",
+      "kr_importer_status": "recheck_failed",
       "model": "듀얼픽스 프로 CLASSIC",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -3102,7 +3137,8 @@
     },
     {
       "brand": "Maxi-Cosi",
-      "kr_importer": "엠베이비 (기존 정보, 재확인 실패)",
+      "kr_importer": "엠베이비",
+      "kr_importer_status": "recheck_failed",
       "model": "미카 360 프로",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -3218,7 +3254,8 @@
     },
     {
       "brand": "Maxi-Cosi",
-      "kr_importer": "엠베이비 (기존 정보, 재확인 실패)",
+      "kr_importer": "엠베이비",
+      "kr_importer_status": "recheck_failed",
       "model": "타이탄 프로",
       "category": "car_seat",
       "kr_official_price_krw": null,
@@ -3335,6 +3372,7 @@
     {
       "brand": "Silver Cross",
       "kr_importer": "미확인",
+      "kr_importer_status": "unconfirmed",
       "model": "리프2",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -3404,6 +3442,7 @@
     {
       "brand": "Silver Cross",
       "kr_importer": "미확인",
+      "kr_importer_status": "unconfirmed",
       "model": "듄2",
       "category": "stroller",
       "kr_official_price_krw": null,
@@ -3472,7 +3511,8 @@
     },
     {
       "brand": "Ergobaby",
-      "kr_importer": "(주)스엔코 (기존 정보, 재확인 실패)",
+      "kr_importer": "(주)스엔코",
+      "kr_importer_status": "recheck_failed",
       "model": "옴니 브리즈",
       "category": "carrier",
       "kr_official_price_krw": null,
@@ -3554,6 +3594,7 @@
     {
       "brand": "Doona",
       "kr_importer": "미확인",
+      "kr_importer_status": "unconfirmed",
       "model": "두나 카시트 겸용 유모차",
       "category": "car_seat",
       "kr_official_price_krw": null,

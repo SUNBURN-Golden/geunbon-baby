@@ -1,4 +1,8 @@
-export type Model = { id: string; brand: string; name: string; category: string; importer: string; official_price: number | null; source_url: string; checked: string; verify_level: string; note: string };
+export type ImporterStatus = 'confirmed' | 'unconfirmed' | 'recheck_failed';
+export const importerStatus: Record<ImporterStatus, string | null> = { confirmed: null, unconfirmed: '수입사 미확인', recheck_failed: '기존 정보, 재확인 실패' };
+export const isImporterStatus = (s: unknown): s is ImporterStatus => typeof s === 'string' && Object.hasOwn(importerStatus, s);
+export const importerStatusLabel = (s: unknown) => importerStatus[isImporterStatus(s) ? s : 'unconfirmed'];
+export type Model = { id: string; brand: string; name: string; category: string; importer: string; importer_status: ImporterStatus; official_price: number | null; source_url: string; checked: string; verify_level: string; note: string };
 export type Seller = { id: string; name: string; source_url: string; registration_source: string | null; withdrawal_source: string | null; official_import_source: string | null };
 export const sellerAnchor = (id: string) => `trust-${id}`;
 export const sellerTrustHref = (id: string) => `/sellers#${encodeURIComponent(sellerAnchor(id))}`;

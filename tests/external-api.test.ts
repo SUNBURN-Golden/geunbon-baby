@@ -23,7 +23,7 @@ beforeAll(async () => {
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
     for (const sql of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(s => s.trim())) await env.DB.prepare(sql).run();
   }
-  await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','')").run();
+  await env.DB.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','test','https://www.stokke.com/')").run();
 });
 afterAll(() => { memory.close(); });

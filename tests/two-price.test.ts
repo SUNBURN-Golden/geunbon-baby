@@ -35,7 +35,7 @@ beforeAll(async () => {
     const schema = await readFile(new URL(file, dir), 'utf8');
     for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
   }
-  await memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  await memory.db.prepare('INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind('model-1', 'Stokke', 'Test chair', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-21', 'page_body', note).run();
   await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at, status) VALUES ('deal-1', 'https://example.com/deal', 'example', 'Reviewed deal', 'post', '2026-10-21', 'approved')").run();
@@ -126,17 +126,27 @@ test('navigation includes the calendar and identifies the official-price tab', (
   expect(html).not.toContain('기준가');
 });
 
-test.each(['기존 수입사 (기존 정보, 재확인 실패)', '미확인'])('unavailable evidence has neutral labels and preserves importer %s', async importer => {
-  await memory.db.prepare("UPDATE models SET source_url = '', official_price = NULL, verify_level = 'official_unpublished', importer = ? WHERE id = ?").bind(importer, 'model-1').run();
+test.each([['기존 수입사', 'recheck_failed', '기존 정보, 재확인 실패'], ['미확인', 'unconfirmed', '수입사 미확인']])('unavailable evidence has neutral labels and preserves importer %s', async (importer, status, label) => {
+  await memory.db.prepare("UPDATE models SET source_url = '', official_price = NULL, verify_level = 'official_unpublished', importer = ?, importer_status = ? WHERE id = ?").bind(importer, status, 'model-1').run();
   try {
     const html = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
     expect(html).toContain('정보 없음');
     expect(html).toContain(verification.official_unpublished);
-    expect(html).toContain(importer);
+    expect(html).toContain(`<p>${importer}</p>`);
+    expect(html).toContain(`<p class="muted">${label}</p>`);
+    expect(html).not.toContain('(기존 정보');
     for (const text of ['미공개', '비공개', '>official_unpublished<', '430,000원']) expect(html).not.toContain(text);
     expect(html).not.toContain(`>${siteCopy.officialSource}</a>`);
     expect(html).not.toContain('href=""');
   } finally {
-    await memory.db.prepare("UPDATE models SET source_url = 'https://example.com/model', official_price = 430000, verify_level = 'page_body', importer = 'Importer' WHERE id = ?").bind('model-1').run();
+    await memory.db.prepare("UPDATE models SET source_url = 'https://example.com/model', official_price = 430000, verify_level = 'page_body', importer = 'Importer', importer_status = 'confirmed' WHERE id = ?").bind('model-1').run();
   }
+});
+
+test('confirmed importer renders its name without a status label', async () => {
+  await memory.db.prepare("UPDATE models SET importer_status = 'confirmed' WHERE id = 'model-1'").run();
+  const html = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
+  expect(html).toContain('<p>Importer</p>');
+  expect(html).not.toContain('수입사 미확인');
+  expect(html).not.toContain('기존 정보, 재확인 실패');
 });

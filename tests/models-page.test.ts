@@ -32,7 +32,7 @@ beforeAll(async () => {
     const schema = await readFile(new URL(file, dir), 'utf8');
     for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
   }
-  const insertModel = (id: string, price: number | null) => memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  const insertModel = (id: string, price: number | null) => memory.db.prepare('INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(id, 'Stokke', names[id as keyof typeof names], 'high_chair', 'Importer', price, 'https://example.com/model', '2026-10-18', 'page_body', note).run();
   await insertModel('model-1', 430000);
   await insertModel('model-42', 430000);

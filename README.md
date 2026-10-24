@@ -35,6 +35,7 @@
 - 해외가·당근 중고 시세·직구가·일반 판매처/백화점 행사가는 비교에서 제외합니다(`migrations/0004_official_groupbuy_only.sql`). 검색 요약·블로그·기사·legacy `external_listing`의 가격도 공식가 근거가 아닙니다.
 - **가격을 절대 만들어 내지 않습니다 (never invent prices).** 공식가가 없으면 다른 판매처 가격이나 구성품 가격 합계로 대체하지 않습니다.
 - `kr_retailers`는 판매자 이름과 출처 URL만 보관하며 가격은 포함하지 않습니다.
+- `importer`는 수입사 이름 또는 `미확인`만 보관합니다. 확인 상태(`importer_status`)는 상세 페이지에서 별도로 표시하고 API에서 이름과 함께 반환합니다.
 - `page_body`는 공식 제품 본문에서 정상가를 확인한 상태이고, `official_unpublished`는 동일 구성 미확인·접속 실패·수입사 미확인 등을 포함한 공식가 정보 없음 상태입니다. UI에는 "공식가 미확인 · 정보 없음"으로 표시합니다. 제조사의 가격 비공개를 단정하지 않으며 `evidence.reason`으로 사유를 구분합니다. 공식가는 `verify_level: "page_body"`인 가격만 표시합니다. `page_text`·`search_summary` 등 다른 수준의 기존 D1 행은 검증 수준과 확인일은 유지하되 페이지에서는 "정보 없음", API(`/api/v1/models`, `/api/v1/models/:id`의 `official_price`, `comparison.official.price`)에서는 `null`로 반환합니다. 공식가 미확인 모델은 다른 판매가나 부품 합산으로 대체하지 않습니다.
 - 모든 공구는 광고이며 구매·결제는 판매처 링크아웃만 제공합니다. 아가마중은 거래 당사자가 아닙니다.
 
@@ -287,6 +288,8 @@ npx tsx scripts/card-screenshots.ts --out .local/card-qa
 아래는 과거 구현·조사 시점의 기록입니다. 현재 설정·리소스 상태나 이번 문서 정리에서 실행한 작업을 뜻하지 않습니다. 현재 로컬 절차는 위의 로컬 실행 절을 따릅니다.
 
 마이그레이션 `0005_users.sql`(users, user_identities, sessions)은 CREATE만 있는 add-only입니다. **로컬(`npm run db:migrate`)에만 적용했고 운영 D1 적용은 운영자가 따로 합니다.** 세션 토큰은 해시만 저장합니다(30일).
+
+`0012_importer_status.sql`은 추가 전용 마이그레이션으로 `models.importer_status`(confirmed/unconfirmed/recheck_failed)를 추가하고 0008의 '(기존 정보, 재확인 실패)' 접미사를 상태 컬럼으로 분리합니다. **로컬 D1에만 `npm run db:migrate`로 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
 
 `0011_deal_lifecycle.sql`은 추가 전용 마이그레이션으로 기존 공구도 v1 publish 이력을 보존합니다. **로컬 D1에만 `npm run db:migrate`로 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
 

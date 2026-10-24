@@ -60,7 +60,7 @@ describe('D1-backed price and evidence rendering', () => {
       const schema = await readFile(new URL(file, dir), 'utf8');
       for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
     }
-    await memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    await memory.db.prepare('INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind('model-1', 'Cybex', 'Test stroller', 'stroller', 'Importer', 430000,
         'https://example.com/model', '2026-10-18', 'page_body', note).run();
     await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
@@ -70,7 +70,7 @@ describe('D1-backed price and evidence rendering', () => {
         'manual', '2026-10-20', '2026-10-20T00:00:00Z', '2026-10-22T00:00:00Z').run();
   });
   beforeEach(async () => {
-    await memory.db.prepare("UPDATE models SET official_price = 430000, source_url = 'https://example.com/model', verify_level = 'page_body', importer = 'Importer'").run();
+    await memory.db.prepare("UPDATE models SET official_price = 430000, source_url = 'https://example.com/model', verify_level = 'page_body', importer = 'Importer', importer_status = 'confirmed'").run();
     await memory.db.prepare("UPDATE deals SET price = 390000, verify_level = 'manual'").run();
   });
   afterAll(() => memory.close());
@@ -110,8 +110,8 @@ describe('D1-backed price and evidence rendering', () => {
   });
 
   test('failed official retrieval preserves importer uncertainty and neutral joined-deal evidence', async () => {
-    // The public fields mirror migration 0008's failed-fetch rows, without importing seed investigations.
-    await memory.db.prepare("UPDATE models SET source_url = '', official_price = NULL, verify_level = 'official_unpublished', importer = '기존 수입사 (기존 정보, 재확인 실패)'").run();
+    // The public fields mirror migration 0012's separated importer status, without importing seed investigations.
+    await memory.db.prepare("UPDATE models SET source_url = '', official_price = NULL, verify_level = 'official_unpublished', importer = '기존 수입사', importer_status = 'recheck_failed'").run();
     const modelHtml = await modelPage();
     expect(modelHtml).toContain(verification.official_unpublished);
     expect(modelHtml).toContain('정보 없음');

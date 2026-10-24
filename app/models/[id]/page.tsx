@@ -1,7 +1,7 @@
 import { DEAL_SELECT, type DealWithContext } from '../../../lib/deals';
 import { notFound } from 'next/navigation';
 import { all, environment } from '../../../lib/db';
-import { categories, displayableOfficialPrice, money, verificationLabel, type Model } from '../../../lib/data';
+import { categories, displayableOfficialPrice, importerStatusLabel, money, verificationLabel, type Model } from '../../../lib/data';
 import { siteCopy } from '../../../lib/site-copy';
 import { dealsCopy } from '../../../lib/deals-copy';
 import { DealList } from '../../deals/_components';
@@ -30,6 +30,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
           <h2>{siteCopy.officialPrice}</h2>
           <h3>{money(displayableOfficialPrice(m))}</h3>
           <p>{m.importer}</p>
+          {importerStatusLabel(m.importer_status) && <p className="muted">{importerStatusLabel(m.importer_status)}</p>}
           <p className="muted">{m.checked} · {verificationLabel(m.verify_level)}</p>
           {m.source_url && <a href={m.source_url} target="_blank" rel="noopener noreferrer">{siteCopy.officialSource}</a>}
           <p className="muted">{siteCopy.officialSourceNotice}</p>

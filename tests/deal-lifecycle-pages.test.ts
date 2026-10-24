@@ -51,7 +51,7 @@ beforeEach(async () => {
   id = (await publish(memory.db, 'public-first')).id;
   otherId = (await publish(memory.db, 'public-second')).id;
   await memory.db.prepare('UPDATE deals SET price = 600000 WHERE id = ?').bind(otherId).run();
-  await memory.db.prepare("INSERT INTO models SELECT 'model-2',brand,'Other model',category,importer,official_price,source_url,checked,verify_level,note FROM models WHERE id = 'model-1'").run();
+  await memory.db.prepare("INSERT INTO models (id,brand,name,category,importer,official_price,source_url,checked,verify_level,note) SELECT 'model-2',brand,'Other model',category,importer,official_price,source_url,checked,verify_level,note FROM models WHERE id = 'model-1'").run();
 });
 afterEach(() => memory.close());
 

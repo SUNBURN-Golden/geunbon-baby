@@ -88,8 +88,8 @@ test('migrated extreme offsets and newly approved rows sort together in API and 
   const start = '2026-10-24T01:00:00+15:00';
   await legacy(memory.db, 'migrated', start, '2026-10-24T02:00:00+15:00');
   await execute(memory.db, migration);
-  // Current routes need the additive seller review and deal lifecycle schemas.
-  for (const file of ['0010_seller_onboarding.sql', '0011_deal_lifecycle.sql']) {
+  // Current routes need the additive seller review, deal lifecycle and importer status schemas.
+  for (const file of ['0010_seller_onboarding.sql', '0011_deal_lifecycle.sql', '0012_importer_status.sql']) {
     await execute(memory.db, await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
   }
   await pending(memory.db, 'new');
