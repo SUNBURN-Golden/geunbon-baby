@@ -7,7 +7,8 @@ import Models from '../app/models/page';
 import ModelDetail from '../app/models/[id]/page';
 import Calendar from '../app/calendar/page';
 import { NavLinks } from '../app/nav';
-import { DealCard } from '../app/shared';
+import { DealCard } from '../app/deals/_components';
+import { DEAL_SELECT, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
 import { siteCopy } from '../lib/site-copy';
 import { verification, verificationLabel, type Deal } from '../lib/data';
@@ -58,7 +59,8 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   const models = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
   const detail = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
   const calendar = renderToStaticMarkup(await Calendar());
-  const card = renderToStaticMarkup(createElement(DealCard, { deal, nowMs: Date.now() }));
+  const joinedDeal = (await memory.db.prepare(DEAL_SELECT).first<DealWithContext>())!;
+  const card = renderToStaticMarkup(createElement(DealCard, { deal: joinedDeal, nowMs: Date.now() }));
   for (const html of [home, models, detail, calendar, card]) excludesOtherPrices(html);
   expect(home).toContain(siteCopy.pricePromise);
   expect(models).toContain(siteCopy.officialLabel);
@@ -71,12 +73,12 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   expect(later).not.toContain('390,000');
   vi.setSystemTime('2026-10-21T03:00:00Z');
   expect(detail).toContain('430,000원');
-  expect(detail).toContain('390,000원');
+  expect(detail).toContain('390,000<span>원</span>');
   expect(detail.match(/<section>/g)).toHaveLength(2);
   for (const html of [calendar, card]) {
     expect(html).toContain(dealsCopy.groupBuyPrice);
-    expect(html).toContain('390,000원');
-    expect(html).not.toContain('430,000원');
+    expect(html).toContain('390,000<span>원</span>');
+    expect(html).toContain('430,000원');
   }
 });
 

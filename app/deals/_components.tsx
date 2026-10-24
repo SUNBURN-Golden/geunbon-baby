@@ -56,10 +56,10 @@ export function DealPrice({ deal, timing }: { deal: DealWithContext; timing: Tim
 }
 
 export function PriceGap({ deal, gap, showContext = true }: { deal: DealWithContext; gap: Gap | null; showContext?: boolean }) {
-  if (!deal.model_joined_id) return null;
+  if (!deal.model_joined_id && showContext) return null;
   const official = dealOfficialPrice(deal);
   if (official === null) return <p className="deal-context">{dealsCopy.unknownOfficial}</p>;
-  if (!gap) return null;
+  if (!gap) return showContext ? null : <p className="deal-context">{dealsCopy.officialPrice} · {official.toLocaleString('ko-KR')}{dealsCopy.won}</p>;
   return (
     <div className="deal-comparison">
       <p className="deal-context">{dealsCopy.officialPrice} · {official.toLocaleString('ko-KR')}{dealsCopy.won}</p>
@@ -93,10 +93,25 @@ export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number
       <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
       <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} /></div>
       <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link></h2>
+      <p className="deal-period"><DealPeriod deal={deal} timing={timing} /></p>
       <DealPrice deal={deal} timing={timing} />
       <PriceGap deal={deal} gap={gap} showContext={false} />
       <PriceToneBadge gap={gap} timing={timing} />
+      <DealCardLinks deal={deal} />
+      <DealDisclaimer />
     </article>
+  );
+}
+
+export function DealCardLinks({ deal }: { deal: DealWithContext }) {
+  return (
+    <div className="deal-card-links">
+      <a className="deal-secondary" href={deal.source_url} target="_blank" rel="sponsored noopener noreferrer">
+        {dealsCopy.primary}<span className="deal-new-tab"> · {dealsCopy.newTab}</span>
+      </a>
+      {/* Native navigation hands fragment focus to the seller so Tab continues at its evidence. */}
+      {deal.seller_joined_id && <a className="deal-secondary" href={sellerTrustHref(deal.seller_joined_id)}>{dealsCopy.sellerTrust}</a>}
+    </div>
   );
 }
 
