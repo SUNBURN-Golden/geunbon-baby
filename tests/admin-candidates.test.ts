@@ -8,9 +8,9 @@ import { memoryD1 } from './helpers/sqlite';
 const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined }));
 vi.mock('../lib/db', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/db')>(),
-  environment: () => ({ DB: context.db, ADMIN_TOKEN: 'fixture-admin' }),
+  environment: () => ({ DB: context.db, ADMIN_TOKEN: 'fixture-admin-token-separation-0001', INGEST_TOKEN: 'fixture-ingest-token-separation-0002' }),
 }));
-vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => ({ value: 'fixture-admin' }) }) }));
+vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => ({ value: 'fixture-admin-token-separation-0001' }) }) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: () => { throw new Error('NEXT_REDIRECT'); } }));
 

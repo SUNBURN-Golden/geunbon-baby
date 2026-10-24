@@ -18,7 +18,7 @@ const rows = async (sql: string) => (await env.DB.prepare(sql).all<Record<string
 type Item = { data: { id: string; status: string } };
 
 beforeAll(async () => {
-  env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'local-admin-test-only', INGEST_TOKEN: 'local-ingest-test-only' };
+  env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'local-admin-test-only-separation', INGEST_TOKEN: 'local-ingest-test-only-separation' };
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
     for (const sql of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(s => s.trim())) await env.DB.prepare(sql).run();

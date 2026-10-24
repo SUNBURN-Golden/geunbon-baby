@@ -24,7 +24,7 @@ async function migrate(files?: string[]) {
 }
 beforeEach(async () => {
   memory = memoryD1();
-  env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'fixture-admin', INGEST_TOKEN: 'fixture-ingest' };
+  env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'fixture-admin-token-separation-0001', INGEST_TOKEN: 'fixture-ingest-token-separation-0002' };
   await migrate();
   await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','fixture','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','fixture','https://example.com/')").run();

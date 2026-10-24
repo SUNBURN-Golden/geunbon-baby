@@ -27,7 +27,7 @@ test('local API requires exact host/origin and distinct privileges; API, CLI and
 test('site stores authenticated counts only; idempotent and reverse versions cannot publish or overwrite newer snapshots',async()=>{
  const memory=memoryD1(),f=fixture();vi.spyOn(Date,'now').mockReturnValue(Date.parse('2026-10-24T00:00:00Z'));try{
   for(const sql of readFileSync(new URL('../migrations/0007_collector_status.sql',import.meta.url),'utf8').split(';').filter(v=>v.trim()))await memory.db.prepare(sql).run();
-  const env:Env={DB:memory.db,IMAGES:{} as R2Bucket,ADMIN_TOKEN:'fixture-admin-token',INGEST_TOKEN:'fixture-ingest-token',COLLECTOR_STATUS_TOKEN:'fixture-status-token-distinct'};
+  const env:Env={DB:memory.db,IMAGES:{} as R2Bucket,ADMIN_TOKEN:'fixture-admin-token-separation-0001',INGEST_TOKEN:'fixture-ingest-token-separation-0002',COLLECTOR_STATUS_TOKEN:'fixture-status-token-distinct'};
   const call=(path:string,token?:string,body?:unknown)=>handleApi(new Request(`https://site.example.org/api/v1/${path}`,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${token??''}`},...(body===undefined?{}:{body:JSON.stringify(body)})}),path.split('/'),env);
   expect((await call('admin/collection-status',env.ADMIN_TOKEN)).status).toBe(200);expect((await (await call('admin/collection-status',env.ADMIN_TOKEN)).json() as {data:{synced:boolean;workers:{snapshot:Snapshot;stale:boolean}[]}}).data).toMatchObject({synced:false,workers:[]});
   const old=f.store.report();intake(f.store,`${source.origin}/a`,price());const newer=f.store.report();

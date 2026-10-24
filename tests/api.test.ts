@@ -14,7 +14,7 @@ type QueueResponse = { data: { id: string; account: string; suggestions: string 
 const ingest = { source_url: 'https://www.instagram.com/p/test-local/', account: 'local-test', text: '검증용 원문. 실제 상품·가격 데이터 아님.', kind: 'post', captured_at: '2026-10-21T00:00:00Z' };
 const call = (path: string, method = 'GET', body?: unknown, token?: string) => handleApi(new Request(`http://localhost/api/v1/${path}`, { method, headers: token ? { authorization: `Bearer ${token}` } : {}, body: body === undefined ? undefined : JSON.stringify(body) }), path.split('?')[0].split('/'), env);
 beforeAll(async () => {
-  env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'local-admin-test-only', INGEST_TOKEN: 'local-ingest-test-only' };
+  env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'local-admin-test-only-separation', INGEST_TOKEN: 'local-ingest-test-only-separation' };
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
     const migration = await readFile(new URL(file, dir), 'utf8');

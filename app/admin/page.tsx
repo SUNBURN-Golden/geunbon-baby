@@ -4,21 +4,26 @@ import { DealImage } from '../deals/_image';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { authorized, handleApi, parseStoredSuggestions } from '../../lib/api';
+import { authorized, handleApi, parseStoredSuggestions, serviceTokens } from '../../lib/api';
 import { environment, all } from '../../lib/db';
 import { EXTERNAL_SOURCES, money, type ExternalCandidate, type Model, type Seller } from '../../lib/data';
 export const dynamic = 'force-dynamic';
 const ADMIN_COOKIE = 'agamajung_admin';
 // Shared by login and logout: replacing/expiring a cookie requires the same name, path and domain.
 const adminCookie = () => ({ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/admin' } as const);
+const adminToken = () => serviceTokens(environment())?.admin ?? null;
 async function authenticated() {
+  const expected = adminToken();
+  if (!expected) return false;
   const token = (await cookies()).get(ADMIN_COOKIE)?.value;
-  return authorized(new Request('https://local.invalid', { headers: { authorization: `Bearer ${token ?? ''}` } }), environment().ADMIN_TOKEN);
+  return authorized(new Request('https://local.invalid', { headers: { authorization: `Bearer ${token ?? ''}` } }), expected);
 }
 async function login(form: FormData) {
   'use server';
+  const expected = adminToken();
+  if (!expected) redirect('/admin?error=config');
   const token = String(form.get('token') ?? '');
-  if (!await authorized(new Request('https://local.invalid', { headers: { authorization: `Bearer ${token}` } }), environment().ADMIN_TOKEN)) redirect('/admin?error=auth');
+  if (!await authorized(new Request('https://local.invalid', { headers: { authorization: `Bearer ${token}` } }), expected)) redirect('/admin?error=auth');
   await (await cookies()).set(ADMIN_COOKIE, token, { ...adminCookie(), maxAge: 3600 });
   redirect('/admin');
 }
@@ -26,22 +31,27 @@ async function logout() { 'use server'; await (await cookies()).set(ADMIN_COOKIE
 async function review(form: FormData) {
   'use server';
   if (!await authenticated()) redirect('/admin?error=auth');
+  const token = adminToken();
+  if (!token) redirect('/admin?error=config');
   const env = environment();
   const payload = Object.fromEntries(form.entries());
-  const response = await handleApi(new Request('https://local.invalid', { method: 'POST', headers: { authorization: `Bearer ${env.ADMIN_TOKEN}` }, body: JSON.stringify({ ...payload, include_image: form.get('include_image') === 'on', price: payload.price === '' ? null : Number(payload.price) }) }), ['admin', 'review', String(form.get('id'))], env);
+  const response = await handleApi(new Request('https://local.invalid', { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, include_image: form.get('include_image') === 'on', price: payload.price === '' ? null : Number(payload.price) }) }), ['admin', 'review', String(form.get('id'))], env);
   if (!response.ok) redirect('/admin?error=review');
   revalidatePath('/admin'); redirect('/admin');
 }
 async function dismissCandidate(form: FormData) {
   'use server';
   if (!await authenticated()) redirect('/admin?error=auth');
+  const token = adminToken();
+  if (!token) redirect('/admin?error=config');
   const env = environment();
-  const response = await handleApi(new Request('https://local.invalid', { method: 'POST', headers: { authorization: `Bearer ${env.ADMIN_TOKEN}` }, body: JSON.stringify({ action: 'dismiss' }) }), ['admin', 'candidates', String(form.get('candidate_id'))], env);
+  const response = await handleApi(new Request('https://local.invalid', { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ action: 'dismiss' }) }), ['admin', 'candidates', String(form.get('candidate_id'))], env);
   if (!response.ok) redirect('/admin?error=review');
   revalidatePath('/admin'); redirect('/admin');
 }
 export default async function Admin({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
+  if (!adminToken()) return <main className="page narrow"><p className="eyebrow">PRIVATE REVIEW DESK</p><h1>관리자 검수</h1><p role="alert">관리자 인증 설정을 확인해야 합니다. 운영자에게 문의하세요.</p></main>;
   if (!await authenticated()) return <main className="page narrow"><p className="eyebrow">PRIVATE REVIEW DESK</p><h1>관리자 검수</h1>{error && <p role="alert">인증에 실패했습니다.</p>}<form action={login}><label>ADMIN_TOKEN<input name="token" type="password" required autoComplete="off"/></label><button>안전하게 들어가기</button></form></main>;
   const db = environment().DB;
   const collector = await collectionStatus(db).catch(() => ({synced:false, workers:[]}));

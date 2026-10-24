@@ -13,7 +13,7 @@ npm ci
 cp .env.example .dev.vars
 ```
 
-`.dev.vars`의 ADMIN_TOKEN과 INGEST_TOKEN에 **서로 다른 충분히 긴 임의 값**을 직접 설정합니다. 비워두면 관련 API는 503으로 닫힙니다. 이 파일은 gitignore 대상입니다. 크롤러 전용 환경변수는 별도의 로컬 파일로 분리해 관리하세요.
+`.dev.vars`의 ADMIN_TOKEN과 INGEST_TOKEN에 **각각 24자 이상이며 앞뒤 공백이 없는 서로 다른 임의 값**을 직접 설정합니다. COLLECTOR_STATUS_TOKEN도 설정 시 같은 길이·공백 규칙을 지키고 두 토큰과 모두 달라야 합니다. 관리자·수집 토큰 중 하나라도 누락되거나 규칙을 어기거나 현황 토큰과 같으면 admin/ingest API는 모두 503으로 닫히고 `/admin`에는 인증 설정 안내만 표시됩니다. 공개 읽기 API는 계속 사용할 수 있으며, collector/status는 별도로 현황 토큰을 검증합니다. 이 파일은 gitignore 대상입니다. 크롤러 전용 환경변수는 별도의 로컬 파일로 분리해 관리하세요.
 
 ```sh
 npm run db:migrate
@@ -33,7 +33,7 @@ npm run dev
 - `/deals`, `/calendar`: 검수 완료 공구 및 일정 (전부 **광고** 표시)
 - `/sellers`: 통신판매업 신고·청약철회 7일·정식수입 증빙. 시드에 증빙이 없으므로 미확인으로 표시
 - `/login`, `/me`: 구글·카카오 소셜 로그인 가입(자체 가입폼 없음)과 내 계정(뉴스레터 해지·재구독, 로그아웃). 아래 "소셜 로그인" 참고
-- `/admin`: ADMIN_TOKEN 로그인 후 검수 대기 원문 승인/반려. 크롤러가 보낸 자동 추출 제안(모델·가격·일정·링크 후보와 근거)은 참고용으로만 함께 표시. httpOnly·SameSite strict 1시간 쿠키, Next.js Server Actions의 동일 origin 검증 사용. 로그아웃은 발급 시와 같은 Path=/admin·HttpOnly·SameSite=strict·Secure(프로덕션에서만) 속성으로 쿠키를 만료시킴. 공개 화면에는 대기 원문을 전달하지 않음
+- `/admin`: ADMIN_TOKEN 로그인 후 검수 대기 원문 승인/반려. ADMIN_TOKEN·INGEST_TOKEN은 각각 24자 이상·앞뒤 공백 없이 설정하고 COLLECTOR_STATUS_TOKEN을 포함한 세 토큰은 모두 달라야 함. 관리자·수집 토큰 설정이 유효하지 않으면 기존 쿠키가 있어도 인증 설정 안내만 표시하고 로그인·검수 작업을 차단함. 크롤러가 보낸 자동 추출 제안(모델·가격·일정·링크 후보와 근거)은 참고용으로만 함께 표시. httpOnly·SameSite strict 1시간 쿠키, Next.js Server Actions의 동일 origin 검증 사용. 로그아웃은 발급 시와 같은 Path=/admin·HttpOnly·SameSite=strict·Secure(프로덕션에서만) 속성으로 쿠키를 만료시킴. 공개 화면에는 대기 원문을 전달하지 않음
 
 로컬 HTTP의 localhost는 브라우저 secure cookie 예외가 적용됩니다. 관리자 접속은 localhost를 사용하세요. 공유/운영 환경은 HTTPS가 필수입니다. 토큰을 URL에 넣지 마세요. 운영 공개 전 관리자 경로와 ingest에 Cloudflare Access/WAF 등의 접근통제·레이트리밋을 별도로 설정하는 것을 권장합니다.
 
