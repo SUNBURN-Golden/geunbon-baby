@@ -14,7 +14,7 @@ const context = vi.hoisted(() => ({
 }));
 vi.mock('../lib/db', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/db')>(),
-  environment: () => ({ DB: context.db, ADMIN_TOKEN: 'fixture-admin-token-session-regression' }),
+  environment: () => ({ DB: context.db, ADMIN_TOKEN: 'fixture-admin-token-session-regression', INGEST_TOKEN: 'fixture-ingest-token-session-regression' }),
 }));
 vi.mock('next/headers', () => ({ cookies: async () => context.store }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));

@@ -5,8 +5,19 @@ import { all, type Env } from './db';
 import { dealsCopy } from './deals-copy';
 import { comparison, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
+export const MIN_SERVICE_TOKEN_LENGTH = 24;
+// Header values are trimmed in transit; surrounding whitespace usually means a paste error.
+const strongToken = (value: unknown): value is string => typeof value === 'string' && value.length >= MIN_SERVICE_TOKEN_LENGTH && value.trim() === value;
+export type ServiceTokens = { admin: string; ingest: string };
+// Validate the privilege boundary as a pair, including collisions with the optional status token.
+export function serviceTokens(env: Pick<Env, 'ADMIN_TOKEN' | 'INGEST_TOKEN' | 'COLLECTOR_STATUS_TOKEN'>): ServiceTokens | null {
+  const { ADMIN_TOKEN: admin, INGEST_TOKEN: ingest, COLLECTOR_STATUS_TOKEN: status } = env;
+  if (!strongToken(admin) || !strongToken(ingest) || admin === ingest) return null;
+  if (status && (status === admin || status === ingest)) return null;
+  return { admin, ingest };
+}
 export async function authorized(request: Request, token?: string) {
-  if (!token) return false;
+  if (!strongToken(token)) return false;
   const supplied = request.headers.get('authorization') ?? '';
   const digest = async (s: string) => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
   const [a, b] = await Promise.all([digest(supplied), digest(`Bearer ${token}`)]);
@@ -161,15 +172,15 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
   const admin = parts[0] === 'admin';
   if (path === 'collector/status') {
     if (request.method !== 'POST') return json({ error: 'method' }, 405);
-    if (!env.COLLECTOR_STATUS_TOKEN || env.COLLECTOR_STATUS_TOKEN.length < 24 || env.COLLECTOR_STATUS_TOKEN === env.ADMIN_TOKEN || env.COLLECTOR_STATUS_TOKEN === env.INGEST_TOKEN) return json({ error: 'status_token_config' }, 503);
+    if (!strongToken(env.COLLECTOR_STATUS_TOKEN) || env.COLLECTOR_STATUS_TOKEN === env.ADMIN_TOKEN || env.COLLECTOR_STATUS_TOKEN === env.INGEST_TOKEN) return json({ error: 'status_token_config' }, 503);
     if (!await authorized(request, env.COLLECTOR_STATUS_TOKEN)) return json({ error: 'unauthorized' }, 401);
     let value: unknown; try { value = await body(request); } catch { return json({ error: 'snapshot_body' }, 400); }
     const result = await receiveStatus(env.DB, value); return json(result.error ? { error: result.error } : { data: result.data }, result.status);
   }
   if (admin || path === 'ingest') {
-    const token = admin ? env.ADMIN_TOKEN : env.INGEST_TOKEN;
-    if (!token) return json({ error: '서비스 토큰 미설정' }, 503);
-    if (!await authorized(request, token)) return json({ error: '인증 필요' }, 401);
+    const tokens = serviceTokens(env);
+    if (!tokens) return json({ error: '서비스 토큰 설정 확인 필요' }, 503);
+    if (!await authorized(request, admin ? tokens.admin : tokens.ingest)) return json({ error: '인증 필요' }, 401);
   }
   if (path === 'admin/collection-status' && request.method === 'GET') return json({ data: await collectionStatus(env.DB) });
   if (request.method === 'GET') {
