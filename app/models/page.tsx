@@ -1,3 +1,4 @@
+import { PUBLISHED_DEALS } from '../../lib/deals';
 import { siteCopy } from '../../lib/site-copy';
 import { all, environment } from '../../lib/db';
 import { categories, type Deal, type Model } from '../../lib/data';
@@ -9,7 +10,7 @@ export default async function Models({ searchParams }: { searchParams: Promise<{
   const models = await all<Model>(environment().DB, 'SELECT * FROM models ORDER BY rowid');
   const selected = models.filter(m => (!filter.category || m.category === filter.category) && (!filter.brand || m.brand === filter.brand) && (!filter.q || `${m.brand} ${m.name}`.toLowerCase().includes(filter.q.toLowerCase())));
   if (filter.by === 'brand') selected.sort((a, b) => a.brand.localeCompare(b.brand));
-  const deals = await all<Deal>(environment().DB, 'SELECT * FROM deals');
+  const deals = await all<Deal>(environment().DB, PUBLISHED_DEALS);
   // eslint-disable-next-line react-hooks/purity -- Dynamic Server Component captures request time once for all deal statuses.
   const nowMs = Date.now();
   const cards = buildModelCards(selected, deals, nowMs);

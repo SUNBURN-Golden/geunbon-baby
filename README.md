@@ -70,6 +70,9 @@ npm run dev
 | GET | `/api/v1/admin/sellers` | ADMIN_TOKEN 전용, 등록 판매자·검수된 연결 계정·미연결 수집 계정 |
 | POST | `/api/v1/admin/sellers` | 판매자 등록, 선택 계정 연결은 `account_reviewed: true` 필수 |
 | POST | `/api/v1/admin/sellers/:id` | `action: update` 증빙 전체 교체, `link_account` 검수 연결, `unlink_account` 해당 판매자의 연결만 해제 |
+| GET | `/api/v1/admin/deals?status=published&limit=20&cursor=…` | ADMIN_TOKEN 전용, 상태 published(기본)/withdrawn/all, checked·id 내림차순 키셋 페이지. limit 1–50, 응답 `{ data, next_cursor }`, 전체 건수 제한 없음 |
+| GET | `/api/v1/admin/deals/:id` | ADMIN_TOKEN 전용, 현재 값·전체 버전 이력·보존된 수집 원문 및 귀속 검수 근거 |
+| POST | `/api/v1/admin/deals/:id` | ADMIN_TOKEN 전용, action correct/withdraw, expected_version·request_id·reason 필수 |
 | GET | `/api/v1/admin/candidates` | `Authorization: Bearer ADMIN_TOKEN`, 외부 공구 모음 후보(candidate) 최대 200건 |
 | POST | `/api/v1/admin/candidates/:id` | `{ "action": "dismiss" }`만 허용(그 외 400, 이미 처리됨 409, 없는 id 404) |
 
@@ -103,6 +106,16 @@ npm run dev
 등록 시 선택 `account`를 입력하거나 기존 판매자에 `link_account`할 때는 반드시 `account_reviewed: true`로 직접 확인해야 합니다. 계정은 앞뒤 공백·선행 @를 제거하고 소문자로 정규화하며 영문·숫자·점·밑줄 1–30자만 연결합니다. 한 계정은 한 판매자에만 연결할 수 있고 충돌은 409입니다. 계정 없는 등록은 기존 연결에 영향을 주지 않습니다. 핸들이 아닌 수집 계정은 따로 표시하며 명시 귀속만 가능합니다. 모든 판매자 관리 API는 ADMIN_TOKEN 전용이며 INGEST_TOKEN으로 관리할 수 없습니다. 수집 요청의 판매자 필드는 판매자를 생성하지 않습니다.
 
 Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사이트가 가져오거나 자동 등록하지 않습니다. `external_candidates.seller_handle`도 판매자 등록·연결에 사용하지 않습니다. `seller_accounts` 및 승인 귀속 사유는 관리자 전용이며 공개 판매자·공구 응답에는 포함하지 않습니다.
+
+게시된 공구는 `/admin`의 “게시된 공구 정정·철회”에서 관리합니다. 게시 중·철회됨·전체 탭과 “다음 20건”으로 오래된 공구까지 탐색하며, `/admin?deal=<id>`로 직접 찾을 수 있습니다. 원래 수집 본문·URL·이미지·판매자 귀속 사유와 검수 시각은 읽기 전용으로 보존합니다. 게시 시 v1 publish 이력을 만들고, 정정·철회마다 전체 상태와 사유를 다음 버전에 추가합니다. 사유·요청 ID·이력·수집 근거는 관리자 전용이며 공개 JSON에는 상태나 버전도 포함하지 않습니다.
+
+정정(`action: "correct"`)은 등록된 `model_id`, 1–200자 `title`, 정수 원 또는 null `price`, 시간대 포함 `starts_at`·`ends_at`, boolean `include_image`를 모두 받습니다. 제목·사유는 앞뒤 공백을 제거하고 일정은 UTC로 정규화합니다. 이미지는 수집 원본에서 복원하거나 제거할 수만 있습니다. 원문 URL·검증 수준·판매자 귀속은 바꿀 수 없습니다. 판매자가 잘못되었으면 철회하세요. 정정 시 가격 확인일도 갱신합니다.
+
+두 작업 모두 `expected_version`(1 이상 안전한 정수), `request_id`(영문·숫자·하이픈 16–64자, `review-` 접두사는 승인 이력용 예약), 10–300자 `reason`이 필요합니다. 폼은 렌더링할 때 각각 새 UUID를 생성합니다. 요청 ID는 정규화된 요청 내용의 SHA-256과 결합되므로 동일 요청을 재전송하면 200 `replayed: true`로 응답하고 버전·이력을 추가하지 않습니다. 같은 키의 다른 내용·동작·예상 버전은 409 `request_id_reused`입니다. 버전 경쟁은 409 `stale_version`과 `current_version`, 이미 철회된 공구의 새 작업은 409 `withdrawn`입니다. 버전 가드가 있는 D1 batch 하나에서 이력 추가와 현재 값 변경을 원자적으로 처리합니다.
+
+`/admin`의 철회(`action: "withdraw"`) 폼은 공개 화면에서 내림 확인과 사유를 요구합니다. 철회는 최종 상태로 복원할 수 없으며, 모든 공개 목록·모델 비교·현재 공구가 카드·달력에서 사라지고 직접 상세 접근도 404가 됩니다. 동일 URL 재수집은 기존 approved 상태만 반환하고 원문이나 게시 내용을 바꾸지 않습니다. 재승인은 409이며 수집/현황 토큰으로 정정·철회 API를 호출할 수 없습니다. 이 기능은 사이트에만 속하며 Linux 수집기의 저장소나 게시 권한을 연결하지 않습니다.
+
+`0011_deal_lifecycle.sql`은 추가 전용 마이그레이션으로 기존 공구도 v1 publish 이력을 보존합니다. **로컬 D1에만 `npm run db:migrate`로 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
 
 `0010_seller_onboarding.sql`은 추가 전용 마이그레이션입니다. **로컬(`npm run db:migrate`)에만 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
 

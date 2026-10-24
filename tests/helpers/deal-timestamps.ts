@@ -19,7 +19,7 @@ export function api(db: D1Database) {
     method: payload === undefined ? 'GET' : 'POST',
     headers: { authorization: `Bearer ${path === 'ingest' ? env.INGEST_TOKEN : env.ADMIN_TOKEN}` },
     body: payload === undefined ? undefined : JSON.stringify(payload),
-  }), path.split('/'), env);
+  }), path.split('?')[0].split('/'), env);
 }
 export async function pending(db: D1Database, id: string) {
   await db.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at) VALUES (?,?,?,?,?,?)')
@@ -32,4 +32,15 @@ export async function legacy(db: D1Database, id: string, start: string, end: str
   await pending(db, id);
   await db.prepare("INSERT INTO deals (id,model_id,seller_id,title,price,source_url,verify_level,checked,starts_at,ends_at) VALUES (?,'model-1','seller-1',?,NULL,?,'manual','2026-10-20',?,?)")
     .bind(id, `Fixture ${id}`, `https://www.instagram.com/p/${id}/`, start, end).run();
+}
+export async function publish(db: D1Database, id: string) {
+  const call = api(db);
+  const ingested = await call('ingest', {
+    source_url: `https://www.instagram.com/p/${id}/`, account: 'offline-test', text: `Original evidence ${id}`,
+    kind: 'post', captured_at: '2026-10-20T00:00:00Z', image_url: 'https://cdninstagram.com/original.jpg?sig=offline%2B',
+  });
+  const item = (await ingested.json<{ data: { id: string } }>()).data;
+  const response = await call(`admin/review/${item.id}`, { ...approval('2026-10-20T00:00:00Z', '2026-10-30T00:00:00Z', `Original ${id}`), price: 400000 });
+  if (response.status !== 200) throw new Error(`Publish failed: ${response.status}`);
+  return (await db.prepare('SELECT id,version FROM deals WHERE id = ?').bind(item.id).first<{ id: string; version: number }>())!;
 }
