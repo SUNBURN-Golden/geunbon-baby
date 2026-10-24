@@ -8,18 +8,21 @@ import { authorized, handleApi, parseStoredSuggestions } from '../../lib/api';
 import { environment, all } from '../../lib/db';
 import { EXTERNAL_SOURCES, money, type ExternalCandidate, type Model, type Seller } from '../../lib/data';
 export const dynamic = 'force-dynamic';
+const ADMIN_COOKIE = 'agamajung_admin';
+// Shared by login and logout: replacing/expiring a cookie requires the same name, path and domain.
+const adminCookie = () => ({ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/admin' } as const);
 async function authenticated() {
-  const token = (await cookies()).get('agamajung_admin')?.value;
+  const token = (await cookies()).get(ADMIN_COOKIE)?.value;
   return authorized(new Request('https://local.invalid', { headers: { authorization: `Bearer ${token ?? ''}` } }), environment().ADMIN_TOKEN);
 }
 async function login(form: FormData) {
   'use server';
   const token = String(form.get('token') ?? '');
   if (!await authorized(new Request('https://local.invalid', { headers: { authorization: `Bearer ${token}` } }), environment().ADMIN_TOKEN)) redirect('/admin?error=auth');
-  await (await cookies()).set('agamajung_admin', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/admin', maxAge: 3600 });
+  await (await cookies()).set(ADMIN_COOKIE, token, { ...adminCookie(), maxAge: 3600 });
   redirect('/admin');
 }
-async function logout() { 'use server'; await (await cookies()).delete('agamajung_admin'); redirect('/admin'); }
+async function logout() { 'use server'; await (await cookies()).set(ADMIN_COOKIE, '', { ...adminCookie(), maxAge: 0, expires: new Date(0) }); redirect('/admin'); }
 async function review(form: FormData) {
   'use server';
   if (!await authenticated()) redirect('/admin?error=auth');
