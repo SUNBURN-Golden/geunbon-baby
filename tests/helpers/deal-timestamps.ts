@@ -26,7 +26,7 @@ export async function pending(db: D1Database, id: string) {
     .bind(id, `https://www.instagram.com/p/${id}/`, 'offline-test', 'Synthetic timestamp fixture', 'post', '2026-10-20T00:00:00.000Z').run();
 }
 export const approval = (starts_at: string, ends_at: string, title = 'Timestamp fixture') => ({
-  action: 'approve', model_id: 'model-1', seller_id: 'seller-1', title, price: null, starts_at, ends_at,
+  action: 'approve', attribution: 'explicit', attribution_note: 'Synthetic fixture attribution reviewed offline', model_id: 'model-1', seller_id: 'seller-1', title, price: null, starts_at, ends_at,
 });
 export async function legacy(db: D1Database, id: string, start: string, end: string) {
   await pending(db, id);

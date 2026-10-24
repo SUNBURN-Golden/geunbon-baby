@@ -66,7 +66,10 @@ npm run dev
 | GET | `/api/v1/calendar` | 시작일순 검수 완료 공구 |
 | POST | `/api/v1/ingest` | `Authorization: Bearer INGEST_TOKEN` |
 | GET | `/api/v1/admin/queue` | `Authorization: Bearer ADMIN_TOKEN`, 최대 100건 |
-| POST | `/api/v1/admin/review/:id` | 관리자 승인/반려 |
+| POST | `/api/v1/admin/review/:id` | 관리자 승인/반려, 승인 시 모델·판매자·귀속 근거 필수 |
+| GET | `/api/v1/admin/sellers` | ADMIN_TOKEN 전용, 등록 판매자·검수된 연결 계정·미연결 수집 계정 |
+| POST | `/api/v1/admin/sellers` | 판매자 등록, 선택 계정 연결은 `account_reviewed: true` 필수 |
+| POST | `/api/v1/admin/sellers/:id` | `action: update` 증빙 전체 교체, `link_account` 검수 연결, `unlink_account` 해당 판매자의 연결만 해제 |
 | GET | `/api/v1/admin/candidates` | `Authorization: Bearer ADMIN_TOKEN`, 외부 공구 모음 후보(candidate) 최대 200건 |
 | POST | `/api/v1/admin/candidates/:id` | `{ "action": "dismiss" }`만 허용(그 외 400, 이미 처리됨 409, 없는 id 404) |
 
@@ -93,7 +96,15 @@ npm run dev
 
 `image_url`은 선택 항목(생략·null 가능)이며 최대 4,096자의 절대 HTTPS URL입니다. `cdninstagram.com`, `fbcdn.net` 및 실제 하위 도메인만 허용하고 사용자 정보·fragment·비표준 포트는 거부합니다. 서명 쿼리는 원문 그대로 저장하며 잘못된 값은 URL을 응답에 포함하지 않고 400으로 거부합니다. 이미 수집한 원문 URL은 이미지·본문을 덮어쓰지 않습니다. 이미지는 검수 대기열에만 저장되고 승인 전이나 반려 후에는 공개되지 않습니다.
 
-승인 JSON은 `action: "approve"`, 등록된 `model_id`, `seller_id`, `title`, `price`(정수 원 또는 null), `starts_at`, `ends_at`(시간대 포함 ISO)을 받습니다. 이미지 포함 여부는 선택 boolean `include_image`로 지정하며 기본값은 true입니다. `/admin`의 인증된 미리보기 옆 “이미지 포함”을 해제하면 이미지 없이 게시합니다. 검수 API는 대체 `image_url`을 받지 않고 저장된 이미지만 승인 트랜잭션 안에서 복사합니다. 반려는 `{ "action": "reject" }`입니다. 승인 후 가격은 manual 검증 수준이며 원문 URL을 유지합니다. 이미 검수된 건은 409, 잘못된 입력은 400입니다. 게시와 검수 상태 변경은 D1 batch 트랜잭션으로 처리합니다. 판매자 신규 등록·배지 증빙은 현재 관리자 UI 범위에 없으며 운영자가 검증한 근거를 D1 마이그레이션으로 추가해야 합니다.
+승인 JSON은 `action: "approve"`, 등록된 `model_id`, `seller_id`, `title`, `price`(정수 원 또는 null), `starts_at`, `ends_at`(시간대 포함 ISO)을 받습니다. 이미지 포함 여부는 선택 boolean `include_image`로 지정하며 기본값은 true입니다. `/admin`의 인증된 미리보기 옆 “이미지 포함”을 해제하면 이미지 없이 게시합니다. 검수 API는 대체 `image_url`을 받지 않고 저장된 이미지만 승인 트랜잭션 안에서 복사합니다. 반려는 `{ "action": "reject" }`입니다. 승인 후 가격은 manual 검증 수준이며 원문 URL을 유지합니다. 이미 검수된 건은 409, 잘못된 입력은 400입니다. 게시와 검수 상태 변경은 D1 batch 트랜잭션으로 처리합니다. `/admin`의 모델·판매자 선택은 공란으로 시작하며 둘 다 직접 선택해야 합니다. 승인에는 `attribution`도 필수입니다. `account`는 정규화된 원문 계정과 선택한 판매자 사이에 검수된 연결이 있어야 합니다. `explicit`은 미연결·다른 판매자 연결·핸들이 아닌 계정에 사용할 수 있으며 `attribution_note`에 10–300자의 귀속 사유를 남겨야 합니다. 명시 귀속은 계정 연결을 만들거나 변경하지 않습니다. 반려에는 선택값·귀속 근거가 필요 없으며 브라우저 필수 입력 검증도 건너뜁니다.
+
+`/admin`의 “판매자 등록·증빙”에서 대기열 유무와 무관하게 새 판매자를 등록할 수 있습니다. 등록·수정 입력은 `name`(100자 이하), `source_url`(HTTPS), 선택 증빙 `registration_source`, `withdrawal_source`, `official_import_source`입니다. 증빙을 비우면 NULL로 지워져 미확인으로 표시되며 원문 URL이나 계정으로 증빙을 추정하지 않습니다. URL은 자격 증명 없는 HTTPS만 허용합니다. 수정은 증빙 전체를 교체합니다.
+
+등록 시 선택 `account`를 입력하거나 기존 판매자에 `link_account`할 때는 반드시 `account_reviewed: true`로 직접 확인해야 합니다. 계정은 앞뒤 공백·선행 @를 제거하고 소문자로 정규화하며 영문·숫자·점·밑줄 1–30자만 연결합니다. 한 계정은 한 판매자에만 연결할 수 있고 충돌은 409입니다. 계정 없는 등록은 기존 연결에 영향을 주지 않습니다. 핸들이 아닌 수집 계정은 따로 표시하며 명시 귀속만 가능합니다. 모든 판매자 관리 API는 ADMIN_TOKEN 전용이며 INGEST_TOKEN으로 관리할 수 없습니다. 수집 요청의 판매자 필드는 판매자를 생성하지 않습니다.
+
+Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사이트가 가져오거나 자동 등록하지 않습니다. `external_candidates.seller_handle`도 판매자 등록·연결에 사용하지 않습니다. `seller_accounts` 및 승인 귀속 사유는 관리자 전용이며 공개 판매자·공구 응답에는 포함하지 않습니다.
+
+`0010_seller_onboarding.sql`은 추가 전용 마이그레이션입니다. **로컬(`npm run db:migrate`)에만 적용하며 운영 D1 적용은 운영자가 별도로 수행합니다.**
 
 승인·수집의 타임스탬프는 시간대 오프셋을 허용하며 UTC `YYYY-MM-DDTHH:MM:SS.SSSZ`로 정규화해 저장합니다. 존재하지 않는 날짜(예: 2월 30일)와 종료 ≤ 시작인 일정은 400으로 거부합니다. 제안 일정은 같은 엄격한 검증을 거치되 원문 값을 보존하며, 공개 화면의 일정·확인일은 KST로 표시합니다.
 

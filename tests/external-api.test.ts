@@ -142,7 +142,7 @@ test('dismiss: only the dismiss action, 404 for unknown ids, 409 when repeated, 
   expect((await call(`admin/candidates/${id}`, 'POST', { action: 'reject' }, env.ADMIN_TOKEN)).status).toBe(400);
   expect((await call(`admin/candidates/${id}`, 'POST', { action: 'dismiss' }, env.INGEST_TOKEN)).status).toBe(401);
   expect((await call('admin/candidates/missing', 'POST', { action: 'dismiss' }, env.ADMIN_TOKEN)).status).toBe(404);
-  expect((await call(`admin/review/${id}`, 'POST', { action: 'approve', model_id: 'model-1', seller_id: 'seller-1', title: 'x', price: 1, starts_at: '2026-10-26T00:00:00+09:00', ends_at: '2026-10-28T00:00:00+09:00' }, env.ADMIN_TOKEN)).status).toBe(404);
+  expect((await call(`admin/review/${id}`, 'POST', { action: 'approve', attribution: 'explicit', attribution_note: 'Synthetic fixture attribution reviewed offline', model_id: 'model-1', seller_id: 'seller-1', title: 'x', price: 1, starts_at: '2026-10-26T00:00:00+09:00', ends_at: '2026-10-28T00:00:00+09:00' }, env.ADMIN_TOKEN)).status).toBe(404);
   expect(await rows('SELECT * FROM deals')).toHaveLength(0);
   expect((await call(`admin/candidates/${id}`, 'POST', { action: 'dismiss' }, env.ADMIN_TOKEN)).status).toBe(200);
   expect((await call(`admin/candidates/${id}`, 'POST', { action: 'dismiss' }, env.ADMIN_TOKEN)).status).toBe(409);
