@@ -1,7 +1,7 @@
 import { PUBLISHED_DEALS } from '../../../lib/deals';
 import { notFound } from 'next/navigation';
 import { all, environment } from '../../../lib/db';
-import { categories, comparison, money, verification, type Model, type Deal } from '../../../lib/data';
+import { categories, comparison, money, verificationLabel, type Model, type Deal } from '../../../lib/data';
 import { siteCopy } from '../../../lib/site-copy';
 import { dealsCopy } from '../../../lib/deals-copy';
 import { DealCard } from '../../shared';
@@ -30,7 +30,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
           <h2>{siteCopy.officialPrice}</h2>
           <h3>{money(m.official_price)}</h3>
           <p>{m.importer}</p>
-          <p className="muted">{m.checked} · {verification[m.verify_level] ?? m.verify_level}</p>
+          <p className="muted">{m.checked} · {verificationLabel(m.verify_level)}</p>
           {m.source_url && <a href={m.source_url} target="_blank" rel="noopener noreferrer">{siteCopy.officialSource}</a>}
           <p className="muted">{siteCopy.officialSourceNotice}</p>
         </section>

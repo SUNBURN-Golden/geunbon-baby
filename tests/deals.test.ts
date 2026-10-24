@@ -146,6 +146,7 @@ describe('server rendered deals UI', () => {
   test('list cards omit qualification, verification, model notes and confirmation dates', () => {
     const html = card();
     for (const copy of [dealsCopy.qualification, dealsCopy.dealChecked, dealsCopy.officialChecked,
+      dealsCopy.dealEvidence, dealsCopy.officialEvidence,
       dealsCopy.searchSummary, dealsCopy.manual, fixture.model_note!, '2026.10.21', '2026.10.18']) {
       expect(html).not.toContain(copy);
     }
@@ -213,8 +214,50 @@ describe('server rendered deals UI', () => {
     }
     expect(card({ price: 0 })).toContain(`>0<span>${dealsCopy.won}</span>`);
     expect(card({ price: null })).toContain(dealsCopy.unknownPrice);
+    expect(card({ price: null })).toContain('정보 없음');
     expect(card({ model_official_price: null })).toContain('390,000');
     expect(card({ model_official_price: null })).toContain(dealsCopy.unknownOfficial);
+  });
+
+  test('failed official retrieval retains the deal price and neutral evidence with its date', () => {
+    const html = detail({ model_verify_level: 'official_unpublished', model_official_price: null });
+    for (const text of [dealsCopy.officialEvidence, dealsCopy.officialUnconfirmed, dealsCopy.unknownOfficial, '390,000', '2026.10.18']) {
+      expect(html).toContain(text);
+    }
+    for (const text of [dealsCopy.officialChecked, '미공개', '비공개', 'class="deal-gap"', 'class="deal-tone', '430,000']) {
+      expect(html).not.toContain(text);
+    }
+  });
+
+  test.each([0, null])('official price %s with a legacy level uses a neutral evidence heading', model_official_price => {
+    const html = detail({ model_official_price, model_verify_level: 'page_text' });
+    expect(html).toContain(dealsCopy.officialEvidence);
+    expect(html).toContain(dealsCopy.pageText);
+    expect(html).not.toContain(dealsCopy.officialChecked);
+  });
+
+  test('an unconfirmed level cannot claim official confirmation even with a numeric price', () => {
+    const html = detail({ model_verify_level: 'official_unpublished' }).replace(/<[^>]+>/g, '');
+    expect(html).toContain(dealsCopy.officialEvidence);
+    expect(html).not.toContain(dealsCopy.officialChecked);
+  });
+
+  test('missing deal price retains evidence and confirmed official metadata without substituting a price', () => {
+    const html = detail({ price: null });
+    expect(html).toContain(dealsCopy.dealEvidence);
+    expect(html).toContain('정보 없음');
+    expect(html).not.toContain(dealsCopy.dealChecked);
+    expect(html).toContain(dealsCopy.officialChecked);
+    expect(html).toContain('2026.10.21');
+    expect(html).not.toContain('390,000');
+    expect(html).not.toContain('class="deal-price"');
+  });
+
+  test('zero deal price remains known and keeps the confirmed headings', () => {
+    const html = detail({ price: 0 });
+    expect(html).toContain('>0<span>원</span>');
+    expect(html).toContain(dealsCopy.dealChecked);
+    expect(html).toContain(dealsCopy.officialChecked);
   });
 
   test('missing joined rows retain the deal, hide the model action and provide a seller fallback', () => {

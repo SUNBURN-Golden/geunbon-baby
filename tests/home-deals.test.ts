@@ -135,6 +135,7 @@ test('active cards preserve unknown prices, zero prices and comparison direction
   expect(render({ price: 0 })).toContain(`>0<span>${dealsCopy.won}</span>`);
   const unknown = render({ price: null });
   expect(unknown).toContain(dealsCopy.unknownPrice);
+  expect(unknown).toContain('정보 없음');
   expect(unknown).toContain('500,000원');
   expect(unknown).not.toContain('class="active-deal-gap"');
   const zeroOfficial = render({ model_official_price: 0 });
@@ -144,6 +145,7 @@ test('active cards preserve unknown prices, zero prices and comparison direction
     const html = render(patch);
     expect(html).toContain('400,000');
     expect(html).toContain(dealsCopy.unknownOfficial);
+    expect(html).toContain('정보 없음');
     expect(html).not.toContain('class="active-deal-gap"');
   }
 });
