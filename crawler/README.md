@@ -14,7 +14,7 @@ Instagram worker는 **Node.js 22 이상 + Playwright**로 본인 계정에서 �
 
 OCR은 **기본 켜짐**이므로 tesseract와 한국어·영어 언어팩을 설치하고 `tesseract --list-langs`로 확인하세요. OCR을 끄려면 `AGAMAJUNG_OCR=0`을 설정합니다.
 
-`.env.example`을 참고해 비밀 저장소나 gitignore 대상인 루트 `.env.crawler`로 환경변수를 주입합니다. 크롤러는 시작 시 루트 `.env.crawler`가 있으면 읽고, 이미 주입된 환경변수는 유지합니다. 파일이 없으면 주입된 환경변수만 사용합니다. 비밀번호는 **`AGAMAJUNG_IG_PASSWORD` 환경변수에서만** 읽습니다. 명령행 인수·로그·git에 넣지 마세요.
+`crawler/.env.crawler.example`을 참고해(`cp crawler/.env.crawler.example .env.crawler`) 비밀 저장소나 gitignore 대상인 루트 `.env.crawler`로 환경변수를 주입합니다. 복사 명령은 저장소 루트에서 실행합니다. 크롤러는 시작 시 루트 `.env.crawler`가 있으면 읽고, 이미 주입된 환경변수는 유지합니다. 파일이 없으면 주입된 환경변수만 사용합니다. 비밀번호는 **`AGAMAJUNG_IG_PASSWORD` 환경변수에서만** 읽습니다. 명령행 인수·로그·git에 넣지 마세요.
 
 | 변수 | 설명 |
 | --- | --- |
@@ -239,7 +239,7 @@ DB 디렉터리는 0700, DB/WAL/SHM/journal은 0600이고 심볼릭 링크·잘�
 
 전송 진입점은 `npm run collector:worker -- sync`(`crawler/src/local-worker.ts` → `crawler/src/status-sync.ts`)이며 사이트의 `POST /api/v1/collector/status`만 호출합니다. 별도 동기화 프로세스로 실행하고 같은 DB의 serve/discover와 동시에 실행하지 않습니다.
 
-sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. 전송 전에 검토 만료와 재확인 건수를 갱신하고, 최신 스냅샷을 만든 지 15분 이상 지났으면 더 높은 버전의 새 스냅샷을 추가합니다. 빈 수집함의 첫 sync도 0건인 버전 1을 만듭니다. 운영 타이머는 `npm run collector:worker -- sync`를 15분 이하 간격으로 실행하세요. 사이트는 스냅샷 생성 후 60분을 넘기면 동기화 지연으로 표시합니다. 대기 중인 항목은 변경하지 않고 새 버전만 추가하므로 응답 유실 후에도 같은 payload를 재전송합니다.
+sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. COLLECTOR_STATUS_TOKEN은 사이트에 바인딩한 것과 같은 값이며 `crawler/.env.crawler.example`에는 포함하지 않으므로 비밀 저장소에서 별도로 주입합니다. 전송 전에 검토 만료와 재확인 건수를 갱신하고, 최신 스냅샷을 만든 지 15분 이상 지났으면 더 높은 버전의 새 스냅샷을 추가합니다. 빈 수집함의 첫 sync도 0건인 버전 1을 만듭니다. 운영 타이머는 `npm run collector:worker -- sync`를 15분 이하 간격으로 실행하세요. 사이트는 스냅샷 생성 후 60분을 넘기면 동기화 지연으로 표시합니다. 대기 중인 항목은 변경하지 않고 새 버전만 추가하므로 응답 유실 후에도 같은 payload를 재전송합니다.
 
 스냅샷은 건수·보조 지표·작업기 ID·버전·시각만 포함하며 실패하면 유지/재전송합니다. outbox는 리디렉트 없는 `200 application/json {data:{worker_id,version}}` 응답에서 일치하는 문자열 worker_id와 전송 버전 이상의 안전한 정수 version을 확인한 뒤에만 삭제합니다. 잘못된 receipt·본문 초과·본문 읽기 실패·응답 유실은 재전송 대상으로 남습니다. 사이트 버전이 로컬 카운터보다 높아도 삭제와 후속 전송을 계속하며 sync CLI JSON에 `site_version_ahead: true, site_version`으로 보고합니다. 카운터 자체는 바꾸지 않습니다. 오류 진단은 고정 코드만 사용하고 토큰·응답 본문·원래 전송 오류는 출력하지 않습니다. 실제 수집함·근거는 Linux에 남습니다. 자세한 Chrome 권한/재클릭 경계는 [확장 README](../tools/chrome-clipper/README.md)를 참고하세요.
 
