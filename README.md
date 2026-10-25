@@ -12,8 +12,8 @@
 
 | 시스템 | 진입점·실행 위치 | 저장소 | 자격 증명·사이트 접점 |
 | --- | --- | --- | --- |
-| 사이트 | `worker.ts`, `app/**` · Cloudflare Workers. 로컬은 `wrangler dev --local` | D1 `DB`(사이트 `/migrations`), R2 `IMAGES` | ADMIN_TOKEN(관리), INGEST_TOKEN(수집 접수), COLLECTOR_STATUS_TOKEN(건수 접수), 선택 OAuth 키. 아래 API 제공 |
-| Instagram worker | `crawler/index.ts`, PM2용 `crawler/run.mjs` · Linux Node 22 + Playwright | `crawler/.session/`, `crawler/.cache/state.json` | AGAMAJUNG_IG_USER(기본 `agamajung`)·AGAMAJUNG_IG_PASSWORD 또는 저장 세션, AGAMAJUNG_API_URL·INGEST_TOKEN. `POST /api/v1/ingest`로 post/story를 pending 접수. 호환 external_listing은 별도 external_candidates에 저장 |
+| 사이트 | `worker.ts`, `app/**` · Cloudflare Workers. 로컬은 `wrangler dev --local` | D1 `DB`(사이트 `/migrations`), R2 `IMAGES` | ADMIN_TOKEN(관리), INGEST_TOKEN(수집 접수), COLLECTOR_STATUS_TOKEN(건수 접수), 선택 OAuth 키(예시 `.env.example` → `.dev.vars`). 아래 API 제공 |
+| Instagram worker | `crawler/index.ts`, PM2용 `crawler/run.mjs` · Linux Node 22 + Playwright | `crawler/.session/`, `crawler/.cache/state.json` | AGAMAJUNG_IG_USER(기본 `agamajung`)·AGAMAJUNG_IG_PASSWORD 또는 저장 세션, AGAMAJUNG_API_URL·INGEST_TOKEN(예시 `crawler/.env.crawler.example` → 루트 `.env.crawler`). `POST /api/v1/ingest`로 post/story를 pending 접수. 호환 external_listing은 별도 external_candidates에 저장 |
 | 독립 로컬 수집함 | `crawler/src/local-worker.ts`의 serve/discover, CLI `crawler/collector.mjs`, Chrome MV3 `tools/chrome-clipper/` · Linux, serve는 `127.0.0.1:4318` | `crawler/.cache/collector.sqlite`, 전용 `crawler/migrations/` | serve는 COLLECTOR_INTAKE_TOKEN·COLLECTOR_REVIEW_TOKEN·COLLECTOR_EXTENSION_ORIGIN, 확장은 인테이크 토큰, CLI는 검토 토큰. discover 자체에는 사이트·Instagram 자격 증명 불필요. 수집 자료를 사이트로 보내지 않음 |
 | 건수 동기화 | `npm run collector:worker -- sync` → `crawler/src/local-worker.ts`, `crawler/src/status-sync.ts` · Linux | 위 SQLite의 트랜잭션 outbox → 사이트 D1 건수 스냅샷 | COLLECTOR_SITE_URL(HTTPS)·전용 COLLECTOR_STATUS_TOKEN. `POST /api/v1/collector/status`에 건수·보조 집계·작업기 ID·버전·시각만 전송 |
 
@@ -51,7 +51,7 @@ npm ci
 cp .env.example .dev.vars
 ```
 
-`.dev.vars`의 ADMIN_TOKEN과 INGEST_TOKEN에 **각각 24자 이상이며 앞뒤 공백이 없는 서로 다른 임의 값**을 직접 설정합니다. COLLECTOR_STATUS_TOKEN도 설정 시 같은 길이·공백 규칙을 지키고 두 토큰과 모두 달라야 합니다. 관리자·수집 토큰 중 하나라도 누락되거나 규칙을 어기거나 현황 토큰과 같으면 admin/ingest API는 모두 503으로 닫히고 `/admin`에는 인증 설정 안내만 표시됩니다. 공개 읽기 API는 계속 사용할 수 있으며, collector/status는 별도로 현황 토큰을 검증합니다. 이 파일은 gitignore 대상입니다. 크롤러 전용 환경변수는 별도의 로컬 파일로 분리해 관리하세요.
+`.dev.vars`의 ADMIN_TOKEN과 INGEST_TOKEN에 **각각 24자 이상이며 앞뒤 공백이 없는 서로 다른 임의 값**을 직접 설정합니다. COLLECTOR_STATUS_TOKEN도 설정 시 같은 길이·공백 규칙을 지키고 두 토큰과 모두 달라야 합니다. 관리자·수집 토큰 중 하나라도 누락되거나 규칙을 어기거나 현황 토큰과 같으면 admin/ingest API는 모두 503으로 닫히고 `/admin`에는 인증 설정 안내만 표시됩니다. 공개 읽기 API는 계속 사용할 수 있으며, collector/status는 별도로 현황 토큰을 검증합니다. 이 파일은 gitignore 대상입니다. `.env.example`에는 사이트 바인딩만 있습니다. 크롤러·수집기 변수는 `crawler/.env.crawler.example`을 루트 `.env.crawler`로 복사해 관리하며 `.dev.vars`에 넣지 마세요.
 
 ```sh
 npm run db:migrate

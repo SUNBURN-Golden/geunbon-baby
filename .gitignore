@@ -6,6 +6,7 @@ node_modules/
 .dev.vars*
 .env*
 !.env.example
+!crawler/.env.crawler.example
 crawler/.session/
 crawler/.cache/
 crawler/logs/
