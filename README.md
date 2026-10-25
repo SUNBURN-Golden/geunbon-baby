@@ -103,6 +103,8 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 
 `/admin`은 httpOnly·SameSite strict·1시간 쿠키와 Server Actions 동일 origin 검증을 사용합니다. 로그아웃은 발급 시와 같은 Path=/admin·HttpOnly·SameSite=strict·Secure(프로덕션에서만) 속성으로 쿠키를 만료시킵니다. 서비스 토큰 설정이 잘못되면 기존 쿠키가 있어도 설정 안내만 표시하고 로그인·검수를 차단합니다. 공개 화면에는 대기 원문을 전달하지 않습니다. 로컬 관리자 접속은 localhost를 사용하고 공유/운영 환경은 HTTPS를 사용합니다. 토큰을 URL에 넣지 마세요.
 
+관리자 쿠키에는 ADMIN_TOKEN 원문 대신 `v1.<만료>.<nonce>.<HMAC-SHA256 서명>`을 저장합니다. 로그인마다 임의 nonce를 생성하고 ADMIN_TOKEN을 키로 만료 시각과 nonce에 서명하며, 서버는 서명과 1시간 만료를 검증합니다. 쿠키 값은 `/api/v1/admin/*`의 `Authorization: Bearer` 토큰으로 사용할 수 없습니다. ADMIN_TOKEN을 교체하면 기존 세션은 즉시 무효화됩니다. 로그아웃은 브라우저 쿠키를 삭제하지만 서버에 세션 상태를 저장하지 않으므로, 로그아웃 전에 탈취된 쿠키는 만료까지(최대 1시간) `/admin`에서 유효합니다.
+
 ## 소셜 로그인
 
 가입은 구글·카카오 소셜 로그인만 지원합니다(네이버·자체 가입폼 없음). 의존성 없이 OAuth 2.0 authorization code 흐름을 직접 구현했고 Workers의 `fetch`와 `crypto.subtle`만 씁니다.

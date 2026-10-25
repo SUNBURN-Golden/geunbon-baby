@@ -4,7 +4,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { ResponseCookies } from 'next/dist/compiled/@edge-runtime/cookies';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import Admin from '../app/admin/page';
-import { authorized, handleApi, MIN_SERVICE_TOKEN_LENGTH, serviceTokens } from '../lib/api';
+import { authorized, handleApi, issueAdminSession, MIN_SERVICE_TOKEN_LENGTH, serviceTokens } from '../lib/api';
 import type { Env } from '../lib/db';
 import { memoryD1 } from './helpers/sqlite';
 
@@ -159,11 +159,11 @@ test('valid credentials retain separate privileges, including collector isolatio
 test.each(invalid)('admin login, existing cookies and stale actions fail closed: $name', async ({ config }) => {
   // Capture real server actions before the operator invalidates configuration.
   const login = await action('name="token"');
-  context.cookie = valid.ADMIN_TOKEN;
+  context.cookie = await issueAdminSession(valid.ADMIN_TOKEN!);
   const review = await action('name="id"');
   const dismiss = await action('name="candidate_id"');
   context.env = { ...context.env!, ADMIN_TOKEN: undefined, INGEST_TOKEN: undefined, COLLECTOR_STATUS_TOKEN: undefined, ...config };
-  for (const cookie of [config.ADMIN_TOKEN, valid.ADMIN_TOKEN]) {
+  for (const cookie of [config.ADMIN_TOKEN, await issueAdminSession(valid.ADMIN_TOKEN!)]) {
     context.cookie = cookie;
     const tree = await page();
     const html = renderToStaticMarkup(tree);
@@ -188,7 +188,9 @@ test('valid administrator login, review, dismiss and logout preserve the session
   }
   await expectRedirect(login, form({ token: valid.ADMIN_TOKEN! }), '/admin');
   const issued = context.response!.get('agamajung_admin')!;
-  expect(issued).toMatchObject({ value: valid.ADMIN_TOKEN, path: '/admin', httpOnly: true, sameSite: 'strict', maxAge: 3600 });
+  expect(issued.value).not.toBe(valid.ADMIN_TOKEN);
+  noSecrets(issued.value);
+  expect(issued).toMatchObject({ path: '/admin', httpOnly: true, sameSite: 'strict', maxAge: 3600 });
   context.cookie = issued.value;
   const tree = await page();
   expect(renderToStaticMarkup(tree)).toContain('게시 전 검수');

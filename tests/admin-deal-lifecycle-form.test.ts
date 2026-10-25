@@ -7,12 +7,12 @@ import * as apiModule from '../lib/api';
 import { api, migrate, publish } from './helpers/deal-timestamps';
 import { memoryD1 } from './helpers/sqlite';
 
-const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined, authenticated: true }));
+const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined, authenticated: true, session: '' }));
 vi.mock('../lib/db', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/db')>(),
   environment: () => ({ DB: context.db, ADMIN_TOKEN: 'timestamp-admin-test-only', INGEST_TOKEN: 'timestamp-ingest-test-only' }),
 }));
-vi.mock('next/headers', () => ({ cookies: async () => new RequestCookies(new Headers({ cookie: context.authenticated ? 'agamajung_admin=timestamp-admin-test-only' : '' })) }));
+vi.mock('next/headers', () => ({ cookies: async () => new RequestCookies(new Headers({ cookie: context.authenticated ? `agamajung_admin=${context.session}` : '' })) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: (to: string) => { throw new Error(`NEXT_REDIRECT:${to}`); } }));
 let memory: ReturnType<typeof memoryD1>, call: ReturnType<typeof api>, id: string;
@@ -50,6 +50,7 @@ async function snapshot() {
   return { deals: (await memory.db.prepare('SELECT * FROM deals ORDER BY id').all()).results, revisions: (await memory.db.prepare('SELECT * FROM deal_revisions ORDER BY deal_id,version').all()).results };
 }
 beforeEach(async () => {
+  context.session = await apiModule.issueAdminSession('timestamp-admin-test-only');
   context.authenticated = true; memory = memoryD1({ serialize: true }); context.db = memory.db;
   call = api(memory.db); await migrate(memory.db); id = (await publish(memory.db, 'admin-form')).id;
 });
