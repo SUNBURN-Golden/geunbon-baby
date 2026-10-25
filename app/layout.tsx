@@ -30,6 +30,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <section id="letter" className="letter" aria-labelledby="letter-title">
             <h2 id="letter-title">가격 소식지</h2>
             <p>{siteCopy.newsletterLead}</p>
+            <p>{siteCopy.newsletterHow}</p>
+            <Link className="button" href="/login">{siteCopy.newsletterCta}</Link>
           </section>
           <nav aria-label="사이트 안내" className="footer-nav">
             <Link href="/calendar">{siteCopy.calendarFooter}</Link>
