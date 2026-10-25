@@ -272,6 +272,7 @@ footer .logo { font-size: 22px; color: var(--ink); margin-bottom: var(--s-4); }
 .letter { margin-bottom: var(--s-7); padding-bottom: var(--s-6); border-bottom: 1px solid var(--border); scroll-margin-top: var(--s-5); }
 .letter h2 { margin-bottom: var(--s-3); color: var(--ink); font-size: 22px; }
 .letter p { margin-bottom: 0; font-size: 16px; }
+.letter .button { margin-top: var(--s-4); }
 .page { max-width: 1200px; margin: auto; padding: var(--s-8) 6%; min-height: 65vh; }
 .narrow { max-width: 600px; }
 .filters { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: end; padding: var(--s-5) 0 var(--s-6); }

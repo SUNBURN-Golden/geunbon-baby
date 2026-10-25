@@ -7,6 +7,7 @@ import Me from '../app/me/page';
 import Layout from '../app/layout';
 import { createSession, SESSION_COOKIE } from '../lib/auth';
 import { authCopy } from '../lib/auth-copy';
+import { siteCopy } from '../lib/site-copy';
 import { memoryD1 } from './helpers/sqlite';
 
 type Props = { children?: ReactNode; [key: string]: unknown };
@@ -128,4 +129,16 @@ test('/me server actions withdraw, resubscribe and log out', async () => {
 test('layout header links to /me', () => {
   const html = renderToStaticMarkup(Layout({ children: null }));
   expect(html).toContain('class="account-link" href="/me"');
+});
+
+test('footer letter section links to /login with sign-in subscription copy', () => {
+  const html = renderToStaticMarkup(Layout({ children: null }));
+  const letter = html.match(/<section[^>]*id="letter"[\s\S]*?<\/section>/)?.[0];
+  expect(letter).toBeDefined();
+  expect(letter).toMatch(/<a[^>]*href="\/login"[^>]*>/);
+  expect(letter).toContain(siteCopy.newsletterCta);
+  expect(letter).toContain(siteCopy.newsletterHow);
+  expect(letter).toContain('내 계정');
+  expect(letter).not.toContain('곧 만나요');
+  expect(letter).not.toMatch(/<(form|input)\b/);
 });
