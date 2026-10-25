@@ -4,7 +4,7 @@ import { DealImage } from '../deals/_image';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { adminDeal, adminDealsPage, adminSellersData, authorized, handleApi, normalizeAccount, parseStoredSuggestions, serviceTokens } from '../../lib/api';
+import { ADMIN_SESSION_SECONDS, adminDeal, adminDealsPage, adminSellersData, authorized, handleApi, issueAdminSession, normalizeAccount, parseStoredSuggestions, serviceTokens, verifyAdminSession } from '../../lib/api';
 import { environment, all } from '../../lib/db';
 import { EXTERNAL_SOURCES, money, type ExternalCandidate, type Model, type Seller } from '../../lib/data';
 export const dynamic = 'force-dynamic';
@@ -13,10 +13,7 @@ const ADMIN_COOKIE = 'agamajung_admin';
 const adminCookie = () => ({ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/admin' } as const);
 const adminToken = () => serviceTokens(environment())?.admin ?? null;
 async function authenticated() {
-  const expected = adminToken();
-  if (!expected) return false;
-  const token = (await cookies()).get(ADMIN_COOKIE)?.value;
-  return authorized(new Request('https://local.invalid', { headers: { authorization: `Bearer ${token ?? ''}` } }), expected);
+  return verifyAdminSession((await cookies()).get(ADMIN_COOKIE)?.value, adminToken() ?? undefined);
 }
 async function login(form: FormData) {
   'use server';
@@ -24,7 +21,7 @@ async function login(form: FormData) {
   if (!expected) redirect('/admin?error=config');
   const token = String(form.get('token') ?? '');
   if (!await authorized(new Request('https://local.invalid', { headers: { authorization: `Bearer ${token}` } }), expected)) redirect('/admin?error=auth');
-  await (await cookies()).set(ADMIN_COOKIE, token, { ...adminCookie(), maxAge: 3600 });
+  await (await cookies()).set(ADMIN_COOKIE, await issueAdminSession(expected), { ...adminCookie(), maxAge: ADMIN_SESSION_SECONDS });
   redirect('/admin');
 }
 async function logout() { 'use server'; await (await cookies()).set(ADMIN_COOKIE, '', { ...adminCookie(), maxAge: 0, expires: new Date(0) }); redirect('/admin'); }

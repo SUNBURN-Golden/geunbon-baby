@@ -3,19 +3,21 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readdir, readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import Admin from '../app/admin/page';
+import { issueAdminSession } from '../lib/api';
 import { memoryD1 } from './helpers/sqlite';
 
-const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined }));
+const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined, session: '' }));
 vi.mock('../lib/db', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/db')>(),
   environment: () => ({ DB: context.db, ADMIN_TOKEN: 'fixture-admin-token-separation-0001', INGEST_TOKEN: 'fixture-ingest-token-separation-0002' }),
 }));
-vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => ({ value: 'fixture-admin-token-separation-0001' }) }) }));
+vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => ({ value: context.session }) }) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: () => { throw new Error('NEXT_REDIRECT'); } }));
 
 let memory: ReturnType<typeof memoryD1>;
 beforeEach(async () => {
+  context.session = await issueAdminSession('fixture-admin-token-separation-0001');
   memory = memoryD1(); context.db = memory.db;
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {

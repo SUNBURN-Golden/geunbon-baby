@@ -13,6 +13,7 @@ async function main() {
   let ORIGIN = '';
   let adminToken = '';
   let ingestToken = '';
+  let captured = '';
   let id: string | undefined;
   let browser: Browser | undefined;
   let context: BrowserContext;
@@ -132,9 +133,16 @@ async function main() {
       const cookies = (await context.cookies(`${ORIGIN}/admin`)).filter(cookie => cookie.name === 'agamajung_admin');
       check(cookies.length === 1);
       const cookie = cookies[0];
+      check(cookie.value !== adminToken && !decodeURIComponent(cookie.value).includes(adminToken));
+      captured = cookie.value;
       check(cookie.path === '/admin' && cookie.httpOnly && cookie.sameSite === 'Strict' && cookie.secure);
       const now = Date.now() / 1000;
       check(cookie.expires > now && cookie.expires <= now + 3600);
+    });
+
+    await step('captured cookie is not an API bearer', async () => {
+      const response = await local('/api/v1/admin/queue', { headers: { authorization: `Bearer ${decodeURIComponent(captured)}` } });
+      check(response.status === 401);
     });
 
     await step('logout with a stale second tab', async () => {

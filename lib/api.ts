@@ -23,6 +23,34 @@ export async function authorized(request: Request, token?: string) {
   const [a, b] = await Promise.all([digest(supplied), digest(`Bearer ${token}`)]);
   return a.reduce((n, v, i) => n | (v ^ b[i]), 0) === 0;
 }
+export const ADMIN_SESSION_SECONDS = 3600;
+const SESSION_RE = /^v1\.(\d{10})\.([A-Za-z0-9_-]{43})\.([A-Za-z0-9_-]{43})$/;
+const sessionMessage = (expires: string, nonce: string) => new TextEncoder().encode(`agamajung-admin-session:v1:${expires}:${nonce}`);
+const sessionBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function sessionKey(token: string, usage: 'sign' | 'verify') {
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, [usage]);
+}
+export async function issueAdminSession(token: string, now = Date.now()): Promise<string> {
+  if (!strongToken(token)) throw new Error('Invalid admin session configuration');
+  const nonce = sessionBase64(crypto.getRandomValues(new Uint8Array(32)));
+  const expires = String(Math.floor(now / 1000) + ADMIN_SESSION_SECONDS);
+  const mac = await crypto.subtle.sign('HMAC', await sessionKey(token, 'sign'), sessionMessage(expires, nonce));
+  return `v1.${expires}.${nonce}.${sessionBase64(new Uint8Array(mac))}`;
+}
+export async function verifyAdminSession(value: string | undefined, token: string | undefined, now = Date.now()): Promise<boolean> {
+  if (!strongToken(token) || !value || value.length > 128) return false;
+  const match = SESSION_RE.exec(value);
+  if (!match || match[0] !== value) return false;
+  const [, expires, nonce, mac] = match;
+  if (Number(expires) <= now / 1000 || Number(expires) > now / 1000 + ADMIN_SESSION_SECONDS + 60) return false;
+  try {
+    const signature = Uint8Array.from(atob(mac.replace(/-/g, '+').replace(/_/g, '/') + '='), c => c.charCodeAt(0));
+    // Reject alternate base64 encodings with nonzero unused padding bits.
+    if (sessionBase64(signature) !== mac) return false;
+    // Web Crypto verifies the HMAC without a timing-sensitive string comparison.
+    return await crypto.subtle.verify('HMAC', await sessionKey(token, 'verify'), signature, sessionMessage(expires, nonce));
+  } catch { return false; }
+}
 export const safeUrl = (value: unknown): value is string => {
   if (typeof value !== 'string' || value.length > 2048) return false;
   try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password; } catch { return false; }

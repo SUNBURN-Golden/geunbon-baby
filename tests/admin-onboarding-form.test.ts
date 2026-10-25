@@ -5,16 +5,17 @@ import { RequestCookies } from 'next/dist/compiled/@edge-runtime/cookies';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import Admin from '../app/admin/page';
 import Sellers from '../app/sellers/page';
+import { issueAdminSession } from '../lib/api';
 import { migrate } from './helpers/deal-timestamps';
 import { memoryD1 } from './helpers/sqlite';
 
 const TOKEN = 'fixture-admin-onboarding-token';
-const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined, authenticated: true }));
+const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined, authenticated: true, session: '' }));
 vi.mock('../lib/db', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/db')>(),
   environment: () => ({ DB: context.db, ADMIN_TOKEN: 'fixture-admin-onboarding-token', INGEST_TOKEN: 'fixture-ingest-onboarding-token' }),
 }));
-vi.mock('next/headers', () => ({ cookies: async () => new RequestCookies(new Headers({ cookie: context.authenticated ? `agamajung_admin=${TOKEN}` : '' })) }));
+vi.mock('next/headers', () => ({ cookies: async () => new RequestCookies(new Headers({ cookie: context.authenticated ? `agamajung_admin=${context.session}` : '' })) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: (to: string) => { throw new Error(`NEXT_REDIRECT:${to}`); } }));
 let memory: ReturnType<typeof memoryD1>;
@@ -40,6 +41,7 @@ async function pending(account = 'new.shop', id = 'item-1') {
 const registration = { name: 'Registered fixture seller', source_url: 'https://example.com/new', account: '' };
 beforeEach(async () => {
   context.authenticated = true;
+  context.session = await issueAdminSession(TOKEN);
   memory = memoryD1(); context.db = memory.db;
   await migrate(memory.db);
 });
