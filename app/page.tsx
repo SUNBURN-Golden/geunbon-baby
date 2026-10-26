@@ -7,9 +7,11 @@ import { ActiveDeals } from './_active-deals';
 
 export const dynamic = 'force-dynamic';
 
-const categoryOrder: Record<string, number> = { stroller: 0, high_chair: 1, car_seat: 2, carrier: 3, bouncer: 4 };
-const categoryTabs = Object.entries(categories).sort(([a], [b]) =>
-  (categoryOrder[a] ?? Infinity) - (categoryOrder[b] ?? Infinity));
+const categoryOrder = ['stroller', 'high_chair', 'car_seat', 'carrier', 'bouncer'];
+const categoryTabs = [
+  ...categoryOrder.filter(key => Object.hasOwn(categories, key)),
+  ...Object.keys(categories).filter(key => !categoryOrder.includes(key)),
+];
 
 export default async function Home() {
   // eslint-disable-next-line react-hooks/purity -- Capture request time once for consistent deal states.
@@ -35,8 +37,8 @@ export default async function Home() {
       </section>
       <nav className="category-tabs" id="categories" aria-label={siteCopy.categoryNavLabel}>
         <Link href="/models">{siteCopy.categoryAll}</Link>
-        {categoryTabs.map(([key, label]) => (
-          <Link key={key} href={`/models?category=${encodeURIComponent(key)}`}>{label}</Link>
+        {categoryTabs.map(key => (
+          <Link key={key} href={`/models?category=${encodeURIComponent(key)}`}>{categories[key]}</Link>
         ))}
       </nav>
       <ActiveDeals deals={deals} nowMs={nowMs} />

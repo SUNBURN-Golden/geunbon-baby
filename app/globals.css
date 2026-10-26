@@ -294,6 +294,7 @@ em { font-style: normal; color: var(--muted); }
   padding: 6px var(--s-4) 0;
   border-bottom: 2px solid var(--rule);
   overflow-x: auto;
+  overflow-y: hidden;
 }
 .category-tabs a {
   display: flex;
