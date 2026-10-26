@@ -370,18 +370,24 @@ describe('theme contrast', () => {
 
   test.each(['light', 'dark'])('%s advertising labels, recommendations, context and actions meet AA', async theme => {
     const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
-    const tokens = Object.fromEntries([...css.matchAll(/(--[\w-]+):\s*(#[\da-f]{3,6})\s*;/gi)].map(match => [match[1], match[2]]));
-    const prefix = theme === 'dark' ? '--dark-' : '--';
+    const root = css.match(/:root\s*\{([\s\S]*?)\}/)![1];
+    const dark = css.match(/@media \(prefers-color-scheme: dark\)\s*\{\s*html\[lang\]\s*\{([\s\S]*?)\}/)![1];
+    const tokens = Object.fromEntries([...`${root}\n${theme === 'dark' ? dark : ''}`.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map(match => [match[1], match[2].trim()]));
+    const token = (name: string): string => {
+      const value = tokens['--' + name];
+      const alias = value.match(/^var\(--([\w-]+)\)$/);
+      return alias ? token(alias[1]) : value;
+    };
     for (const [foreground, background] of [
       ['text', 'surface'], ['text', 'surface-2'], ['text', 'clay'],
-      ['muted', 'surface'], ['on-accent', 'accent'], ['muted', 'neutral'], ['text', 'surface'],
+      ['muted', 'surface'], ['on-accent', 'stamp'], ['muted', 'neutral'], ['text', 'surface'],
       ['accent', 'surface'], ['accent', 'surface-2'], ['muted', 'bg'],
     ]) {
-      expect(contrast(tokens[prefix + foreground], tokens[prefix + background])).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(token(foreground), token(background))).toBeGreaterThanOrEqual(4.5);
     }
     // Focus rings sit outside controls, against the page/card surfaces.
     for (const background of ['bg', 'surface']) {
-      expect(contrast(tokens[prefix + 'accent'], tokens[prefix + background])).toBeGreaterThanOrEqual(3);
+      expect(contrast(token('accent'), token(background))).toBeGreaterThanOrEqual(3);
     }
   });
 });
