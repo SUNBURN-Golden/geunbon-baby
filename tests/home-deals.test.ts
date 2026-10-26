@@ -52,13 +52,15 @@ function detailLinks(html: string) {
   return [...html.matchAll(/href="\/deals\/([^"]+)"/g)].map(match => match[1]);
 }
 
-test('dynamic home queries D1 and renders only active deals before the hero, soonest ending first, with a count', async () => {
+test('dynamic home queries D1 and renders hero then active deals soonest ending first then entry links, with matching counts', async () => {
   expect(dynamic).toBe('force-dynamic');
   const clock = vi.spyOn(Date, 'now').mockReturnValue(nowMs);
   const html = renderToStaticMarkup(await Home());
   expect(clock).toHaveBeenCalledTimes(1);
-  expect(html).toMatch(/^<main><section class="active-deals"/);
-  expect(html.indexOf('class="active-deals"')).toBeLessThan(html.indexOf('class="hero"'));
+  expect(html).toMatch(/^<main><section class="hero"/);
+  expect(html.indexOf('class="hero"')).toBeLessThan(html.indexOf('class="active-deals"'));
+  expect(html.indexOf('class="active-deals"')).toBeLessThan(html.indexOf('class="entry-grid"'));
+  expect(html).toContain('class="active-deals" id="ledger"');
   expect(detailLinks(html)).toEqual(['today', 'soon', 'later']);
   for (const inactive of ['upcoming deal', 'ended deal', 'unknown deal']) expect(html).not.toContain(inactive);
   expect(html).toContain(dealsCopy.activeHeading);
@@ -91,6 +93,20 @@ test('dynamic home queries D1 and renders only active deals before the hero, soo
   expect(cards[0]).toContain(dealsCopy.endsToday);
   expect(cards[1]).toContain(dealsCopy.remaining.replace('{n}', '1'));
   expect(cards[2]).toContain(dealsCopy.remaining.replace('{n}', '4'));
+});
+
+test.each([
+  [nowMs, 3],
+  [Date.parse('2026-11-01T00:00:00Z'), 0],
+])('hero counter uses the real active count at %s, including zero (%s)', async (requestTime, count) => {
+  vi.spyOn(Date, 'now').mockReturnValue(requestTime);
+  const html = renderToStaticMarkup(await Home());
+  const counter = html.match(/<div class="hero-counter"[\s\S]*?<\/section>/)?.[0];
+  expect(counter).toContain(`<span class="visually-hidden">오늘 열려 있는 공구 ${count}건</span>`);
+  expect(counter).toContain('<span aria-hidden="true">오늘 열려 있는 공구</span>');
+  expect(counter).toContain('<div class="hero-counter-total" aria-hidden="true">');
+  expect(counter).not.toContain('role="img"');
+  expect(counter).toContain(`<strong>${count}</strong>`);
 });
 
 test('home image alt prefers the joined model name and falls back to the deal title', async () => {
