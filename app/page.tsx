@@ -22,9 +22,10 @@ export default async function Home() {
             <Link className="button hero-secondary" href="/models">{siteCopy.heroSecondaryCta}</Link>
           </div>
         </div>
-        <div className="hero-counter" role="img" aria-label={`${siteCopy.heroCountLabel} ${activeCount}${siteCopy.heroCountUnit}`}>
-          <span>{siteCopy.heroCountLabel}</span>
-          <div className="hero-counter-total"><strong>{activeCount}</strong><span>{siteCopy.heroCountUnit}</span></div>
+        <div className="hero-counter">
+          <span className="visually-hidden">{`${siteCopy.heroCountLabel} ${activeCount}${siteCopy.heroCountUnit}`}</span>
+          <span aria-hidden="true">{siteCopy.heroCountLabel}</span>
+          <div className="hero-counter-total" aria-hidden="true"><strong>{activeCount}</strong><span>{siteCopy.heroCountUnit}</span></div>
         </div>
       </section>
       <ActiveDeals deals={deals} nowMs={nowMs} />

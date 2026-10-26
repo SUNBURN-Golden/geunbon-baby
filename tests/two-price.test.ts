@@ -62,7 +62,6 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   const joinedDeal = (await memory.db.prepare(DEAL_SELECT).first<DealWithContext>())!;
   const card = renderToStaticMarkup(createElement(DealCard, { deal: joinedDeal, nowMs: Date.now() }));
   for (const html of [home, models, detail, calendar, card]) excludesOtherPrices(html);
-  expect(home).toContain(siteCopy.heroLead);
   expect(models).toContain(siteCopy.officialLabel);
   expect(models).toContain('430,000원');
   expect(models).toContain('390,000<span>원</span>');

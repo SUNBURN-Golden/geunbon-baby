@@ -102,7 +102,10 @@ test.each([
   vi.spyOn(Date, 'now').mockReturnValue(requestTime);
   const html = renderToStaticMarkup(await Home());
   const counter = html.match(/<div class="hero-counter"[\s\S]*?<\/section>/)?.[0];
-  expect(counter).toContain(`role="img" aria-label="오늘 열려 있는 공구 ${count}건"`);
+  expect(counter).toContain(`<span class="visually-hidden">오늘 열려 있는 공구 ${count}건</span>`);
+  expect(counter).toContain('<span aria-hidden="true">오늘 열려 있는 공구</span>');
+  expect(counter).toContain('<div class="hero-counter-total" aria-hidden="true">');
+  expect(counter).not.toContain('role="img"');
   expect(counter).toContain(`<strong>${count}</strong>`);
 });
 
