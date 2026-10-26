@@ -561,6 +561,8 @@ form { max-width: 100%; }
   .deal-card { grid-template-columns: 56px minmax(0, 1fr); }
   .deal-card > .deal-thumbnail { width: 56px; height: 56px; }
 }
+/* Model detail places the list in a half-width column; it stays one card wide at every viewport. */
+.comparison .deal-list { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 360px) {
   .deal-card { grid-template-columns: 56px minmax(0, 1fr); }
   .deal-card > .deal-thumbnail { width: 56px; height: 56px; }

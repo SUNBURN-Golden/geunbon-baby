@@ -170,3 +170,8 @@ test('ledger orders official/group-buy cells and derives badges only for verifie
     await writeFile('.local/redesign-html/ledger-fixtures.html', `<main><section class="active-deals"><h1>Ledger regression fixtures</h1>${renderToStaticMarkup(createElement(PriceLegend))}<div class="deal-list">${cards.join('')}</div></section></main>`);
   }
 });
+
+test('model detail keeps its half-width deal column to a single card at every width', async () => {
+  const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
+  expect(css).toMatch(/\.comparison \.deal-list\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);\s*\}/);
+});
