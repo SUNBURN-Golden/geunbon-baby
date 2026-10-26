@@ -66,9 +66,9 @@ test('model list, detail and calendar show only supported prices with explicit l
 
 test('home has the verified-products description and no deleted phrases or empty note block', async () => {
   const html = renderToStaticMarkup(await Home());
-  expect(html).toContain('class="deal-card"');
-  expect(html).toContain(dealsCopy.disclaimer);
-  expect(html).toContain('href="/sellers#trust-seller-1"');
+  expect(html).toContain('class="ledger-card"');
+  expect(html).toContain('href="/deals/deal-1"');
+  expect(html).toContain('class="ledger-name">Stokke Example model</span>');
   expect(html).toContain(siteCopy.heroLead);
   expect(html).toContain('<h1>너는 건강하게만 오렴, 좋은 것을 골라둘게.</h1>');
   expect(html).toContain('href="#ledger"');
@@ -111,9 +111,9 @@ test('calendar alone is current on its route and the server fallback has all fiv
   expect(fallback).toContain('href="/calendar"');
 });
 
-test('the same deal with a seller renders an identical card on all four routes', async () => {
+test('the shared deal with a seller renders an identical card on deals, calendar and detail', async () => {
   const cards = [];
-  for (const page of [await Home(), await DealsPage(), await Calendar(), await Detail({ params: Promise.resolve({ id: 'model-1' }) })]) {
+  for (const page of [await DealsPage(), await Calendar(), await Detail({ params: Promise.resolve({ id: 'model-1' }) })]) {
     const html = renderToStaticMarkup(page);
     const card = html.match(/<article class="deal-card">[\s\S]*?<\/article>/)?.[0];
     expect(card).toBeDefined();

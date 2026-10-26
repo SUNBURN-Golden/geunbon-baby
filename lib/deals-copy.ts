@@ -53,4 +53,11 @@ export const dealsCopy = {
   activeHeading: "지금 진행 중",
   activeCount: "{count}개 진행 중이에요",
   activeEmpty: "지금 진행 중인 공동구매가 없어요.",
+  legendOfficial: "왼쪽 칸 공식가", // copy-todo(Argon 미확정)
+  legendGroup: "오른쪽 칸 공구가", // copy-todo(Argon 미확정)
+  ledgerOfficial: "공식가", // copy-todo(Argon 미확정)
+  ledgerGroup: "공구가", // copy-todo(Argon 미확정)
+  zeroTitle: "지금 열려 있는 공구가 없어요", // copy-todo(Argon 미확정)
+  zeroBody: "공식가는 계속 확인하고 있어요. 공구가 열리면 여기에 가격표가 생겨요.", // copy-todo(Argon 미확정)
+  zeroCta: "공식가 살펴보기", // copy-todo(Argon 미확정)
 } as const;

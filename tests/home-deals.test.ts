@@ -7,7 +7,8 @@ import DealsPage from '../app/deals/page';
 import Calendar from '../app/calendar/page';
 import ModelDetail from '../app/models/[id]/page';
 import { ActiveDeals } from '../app/_active-deals';
-import { DEAL_SELECT, formatGap, priceGap, type DealWithContext } from '../lib/deals';
+import { LedgerCard } from '../app/_ledger-card';
+import { DEAL_SELECT, type DealWithContext } from '../lib/deals';
 import { all } from '../lib/db';
 import { dealsCopy } from '../lib/deals-copy';
 import { categories } from '../lib/data';
@@ -66,34 +67,22 @@ test('dynamic home queries D1 and renders hero then category tabs then active de
   for (const inactive of ['upcoming deal', 'ended deal', 'unknown deal']) expect(html).not.toContain(inactive);
   expect(html).toContain(dealsCopy.activeHeading);
   expect(html).toContain('class="active-deal-count" aria-label="3개 진행 중이에요">3</span>');
-  const cards = [...html.matchAll(/<article class="deal-card">([\s\S]*?)<\/article>/g)].map(match => match[1]);
+  const cards = [...html.matchAll(/<a class="ledger-card"[^>]*>([\s\S]*?)<\/a>/g)].map(match => match[1]);
   expect(cards).toHaveLength(3);
   for (const card of cards) {
-    expect(card).toContain('<h2><a class="deal-title-link"');
-    expect(card).toContain('400,000<span>원</span>');
+    expect(card).toContain('class="ledger-name">Brand Chair</span>');
+    expect(card).toContain('400,000원');
     expect(card).toContain('500,000원');
-    expect(card.replace(/<[^>]*>/g, '')).toContain(formatGap(priceGap(400000, 500000)!));
-    expect(card).toContain('rel="sponsored noopener noreferrer"');
-    expect(card).not.toContain('/sellers#');
-    expect(card.match(/class="deal-disclaimer"/g)).toHaveLength(1);
-    // An opening anchor must be closed before another one opens.
-    const anchors = card.match(/<a\b[^>]*>|<\/a>/g);
-    expect(anchors).toHaveLength(4);
-    expect(anchors?.map(anchor => anchor === '</a>' ? 'close' : 'open')).toEqual(['open', 'close', 'open', 'close']);
-    expect(card).toContain(dealsCopy.ad);
+    expect(card).toContain('class="ledger-discount">-20%</span>');
+    expect(card.match(/class="ledger-value"/g)).toHaveLength(2);
+    expect(card).not.toContain('<a');
+    expect(card).not.toContain('class="deal-card"');
+    expect(card).not.toContain('<time');
+    expect(card).not.toContain('cdninstagram.com');
   }
-  expect(cards[0]).toContain('<img');
-  expect(cards[0]).toContain('src="https://cdninstagram.com/chair.jpg?sig=synthetic%2B&amp;x=1"');
-  expect(cards[0]).toContain('alt="Chair 상품 이미지"');
-  expect(cards[0]).toContain('referrerPolicy="no-referrer"');
-  expect(cards[0]).not.toContain('class="active-deal-mark"');
-  for (const card of cards.slice(1)) {
-    expect(card).not.toContain('class="active-deal-mark"');
-    expect(card).not.toContain('<img');
-  }
-  expect(cards[0]).toContain(dealsCopy.endsToday);
-  expect(cards[1]).toContain(dealsCopy.remaining.replace('{n}', '1'));
-  expect(cards[2]).toContain(dealsCopy.remaining.replace('{n}', '4'));
+  expect(html).toContain(dealsCopy.legendOfficial);
+  expect(html).toContain(dealsCopy.legendGroup);
+  expect(html.indexOf('class="ledger-legend"')).toBeLessThan(html.indexOf('class="active-deal-row"'));
 });
 
 test('home category navigation has all categories from the map and the all-models link', async () => {
@@ -127,81 +116,94 @@ test.each([
   expect(counter).toContain(`<strong>${count}</strong>`);
 });
 
-test('home image alt prefers the joined model name and falls back to the deal title', async () => {
+test('ledger product names use joined brand and model, falling back to the deal title', async () => {
   const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
   const base = rows.find(deal => deal.id === 'today')!;
   for (const [patch, name] of [
-    [{}, 'Chair'],
+    [{}, 'Brand Chair'],
+    [{ model_brand: null }, 'Chair'],
     [{ model_joined_id: null }, 'today deal'],
     [{ model_name: null }, 'today deal'],
   ] as const) {
-    const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], nowMs }));
-    expect(html).toContain(`alt="${name} 상품 이미지"`);
-    expect(html.match(/<img /g)).toHaveLength(1);
-    expect(html).not.toContain('/_next/image');
+    const html = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, ...patch } }));
+    expect(html).toContain(`class="ledger-name">${name}</span>`);
+    expect(html).toContain('href="/deals/today"');
   }
+  const encoded = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, id: 'deal/with space' } }));
+  expect(encoded).toContain('href="/deals/deal%2Fwith%20space"');
 });
 
-test.each([null, '', 'http://cdninstagram.com/chair.jpg', 'https://example.com/chair.jpg', 'javascript:alert(1)'])(
-  'home keeps text-only cards for missing or unsafe image %s', async image_url => {
-    const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
-    const base = rows.find(deal => deal.id === 'today')!;
-    for (const patch of [{}, { model_joined_id: null }]) {
-      const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch, image_url }], nowMs }));
-      expect(html).not.toContain('class="active-deal-mark"');
-      expect(html).not.toContain('<img');
-      expect(html).toContain(base.title);
-      expect(html).toContain('400,000');
-    }
-  },
-);
+test('ledger uses decorative local model art and keeps an empty frame when art is unavailable', async () => {
+  const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+  const base = rows.find(deal => deal.id === 'today')!;
+  const illustrated = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, model_id: 'model-1' } }));
+  expect(illustrated).toContain('src="/img/models/model-1-540x540.png"');
+  expect(illustrated).toContain('alt=""');
+  expect(illustrated).toContain('class="ledger-name">Brand Chair</span>');
+  expect(illustrated).not.toContain('cdninstagram.com');
+  expect(illustrated).not.toContain('/_next/image');
+  const empty = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, model_id: 'model-32' } }));
+  expect(empty).toContain('<span class="ledger-stamp"></span>');
+  expect(empty).not.toContain('<img');
+  expect(empty).not.toContain('cdninstagram.com');
+});
 
-test('no active deals renders a zero count and one short empty line without cards', async () => {
+test('no active deals renders the zero state with an official-price link and no legend or cards', async () => {
   vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-01T00:00:00Z'));
   const html = renderToStaticMarkup(await Home());
   expect(html).toContain('class="active-deal-count" aria-label="0개 진행 중이에요">0</span>');
-  expect(html).toContain(`<p class="active-deal-empty">${dealsCopy.activeEmpty}</p></section>`);
   expect(detailLinks(html)).toEqual([]);
-  expect(html).not.toContain('class="active-deal-row"');
   const empty = renderToStaticMarkup(createElement(ActiveDeals, { deals: [], nowMs }));
-  expect(empty).toContain(dealsCopy.activeEmpty);
-  expect(empty).not.toContain('<ul');
-});
-
-test('active cards preserve unknown prices, zero prices and comparison direction', async () => {
-  const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
-  const base = rows.find(deal => deal.id === 'soon')!;
-  const render = (patch: Partial<DealWithContext>) => renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], nowMs }));
-  expect(render({ price: 600000 })).toContain('높아요');
-  expect(render({ price: 500000 })).toContain(formatGap(priceGap(500000, 500000)!));
-  expect(render({ price: 499999 })).toContain('낮아요');
-  expect(render({ price: 499999 }).replace(/<[^>]*>/g, '').replace(/&lt;/g, '<')).toContain(formatGap(priceGap(499999, 500000)!));
-  expect(render({ price: 0 })).toContain(`>0<span>${dealsCopy.won}</span>`);
-  const unknown = render({ price: null });
-  expect(unknown).toContain(dealsCopy.unknownPrice);
-  expect(unknown).toContain('정보 없음');
-  expect(unknown).toContain('500,000원');
-  expect(unknown).not.toContain('class="deal-gap"');
-  const zeroOfficial = render({ model_official_price: 0 });
-  expect(zeroOfficial).toContain(`${dealsCopy.officialPrice} · 0원`);
-  expect(zeroOfficial).not.toContain('class="deal-gap"');
-  for (const patch of [{ model_official_price: null }, { model_joined_id: null }]) {
-    const html = render(patch);
-    expect(html).toContain('400,000');
-    expect(html).toContain(dealsCopy.unknownOfficial);
-    expect(html).toContain('정보 없음');
-    expect(html).not.toContain('class="deal-gap"');
+  for (const markup of [html, empty]) {
+    expect(markup).toContain(`<h3>${dealsCopy.zeroTitle}</h3>`);
+    expect(markup).toContain(`<p>${dealsCopy.zeroBody}</p>`);
+    expect(markup).toContain(`<a class="ledger-zero-link" href="/models">${dealsCopy.zeroCta}</a>`);
+    expect(markup).not.toContain('class="active-deal-row"');
+    expect(markup).not.toContain('class="ledger-legend"');
+    expect(markup).not.toContain('class="ledger-card"');
+    expect(markup).not.toContain('class="ledger-discount"');
+    expect(markup).not.toContain('class="ledger-group-price"');
   }
 });
 
-test.each(['page_text', 'search_summary'])('home active cards hide %s prices and comparisons', async model_verify_level => {
+test('LedgerCard renders exactly two prices with hidden labels and a below-official badge', async () => {
   const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
   const base = rows.find(deal => deal.id === 'soon')!;
-  const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, model_verify_level }], nowMs }));
-  expect(html).toContain(dealsCopy.unknownOfficial);
-  expect(html).toContain('400,000');
-  expect(html).not.toContain('500,000');
-  expect(html).not.toContain('class="deal-gap"');
+  const html = renderToStaticMarkup(createElement(LedgerCard, { deal: base }));
+  expect(html.match(/class="ledger-value"/g)).toHaveLength(2);
+  expect(html).toContain('500,000원');
+  expect(html).toContain('400,000원');
+  expect(html).toContain(`<span class="visually-hidden">${dealsCopy.ledgerOfficial} </span>`);
+  expect(html).toContain(`<span class="visually-hidden">${dealsCopy.ledgerGroup} </span>`);
+  expect(html).toContain('class="ledger-discount">-20%</span>');
+  const tinyGap = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, price: 499999 } }));
+  expect(tinyGap).toContain('class="ledger-discount">-&lt;0.1%</span>');
+  expect(tinyGap).not.toContain('>-0%');
+  const zero = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, price: 0 } }));
+  expect(zero).toContain('>0원</span>');
+  expect(zero).toContain('>-100%</span>');
+});
+
+test.each([
+  { price: 500000 },
+  { price: 600000 },
+  { price: null },
+  { model_official_price: null },
+  { model_official_price: 0 },
+  { model_joined_id: null },
+  { model_verify_level: 'page_text' },
+  { model_verify_level: 'search_summary' },
+])('LedgerCard omits the badge for equal, above or unknown official comparisons: %j', async patch => {
+  const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+  const base = rows.find(deal => deal.id === 'soon')!;
+  const html = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, ...patch } }));
+  expect(html.match(/class="ledger-value"/g)).toHaveLength(2);
+  expect(html).not.toContain('class="ledger-discount"');
+  if (patch.price === null || patch.model_official_price === null || patch.model_joined_id === null || patch.model_verify_level) {
+    expect(html).toContain(dealsCopy.unknownPrice);
+  }
+  if (patch.model_official_price === 0) expect(html).toContain('>0원</span>');
+  if (patch.model_verify_level) expect(html).not.toContain('500,000');
 });
 
 test('/deals keeps active deals first and displays their count near the h1', async () => {
@@ -211,10 +213,10 @@ test('/deals keeps active deals first and displays their count near the h1', asy
   expect(html).toMatch(/<h1>[^<]+<\/h1><p>지금 진행 중 <span class="active-deal-count" aria-label="3개 진행 중이에요">3<\/span><\/p>/);
 });
 
-test('the same deal without a seller renders byte-identical cards on all four routes', async () => {
+test('the shared deal card remains byte-identical on deals, calendar and model detail', async () => {
   vi.spyOn(Date, 'now').mockReturnValue(nowMs);
   const cards = [];
-  for (const page of [await Home(), await DealsPage(), await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model' }) })]) {
+  for (const page of [await DealsPage(), await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model' }) })]) {
     const html = renderToStaticMarkup(page);
     const card = [...html.matchAll(/<article class="deal-card">[\s\S]*?<\/article>/g)]
       .map(match => match[0]).find(article => article.includes('href="/deals/today"'));

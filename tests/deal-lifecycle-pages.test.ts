@@ -57,14 +57,17 @@ afterEach(() => memory.close());
 
 test('every public surface follows corrections and withdrawals and public JSON stays private', async () => {
   let pages = await surfaces(); counts(pages, 2);
-  for (const html of [pages.home, pages.deals, pages.model, pages.calendar, await render(() => detail(id))]) expect(html).toContain('Original public-first');
+  expect(pages.home).toContain(`href="/deals/${id}"`);
+  for (const html of [pages.deals, pages.model, pages.calendar, await render(() => detail(id))]) expect(html).toContain('Original public-first');
   expect(pages.models).toContain('400,000');
   let data = await publicData();
   for (const path of ['deals','calendar','models/model-1']) expect(data[path].map(d => d.id)).toContain(id);
   const correction = edit();
   expect((await call(`admin/deals/${id}`, correction)).status).toBe(200);
   pages = await surfaces(); counts(pages, 2);
-  for (const html of [pages.home, pages.deals, pages.model, pages.calendar, await render(() => detail(id))]) {
+  expect(pages.home).toContain(`href="/deals/${id}"`);
+  expect(pages.home).toContain('234,567원');
+  for (const html of [pages.deals, pages.model, pages.calendar, await render(() => detail(id))]) {
     expect(html).toContain('Revised public title'); expect(html).toContain('234,567'); expect(html).not.toContain('Original public-first');
   }
   expect(pages.models).toContain('234,567'); expect(pages.models).not.toContain('400,000');
@@ -78,7 +81,9 @@ test('every public surface follows corrections and withdrawals and public JSON s
   expect((await call(`admin/deals/${id}`, withdraw(2))).status).toBe(200);
   pages = await surfaces(); counts(pages, 1);
   for (const html of Object.values(pages)) { expect(html).not.toContain('Revised public title'); expect(html).not.toContain('234,567'); }
-  for (const html of [pages.home, pages.deals, pages.model, pages.calendar]) expect(html).toContain('Original public-second');
+  expect(pages.home).not.toContain(`href="/deals/${id}"`);
+  expect(pages.home).toContain(`href="/deals/${otherId}"`);
+  for (const html of [pages.deals, pages.model, pages.calendar]) expect(html).toContain('Original public-second');
   expect(pages.models).toContain('600,000');
   await expect(detail(id)).rejects.toThrow('NEXT_NOT_FOUND'); await expect(detail('unknown')).rejects.toThrow('NEXT_NOT_FOUND');
   data = await publicData();
@@ -99,11 +104,14 @@ test('model moves, image restoration and changed schedules reach all applicable 
   expect(await render(() => model())).not.toContain('Revised public title');
   expect(await render(() => model('model-2'))).toContain('Revised public title');
   const page = await render(() => detail(id)); expect(page).toContain('Other model'); expect(page).toContain('/models/model-2'); expect(page).toContain('original.jpg');
-  expect(await render(Home)).toContain('alt="Other model 상품 이미지"');
+  const home = await render(Home);
+  expect(home).toContain('class="ledger-name">Test brand Other model</span>');
+  expect(home).toContain('src="/img/models/model-2-540x540.png"');
+  expect(home).toContain('alt=""');
   expect(await render(DealsPage)).toContain('alt="Other model 상품 이미지"');
   // A corrected future schedule removes the deal from active-price cards and counts.
   expect((await call(`admin/deals/${id}`, edit({ expected_version: 2, model_id: 'model-2', starts_at: '2026-11-01T00:00:00Z', ends_at: '2026-11-02T00:00:00Z' }))).status).toBe(200);
-  const pages = await surfaces(); counts(pages, 1); expect(pages.home).not.toContain('Revised public title');
+  const pages = await surfaces(); counts(pages, 1); expect(pages.home).not.toContain(`href="/deals/${id}"`);
   expect(pages.models).not.toContain('234,567'); expect(pages.deals).toContain('Revised public title'); expect(pages.calendar).toContain('2026-11-01T00:00:00.000Z');
   data = await publicData(); expect(data.deals.find(d => d.id === id)?.starts_at).toBe('2026-11-01T00:00:00.000Z');
 });
