@@ -52,13 +52,17 @@ function detailLinks(html: string) {
   return [...html.matchAll(/href="\/deals\/([^"]+)"/g)].map(match => match[1]);
 }
 
-test('dynamic home queries D1 and renders only active deals before the hero, soonest ending first, with a count', async () => {
+test('dynamic home queries D1 and renders only active deals after the compact hero, soonest ending first, with a count', async () => {
   expect(dynamic).toBe('force-dynamic');
   const clock = vi.spyOn(Date, 'now').mockReturnValue(nowMs);
   const html = renderToStaticMarkup(await Home());
   expect(clock).toHaveBeenCalledTimes(1);
-  expect(html).toMatch(/^<main><section class="active-deals"/);
-  expect(html.indexOf('class="active-deals"')).toBeLessThan(html.indexOf('class="hero"'));
+  expect(html).toMatch(/^<main><section class="hero"/);
+  expect(html.indexOf('class="hero"')).toBeLessThan(html.indexOf('class="active-deals"'));
+  expect(html).toContain('<h1 id="home-title">너는 건강하게만 오렴, 좋은 것을 골라둘게.</h1>');
+  const hero = html.match(/<section class="hero"[\s\S]*?<\/section>/)![0];
+  expect(hero).toContain('aria-label="3개 진행 중이에요"');
+  expect(hero).not.toContain('hero-art');
   expect(detailLinks(html)).toEqual(['today', 'soon', 'later']);
   for (const inactive of ['upcoming deal', 'ended deal', 'unknown deal']) expect(html).not.toContain(inactive);
   expect(html).toContain(dealsCopy.activeHeading);
@@ -126,8 +130,11 @@ test('no active deals renders a zero count and one short empty line without card
   vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-01T00:00:00Z'));
   const html = renderToStaticMarkup(await Home());
   expect(html).toContain('class="active-deal-count" aria-label="0개 진행 중이에요">0</span>');
-  expect(html).toContain(`<p class="active-deal-empty">${dealsCopy.activeEmpty}</p></section>`);
+  expect(html).toContain(`<p class="active-deal-empty">${dealsCopy.activeEmpty}</p>`);
   expect(detailLinks(html)).toEqual([]);
+  expect(html).toContain('class="active-deal-zero"');
+  expect(html).toContain('href="/models"');
+  expect(html).not.toContain('deal-price');
   expect(html).not.toContain('class="active-deal-row"');
   const empty = renderToStaticMarkup(createElement(ActiveDeals, { deals: [], nowMs }));
   expect(empty).toContain(dealsCopy.activeEmpty);
