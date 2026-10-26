@@ -73,7 +73,7 @@ test('home has the verified-products description and no deleted phrases or empty
   expect(html).toContain('<h1>너는 건강하게만 오렴, 좋은 것을 골라둘게.</h1>');
   expect(html).toContain('href="#ledger"');
   expect(html).toContain(siteCopy.heroPrimaryCta);
-  expect(html).toContain('href="/models"');
+  expect(html).toContain(`class="button hero-secondary" href="#categories">${siteCopy.heroSecondaryCta}</a>`);
   expect(html).toContain(siteCopy.heroSecondaryCta);
   for (const forbidden of ['모르', '모릅', '해외가', '중고', 'class="note"', 'class="eyebrow"', 'class="hero-art"', 'class="manifesto"', 'A THOUGHTFUL BEGINNING']) expect(html).not.toContain(forbidden);
 });

@@ -11,6 +11,8 @@ export const siteCopy = {
   heroSecondaryCta: "품목별 공구 찾아보기",
   heroCountLabel: "오늘 열려 있는 공구",
   heroCountUnit: "건",
+  categoryNavLabel: "품목", // copy-todo(Argon 미확정)
+  categoryAll: "전체", // copy-todo(Argon 미확정)
   pricePromise: "공식가격과 공동구매 가격을 함께 보여 드려요.",
   newsletterLead: "주 1회, 확인한 공동구매 가격을 전해요.",
   newsletterHow: "소셜 계정으로 로그인하면 소식지를 받을 수 있어요. 구독은 내 계정에서 언제든 바꿀 수 있어요.",

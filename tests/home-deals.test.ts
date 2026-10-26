@@ -10,6 +10,7 @@ import { ActiveDeals } from '../app/_active-deals';
 import { DEAL_SELECT, formatGap, priceGap, type DealWithContext } from '../lib/deals';
 import { all } from '../lib/db';
 import { dealsCopy } from '../lib/deals-copy';
+import { categories } from '../lib/data';
 import { memoryD1 } from './helpers/sqlite';
 
 const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined }));
@@ -52,14 +53,14 @@ function detailLinks(html: string) {
   return [...html.matchAll(/href="\/deals\/([^"]+)"/g)].map(match => match[1]);
 }
 
-test('dynamic home queries D1 and renders hero then active deals soonest ending first then entry links, with matching counts', async () => {
+test('dynamic home queries D1 and renders hero then category tabs then active deals soonest ending first, with matching counts', async () => {
   expect(dynamic).toBe('force-dynamic');
   const clock = vi.spyOn(Date, 'now').mockReturnValue(nowMs);
   const html = renderToStaticMarkup(await Home());
   expect(clock).toHaveBeenCalledTimes(1);
   expect(html).toMatch(/^<main><section class="hero"/);
-  expect(html.indexOf('class="hero"')).toBeLessThan(html.indexOf('class="active-deals"'));
-  expect(html.indexOf('class="active-deals"')).toBeLessThan(html.indexOf('class="entry-grid"'));
+  expect(html).toMatch(/<\/section><nav class="category-tabs" id="categories"[\s\S]*?<\/nav><section class="active-deals"/);
+  expect(html).not.toContain('entry-grid');
   expect(html).toContain('class="active-deals" id="ledger"');
   expect(detailLinks(html)).toEqual(['today', 'soon', 'later']);
   for (const inactive of ['upcoming deal', 'ended deal', 'unknown deal']) expect(html).not.toContain(inactive);
@@ -93,6 +94,23 @@ test('dynamic home queries D1 and renders hero then active deals soonest ending 
   expect(cards[0]).toContain(dealsCopy.endsToday);
   expect(cards[1]).toContain(dealsCopy.remaining.replace('{n}', '1'));
   expect(cards[2]).toContain(dealsCopy.remaining.replace('{n}', '4'));
+});
+
+test('home category navigation has all categories from the map and the all-models link', async () => {
+  const html = renderToStaticMarkup(await Home());
+  const nav = html.match(/<nav class="category-tabs" id="categories" aria-label="품목">([\s\S]*?)<\/nav>/)?.[1];
+  expect(nav).toBeDefined();
+  const links = [...nav!.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map(([, href, label]) => ({ href, label }));
+  expect(links).toHaveLength(Object.keys(categories).length + 1);
+  expect(links[0]).toEqual({ href: '/models', label: '전체' });
+  for (const [key, label] of Object.entries(categories)) {
+    expect(links.filter(link => link.href === `/models?category=${encodeURIComponent(key)}`)).toEqual([
+      { href: `/models?category=${encodeURIComponent(key)}`, label },
+    ]);
+  }
+  expect(links.slice(1).map(link => new URL(link.href, 'https://example.com').searchParams.get('category')))
+    .toEqual(['stroller', 'high_chair', 'car_seat', 'carrier', 'bouncer']);
+  expect(nav).not.toContain('aria-current');
 });
 
 test.each([
