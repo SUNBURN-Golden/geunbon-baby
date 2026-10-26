@@ -12,7 +12,7 @@ import { priceGap } from '../lib/deals';
 import { SQUARE_MODEL_IDS } from '../lib/model-illustrations';
 
 const root = new URL('..', import.meta.url).pathname;
-const DARK_BG = 'rgb(27, 33, 28)';
+const DARK_BG = 'rgb(22, 27, 34)';
 const outIndex = process.argv.indexOf('--out');
 if (outIndex < 0 || !process.argv[outIndex + 1]) throw new Error('Usage: tsx scripts/card-screenshots.ts --out <dir> [--cards model-31,model-33]');
 const out = resolve(process.argv[outIndex + 1]);
@@ -36,7 +36,10 @@ const cards: ModelCardData[] = [
   noDeal({ id: 'model-42', name: '손그림 없는 모델', brand: 'Stokke', official_price: null }),
 ];
 
-const css = await readFile(join(root, 'app/globals.css'), 'utf8');
+let css = await readFile(join(root, 'app/globals.css'), 'utf8');
+for (const path of [...new Set(css.match(/\/fonts\/[\w.-]+\.woff2/g) ?? [])]) {
+  css = css.split(path).join(`data:font/woff2;base64,${Buffer.from(await readFile(join(root, 'public', path))).toString('base64')}`);
+}
 const markup = renderToStaticMarkup(createElement('div', { className: 'model-grid' }, cards.map(card => createElement(ModelCard, { key: card.id, card }))));
 const imageData = new Map<string, string>();
 async function dataUrl(path: string) {

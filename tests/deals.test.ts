@@ -347,7 +347,11 @@ describe('server rendered deals UI', () => {
     expect(renderToStaticMarkup(createElement(DealStateChip, { timing: { state: 'upcoming', days: 0 } }))).toContain(dealsCopy.startsToday);
     expect(detail({ starts_at: 'invalid' })).toContain(dealsCopy.unknownSchedule);
     expect(detail({ starts_at: 'invalid' })).not.toContain(dealsCopy.good);
-    expect(renderToStaticMarkup(createElement(DealList, { deals: [], nowMs }))).toBe(`<p class="deal-empty">${dealsCopy.empty}</p>`);
+    const empty = renderToStaticMarkup(createElement(DealList, { deals: [], nowMs }));
+    expect(empty).toContain(`<p>${dealsCopy.empty}</p>`);
+    expect(empty).toContain(`href="/models">${dealsCopy.secondary}</a>`);
+    expect(empty).not.toContain('ledger-prices');
+    expect(empty).not.toContain('ledger-discount');
     const missing = renderToStaticMarkup(createElement(DealNotFound));
     expect(missing).toContain(dealsCopy.missing);
     expect(missing).toContain('href="/deals"');
@@ -383,7 +387,7 @@ describe('theme contrast', () => {
       ['muted', 'surface'], ['on-accent', 'stamp'], ['muted', 'neutral'], ['text', 'surface'],
       ['accent', 'surface'], ['accent', 'surface-2'], ['muted', 'bg'],
       // Ledger pairs: body ink on the page, and the active tab's inverted label.
-      ['ink', 'bg'], ['text', 'bg'], ['bg', 'ink'],
+      ['ink', 'bg'], ['text', 'bg'], ['bg', 'ink'], ['paper-ink', 'paper'],
     ]) {
       expect(contrast(token(foreground), token(background))).toBeGreaterThanOrEqual(4.5);
     }

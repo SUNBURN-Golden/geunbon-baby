@@ -153,5 +153,6 @@ test('after every deal ends all cards say there is no active deal', async () => 
 test('deal rows keep compact, unwrapped mobile pricing', async () => {
   const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
   expect(css.match(/\.model-deal \{([^}]+)\}/)?.[1]).toContain('flex-wrap: nowrap');
-  expect(css.match(/\.model-deal-price \{([^}]+)\}/)?.[1]).toContain('clamp(20px, 5vw, 28px)');
+  expect(css.match(/\.model-deal-price \{([^}]+)\}/)?.[1]).toContain('white-space: nowrap');
+  expect(css.match(/\.model-deal-price \{([^}]+)\}/)?.[1]).toContain('font-variant-numeric: tabular-nums');
 });
