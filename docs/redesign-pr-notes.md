@@ -21,4 +21,5 @@ Move the hero before the active ledger, apply the exact owner-approved headline,
 - [x] Screenshot render command from PR1, followed by `node_modules/.bin/tsx scripts/redesign-screenshots.ts .local/redesign-pr2`.
 - [x] All 18 mobile/desktop light/dark checks passed; zero horizontal overflow and no targets below 44px. Hero measured 187.5px at 320/390 and 175px at 1440. Mobile dark and desktop light visually inspected.
 - [x] Hero/order/count and empty-state tests updated in this PR; no cards or prices in the zero state.
+- [x] Review fixes: the hero tally is `aria-hidden` because the list heading announces the same count; the intermediate-width `clamp()` heading size lives here with the hero; README headline updated to the approved text.
 - [ ] Mockup Korean wording and removal of supplemental copy: pending Argon; detailed file/line proposals are in `/workspace/rd-wt/logs/agamajung-copy-todo.md`.

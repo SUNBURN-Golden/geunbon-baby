@@ -23,7 +23,7 @@ export default async function Home() {
           <Link className="button button-outline" href="/models">{dealsCopy.secondary}</Link>
         </div>
       </div>
-      <div className="hero-counter"><span>{dealsCopy.activeHeading}</span><ActiveDealCount count={activeCount} /></div>
+      <div className="hero-counter" aria-hidden="true"><span>{dealsCopy.activeHeading}</span><ActiveDealCount count={activeCount} /></div>
     </section>
     <ActiveDeals deals={deals} nowMs={nowMs} />
     <section className="manifesto"><p className="hero-caption">작은 시작, 오래 곁에 둘 것들.</p><h2>많이 고르기보다,<br/>제대로 고르는 일.</h2><div><p>유모차부터 첫 의자까지. 브랜드의 이름보다<br/>아이와 함께할 시간을 먼저 생각합니다.</p><p>{siteCopy.pricePromise}</p></div></section><section className="entry-grid"><Link href="/models?category=stroller"><span>01 / OUT & ABOUT</span><h3>함께 걷는 첫 길</h3><p>유모차 살펴보기 →</p></Link><Link href="/models?category=high_chair"><span>02 / AT THE TABLE</span><h3>식탁의 작은 자리</h3><p>하이체어 살펴보기 →</p></Link><Link href="/models?category=car_seat"><span>03 / SAFE JOURNEY</span><h3>안심을 싣는 시간</h3><p>카시트 살펴보기 →</p></Link></section></main>;

@@ -62,6 +62,9 @@ test('dynamic home queries D1 and renders only active deals after the compact he
   expect(html).toContain('<h1 id="home-title">너는 건강하게만 오렴, 좋은 것을 골라둘게.</h1>');
   const hero = html.match(/<section class="hero"[\s\S]*?<\/section>/)![0];
   expect(hero).toContain('aria-label="3개 진행 중이에요"');
+  // The list heading below announces the same count; the hero tally is visual only.
+  expect(hero).toContain('<div class="hero-counter" aria-hidden="true">');
+  expect(html.slice(html.indexOf('class="active-deals"'))).toContain('aria-label="3개 진행 중이에요"');
   expect(hero).not.toContain('hero-art');
   expect(detailLinks(html)).toEqual(['today', 'soon', 'later']);
   for (const inactive of ['upcoming deal', 'ended deal', 'unknown deal']) expect(html).not.toContain(inactive);
