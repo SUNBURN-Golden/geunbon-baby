@@ -4,7 +4,7 @@ All branches remain local and stacked on `801ac47` (`origin/main`). No push, mer
 
 ## PR1 — tokens and fonts
 
-Replace the previous palette and font stack with ledger tokens and licensed self-hosted Gowun Batang / Spoqa Han Sans Neo. The owner-approved supersession is recorded in `design-decisions.md` and the dev-daemon guide. The contrast test now resolves aliases and verifies each actual theme and stamp-fill contrast.
+Replace the previous palette and font stack with ledger tokens and licensed self-hosted Gowun Batang / Spoqa Han Sans Neo. The owner-approved supersession is recorded in `design-decisions.md` and the dev-daemon guide. The contrast test now resolves aliases and verifies each actual theme and stamp-fill contrast, including ink/text on the page background and the active tab's inverted label. (A stamp-text-on-paper pair is not tested: that combination is not used, and the dark accent would not pass on the always-light paper.)
 
 - [x] `npm run build`, `npm test` (80 files / 1567 tests), `npm run typecheck`, `npm run lint`.
 - [x] `REDESIGN_SCREENSHOTS=1 npm test -- tests/redesign-pages.test.ts`.

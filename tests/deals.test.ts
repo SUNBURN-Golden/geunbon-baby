@@ -382,6 +382,8 @@ describe('theme contrast', () => {
       ['text', 'surface'], ['text', 'surface-2'], ['text', 'clay'],
       ['muted', 'surface'], ['on-accent', 'stamp'], ['muted', 'neutral'], ['text', 'surface'],
       ['accent', 'surface'], ['accent', 'surface-2'], ['muted', 'bg'],
+      // Ledger pairs: body ink on the page, and the active tab's inverted label.
+      ['ink', 'bg'], ['text', 'bg'], ['bg', 'ink'],
     ]) {
       expect(contrast(token(foreground), token(background))).toBeGreaterThanOrEqual(4.5);
     }
