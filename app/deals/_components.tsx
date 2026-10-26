@@ -1,4 +1,5 @@
 import { sellerTrustHref, type Deal } from '../../lib/data';
+import { modelIllustration } from '../../lib/model-illustrations';
 import { DealImage } from './_image';
 import Link from 'next/link';
 import { dealOfficialPrice, dealTiming, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
@@ -85,17 +86,49 @@ export function DealDisclaimer() {
   return <p className="deal-disclaimer">{dealsCopy.disclaimer}</p>;
 }
 
+export function PriceLegend() {
+  return <div className="price-legend" aria-hidden="true">
+    <span>{dealsCopy.officialPrice}</span><span>{dealsCopy.groupBuyPrice}</span>
+  </div>;
+}
+
+function DealThumbnail({ deal }: { deal: DealWithContext }) {
+  const art = deal.model_joined_id && deal.model_name ? modelIllustration(deal.model_id) : null;
+  return <div className="deal-thumbnail">
+    {art
+      // eslint-disable-next-line @next/next/no-img-element -- Local pre-sized repository line art.
+      ? <img src={art.src} width={art.width} height={art.height} alt="" loading="lazy" decoding="async" />
+      : <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />}
+  </div>;
+}
+
+export function LedgerPrices({ deal, timing, gap }: { deal: DealWithContext; timing: Timing; gap: Gap | null }) {
+  const official = dealOfficialPrice(deal);
+  const discount = gap?.relation === 'below' && Math.round(gap.percent) >= 1 &&
+    (timing.state === 'active' || timing.state === 'upcoming') ? `−${Math.round(gap.percent)}%` : null;
+  return <div className="ledger-prices">
+    <div className="ledger-cell ledger-official"><p className="deal-context">
+      {official === null ? dealsCopy.unknownOfficial : <><span className="sr-only">{dealsCopy.officialPrice} · </span>{official.toLocaleString('ko-KR')}{dealsCopy.won}</>}
+    </p></div>
+    <div className="ledger-cell ledger-group"><DealPrice deal={deal} timing={timing} />
+      {discount && <span className="ledger-discount" aria-hidden="true">{discount}</span>}
+    </div>
+  </div>;
+}
+
 export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number }) {
   const timing = dealTiming(deal.starts_at, deal.ends_at, nowMs);
   const gap = priceGap(deal.price, dealOfficialPrice(deal));
   return (
     <article className="deal-card">
-      <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
+      <DealThumbnail deal={deal} />
       <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} /></div>
-      <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link></h2>
+      <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link>
+        {deal.model_brand && <span className="deal-model">{deal.model_brand} {deal.model_name}</span>}
+      </h2>
       <p className="deal-period"><DealPeriod deal={deal} timing={timing} /></p>
-      <DealPrice deal={deal} timing={timing} />
-      <PriceGap deal={deal} gap={gap} showContext={false} />
+      <LedgerPrices deal={deal} timing={timing} gap={gap} />
+      {gap && <p className="deal-gap">{gapChunks(formatGap(gap)).map((chunk, i) => <span className="deal-gap-chunk" key={i}>{i > 0 ? ` · ${chunk}` : chunk}</span>)}</p>}
       <PriceToneBadge gap={gap} timing={timing} />
       <DealCardLinks deal={deal} />
       <DealDisclaimer />

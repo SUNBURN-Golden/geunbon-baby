@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest';
@@ -7,7 +7,7 @@ import Models from '../app/models/page';
 import ModelDetail from '../app/models/[id]/page';
 import Calendar from '../app/calendar/page';
 import { NavLinks } from '../app/nav';
-import { DealCard } from '../app/deals/_components';
+import { DealCard, PriceLegend } from '../app/deals/_components';
 import { DEAL_SELECT, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
 import { siteCopy } from '../lib/site-copy';
@@ -138,5 +138,31 @@ test.each(['기존 수입사 (기존 정보, 재확인 실패)', '미확인'])('
     expect(html).not.toContain('href=""');
   } finally {
     await memory.db.prepare("UPDATE models SET source_url = 'https://example.com/model', official_price = 430000, verify_level = 'page_body', importer = 'Importer' WHERE id = ?").bind('model-1').run();
+  }
+});
+
+
+test('ledger orders official/group-buy cells and derives badges only for verified live reductions', async () => {
+  const joined = (await memory.db.prepare(DEAL_SELECT).first<DealWithContext>())!;
+  const nowMs = Date.parse('2026-10-21T03:00:00Z');
+  const variants: Partial<DealWithContext>[] = [
+    {}, { price: null }, { price: 0 }, { model_official_price: null },
+    { model_verify_level: 'page_text' }, { price: 500000 },
+    { ends_at: '2026-10-20T00:00:00Z' }, { model_id: 'unillustrated', model_joined_id: null },
+  ];
+  const cards = variants.map(patch => renderToStaticMarkup(createElement(DealCard, { deal: { ...joined, ...patch }, nowMs })));
+  expect(cards[0].indexOf('ledger-official')).toBeLessThan(cards[0].indexOf('ledger-group'));
+  expect(cards[0]).toContain('<span class="sr-only">공식가격이에요 · </span>430,000원');
+  expect(cards[0]).toContain('390,000<span>원</span>');
+  expect(cards[0]).toContain('class="ledger-discount" aria-hidden="true">−9%');
+  expect(cards[0]).toContain('src="/img/models/model-1-540x540.png"');
+  for (const index of [1, 3, 4, 5, 6, 7]) expect(cards[index]).not.toContain('ledger-discount');
+  expect(cards[1]).toContain(dealsCopy.unknownPrice);
+  expect(cards[2]).toContain('>0<span>원</span>');
+  expect(cards[2]).toContain('−100%');
+  expect(cards[4]).not.toContain('430,000');
+  if (process.env.REDESIGN_SCREENSHOTS === '1') {
+    await mkdir('.local/redesign-html', { recursive: true });
+    await writeFile('.local/redesign-html/ledger-fixtures.html', `<main><section class="active-deals"><h1>Ledger regression fixtures</h1>${renderToStaticMarkup(createElement(PriceLegend))}<div class="deal-list">${cards.join('')}</div></section></main>`);
   }
 });

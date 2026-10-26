@@ -159,7 +159,7 @@ test('active cards preserve unknown prices, zero prices and comparison direction
   expect(unknown).toContain('500,000원');
   expect(unknown).not.toContain('class="deal-gap"');
   const zeroOfficial = render({ model_official_price: 0 });
-  expect(zeroOfficial).toContain(`${dealsCopy.officialPrice} · 0원`);
+  expect(zeroOfficial.replace(/<[^>]*>/g, '')).toContain(`${dealsCopy.officialPrice} · 0원`);
   expect(zeroOfficial).not.toContain('class="deal-gap"');
   for (const patch of [{ model_official_price: null }, { model_joined_id: null }]) {
     const html = render(patch);

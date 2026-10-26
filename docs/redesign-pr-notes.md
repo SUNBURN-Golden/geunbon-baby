@@ -41,3 +41,15 @@ Use `var(--bg)` for the selected category's inset focus outline against its ink 
 - [x] `npm run build:worker` (includes the production Next build), `npm test -- --maxWorkers=1` (81 files / 1569 tests), `npm run typecheck`, `npm run lint`.
 - [x] Real local Wrangler app and isolated local D1: Playwright captured home, deals and models at 390px and 1440px, light and dark, including native keyboard focus on the selected tab. All 24 page/focus checks passed; zero page overflow, loaded fonts, 44px targets, focus contrast above 3:1.
 - [x] Screenshots and metrics: `/workspace/rd-wt/logs/agamajung-shots/fix2-pr3/`. Mobile light and desktop dark focus screenshots visually inspected. Server stopped; no production access or data changes.
+## PR4 — ledger cards and two-price tables
+
+Use repository line art on paper stamp frames, a ruled official-left/group-buy-right price table, a sticky legend, and a calculated decorative discount stamp. Screen-reader labels and every existing status, comparison, source and disclosure string remain. Shared cards remain identical across home/deals/calendar/model detail. Deal detail keeps the original source image; unillustrated cards retain the safe-image fallback. No `/models` date or discount-badge restrictions were lifted.
+
+- [x] `npm run build`, `npm run typecheck`, `npm run lint`.
+- [x] `npm test -- --maxWorkers=1`: 81 files / 1570 tests passed. Single worker avoids the existing session-capture polling test's host-contention flake.
+- [x] `REDESIGN_SCREENSHOTS=1 npm test -- tests/redesign-pages.test.ts tests/two-price.test.ts`.
+- [x] `LEDGER_FIXTURES=1 node_modules/.bin/tsx scripts/redesign-screenshots.ts .local/redesign-pr4`: 24 screenshots/checks, 320/390/1440 light/dark, no page overflow or small targets. Fixture mobile light and desktop dark visually inspected.
+- [x] The extra six screenshots explicitly show existing test fixtures (unknown, zero, unverified, higher and expired prices); these are never loaded into production data or routes. The real home/deals screenshots still show zero deals.
+- [x] Updated hero/card, image-lifecycle and two-price expectations with the implementation; retained `/models` forbidden-date/discount tests.
+
+Responsive accommodation: 1 column through 720px, 2 through 1199px, 4 at 1200px and above. Four thumbnail-plus-two-price columns at 721px cannot hold the real prices at the approved readable size; the intermediate layout preserves price legibility and AA targets. Retaining the current Korean metadata/disclosures also makes live cards taller than the mockup. The mockup's first-viewport card counts cannot be reproduced while retaining that copy and the existing navigation; copy removal remains pending Argon.

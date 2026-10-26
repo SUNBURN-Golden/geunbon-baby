@@ -10,8 +10,9 @@ const css = await readFile('app/globals.css', 'utf8');
 const browser = await chromium.launch({ headless: true });
 const results: unknown[] = [];
 try {
-  for (const name of ['home', 'deals', 'models']) {
-    const markup = await readFile(`.local/redesign-html/${name}.html`, 'utf8');
+  for (const name of ['home', 'deals', 'models', ...(process.env.LEDGER_FIXTURES === '1' ? ['ledger-fixtures'] : [])]) {
+    let markup = await readFile(`.local/redesign-html/${name}.html`, 'utf8');
+    if (name === 'ledger-fixtures') markup = (await readFile('.local/redesign-html/home.html', 'utf8')).replace(/<main[\s\S]*?<\/main>/, markup);
     for (const width of [320, 390, 1440]) for (const scheme of ['light', 'dark'] as const) {
       const page = await browser.newPage({ viewport: { width, height: width === 1440 ? 900 : 844 }, colorScheme: scheme, reducedMotion: 'reduce' });
       await page.route('**/*', async route => {
@@ -47,4 +48,4 @@ try {
   await writeFile(join(output, 'metrics.json'), JSON.stringify(results, null, 2));
   await browser.close();
 }
-console.log(`Saved 18 real-page screenshots and metrics to ${output}`);
+console.log(`Saved page screenshots and metrics to ${output}`);
