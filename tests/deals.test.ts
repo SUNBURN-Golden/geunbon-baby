@@ -375,13 +375,13 @@ describe('theme contrast', () => {
     for (const [foreground, background] of [
       ['text', 'surface'], ['text', 'surface-2'], ['text', 'clay'],
       ['muted', 'surface'], ['on-accent', 'accent'], ['muted', 'neutral'], ['text', 'surface'],
-      ['accent', 'surface'], ['accent', 'surface-2'], ['muted', 'bg'],
+      ['stamp-text', 'surface'], ['stamp-text', 'surface-2'], ['muted', 'bg'],
     ]) {
       expect(contrast(tokens[prefix + foreground], tokens[prefix + background])).toBeGreaterThanOrEqual(4.5);
     }
     // Focus rings sit outside controls, against the page/card surfaces.
     for (const background of ['bg', 'surface']) {
-      expect(contrast(tokens[prefix + 'accent'], tokens[prefix + background])).toBeGreaterThanOrEqual(3);
+      expect(contrast(tokens[prefix + 'stamp-text'], tokens[prefix + background])).toBeGreaterThanOrEqual(3);
     }
   });
 });
