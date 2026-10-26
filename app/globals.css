@@ -40,19 +40,12 @@
   --on-accent: #FFFFFF;
   --stamp-text: #B42318;
   --paper: #FAF7F0;
-  --paper-muted: #5B5F66;
-  /* Legacy surface and art names retain the ledger palette. */
+  /* Legacy surface names retain the ledger palette. */
   --sage: #FAF7F0;
   --clay: #FAF7F0;
   --neutral: #FAF7F0;
   --verified: #FAF7F0;
   --nav-glass: var(--surface);
-  --art-1: var(--paper);
-  --art-2: var(--surface-2);
-  --art-3: var(--surface-2);
-  --art-4: var(--surface-2);
-  --art-5: #1D3557;
-  --art-6: #1D3557;
 
   --dark-bg: #161B22;
   --dark-surface: #1C222B;
@@ -70,12 +63,6 @@
   --dark-neutral: #1C222B;
   --dark-verified: #1C222B;
   --dark-nav-glass: var(--dark-surface);
-  --dark-art-1: var(--paper);
-  --dark-art-2: var(--paper);
-  --dark-art-3: var(--paper);
-  --dark-art-4: var(--paper);
-  --dark-art-5: #1D3557;
-  --dark-art-6: #1D3557;
 
   --s-1: 4px;
   --s-2: 8px;
@@ -127,12 +114,6 @@
     --neutral: var(--dark-neutral);
     --verified: var(--dark-verified);
     --nav-glass: var(--dark-nav-glass);
-    --art-1: var(--dark-art-1);
-    --art-2: var(--dark-art-2);
-    --art-3: var(--dark-art-3);
-    --art-4: var(--dark-art-4);
-    --art-5: var(--dark-art-5);
-    --art-6: var(--dark-art-6);
     --shadow-sm: none;
     --shadow-lg: none;
   }
@@ -303,13 +284,35 @@ em { font-style: normal; color: var(--muted); }
 /* Hero buttons keep the stamp fill and outline distinct in both themes. */
 .hero-actions .button { border: 2px solid var(--accent); border-radius: 0; padding: 0 18px; min-height: 44px; font-size: 15px; font-weight: 700; }
 .hero-actions .hero-secondary { border-color: var(--stamp-text); color: var(--stamp-text); background: transparent; }
-.entry-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); margin: 0 6% var(--s-8); }
-.entry-grid a { text-decoration: none; padding: var(--s-5); background: var(--sage); border-radius: var(--r-lg); }
-.entry-grid a:nth-child(2) { background: var(--clay); }
-.entry-grid a:nth-child(3) { background: var(--neutral); }
-.entry-grid span { font: 9px var(--font-sans); letter-spacing: 2px; }
-.entry-grid h3 { margin: var(--s-4) 0; }
-.entry-grid p { font-size: 14px; margin: 0; }
+.category-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--s-1);
+  min-width: 0;
+  max-width: 1280px;
+  margin: var(--s-4) auto 0;
+  padding: 6px var(--s-4) 0;
+  border-bottom: 2px solid var(--rule);
+  overflow-x: auto;
+}
+.category-tabs a {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding-inline: var(--s-5);
+  border: 2px solid var(--rule);
+  border-bottom: 0;
+  border-radius: 0;
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.category-tabs a:hover { background: var(--ink); color: var(--bg); }
+.category-tabs a:focus-visible { outline-offset: -3px; }
 .note { background: var(--sage); padding: var(--s-8) 6%; text-align: center; }
 .note p { color: var(--muted); }
 .note a, .notice a, .empty a, .seller a, .comparison a {
@@ -392,9 +395,6 @@ form { max-width: 100%; }
   .nav-link { min-height: var(--control-height); padding: var(--s-3) var(--s-4); border-bottom: 2px solid transparent; border-radius: 0; font-size: 14px; }
   .nav-link svg { display: none; }
   .nav-link[aria-current='page'] { border-bottom-color: var(--stamp-text); }
-  .entry-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-5); margin: 0 8% var(--s-10); }
-  .entry-grid a { padding: var(--s-7) var(--s-6); }
-  .entry-grid h3 { margin: var(--s-6) 0 var(--s-4); }
   .note, footer { padding: var(--s-9) 8%; }
   .page { padding: var(--s-9) 5% var(--s-10); }
   .filters { flex-wrap: nowrap; gap: var(--s-4); }
@@ -554,7 +554,7 @@ form { max-width: 100%; }
 .deals-heading h1 { margin-bottom: var(--s-2); }
 .deals-heading p { display: flex; align-items: center; gap: var(--s-2); margin: 0; }
 @media (min-width: 768px) {
-  .hero, .active-deals { padding-inline: var(--s-6); }
+  .hero, .category-tabs, .active-deals { padding-inline: var(--s-6); }
   .active-deals { padding-block: var(--s-6); }
   .active-deal-row { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); overflow: visible; }
 }

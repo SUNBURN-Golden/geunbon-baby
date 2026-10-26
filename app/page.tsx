@@ -1,10 +1,15 @@
 import Link from 'next/link';
 import { siteCopy } from '../lib/site-copy';
 import { all, environment } from '../lib/db';
+import { categories } from '../lib/data';
 import { DEAL_SELECT, dealTiming, type DealWithContext } from '../lib/deals';
 import { ActiveDeals } from './_active-deals';
 
 export const dynamic = 'force-dynamic';
+
+const categoryOrder: Record<string, number> = { stroller: 0, high_chair: 1, car_seat: 2, carrier: 3, bouncer: 4 };
+const categoryTabs = Object.entries(categories).sort(([a], [b]) =>
+  (categoryOrder[a] ?? Infinity) - (categoryOrder[b] ?? Infinity));
 
 export default async function Home() {
   // eslint-disable-next-line react-hooks/purity -- Capture request time once for consistent deal states.
@@ -19,7 +24,7 @@ export default async function Home() {
           <p className="lead">{siteCopy.heroLead}</p>
           <div className="hero-actions">
             <Link className="button hero-primary" href="#ledger">{siteCopy.heroPrimaryCta}</Link>
-            <Link className="button hero-secondary" href="/models">{siteCopy.heroSecondaryCta}</Link>
+            <Link className="button hero-secondary" href="#categories">{siteCopy.heroSecondaryCta}</Link>
           </div>
         </div>
         <div className="hero-counter">
@@ -28,8 +33,13 @@ export default async function Home() {
           <div className="hero-counter-total" aria-hidden="true"><strong>{activeCount}</strong><span>{siteCopy.heroCountUnit}</span></div>
         </div>
       </section>
+      <nav className="category-tabs" id="categories" aria-label={siteCopy.categoryNavLabel}>
+        <Link href="/models">{siteCopy.categoryAll}</Link>
+        {categoryTabs.map(([key, label]) => (
+          <Link key={key} href={`/models?category=${encodeURIComponent(key)}`}>{label}</Link>
+        ))}
+      </nav>
       <ActiveDeals deals={deals} nowMs={nowMs} />
-      <section className="entry-grid"><Link href="/models?category=stroller"><span>01 / OUT & ABOUT</span><h3>함께 걷는 첫 길</h3><p>유모차 살펴보기 →</p></Link><Link href="/models?category=high_chair"><span>02 / AT THE TABLE</span><h3>식탁의 작은 자리</h3><p>하이체어 살펴보기 →</p></Link><Link href="/models?category=car_seat"><span>03 / SAFE JOURNEY</span><h3>안심을 싣는 시간</h3><p>카시트 살펴보기 →</p></Link></section>
     </main>
   );
 }
