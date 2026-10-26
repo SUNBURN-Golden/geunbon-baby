@@ -102,9 +102,10 @@ function DealThumbnail({ deal }: { deal: DealWithContext }) {
   </div>;
 }
 
-export function LedgerPrices({ deal, timing, gap }: { deal: DealWithContext; timing: Timing; gap: Gap | null }) {
+export function LedgerPrices({ deal, timing, gap, showBadge = true }: { deal: DealWithContext; timing: Timing; gap: Gap | null; showBadge?: boolean }) {
   const official = dealOfficialPrice(deal);
-  const discount = gap?.relation === 'below' && Math.round(gap.percent) >= 1 &&
+  // Decorative whole-percent stamp: hidden below 1% (the sentence keeps one decimal), for a 0원 price, and where `showBadge` is false (model detail).
+  const discount = showBadge && gap?.relation === 'below' && deal.price !== null && deal.price > 0 && Math.round(gap.percent) >= 1 &&
     (timing.state === 'active' || timing.state === 'upcoming') ? `−${Math.round(gap.percent)}%` : null;
   return <div className="ledger-prices">
     <div className="ledger-cell ledger-official"><p className="deal-context">
@@ -116,7 +117,7 @@ export function LedgerPrices({ deal, timing, gap }: { deal: DealWithContext; tim
   </div>;
 }
 
-export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number }) {
+export function DealCard({ deal, nowMs, showBadge = true }: { deal: DealWithContext; nowMs: number; showBadge?: boolean }) {
   const timing = dealTiming(deal.starts_at, deal.ends_at, nowMs);
   const gap = priceGap(deal.price, dealOfficialPrice(deal));
   return (
@@ -127,7 +128,7 @@ export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number
         {deal.model_brand && <span className="deal-model">{deal.model_brand} {deal.model_name}</span>}
       </h2>
       <p className="deal-period"><DealPeriod deal={deal} timing={timing} /></p>
-      <LedgerPrices deal={deal} timing={timing} gap={gap} />
+      <LedgerPrices deal={deal} timing={timing} gap={gap} showBadge={showBadge} />
       {gap && <p className="deal-gap">{gapChunks(formatGap(gap)).map((chunk, i) => <span className="deal-gap-chunk" key={i}>{i > 0 ? ` · ${chunk}` : chunk}</span>)}</p>}
       <PriceToneBadge gap={gap} timing={timing} />
       <DealCardLinks deal={deal} />
@@ -148,8 +149,8 @@ export function DealCardLinks({ deal }: { deal: DealWithContext }) {
   );
 }
 
-export function DealList({ deals, nowMs }: { deals: readonly DealWithContext[]; nowMs: number }) {
-  return deals.length ? <div className="deal-list">{deals.map(deal => <DealCard key={deal.id} deal={deal} nowMs={nowMs} />)}</div>
+export function DealList({ deals, nowMs, showBadge = true }: { deals: readonly DealWithContext[]; nowMs: number; showBadge?: boolean }) {
+  return deals.length ? <div className="deal-list">{deals.map(deal => <DealCard key={deal.id} deal={deal} nowMs={nowMs} showBadge={showBadge} />)}</div>
     : <p className="deal-empty">{dealsCopy.empty}</p>;
 }
 

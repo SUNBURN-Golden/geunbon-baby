@@ -62,6 +62,10 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   const joinedDeal = (await memory.db.prepare(DEAL_SELECT).first<DealWithContext>())!;
   const card = renderToStaticMarkup(createElement(DealCard, { deal: joinedDeal, nowMs: Date.now() }));
   for (const html of [home, models, detail, calendar, card]) excludesOtherPrices(html);
+  // The decorative discount stamp is allowed on shared deal lists but never on /models/* routes.
+  for (const html of [home, calendar, card]) expect(html).toContain('class="ledger-discount"');
+  for (const html of [models, detail]) expect(html).not.toContain('ledger-discount');
+  expect(detail).toContain('class="deal-gap"');
   expect(home).toContain(siteCopy.pricePromise);
   expect(models).toContain(siteCopy.officialLabel);
   expect(models).toContain('430,000원');
@@ -156,10 +160,10 @@ test('ledger orders official/group-buy cells and derives badges only for verifie
   expect(cards[0]).toContain('390,000<span>원</span>');
   expect(cards[0]).toContain('class="ledger-discount" aria-hidden="true">−9%');
   expect(cards[0]).toContain('src="/img/models/model-1-540x540.png"');
-  for (const index of [1, 3, 4, 5, 6, 7]) expect(cards[index]).not.toContain('ledger-discount');
+  for (const index of [1, 2, 3, 4, 5, 6, 7]) expect(cards[index]).not.toContain('ledger-discount');
   expect(cards[1]).toContain(dealsCopy.unknownPrice);
   expect(cards[2]).toContain('>0<span>원</span>');
-  expect(cards[2]).toContain('−100%');
+  expect(cards[2]).not.toContain('−100%');
   expect(cards[4]).not.toContain('430,000');
   if (process.env.REDESIGN_SCREENSHOTS === '1') {
     await mkdir('.local/redesign-html', { recursive: true });

@@ -23,7 +23,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
         <section>
           <p className="eyebrow">01 / GROUP BUY</p>
           <h2>{dealsCopy.groupBuyPrice}</h2>
-          {deals.length ? <DealList deals={deals} nowMs={nowMs} /> : <p>{dealsCopy.modelEmpty}</p>}
+          {deals.length ? <DealList deals={deals} nowMs={nowMs} showBadge={false} /> : <p>{dealsCopy.modelEmpty}</p>}
         </section>
         <section>
           <p className="eyebrow">02 / OFFICIAL</p>
