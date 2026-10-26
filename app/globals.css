@@ -508,3 +508,15 @@ form { max-width: 100%; }
   .hero-counter > span:first-child { font-size: 12px; }
   .hero-counter .active-deal-count { font-size: 30px; }
 }
+
+/* Native link navigation supports Tab/Shift+Tab and Enter without client state. */
+.home-index { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+.category-tabs { display: flex; gap: 4px; margin: 20px 0 12px; padding: 4px 4px 0; border-bottom: 2px solid var(--ink); overflow-x: auto; overscroll-behavior-x: contain; }
+.category-tabs a { flex: none; display: flex; align-items: center; min-height: 44px; padding: 0 20px; border: 2px solid var(--ink); border-bottom: 0; color: var(--ink); text-decoration: none; font-weight: 700; white-space: nowrap; }
+.category-tabs a[aria-current='page'] { background: var(--ink); color: var(--bg); }
+.category-tabs a:focus-visible { outline-offset: -4px; }
+@media (max-width: 720px) {
+  .home-index { padding: 0 16px; }
+  .category-tabs { margin-top: 12px; }
+  .category-tabs a { padding-inline: 14px; }
+}

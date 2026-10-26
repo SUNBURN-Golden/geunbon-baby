@@ -23,3 +23,13 @@ Move the hero before the active ledger, apply the exact owner-approved headline,
 - [x] Hero/order/count and empty-state tests updated in this PR; no cards or prices in the zero state.
 - [x] Review fixes: the hero tally is `aria-hidden` because the list heading announces the same count; the intermediate-width `clamp()` heading size lives here with the hero; README headline updated to the approved text.
 - [ ] Mockup Korean wording and removal of supplemental copy: pending Argon; detailed file/line proposals are in `/workspace/rd-wt/logs/agamajung-copy-todo.md`.
+
+## PR3 — index category tabs
+
+Add native category links on home, deals and models, preserving every category (including car seats) and model search/brand parameters. Active categories use `aria-current="page"`; unsupported home/deal categories safely fall back to all. Home/deals filter joined model categories and keep the hero's global active count.
+
+- [x] `npm run build`, `npm run typecheck`, `npm run lint`.
+- [x] `npm test -- --maxWorkers=2`: 81 files / 1569 tests passed. An unrestricted run encountered unrelated existing timing failures under host contention; reducing workers passed without code changes to those systems.
+- [x] Screenshot render command and `node_modules/.bin/tsx scripts/redesign-screenshots.ts .local/redesign-pr3`: 18 checks passed, 320/390/1440 light/dark, no overflow or undersized targets. Home 320 light and deals desktop dark visually inspected.
+- [x] Link semantics, preserved query parameters and category filtering covered by tests. Tabs scroll within their own nav on mobile.
+- [ ] “전체” is pending Argon; retain existing “모든 종류”.
