@@ -70,9 +70,12 @@ test('home has the verified-products description and no deleted phrases or empty
   expect(html).toContain(dealsCopy.disclaimer);
   expect(html).toContain('href="/sellers#trust-seller-1"');
   expect(html).toContain(siteCopy.heroLead);
-  expect(html).toContain(siteCopy.pricePromise);
-  expect(html).toContain('href="/deals"');
-  for (const forbidden of ['모르', '모릅', '해외가', '중고', 'class="note"']) expect(html).not.toContain(forbidden);
+  expect(html).toContain('<h1>너는 건강하게만 오렴, 좋은 것을 골라둘게.</h1>');
+  expect(html).toContain('href="#ledger"');
+  expect(html).toContain(siteCopy.heroPrimaryCta);
+  expect(html).toContain('href="/models"');
+  expect(html).toContain(siteCopy.heroSecondaryCta);
+  for (const forbidden of ['모르', '모릅', '해외가', '중고', 'class="note"', 'class="eyebrow"', 'class="hero-art"', 'class="manifesto"', 'A THOUGHTFUL BEGINNING']) expect(html).not.toContain(forbidden);
 });
 
 test('layout, metadata and sharing use the 아가마중 brand and new description, retaining wordmark and nav hrefs', () => {

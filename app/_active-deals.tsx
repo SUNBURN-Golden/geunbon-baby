@@ -9,7 +9,7 @@ export function ActiveDealCount({ count }: { count: number }) {
 export function ActiveDeals({ deals, nowMs }: { deals: readonly DealWithContext[]; nowMs: number }) {
   const active = sortDeals(deals.filter(deal => dealTiming(deal.starts_at, deal.ends_at, nowMs).state === 'active'), nowMs);
   return (
-    <section className="active-deals" aria-labelledby="active-deals-title">
+    <section className="active-deals" id="ledger" aria-labelledby="active-deals-title">
       <h2 id="active-deals-title">{dealsCopy.activeHeading} <ActiveDealCount count={active.length} /></h2>
       {active.length ? <ul className="active-deal-row">{active.map(deal => <li key={deal.id}><DealCard deal={deal} nowMs={nowMs} /></li>)}</ul>
         : <p className="active-deal-empty">{dealsCopy.activeEmpty}</p>}
