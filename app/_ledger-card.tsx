@@ -35,7 +35,11 @@ export function LedgerCard({ deal }: { deal: DealWithContext }) {
           <span className="visually-hidden">{dealsCopy.ledgerGroup} </span>
           <span className="ledger-value">{ledgerPrice(deal.price)}</span>
           {gap?.relation === 'below' && (
-            <span className="ledger-discount">-{gap.percent < 0.1 ? '<0.1' : Number(gap.percent.toFixed(1))}%</span>
+            // Intentional difference from formatGap: the badge uses a minus sign and omits trailing decimal zeros.
+            <span className="ledger-discount">
+              <span className="visually-hidden">{dealsCopy.discountPrefix}</span>
+              -{gap.percent < 0.1 ? '<0.1' : Number(gap.percent.toFixed(1))}%
+            </span>
           )}
         </span>
       </span>

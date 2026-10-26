@@ -73,7 +73,7 @@ test('dynamic home queries D1 and renders hero then category tabs then active de
     expect(card).toContain('class="ledger-name">Brand Chair</span>');
     expect(card).toContain('400,000원');
     expect(card).toContain('500,000원');
-    expect(card).toContain('class="ledger-discount">-20%</span>');
+    expect(card).toContain(`class="ledger-discount"><span class="visually-hidden">${dealsCopy.discountPrefix}</span>-20%</span>`);
     expect(card.match(/class="ledger-value"/g)).toHaveLength(2);
     expect(card).not.toContain('<a');
     expect(card).not.toContain('class="deal-card"');
@@ -175,9 +175,9 @@ test('LedgerCard renders exactly two prices with hidden labels and a below-offic
   expect(html).toContain('400,000원');
   expect(html).toContain(`<span class="visually-hidden">${dealsCopy.ledgerOfficial} </span>`);
   expect(html).toContain(`<span class="visually-hidden">${dealsCopy.ledgerGroup} </span>`);
-  expect(html).toContain('class="ledger-discount">-20%</span>');
+  expect(html).toContain(`class="ledger-discount"><span class="visually-hidden">${dealsCopy.discountPrefix}</span>-20%</span>`);
   const tinyGap = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, price: 499999 } }));
-  expect(tinyGap).toContain('class="ledger-discount">-&lt;0.1%</span>');
+  expect(tinyGap).toContain(`class="ledger-discount"><span class="visually-hidden">${dealsCopy.discountPrefix}</span>-&lt;0.1%</span>`);
   expect(tinyGap).not.toContain('>-0%');
   const zero = renderToStaticMarkup(createElement(LedgerCard, { deal: { ...base, price: 0 } }));
   expect(zero).toContain('>0원</span>');
