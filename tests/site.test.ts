@@ -108,7 +108,8 @@ test('calendar alone is current on its route and the server fallback has all fiv
   expect(fallback).toContain('href="/calendar"');
 });
 
-test('the same deal with a seller renders an identical card on all four routes', async () => {
+test('the same deal with a seller renders an identical card on all four routes, except the discount stamp /models/* forbids', async () => {
+  const stamp = /<span class="ledger-discount"[^>]*>[^<]*<\/span>/;
   const cards = [];
   for (const page of [await Home(), await DealsPage(), await Calendar(), await Detail({ params: Promise.resolve({ id: 'model-1' }) })]) {
     const html = renderToStaticMarkup(page);
@@ -116,7 +117,8 @@ test('the same deal with a seller renders an identical card on all four routes',
     expect(card).toBeDefined();
     expect(card).toContain('href="/deals/deal-1"');
     expect(card).toContain('href="/sellers#trust-seller-1"');
-    cards.push(card);
+    expect(stamp.test(card!)).toBe(cards.length < 3);
+    cards.push(card!.replace(stamp, ''));
   }
   expect(new Set(cards).size).toBe(1);
 });
