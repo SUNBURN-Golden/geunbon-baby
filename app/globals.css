@@ -533,22 +533,109 @@ form { max-width: 100%; }
 }
 .active-deal-row {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: min(304px, calc(100% - var(--s-4)));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-4);
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-padding-inline: var(--s-2);
-  overscroll-behavior-x: contain;
   margin: 0;
-  padding: var(--s-2) var(--s-2) var(--s-4);
+  padding: var(--s-3) 0 0;
   list-style: none;
 }
-.active-deal-row > li { min-width: 0; scroll-snap-align: start; }
-.active-deal-row > li > .deal-card { height: 100%; }
-.active-deal-empty { margin: 0; color: var(--muted); font-size: 14px; }
+.active-deal-row > li { min-width: 0; container: ledger / inline-size; }
+.ledger-legend {
+  position: sticky;
+  /* TODO: When the header becomes sticky, change top to the header-height variable. */
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  padding-block: var(--s-2);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.ledger-legend > span { border-left: 4px solid var(--ink); padding-left: 6px; }
+.ledger-legend > .ledger-legend-group { border-color: var(--accent); color: var(--stamp-text); }
+.ledger-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  gap: var(--s-2);
+  height: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 2px solid var(--rule);
+  color: var(--text);
+  text-decoration: none;
+}
+.ledger-card:focus-visible, .ledger-zero-link:focus-visible { outline: 3px solid var(--stamp-text); outline-offset: 3px; }
+.ledger-stamp {
+  grid-row: 1 / 3;
+  width: 56px;
+  height: 56px;
+  padding: 4px;
+  border: 1px dashed var(--ink);
+  background: var(--paper);
+}
+.ledger-stamp img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.ledger-name { min-width: 0; color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.4; word-break: keep-all; }
+.ledger-prices {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  border-top: 3px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.ledger-price-cell { position: relative; min-width: 0; padding: 12px 2px 6px; }
+.ledger-price-cell + .ledger-price-cell { border-left: 2px solid var(--rule); }
+.ledger-value { display: block; overflow: hidden; text-overflow: clip; font-size: 15px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ledger-group-price .ledger-value { color: var(--stamp-text); font-weight: 700; }
+.ledger-discount {
+  position: absolute;
+  top: -11px;
+  right: 0;
+  padding-inline: var(--s-1);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+/* Let the price rules span the card when the illustration would crowd the figures. */
+@container ledger (max-width: 300px) {
+  .ledger-stamp { grid-row: 1; }
+  .ledger-prices { grid-column: 1 / -1; }
+}
+.ledger-zero { padding-block: 28px; border-top: 3px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.ledger-zero h3 { margin-bottom: var(--s-2); }
+.ledger-zero p { margin-bottom: var(--s-4); color: var(--muted); }
+.ledger-zero-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--s-2) var(--s-4);
+  border: 2px solid var(--stamp-text);
+  color: var(--stamp-text);
+  font-weight: 700;
+  text-decoration: none;
+}
+@media (max-width: 720px) {
+  .ledger-card { grid-template-columns: 72px minmax(0, 1fr); }
+  .ledger-stamp { width: 72px; height: 72px; }
+  .ledger-value { font-size: 17px; }
+  @container ledger (max-width: 320px) {
+    .ledger-stamp { grid-row: 1; }
+    .ledger-prices { grid-column: 1 / -1; }
+  }
+}
+@media (min-width: 721px) {
+  .active-deal-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .deals-heading { margin-bottom: var(--s-5); }
 @media (min-width: 1024px) {
+  .active-deal-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .model-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
@@ -557,13 +644,11 @@ form { max-width: 100%; }
 @media (min-width: 768px) {
   .hero, .category-tabs, .active-deals { padding-inline: var(--s-6); }
   .active-deals { padding-block: var(--s-6); }
-  .active-deal-row { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); overflow: visible; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .button:active, button:active { transform: none; }
-  .active-deal-row { scroll-snap-type: none; }
 }
 
 .keep-line { white-space: nowrap; }

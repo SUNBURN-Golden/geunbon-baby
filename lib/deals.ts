@@ -14,6 +14,7 @@ export type Gap = {
 export type DealWithContext = Deal & {
   model_joined_id: string | null;
   model_name: string | null;
+  model_brand?: string | null;
   model_official_price: number | null;
   model_checked: string | null;
   model_verify_level: string | null;
@@ -32,7 +33,7 @@ export const PUBLISHED_DEALS = `SELECT ${PUBLIC_DEAL_COLUMNS} FROM deals WHERE s
 export const DEAL_SELECT = `
   SELECT d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.image_url,
          d.verify_level, d.checked, d.starts_at, d.ends_at,
-         m.id AS model_joined_id, m.name AS model_name,
+         m.id AS model_joined_id, m.name AS model_name, m.brand AS model_brand,
          m.official_price AS model_official_price, m.checked AS model_checked,
          m.verify_level AS model_verify_level,
          s.id AS seller_joined_id, s.name AS seller_name
