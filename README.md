@@ -1,6 +1,6 @@
 # 아가마중
 
-> 너는 건강하게만 와 주렴. 좋은 것은 우리가 골라 둘게.
+> 너는 건강하게만 오렴, 좋은 것을 골라둘게.
 
 오래 곁에 둘 프리미엄 근본 육아용품 가격 비교·공구 정보 MVP입니다. Stokke, Bugaboo, Cybex, BabyBjorn, Nuna 등 유모차·하이체어·카시트·바운서·아기띠를 다룹니다. 기저귀·분유·결제·주문 기능은 없습니다. 사이트는 Next.js App Router + TypeScript, OpenNext Cloudflare Workers, D1, R2를 사용합니다.
 
