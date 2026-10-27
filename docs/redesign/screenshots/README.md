@@ -1,5 +1,7 @@
 # Browser evidence — 2026-10-26
 
+These BUILD-stage captures are retained as history. Current review-2 FIX evidence uses the real local Wrangler app, including client hydration, and is saved in `/workspace/rd-wt/logs/agamajung-shots/fix2-pr3/`, `fix2-pr4/`, `fix2-pr5/` and `fix2-pr5-zero/`. See the review-2 checklists in `docs/redesign-pr-notes.md`; the older ledger-fixture images below predate the container-width fix.
+
 PNG files are actual Chromium viewport screenshots of repository server-page markup and the shared layout, with fonts and images served locally through Playwright routes. The script checks 48 combinations (home, deals, models and explicitly labelled ledger regression fixtures at 320/390/721/1024/1280/1440px, each in light and dark mode) and writes a `metrics.json` into its ignored output directory; that file is not committed. Screenshots here retain the requested 320/390/1440 viewports; full pages and intermediate sizes remain in `.local/redesign-pr5`.
 
 Home/deals use a genuinely empty in-memory deals table with the real migrations and repository model records. They contain no example offers. The `ledger-fixtures` images come exclusively from the existing two-price test fixture and its unknown/zero/unverified/expired variants; they are regression evidence, never production content.

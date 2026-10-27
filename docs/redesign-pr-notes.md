@@ -41,6 +41,7 @@ Use `var(--bg)` for the selected category's inset focus outline against its ink 
 - [x] `npm run build:worker` (includes the production Next build), `npm test -- --maxWorkers=1` (81 files / 1569 tests), `npm run typecheck`, `npm run lint`.
 - [x] Real local Wrangler app and isolated local D1: Playwright captured home, deals and models at 390px and 1440px, light and dark, including native keyboard focus on the selected tab. All 24 page/focus checks passed; zero page overflow, loaded fonts, 44px targets, focus contrast above 3:1.
 - [x] Screenshots and metrics: `/workspace/rd-wt/logs/agamajung-shots/fix2-pr3/`. Mobile light and desktop dark focus screenshots visually inspected. Server stopped; no production access or data changes.
+
 ## PR4 — ledger cards and two-price tables
 
 Use repository line art on paper stamp frames, a ruled official-left/group-buy-right price table, a sticky legend, and a calculated decorative discount stamp. Screen-reader labels and every existing status, comparison, source and disclosure string remain. Shared cards remain identical across home/deals/calendar/model detail. Deal detail keeps the original source image; unillustrated cards retain the safe-image fallback. No `/models` date or discount-badge restrictions were lifted.
@@ -95,3 +96,14 @@ Fixes from the first review were verified against the real app: `opennextjs-clou
 - [x] 320px: no horizontal overflow, no target under 44px, no broken images, self-hosted fonts loaded, hero 187.5px (mobile) / 175px (desktop).
 - [x] Stamp appears on home/deals/calendar cards only; model detail (`/models/model-7`) and `/models` show none, and a 0원 deal shows none.
 - [x] This pass caught the model-detail card collapse (fixed in PR4); the earlier `setContent` renders could not show it. The committed ledger-fixture PNGs were regenerated to drop the old −100% stamp.
+
+### Review 2 — final stack verification
+
+PR3's selected-focus correction and both PR4 ledger corrections were applied in their introducing branches; PR4 and PR5 were rebased locally. PR1 and PR2 had no findings and remain unchanged. No findings were declined.
+
+- [x] Final PR5: `npm run build:worker` (includes Next production build), `npm test -- --maxWorkers=1` (81 files / 1571 tests), `npm run typecheck`, `npm run lint` all passed. PR3 and PR4 each passed the same commands before committing their fixes.
+- [x] Real app, Chromium Playwright: 390px mobile and 1440px desktop, light and dark, home/deals/calendar/models/model detail/deal detail. Screenshots and metrics: `/workspace/rd-wt/logs/agamajung-shots/fix2-pr5/` (60 page/focus checks, including calendar/model-detail widths 320/720/900/1100/1199/1280).
+- [x] Visible price legends on every populated ledger, seven-digit price cells without clipping/wrapping, selected-tab keyboard focus above 3:1, 44px targets, loaded fonts, no page overflow or browser exceptions, no `/models/*` stamps. Mobile dark and desktop light calendar screenshots visually inspected; PR4's mobile light and desktop dark captures were also inspected.
+- [x] Temporary fixture deals deleted from scratch D1; final zero-deal pages captured at 390/1440 in both themes: `/workspace/rd-wt/logs/agamajung-shots/fix2-pr5-zero/` (32 page/focus checks). No fabricated offers appear in the empty database.
+- [x] Existing committed BUILD screenshots retained as history; their README points to current real-app FIX evidence. Reused Korean legend copy recorded in `/workspace/rd-wt/logs/agamajung-copy-todo.md`, pending Argon; no new wording invented.
+- [x] `crawler/`, lockfile, seed and migrations unchanged. `/models` date/discount exclusion tests retained. No push, gh, network Git, main merge or deployment. Local server stopped and the temporary database/SQL directory removed.
