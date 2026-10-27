@@ -62,6 +62,11 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   const joinedDeal = (await memory.db.prepare(DEAL_SELECT).first<DealWithContext>())!;
   const card = renderToStaticMarkup(createElement(DealCard, { deal: joinedDeal, nowMs: Date.now() }));
   for (const html of [home, models, detail, calendar, card]) excludesOtherPrices(html);
+  // Hidden cell labels must have a visible legend on every populated ledger surface.
+  for (const html of [home, detail, calendar]) {
+    expect(html).toContain(`class="price-legend" aria-hidden="true"><span>${dealsCopy.officialPrice}</span><span>${dealsCopy.groupBuyPrice}</span>`);
+    expect(html.indexOf('price-legend')).toBeLessThan(html.indexOf('class="deal-card"'));
+  }
   // The decorative discount stamp is allowed on shared deal lists but never on /models/* routes.
   for (const html of [home, calendar, card]) expect(html).toContain('class="ledger-discount"');
   for (const html of [models, detail]) expect(html).not.toContain('ledger-discount');

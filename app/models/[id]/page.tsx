@@ -4,7 +4,7 @@ import { all, environment } from '../../../lib/db';
 import { categories, displayableOfficialPrice, money, verificationLabel, type Model } from '../../../lib/data';
 import { siteCopy } from '../../../lib/site-copy';
 import { dealsCopy } from '../../../lib/deals-copy';
-import { DealList } from '../../deals/_components';
+import { DealList, PriceLegend } from '../../deals/_components';
 export const dynamic = 'force-dynamic';
 export default async function Detail({ params }: { params: Promise<{ id: string }> }) {
   // eslint-disable-next-line react-hooks/purity -- Dynamic Server Component captures request time once for all deal statuses.
@@ -23,7 +23,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
         <section>
           <p className="eyebrow">01 / GROUP BUY</p>
           <h2>{dealsCopy.groupBuyPrice}</h2>
-          {deals.length ? <DealList deals={deals} nowMs={nowMs} showBadge={false} /> : <p>{dealsCopy.modelEmpty}</p>}
+          {deals.length ? <><PriceLegend /><DealList deals={deals} nowMs={nowMs} showBadge={false} /></> : <p>{dealsCopy.modelEmpty}</p>}
         </section>
         <section>
           <p className="eyebrow">02 / OFFICIAL</p>
