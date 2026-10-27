@@ -11,7 +11,8 @@ export type StageHandler = {kind:'transactional'|'external'; version:string; run
 export type CostKind = 'requests'|'bytes'|'model_calls';
 export type Costs = Record<CostKind,number>;
 export type CostCaps = {run:Costs;day:Costs};
-export class CostCapError extends Error { constructor(readonly scope:'run'|'day'){super(`cost_${scope}`);} }
+export type CostScope = {key:string;caps:Costs;local?:boolean};
+export class CostCapError extends Error { constructor(readonly scope:'run'|'day',readonly local=false,readonly budgetScope=''){super(`cost_${scope}`);} }
 export type CostTicket = {id:string};
 export interface RequestMeter {hold(maxBytes:number):CostTicket;settle(ticket:CostTicket,received:number):void}
 export type FetchResponse = {status:number;headers:Record<string,string>;body:string;bytes?:Buffer;finalUrl?:string};

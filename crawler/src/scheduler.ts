@@ -7,8 +7,11 @@ import { request } from 'node:https';
 import { CollectorStore, requireThat } from './store';
 import { visitAllowed, type SourcePolicy } from './source-policy';
 import { parseRobots, robotsAllows, type Robots, USER_AGENT } from '../lib/external/robots';
+import { detectExplicit } from '../engine/restricted';
+import { canonicalUrl, filterText } from '../../shared/privacy-rules';
 export type DomainState = { next_at:number; stopped:boolean; reason?:string; crawl_delay?:number };
 export type NetworkResponse = {status:number;headers:Record<string,string>;body:string;bytes?:Buffer;finalUrl?:string};
+type DocumentRequestOptions={headers?:Record<string,string>;validateUrl?:(url:string)=>boolean};
 export function publicAddress(ip:string) {
   if(isIP(ip)===4){const [a,b]=ip.split('.').map(Number);return !(a===0||a===10||a===127||a===169&&b===254||a===172&&b>=16&&b<=31||a===192&&(b===168||b===0||b===2||b===88)||a===100&&b>=64&&b<=127||a>=224||a===198&&(b===18||b===19||b===51)||a===203&&b===0);}
   // Only global unicast; reject mapped IPv4, ULA, link-local, transition and documentation space.
@@ -88,7 +91,24 @@ export class Scheduler {
     if(delays.length){const domain=new URL(source.origin).hostname;const d=this.store.get<DomainState>('domain_state',domain)!;d.crawl_delay=Math.max(...delays);d.next_at=Math.max(d.next_at,this.store.now()+d.crawl_delay);this.store.transaction(()=>this.store.put('domain_state',domain,d));}
     return rules;
   }
-  async get(raw:string,source:SourcePolicy,opts:{headers?:Record<string,string>}={}):Promise<NetworkResponse> {
+  // Search API permission is explicit and separate from the ordinary document URL policy.
+  // No redirects, no cookies, and credentials are bound to this exact HTTPS endpoint.
+  async searchApi(endpoint:string,params:Record<string,string>,headers:Record<string,string>={}) {
+    const url=new URL(endpoint);
+    requireThat(url.protocol==='https:'&&!url.username&&!url.password&&!url.port&&!url.search&&!url.hash,'search_endpoint');
+    canonicalUrl(url.origin);
+    const path=decodeURIComponent(url.pathname);
+    requireThat(filterText(path,4096)===path&&!/%[0-9a-f]{2}|\\|[\u0000-\u001f\u007f]/i.test(path)&&! /\/(?:my|auth|login|logout|signin|signup|admin|account|member|mypage|oauth|session|messages|direct|mail|profile)(?:\/|$)/i.test(path)&&!['instagram.com','facebook.com','cdninstagram.com','fbcdn.net'].some(h=>url.hostname===h||url.hostname.endsWith(`.${h}`)),'search_endpoint');
+    for(const [key,value] of Object.entries(params))url.searchParams.set(key,value);
+    const res=await this.raw(url,{headers});
+    requireThat(res.status<300||res.status>=400,'search_redirect');
+    requireThat(res.status>=200&&res.status<300,'source_response');
+    const restricted=detectExplicit(res);
+    if(restricted){this.store.transaction(()=>{const d=this.store.get<DomainState>('domain_state',url.hostname)??{next_at:0,stopped:false};d.stopped=true;d.reason=restricted;this.store.put('domain_state',url.hostname,d);});throw new Error(restricted);}
+    requireThat(/(?:application\/(?:[\w.+-]+\+)?json)/i.test(res.headers['content-type']??''),'search_content_type');
+    return res;
+  }
+  async get(raw:string,source:SourcePolicy,opts:DocumentRequestOptions={}):Promise<NetworkResponse> {
     try{return await this.fetchWithin(raw,source,0,opts);}catch(e){
       const code=failureCode(e);
       if(BLOCKED_CODES.has(code)){
@@ -97,8 +117,8 @@ export class Scheduler {
       throw e;
     }
   }
-  private async fetchWithin(raw:string,source:SourcePolicy,hop:number,opts:{headers?:Record<string,string>}):Promise<NetworkResponse> {
-    requireThat(hop<=3&&visitAllowed(raw,source),'visit_not_allowed',403);const u=new URL(raw),robots=await this.robotsFor(source);requireThat(robotsAllows(robots,u.pathname+u.search),'robots_denied',403);
+  private async fetchWithin(raw:string,source:SourcePolicy,hop:number,opts:DocumentRequestOptions):Promise<NetworkResponse> {
+    requireThat(hop<=3&&visitAllowed(raw,source)&&(!opts.validateUrl||opts.validateUrl(raw)),'visit_not_allowed',403);const u=new URL(raw),robots=await this.robotsFor(source);requireThat(robotsAllows(robots,u.pathname+u.search),'robots_denied',403);
     const res=await this.raw(u,opts);if(res.status===304&&Object.keys(opts.headers??{}).some(k=>/^if-(none-match|modified-since)$/i.test(k)))return res;if(res.status>=300&&res.status<400){requireThat(res.headers.location,'redirect_missing');const next=new URL(res.headers.location,u);if(/\/(?:accounts\/login|login|checkpoint)(?:\/|$)/i.test(next.pathname))throw new Error('login_required');return this.fetchWithin(next.href,source,hop+1,opts);}if(!(res.status>=200&&res.status<300))throw Object.assign(new Error('source_response'),{http_status:res.status});return res;
   }
 }

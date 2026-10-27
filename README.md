@@ -303,3 +303,5 @@ npx tsx scripts/card-screenshots.ts --out .local/card-qa
 OAuth 구현 때 공급자 콘솔 설정은 수행하지 않았습니다. Instagram 상품 이미지 URL 구현은 R2에 저장하지 않았으며, 현재도 ingest 업로드 계약이 없습니다. CDN 직접 표시 계약은 현재 API 설명을 따릅니다.
 
 공식 참조·구성품·세부 경로·시각 검수와 서버 축소 요청 제한은 [배치 1 제작 기록](docs/model-illustrations-batch-1.md), [배치 2 제작 기록](docs/model-illustrations-batch-2.md), [배치 3 제작 기록](docs/model-illustrations-batch-3.md), [배치 4 제작 기록](docs/model-illustrations-batch-4.md)에 있습니다.
+
+Linux 수집 봇의 새 출처 탐색은 [소스 발견기](docs/collector/source-discoverer.md)를 사용합니다. `discover-sources`는 검색 API·승인된 sitemap/RSS/목록에서 별도 `source_candidates` 후보만 만들며 사이트·자료 접수·수집 권한과 분리됩니다. 기본 비활성이며 collect와 공유 요청 예산을 사용합니다. `discover-sources --dry-run`은 오프라인 계획 조회입니다.

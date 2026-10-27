@@ -3,6 +3,7 @@ import type { Checkpoint, Data, EngineDb, RunState, StageHandler, StageResult } 
 import { acquire, release, renew } from './lease';
 import { classify, errorCode, HALT_CODES, nextAttemptAt } from './retry';
 import { digest, midnight } from './util';
+import { CostCapError } from './types';
 type Run={id:string;profile_id:string;state:RunState;data:string};
 export class JobEngine {
   readonly owner=randomUUID();
@@ -62,6 +63,7 @@ export class JobEngine {
         this.store.transaction(()=>{
           const unfinished=this.store.db.prepare("SELECT count(*) n FROM engine_checkpoints WHERE run_id=? AND phase IN ('pending','leased','retry_wait','deferred')").get(runId) as {n:number};
           if(!unfinished.n)this.store.db.prepare("UPDATE engine_runs SET state='finished',finished_at=? WHERE id=?").run(new Date(this.store.now()).toISOString(),runId);
+          else if(!this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND phase IN ('pending','leased','retry_wait') LIMIT 1").get(runId))this.store.db.prepare("UPDATE engine_runs SET state='cost_wait' WHERE id=?").run(runId);
         });return false;
       }
       const handler=this.handlers[c.stage];
@@ -103,15 +105,15 @@ export class JobEngine {
         if(!['day','run','unsupported'].includes(category))this.store.db.prepare('INSERT INTO engine_failures VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET reason=excluded.reason,attempts=excluded.attempts,retryable=excluded.retryable,next_retry_at=excluded.next_retry_at,last_at=excluded.last_at').run(ck.id,runId,ck.stage,ck.item_key,code,attempts,Number(category==='retryable'),next||null,this.store.now(),this.store.now(),'{}');
         if(HALT_CODES.has(code)){this.options.onHalt?.(ck,code);this.store.db.prepare("UPDATE engine_runs SET state='halted' WHERE id=?").run(runId);}
       });
-      return !['day','run'].includes(category)&&!HALT_CODES.has(code);
+      return (e instanceof CostCapError&&e.local||!['day','run'].includes(category))&&!HALT_CODES.has(code);
     }
   }
   async runUntilIdle(runId:string){while(await this.step(runId)){}return this.run(runId)!;}
   failures(){return this.store.db.prepare('SELECT id,run_id,stage,item_key,reason,attempts,retryable,next_retry_at,first_at,last_at FROM engine_failures ORDER BY last_at').all();}
   retryFailure(id:string){
-    const c=this.checkpoint(id);if(!c||c.phase!=='failed'||this.run(c.run_id)?.profile_id!==this.profileId)throw new Error('failure_not_found');
+    const c=this.checkpoint(id);if(!c||c.phase!=='failed'||this.run(c.run_id)?.profile_id!==this.profileId||HALT_CODES.has(c.error_code??''))throw new Error('failure_not_found');
     // Manual retries are isolated runs and never reset the original ledger.
     const runId=digest([this.profileId,'manual',id,randomUUID()]);
-    this.store.transaction(()=>{this.store.db.prepare("INSERT INTO engine_runs VALUES(?,?,'manual',?,'running',?,NULL,?)").run(runId,this.profileId,runId,new Date(this.store.now()).toISOString(),JSON.stringify({parent_run:c.run_id}));this.copyAncestors(c.run_id,runId,c.item_key,c.stage);this.enqueueInside(runId,c.stage,c.item_key,{...c.data,parent_run:c.run_id},c.input_digest);});return runId;
+    this.store.transaction(()=>{this.store.db.prepare("INSERT INTO engine_runs VALUES(?,?,'manual',?,'running',?,NULL,?)").run(runId,this.profileId,runId,new Date(this.store.now()).toISOString(),JSON.stringify({parent_run:c.run_id}));this.copyAncestors(c.run_id,runId,c.item_key,c.stage);this.enqueueInside(runId,c.stage,c.item_key,{...c.data,parent_run:c.run_id},c.input_digest,c.attempts);});return runId;
   }
 }

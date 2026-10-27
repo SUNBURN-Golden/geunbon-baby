@@ -1,0 +1,10 @@
+export type Conditions=Record<string,string>;
+export type CandidateUrl=string & {readonly __candidateUrl:unique symbol};
+export type Destination={canonical_url:CandidateUrl|null;display_url:CandidateUrl|null;identity:'preserved'|'identity_loss'|'rejected';reasons:string[];policy_version:string};
+export type Relation='search_result'|'link'|'sitemap'|'feed'|'pagination'|'social'|'order'|'attachment';
+export type Clue={destination:Destination;title:string;quote:string;locator:string;relation:Relation};
+export type DocumentLinks={links:Clue[];truncated:boolean;text:string;kind:'sitemap_index'|'sitemap'|'rss'|'html'};
+export type Subject={subject_ref:string;conditions:Conditions;brand?:string;product_line?:string;model_number?:string;release_year?:string;option?:string;seller?:string;compatible_part?:string;event?:string};
+export type SearchQuery={id:string;text:string;region:string;language:string;year:string;category:string;event:string;subject_ref:string;conditions:Conditions;kind:'combination'|'entity'|'missing_field';planner_version:string};
+export type EvidenceInput={capture_id:string;source_url:string;collected_at:string;locator:string;relation:Relation;subject_ref:string;conditions:Conditions;quote:string;title?:string;query_id?:string;parent_id?:string;depth:number;effective_at?:string;effective_basis?:'explicit'|'observed';fact_status:'unverified'|'source_claim';extractor_version:string;deferred_reason?:string};
+export type Evidence=EvidenceInput & {candidate_id:string;conditions_key:string;claim_slot:number;id:string};

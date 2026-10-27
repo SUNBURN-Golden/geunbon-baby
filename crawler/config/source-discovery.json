@@ -1,0 +1,23 @@
+{
+  "enabled": false,
+  "version": "source-discovery@1",
+  "regions": ["KR"],
+  "languages": ["ko", "en"],
+  "years": ["current"],
+  "events": [{"ko":"공구","en":"group buy"},{"ko":"신제품","en":"new release"},{"ko":"리콜","en":"recall"}],
+  "source_ids": [],
+  "url_policies": [],
+  "providers": [],
+  "max_depth": 2,
+  "min_relevance": 50,
+  "max_queries": 200,
+  "max_pages": 20,
+  "max_candidates_day": 500,
+  "requery_ms": 86400000,
+  "cost_caps": {
+    "run": {"requests":40,"bytes":20971520,"model_calls":0},
+    "day": {"requests":100,"bytes":52428800,"model_calls":0},
+    "origin": {"requests":20,"bytes":10485760,"model_calls":0},
+    "provider": {"requests":20,"bytes":10485760,"model_calls":0}
+  }
+}

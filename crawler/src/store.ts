@@ -59,6 +59,7 @@ export class CollectorStore {
         this.retryBusy(()=>this.db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`));chmodSync(backup,0o600);
         this.transaction(()=>{ if (uv()<3) this.db.exec(readFileSync(new URL('../migrations/0003_engine.sql',import.meta.url),'utf8')); });
       }
+      if(uv()<4)this.transaction(()=>{if(uv()<4)this.db.exec(readFileSync(new URL('../migrations/0004_source_discovery.sql',import.meta.url),'utf8'));});
       requireThat(!this.db.prepare('PRAGMA foreign_key_check').all().length,'database_foreign_key');
       requireThat((this.db.prepare('PRAGMA quick_check').get() as {quick_check:string}).quick_check==='ok','database_corrupt');
       this.secureFiles();
