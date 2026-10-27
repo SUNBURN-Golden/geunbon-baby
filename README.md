@@ -237,8 +237,8 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 | Instagram 직접 연속 모드 | 알림·홈 스토리 트레이 1–2분 지터, 프로필 재확인 최소 90분·스토리 최소 30분, 태그 발견 최소 6시간 간격. 작업 시간·행동 한도·휴식에 따라 지연 | `crawler/config/settings.json`, `crawler/index.ts` |
 | Instagram systemd 대안 | 연속 모드, 실패 시 600초 뒤 재시작. `RestartPreventExitStatus=75`로 차단·챌린지 시 자동 재시작 금지 | `crawler/agamajung-crawler.service`. PM2와 동시 실행 금지 |
 | Workers Cron | `0 */6 * * *`(UTC, 6시간 간격), 로그만 기록 | `wrangler.jsonc`, `worker.ts`. Linux 수집을 호출하지 않음 |
-| 독립 discover | 제공되는 timer 없음. 운영자가 Linux timer/cron으로 예약 | `crawler/src/local-worker.ts`. 같은 DB의 serve/discover/sync는 순차 실행 |
-| 건수 sync | heartbeat 15분(`STATUS_HEARTBEAT_MS`). sync 호출 때 새 스냅샷 필요 여부 확인, 내장 timer 없음. 운영자는 15분 이하 간격으로 순차 실행 | `crawler/src/status-sync.ts`, [동기화 운영](crawler/README.md#건수-동기화) |
+| 독립 discover | 제공되는 timer 없음. 운영자가 Linux timer/cron으로 예약 | `crawler/src/local-worker.ts`. 같은 DB의 serve/discover/sync 동시 실행 가능, 같은 종류는 실행 잠금으로 1개. [동시 실행과 잠금](crawler/README.md#동시-실행과-잠금) |
+| 건수 sync | heartbeat 15분(`STATUS_HEARTBEAT_MS`). sync 호출 때 새 스냅샷 필요 여부 확인, 내장 timer 없음. 운영자는 15분 이하 간격으로 실행(같은 sync 중복은 자동 거부) | `crawler/src/status-sync.ts`, [동기화 운영](crawler/README.md#건수-동기화) |
 | 사이트 현황 | 스냅샷 **생성** 후 60분 초과 시 동기화 지연 | `lib/collection-status.ts`. 수신 시각 기준이 아님 |
 
 `pm2 start crawler/ecosystem.config.cjs`는 등록 즉시 한 번 실행합니다. 예약만 등록하는 절차와 보안 중단 후 수동 확인은 수집기 운영 문서를 따르세요. discover/sync 타이머는 저장소에 포함되어 있지 않습니다.

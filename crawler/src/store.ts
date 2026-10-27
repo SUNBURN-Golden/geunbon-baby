@@ -1,8 +1,10 @@
+import { sqliteRuntimeSafe } from './sqlite-runtime';
+import { acquireRunLock, type RunKind, type RunLock, type ProcReader } from './run-lock';
 import { normalizedConditions } from './agamajung/subject';
 import { axesOf, mergeConflict, conflictAxes, type Axes } from './merge-rules';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { chmodSync, existsSync, lstatSync, mkdirSync, openSync, closeSync, readFileSync, unlinkSync, realpathSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { STATUSES } from '../../shared/collection-schema';
 import { type AssertionInput, type Binding, type ClipPayload, type CollectionRecord, type Snapshot } from '../../shared/collection-schema';
@@ -10,7 +12,7 @@ import { PRIVACY_VERSION, canonicalUrl, filterText } from '../../shared/privacy-
 import { config, sourceFor, validateConfig, type CollectorConfig } from './source-policy';
 import { privacyFilter } from './privacy-filter';
 import { dedupKey, digest, stable } from './dedup';
-export class CollectorError extends Error { constructor(public code: string, public status = 400) { super(code); } }
+export class CollectorError extends Error { constructor(public code: string, public status = 400, public detail?: Record<string,string|number>) { super(code); } }
 export const requireThat = (ok: unknown, code: string, status = 409): void => { if (!ok) throw new CollectorError(code,status); };
 type Table = 'collector_meta'|'collection_records'|'dedup_groups'|'dedup_members'|'evidence_assertions'|'group_evidence_links'|'evidence_conflicts'|'review_events'|'collection_jobs'|'intake_reservations'|'intake_attempts'|'intake_receipts'|'daily_budgets'|'domain_state'|'seller_candidates'|'seller_candidate_sources'|'legacy_imports'|'sync_outbox';
 export type Group = { id: string; key: string; representative: string; group_version: number; evidence_version: number; review_scope_digest: string; verified_evidence_version: number|null; ready_evidence_version: number|null; retired?: boolean; lineage: string[]; aliases?:string[] };
@@ -25,37 +27,79 @@ const midnight = (t: number) => Date.parse(`${dayKey(t)}T00:00:00+09:00`)+864000
 export type JobSummary = {generated_at:string;sources:Record<string,{done:number;failed:number;pending:number;failures:Record<string,number>;last_failure?:{reason:string;at:string}}>};
 export class CollectorStore {
   readonly db: DatabaseSync;
-  private lock: string;
+  private runLocks: RunLock[] = [];
+  private closed = false;
+  private releaseRunLocks = () => { for (const lock of this.runLocks) lock.release(); this.runLocks = []; };
   private inTransaction = false;
-  constructor(readonly file: string, readonly settings: CollectorConfig = config, readonly now = Date.now, readonly fault: (point: string)=>void = ()=>{}) {
+  constructor(readonly file: string, readonly settings: CollectorConfig = config, readonly now = Date.now, readonly fault: (point: string)=>void = ()=>{}, sqliteVersion = process.versions.sqlite ?? 'unknown') {
+    if (!sqliteRuntimeSafe(sqliteVersion)) throw new CollectorError('sqlite_runtime_unsafe',500,{sqlite:sqliteVersion,node:process.versions.node});
     validateConfig(settings); process.umask(0o077);
     const dir = dirname(resolve(file));
     mkdirSync(dir,{recursive:true,mode:0o700});
     requireThat(realpathSync(dir) === dir && !lstatSync(dir).isSymbolicLink() && (lstatSync(dir).mode&0o077)===0,'unsafe_directory');
-    for (const path of [file,`${file}-wal`,`${file}-shm`,`${file}-journal`]) if (existsSync(path)) requireThat(!lstatSync(path).isSymbolicLink() && lstatSync(path).isFile() && (lstatSync(path).mode&0o077)===0,'unsafe_file');
-    this.lock=`${file}.lock`;
-    // A stale lock is never silently removed; operator confirms the old process is gone.
-    const fd=openSync(this.lock,'wx',0o600); closeSync(fd);
+    for (const suffix of ['', '-wal', '-shm', '-journal']) {
+      if (suffix) this.fault(`aux_check:${suffix}`);
+      const stat=lstatSync(file+suffix,{throwIfNoEntry:false});
+      if (stat) requireThat(!stat.isSymbolicLink() && stat.isFile() && (stat.mode&0o077)===0,'unsafe_file');
+    }
+    // Legacy DB-wide locks are deliberately left untouched, including empty files.
+    if (lstatSync(`${file}.lock`,{throwIfNoEntry:false})) console.error(`collector_warning legacy_lock_present path=${basename(file)}.lock`);
     let opened:DatabaseSync|undefined;
     try {
       this.db=opened=new DatabaseSync(file);
-      this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;');
-      if ((this.db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version===0) this.db.exec(readFileSync(new URL('../migrations/0001_collection.sql',import.meta.url),'utf8'));
-      if ((this.db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version<2) this.db.exec(readFileSync(new URL('../migrations/0002_lookup_indexes.sql',import.meta.url),'utf8'));
-      if ((this.db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version<3) {
+      this.db.exec(`PRAGMA busy_timeout=${settings.busy_timeout_ms}; PRAGMA foreign_keys=ON;`);
+      this.retryBusy(()=>this.db.exec('PRAGMA journal_mode=WAL;'));
+      this.db.exec('PRAGMA synchronous=FULL;');
+      const uv=()=>(this.db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version;
+      for (const [version,name] of [[1,'0001_collection.sql'],[2,'0002_lookup_indexes.sql']] as const) {
+        if (uv()<version) this.transaction(()=>{ if (uv()<version) this.db.exec(readFileSync(new URL(`../migrations/${name}`,import.meta.url),'utf8')); });
+      }
+      if (uv()<3) {
         const backup=`${resolve(file)}.pre-0003-${new Date(this.now()).toISOString().replaceAll(':','-')}-${randomUUID()}.sqlite`;
-        this.db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`);chmodSync(backup,0o600);
-        this.transaction(()=>this.db.exec(readFileSync(new URL('../migrations/0003_engine.sql',import.meta.url),'utf8')));
+        this.retryBusy(()=>this.db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`));chmodSync(backup,0o600);
+        this.transaction(()=>{ if (uv()<3) this.db.exec(readFileSync(new URL('../migrations/0003_engine.sql',import.meta.url),'utf8')); });
       }
       requireThat(!this.db.prepare('PRAGMA foreign_key_check').all().length,'database_foreign_key');
       requireThat((this.db.prepare('PRAGMA quick_check').get() as {quick_check:string}).quick_check==='ok','database_corrupt');
-      if (!this.get('collector_meta','version')) this.put('collector_meta','version',0);
       this.secureFiles();
-      this.transaction(()=>{const prior=this.get<number>('collector_meta','policy');if(prior!==undefined&&(prior!==settings.policy_version||this.get<number>('collector_meta','privacy_version')!==PRIVACY_VERSION)){for(const g of this.list<Group>('dedup_groups').filter(g=>!g.retired))this.invalidate(g.id,'policy_changed');this.snapshotInside();}this.put('collector_meta','policy',settings.policy_version);this.put('collector_meta','privacy_version',PRIVACY_VERSION);});
-    } catch (e) { try{opened?.close();}finally{unlinkSync(this.lock);}throw e; }
+      this.transaction(()=>{if(this.get('collector_meta','version')===undefined)this.put('collector_meta','version',0);const prior=this.get<number>('collector_meta','policy');if(prior!==undefined&&(prior!==settings.policy_version||this.get<number>('collector_meta','privacy_version')!==PRIVACY_VERSION)){for(const g of this.list<Group>('dedup_groups').filter(g=>!g.retired))this.invalidate(g.id,'policy_changed');this.snapshotInside();}this.put('collector_meta','policy',settings.policy_version);this.put('collector_meta','privacy_version',PRIVACY_VERSION);});
+    } catch (e) { opened?.close(); throw e; }
   }
-  private secureFiles() { for (const path of [this.file,`${this.file}-wal`,`${this.file}-shm`,`${this.file}-journal`]) if (existsSync(path)) chmodSync(path,0o600); }
-  close() { this.db.close(); unlinkSync(this.lock); }
+  private secureFiles() {
+    for (const path of [this.file,`${this.file}-wal`,`${this.file}-shm`,`${this.file}-journal`]) {
+      const stat=lstatSync(path,{throwIfNoEntry:false});
+      if (!stat) continue;
+      requireThat(!stat.isSymbolicLink() && stat.isFile(),'unsafe_file');
+      if ((stat.mode&0o777)!==0o600) {
+        try { chmodSync(path,0o600); } catch(e) { if ((e as NodeJS.ErrnoException).code!=='ENOENT') throw e; }
+      }
+    }
+  }
+  runLock(kind: RunKind, procReader?: ProcReader) {
+    requireThat(!this.closed,'store_closed');
+    const lock=acquireRunLock(this,kind,procReader);
+    if (!this.runLocks.length) process.once('exit',this.releaseRunLocks);
+    this.runLocks.push(lock);
+  }
+  close() {
+    if (this.closed) return;
+    try { this.db.close(); } finally {
+      this.closed=true; this.releaseRunLocks(); process.removeListener('exit',this.releaseRunLocks);
+    }
+  }
+  private isBusy(error: unknown) {
+    const e=error as {errcode?:number;message?:string}|null;
+    return !!e && (typeof e.errcode==='number' && (e.errcode&0xff)===5 || /database is locked|SQLITE_BUSY/i.test(e.message??''));
+  }
+  private retryBusy<T>(task:()=>T): T {
+    for (let attempt=0;;attempt++) {
+      try { return task(); } catch(e) {
+        if (!this.isBusy(e)) throw e;
+        if (attempt>=this.settings.busy_retries) throw new CollectorError('database_busy',503);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,50+Math.floor(Math.random()*201));
+      }
+    }
+  }
   get<T>(table: Table, id: string): T|undefined { const row=this.db.prepare(`SELECT data FROM ${table} WHERE id=?`).get(id) as {data:string}|undefined; return row ? JSON.parse(row.data) as T : undefined; }
   list<T>(table: Table): T[] { return (this.db.prepare(`SELECT data FROM ${table} ORDER BY id`).all() as {data:string}[]).map(r=>JSON.parse(r.data) as T); }
   put(table: Table, id: string, data: unknown) {
@@ -66,9 +110,9 @@ export class CollectorStore {
     }
   }
   transaction<T>(task:()=>T): T {
-    requireThat(!this.inTransaction,'nested_transaction'); this.db.exec('BEGIN IMMEDIATE'); this.inTransaction=true;
+    requireThat(!this.inTransaction,'nested_transaction'); this.retryBusy(()=>this.db.exec('BEGIN IMMEDIATE')); this.inTransaction=true;
     try { const result=task(); this.fault('before_commit'); this.db.exec('COMMIT'); this.secureFiles(); return result; }
-    catch(e) { if (this.db.isTransaction) this.db.exec('ROLLBACK'); throw e; }
+    catch(e) { if (this.db.isTransaction) this.db.exec('ROLLBACK'); if(this.isBusy(e))throw new CollectorError('database_busy',503); throw e; }
     finally { this.inTransaction=false; }
   }
   private saveRecord(r: CollectionRecord) { this.db.prepare('INSERT INTO collection_records(id,url,group_id,status,data) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET url=excluded.url,group_id=excluded.group_id,status=excluded.status,data=excluded.data').run(r.id,r.url,r.dedup_group_id,r.verification_status,JSON.stringify(r)); }
