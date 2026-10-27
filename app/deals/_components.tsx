@@ -43,7 +43,7 @@ export function DealStateChip({ timing }: { timing: Timing }) {
   );
 }
 
-export function DealPrice({ deal, timing }: { deal: DealWithContext; timing: Timing }) {
+export function DealPrice({ deal, timing, showArchive = true }: { deal: DealWithContext; timing: Timing; showArchive?: boolean }) {
   const validPrice = knownDealPrice(deal.price);
   return (
     <div className="deal-price-block">
@@ -51,7 +51,7 @@ export function DealPrice({ deal, timing }: { deal: DealWithContext; timing: Tim
       <p className={validPrice ? 'deal-price' : 'deal-price-unknown'}>
         {validPrice ? <>{deal.price!.toLocaleString('ko-KR')}<span>{dealsCopy.won}</span></> : dealsCopy.unknownPrice}
       </p>
-      {timing.state === 'ended' && <p className="deal-archive"><WithDate label={dealsCopy.archived}><CheckedDate value={deal.checked} /></WithDate></p>}
+      {showArchive && timing.state === 'ended' && <p className="deal-archive"><WithDate label={dealsCopy.archived}><CheckedDate value={deal.checked} /></WithDate></p>}
     </div>
   );
 }
@@ -111,7 +111,7 @@ export function LedgerPrices({ deal, timing, gap, showBadge = true }: { deal: De
     <div className="ledger-cell ledger-official"><p className="deal-context">
       {official === null ? dealsCopy.unknownOfficial : <><span className="sr-only">{dealsCopy.officialPrice} · </span>{official.toLocaleString('ko-KR')}{dealsCopy.won}</>}
     </p></div>
-    <div className="ledger-cell ledger-group"><DealPrice deal={deal} timing={timing} />
+    <div className="ledger-cell ledger-group"><DealPrice deal={deal} timing={timing} showArchive={false} />
       {discount && <span className="ledger-discount" aria-hidden="true">{discount}</span>}
     </div>
   </div>;
@@ -129,6 +129,7 @@ export function DealCard({ deal, nowMs, showBadge = true }: { deal: DealWithCont
       </h2>
       <p className="deal-period"><DealPeriod deal={deal} timing={timing} /></p>
       <LedgerPrices deal={deal} timing={timing} gap={gap} showBadge={showBadge} />
+      {timing.state === 'ended' && <p className="deal-archive"><WithDate label={dealsCopy.archived}><CheckedDate value={deal.checked} /></WithDate></p>}
       {gap && <p className="deal-gap">{gapChunks(formatGap(gap)).map((chunk, i) => <span className="deal-gap-chunk" key={i}>{i > 0 ? ` · ${chunk}` : chunk}</span>)}</p>}
       <PriceToneBadge gap={gap} timing={timing} />
       <DealCardLinks deal={deal} />
@@ -151,7 +152,7 @@ export function DealCardLinks({ deal }: { deal: DealWithContext }) {
 
 export function DealList({ deals, nowMs, showBadge = true }: { deals: readonly DealWithContext[]; nowMs: number; showBadge?: boolean }) {
   return deals.length ? <div className="deal-list">{deals.map(deal => <DealCard key={deal.id} deal={deal} nowMs={nowMs} showBadge={showBadge} />)}</div>
-    : <p className="deal-empty">{dealsCopy.empty}</p>;
+    : <div className="deal-empty"><p>{dealsCopy.empty}</p><Link className="button button-outline" href="/models">{dealsCopy.secondary}</Link></div>;
 }
 
 export function DealHeader({ deal, timing }: { deal: DealWithContext; timing: Timing }) {

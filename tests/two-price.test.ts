@@ -157,7 +157,7 @@ test('ledger orders official/group-buy cells and derives badges only for verifie
   const variants: Partial<DealWithContext>[] = [
     {}, { price: null }, { price: 0 }, { model_official_price: null },
     { model_verify_level: 'page_text' }, { price: 500000 },
-    { ends_at: '2026-10-20T00:00:00Z' }, { model_id: 'unillustrated', model_joined_id: null },
+    { starts_at: '2026-10-19T00:00:00Z', ends_at: '2026-10-20T00:00:00Z' }, { model_id: 'unillustrated', model_joined_id: null },
   ];
   const cards = variants.map(patch => renderToStaticMarkup(createElement(DealCard, { deal: { ...joined, ...patch }, nowMs })));
   expect(cards[0].indexOf('ledger-official')).toBeLessThan(cards[0].indexOf('ledger-group'));
@@ -166,6 +166,8 @@ test('ledger orders official/group-buy cells and derives badges only for verifie
   expect(cards[0]).toContain('class="ledger-discount" aria-hidden="true">−9%');
   expect(cards[0]).toContain('src="/img/models/model-1-540x540.png"');
   for (const index of [1, 2, 3, 4, 5, 6, 7]) expect(cards[index]).not.toContain('ledger-discount');
+  expect(cards[6].replace(/<[^>]*>/g, '')).toContain(dealsCopy.archived);
+  expect(cards[6].indexOf('deal-archive')).toBeGreaterThan(cards[6].indexOf('ledger-group'));
   expect(cards[1]).toContain(dealsCopy.unknownPrice);
   expect(cards[2]).toContain('>0<span>원</span>');
   expect(cards[2]).not.toContain('−100%');
