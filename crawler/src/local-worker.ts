@@ -1,6 +1,9 @@
+import { dirname, resolve } from 'node:path';
+import { externalDirectory, RawStore } from '../engine/raw-store';
+import { AgamajungPipeline } from './agamajung/pipeline';
+import { backfillEngine } from './agamajung/backfill';
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { CollectorStore, requireThat } from './store';
 import { config, type CollectorConfig } from './source-policy';
@@ -15,10 +18,45 @@ export async function main(){
   const settings=process.env.COLLECTOR_CONFIG?JSON.parse(readFileSync(process.env.COLLECTOR_CONFIG,'utf8')) as CollectorConfig:config;
   const trusted=parseTrustedEgress(process.env.COLLECTOR_TRUSTED_EGRESS_CIDRS);
   if(trusted.length)console.error(`trusted_egress_cidrs=${trusted.map(c=>c.text).join(',')}`);
-  requireThat(['serve','discover','sync'].includes(command),'command');
+  requireThat(['serve','discover','sync','collect','engine-status','failures','backfill-engine','dedup-audit'].includes(command),'command');
+  if(command==='collect'||command==='backfill-engine'||command==='failures'&&args[1]==='retry'){
+    requireThat(process.env.COLLECTOR_DB&&process.env.COLLECTOR_RAW_DIR,'engine_paths_required');
+    externalDirectory(dirname(process.env.COLLECTOR_DB!));externalDirectory(process.env.COLLECTOR_RAW_DIR!);
+  }
+  if(['engine-status','failures','dedup-audit'].includes(command)){requireThat(process.env.COLLECTOR_DB,'engine_paths_required');externalDirectory(dirname(process.env.COLLECTOR_DB!));}
   const auth={intakeToken:process.env.COLLECTOR_INTAKE_TOKEN??'',reviewToken:process.env.COLLECTOR_REVIEW_TOKEN??'',extensionOrigin:process.env.COLLECTOR_EXTENSION_ORIGIN??'',host:'127.0.0.1:4318'};
   if(command==='serve')requireThat(auth.intakeToken.length>=24&&auth.reviewToken.length>=24&&auth.intakeToken!==auth.reviewToken&&/^chrome-extension:\/\/[a-p]{32}$/.test(auth.extensionOrigin),'local_auth_config');
   const store=new CollectorStore(resolve(process.env.COLLECTOR_DB??'crawler/.cache/collector.sqlite'),settings);
+  if(['collect','engine-status','failures','backfill-engine','dedup-audit'].includes(command)){
+    try {
+      if(command==='engine-status'){
+        console.log(JSON.stringify({runs:store.db.prepare('SELECT id,profile_id,state,started_at,finished_at FROM engine_runs ORDER BY started_at DESC').all(),checkpoints:store.db.prepare('SELECT run_id,stage,phase,count(*) count FROM engine_checkpoints GROUP BY run_id,stage,phase').all(),costs:store.db.prepare('SELECT scope,kind,cap,held,spent FROM engine_costs').all()}));return;
+      }
+      if(command==='dedup-audit'){console.log(JSON.stringify({violations:store.dedupAudit({apply:args.includes('--apply')})}));return;}
+      if(command==='backfill-engine'){console.log(JSON.stringify(backfillEngine(store)));return;}
+      if(command==='failures'&&(args[1]??'list')==='list'){
+        console.log(JSON.stringify(store.db.prepare('SELECT id,run_id,stage,item_key,reason,attempts,retryable,next_retry_at,first_at,last_at FROM engine_failures ORDER BY last_at').all()));return;
+      }
+      requireThat(process.env.COLLECTOR_DB&&process.env.COLLECTOR_RAW_DIR,'engine_paths_required');
+      externalDirectory(dirname(process.env.COLLECTOR_DB!));
+      const scheduler=new Scheduler(store,(u,m,_trusted,opts)=>pinnedRequest(u,m,trusted,opts));
+      const pipeline=new AgamajungPipeline(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),undefined,{scheduler,health:code=>console.error(`collect reason=${code}`)});
+      if(command==='failures'){
+        requireThat(args[1]==='retry'&&args[2],'command');console.log(JSON.stringify({run_id:pipeline.engine.retryFailure(args[2])}));return;
+      }
+      // Dry-run is an offline policy/seed preview: no transport or service intake.
+      const resumeIndex=args.indexOf('--resume');if(resumeIndex>=0)requireThat(args[resumeIndex+1],'run_id_required');
+      const id=resumeIndex>=0?pipeline.resume(args[resumeIndex+1]):args.includes('--dry-run')?pipeline.start({kind:'dry-run',at:new Date(store.now()+9*3600000).toISOString().slice(0,10)}):pipeline.start();
+      if(args.includes('--dry-run')){
+        const enabled=settings.sources.filter(s=>s.enabled&&pipeline.profile.domain_policy.sources[s.id]);
+        if(!enabled.length&&!store.db.prepare('SELECT 1 FROM engine_checkpoints WHERE run_id=? LIMIT 1').get(id))await pipeline.run(id);
+        console.log(JSON.stringify({run_id:id,dry_run:true,state:pipeline.engine.run(id)?.state,sources:enabled.map(s=>s.id)}));if(pipeline.engine.run(id)?.state==='halted')process.exitCode=75;return;
+      }
+      pipeline.seed(id);const run=await pipeline.run(id);console.log(JSON.stringify({run_id:id,state:run.state}));
+      if(run.state==='halted')process.exitCode=75;
+    }finally{store.close();}
+    return;
+  }
   if(command==='discover'){
     try{
       const runner=new DiscoveryRunner(store,new Scheduler(store,(u,m)=>pinnedRequest(u,m,trusted))),dry=args.includes('--dry-run');

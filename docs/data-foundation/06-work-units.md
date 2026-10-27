@@ -24,13 +24,15 @@ fixture에는 토큰·쿠키·개인정보·실제 개인 계정 핸들·Instagr
 
 ## 후속 작업 목록
 
+공용 수집 엔진이 `crawler/migrations/0003_engine.sql`을 사용하므로 fact ledger는 0004부터 시작하며 착수 시 head를 다시 확인한다.
+
 아래 번호는 순서와 의존성을 뜻한다. 각 PR은 해당 스키마/수집기/검증 규칙·필요한 migration·비식별 fixture·운영 문서를 함께 포함한다. 번호 후보는 착수 시 현재 migration head를 다시 확인한다. 작업 데몬이 검증·커밋·공개를 관리하며 이 설계 작업에서는 커밋·push·PR 생성·배포를 하지 않는다.
 
 | 순서 | 의존 | 각 PR 범위 | 완료 기준 |
 | --- | --- | --- | --- |
 | WU-01 | 없음 | 이 설계 문서 7개 | 요청 §1~6 및 리뷰 7건 대응, 용어·링크·예시·경계 검토, 준태님 승인 |
 | WU-02 | 01 승인 | shared/fact-schema.ts 후보, Fact JSON Schema·의미 validator·비식별 fixture | verified 필수 근거·검수 필드, human_review 행위자, observed의 change_window_start, UTC·조건·개인정보 검증 |
-| WU-03 | 02 | crawler/migrations/0003_fact_ledger.sql 후보·원장 저장 API·멱등 backfill | 아래 원장 테스트. page_body는 source_claim+검수 큐. 기존 로컬 경로 회귀 통과 |
+| WU-03 | 02 | crawler/migrations/0004_fact_ledger.sql 후보·원장 저장 API·멱등 backfill | 아래 원장 테스트. page_body는 source_claim+검수 큐. 기존 로컬 경로 회귀 통과 |
 | WU-04 | 02 | 소스 레지스트리 파일·validator·초기 disabled 레코드 | unknown→disabled, 유효 exception만 예외, disallowed 절대 거부, 예외 결정자·날짜·범위·만료 필수, legacy enabled 무시 |
 | WU-05 | 03 | run/capture·stage 체크포인트·lease·실패 큐·비용 상한·저장 API 연결 | 04 테스트 (c)(d), 강제 실패 stage부터 재개, attempts·예산 미초기화 |
 | WU-06 | 05 | 변경 감지·추출 결과 캐시·Observation | 04 테스트 (a)(b)(e), 동일 본문 새 관측·왕복 변경 보존 |

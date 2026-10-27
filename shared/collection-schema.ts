@@ -1,7 +1,7 @@
 export const STATUSES = ['discovered', 'source_check_needed', 'dedup_excluded', 'verified_waiting', 'ready_to_publish'] as const;
 export type Status = typeof STATUSES[number];
 export type Method = 'auto_discovery' | 'browser_extract' | 'manual_clip';
-export const FACT_FIELDS = ['brand', 'model', 'generation', 'bundle_components', 'official_msrp', 'clue_price', 'group_buy_terms', 'manual_url', 'certifications', 'recalls'] as const;
+export const FACT_FIELDS = ['brand', 'model', 'generation', 'bundle_components', 'official_msrp', 'clue_price', 'group_buy_terms', 'manual_url', 'certifications', 'recalls', 'shipping_fee', 'compatibility', 'release_year'] as const;
 export type FactField = typeof FACT_FIELDS[number];
 export type SourceKind = 'manufacturer' | 'importer' | 'government' | 'press' | 'blog' | 'interview' | 'event' | 'search' | 'unknown';
 export type AssertionInput = { field: FactField; value: unknown; quote: string; locator: string; conditions?: Record<string, string>; msrp_explicit?: boolean };

@@ -1,3 +1,4 @@
+import { axesOf } from './merge-rules';
 import { createHash } from 'node:crypto';
 import families from '../config/model-families.json';
 import type { ClipPayload } from '../../shared/collection-schema';
@@ -10,7 +11,7 @@ export function stable(v: unknown): string {
 export function dedupKey(url: string, p: ClipPayload): string {
   // Only reviewed families collapse options. Unknown generations remain independent.
   const family = p.target_model_id && (families as Record<string,string>)[p.target_model_id];
-  if (family) {const generations=p.assertions.filter(a=>a.field==='generation').map(a=>a.value);return `family:${family}${generations.length?`:generation:${digest(generations)}`:''}`;}
+  if (family) {const axes=axesOf(p.assertions);return `family:${family}${(['generation','market','bundle','release_year'] as const).map(axis=>axes[axis]?.length?`:${axis}:${digest(axes[axis])}`:'').join('')}`;}
   if (p.document_origin && new URL(p.document_origin).pathname !== '/') return `document:${p.document_origin}`;
   if (p.full_text && p.full_text.length >= 500) return `fingerprint:${digest(p.full_text)}`;
   return `document:${url}`;

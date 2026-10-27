@@ -1,3 +1,5 @@
+import { normalizedConditions } from './agamajung/subject';
+import { axesOf, mergeConflict, conflictAxes, type Axes } from './merge-rules';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { chmodSync, existsSync, lstatSync, mkdirSync, openSync, closeSync, readFileSync, unlinkSync, realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -40,6 +42,12 @@ export class CollectorStore {
       this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;');
       if ((this.db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version===0) this.db.exec(readFileSync(new URL('../migrations/0001_collection.sql',import.meta.url),'utf8'));
       if ((this.db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version<2) this.db.exec(readFileSync(new URL('../migrations/0002_lookup_indexes.sql',import.meta.url),'utf8'));
+      if ((this.db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version<3) {
+        const backup=`${resolve(file)}.pre-0003-${new Date(this.now()).toISOString().replaceAll(':','-')}-${randomUUID()}.sqlite`;
+        this.db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`);chmodSync(backup,0o600);
+        this.transaction(()=>this.db.exec(readFileSync(new URL('../migrations/0003_engine.sql',import.meta.url),'utf8')));
+      }
+      requireThat(!this.db.prepare('PRAGMA foreign_key_check').all().length,'database_foreign_key');
       requireThat((this.db.prepare('PRAGMA quick_check').get() as {quick_check:string}).quick_check==='ok','database_corrupt');
       if (!this.get('collector_meta','version')) this.put('collector_meta','version',0);
       this.secureFiles();
@@ -110,6 +118,7 @@ export class CollectorStore {
     return this.transaction(()=>{this.reap();const r=this.reservation(client,id);if(['started','complete'].includes(r.phase))return r;requireThat(r.phase==='held','reservation_expired');this.release(r);const b=this.budget(r.day,r.brand,r.operation);b.spent++;this.put('daily_budgets',b.id,b);r.phase='started';r.execution_until=this.now()+this.settings.execution_ms;r.submit_until=this.now()+this.settings.submission_grace_ms;this.put('intake_reservations',id,r);this.put('intake_attempts',id,{...r,started_at:this.now()});this.fault('start');return r;});
   }
   cancel(client:string,id:string) {return this.transaction(()=>{this.reap();const r=this.reservation(client,id);requireThat(r.phase!=='started'&&r.phase!=='complete','already_started');if(r.phase==='held'){this.release(r);r.phase='cancelled';this.put('intake_reservations',id,r);}return r;});}
+  receipt(id:string) {return this.get<Receipt>('intake_receipts',id);}
   submit(client:string,id:string,raw:unknown,trustedSourceId?:string):Receipt {
     const p=privacyFilter(raw),hash=digest(p);
     return this.transaction(()=>{
@@ -121,13 +130,57 @@ export class CollectorStore {
       const ack={id,digest:hash,record_id:r.record_id,reservation_id:id};this.put('intake_receipts',id,ack);r.phase='complete';this.put('intake_reservations',id,r);this.put('intake_attempts',id,r);this.snapshotInside();this.fault('intake');return ack;
     });
   }
+  private activeEvidence(id:string){return this.rows<Evidence>('SELECT data FROM evidence_assertions WHERE record_id=?',id).filter(a=>!a.withdrawn&&!a.superseded_by);}
+  private recordAxes(id:string,incoming:AssertionInput[]=[]):Axes {
+    return axesOf([...this.activeEvidence(id).filter(a=>!incoming.some(n=>n.field===a.field&&stable(n.conditions??{})===stable(a.conditions??{}))),...incoming]);
+  }
+  dedupAudit({apply=false}:{apply?:boolean}={}) {
+    const violations=this.list<Group>('dedup_groups').filter(g=>!g.retired).flatMap(g=>{
+      const members=this.members(g.id),pairs=[];
+      for(let i=0;i<members.length;i++)for(let j=i+1;j<members.length;j++){
+        const axes=conflictAxes(this.recordAxes(members[i].id),this.recordAxes(members[j].id));
+        if(axes.length)pairs.push({group_id:g.id,records:[members[i].id,members[j].id],axes});
+      }
+      return pairs;
+    });
+    if(apply&&violations.length)this.transaction(()=>{
+      for(const groupId of new Set(violations.map(v=>v.group_id))){
+        const kept:string[]=[];
+        for(const r of this.members(groupId)){
+          if(!kept.some(id=>mergeConflict(this.recordAxes(id),this.recordAxes(r.id)))){kept.push(r.id);continue;}
+          const next=this.group(`audit:${r.id}`,r.id);next.lineage.push(groupId);this.put('dedup_groups',next.id,next);
+          r.dedup_group_id=next.id;this.saveRecord(r);this.member(r,'merge_forbidden_split');
+          this.db.prepare('DELETE FROM collector_meta WHERE id=?').run(`dedup_override:${r.id}`);
+          this.put('review_events',randomUUID(),{decision:'merge_forbidden_split',record_id:r.id,group_id:groupId,axes:this.recordAxes(r.id),at:this.now()});this.invalidate(next.id,'merge_forbidden_split');
+        }
+        this.invalidate(groupId,'merge_forbidden_split');
+      }
+      this.snapshotInside();
+    });
+    return violations;
+  }
   private applyPayload(id:string,p:ClipPayload,eventId:string,trustedSourceId?:string) {
     const r=this.get<CollectionRecord>('collection_records',id)!;const s=trustedSourceId?this.settings.sources.find(s=>s.id===trustedSourceId):sourceFor(r.url,this.settings);
     if(trustedSourceId&&s)r.source=s.id;
     r.title=p.title??r.title;r.published_at=p.published_at??r.published_at;r.target_model_id=p.target_model_id??r.target_model_id;r.record_version++;r.last_checked_at=new Date(this.now()).toISOString();r.next_recheck_at=new Date(this.now()+(s?.recheck_ms??86400000)).toISOString();
-    const previousGeneration=r.extracted_facts.generation?.at(-1);const key=dedupKey(r.url,{...p,target_model_id:r.target_model_id,assertions:p.assertions.some(a=>a.field==='generation')||!previousGeneration?p.assertions:[...p.assertions,{field:'generation',value:previousGeneration.value,quote:'',locator:''}]});const oldGroup=r.dedup_group_id;const groups=this.rows<Group>("SELECT data FROM dedup_groups WHERE id=? OR id IN (SELECT group_id FROM dedup_keys WHERE key IN (?,?))",this.get<string>('collector_meta',`dedup_override:${r.id}`)??'',key,`document:${r.url}`);const linked=p.document_origin&&new URL(p.document_origin).pathname!=='/'?this.recordByUrl(p.document_origin):undefined;const override=this.get<string>('collector_meta',`dedup_override:${r.id}`);const target=groups.find(g=>g.id===override)??groups.find(g=>g.key===key||g.aliases?.includes(key))??(linked?this.get<Group>('dedup_groups',linked.dedup_group_id):undefined)??groups.find(g=>g.key===`document:${r.url}`);
-    if(target&&target.id!==oldGroup) {r.dedup_group_id=target.id;target.lineage=[...new Set([...target.lineage,oldGroup])];this.put('dedup_groups',target.id,target);this.saveRecord(r);this.member(r,'reviewed_family_or_document');this.retireOrInvalidate(oldGroup,'member_moved');}
-    else if(!target) {const g=this.get<Group>('dedup_groups',oldGroup)!;if(g.key!==key&&this.scope(oldGroup).members.length>1){const next=this.group(key,id);next.lineage.push(oldGroup);this.put('dedup_groups',next.id,next);r.dedup_group_id=next.id;this.saveRecord(r);this.member(r,'model_or_generation_changed');this.retireOrInvalidate(oldGroup,'member_moved');}else{g.key=key;this.put('dedup_groups',g.id,g);}}
+    const incoming=this.recordAxes(id,p.assertions);
+    const key=dedupKey(r.url,{...p,target_model_id:r.target_model_id,assertions:[...this.activeEvidence(id).filter(a=>!p.assertions.some(n=>n.field===a.field&&stable(n.conditions??{})===stable(a.conditions??{}))),...p.assertions]});
+    const oldGroup=r.dedup_group_id,override=this.get<string>('collector_meta',`dedup_override:${r.id}`);
+    const groups=this.rows<Group>("SELECT data FROM dedup_groups WHERE id=? OR id IN (SELECT group_id FROM dedup_keys WHERE key IN (?,?))",override??'',key,`document:${r.url}`).filter(g=>!g.retired);
+    const linked=p.document_origin&&new URL(p.document_origin).pathname!=='/'?this.recordByUrl(p.document_origin):undefined;
+    const candidates=[groups.find(g=>g.id===override),...groups.filter(g=>g.key===key||g.aliases?.includes(key)),linked?this.get<Group>('dedup_groups',linked.dedup_group_id):undefined,...groups.filter(g=>g.key===`document:${r.url}`)];
+    const compatible=(g:Group)=>!g.retired&&this.members(g.id).filter(m=>m.id!==id).every(m=>!mergeConflict(incoming,this.recordAxes(m.id)));
+    const invalidOverride=override&&candidates.find(g=>g?.id===override&&!compatible(g));
+    if(invalidOverride){this.db.prepare('DELETE FROM collector_meta WHERE id=?').run(`dedup_override:${id}`);this.put('review_events',randomUUID(),{decision:'merge_forbidden_split',record_id:id,group_id:override,axes:incoming,at:this.now()});}
+    const target=candidates.find((g):g is Group=>!!g&&compatible(g));
+    if(target&&target.id!==oldGroup) {
+      r.dedup_group_id=target.id;target.lineage=[...new Set([...target.lineage,oldGroup])];this.put('dedup_groups',target.id,target);this.saveRecord(r);this.member(r,'reviewed_family_or_document');this.retireOrInvalidate(oldGroup,'member_moved');
+    } else if(!target) {
+      const g=this.get<Group>('dedup_groups',oldGroup)!;
+      if(this.members(oldGroup).length>1&&(g.key!==key||!compatible(g)||invalidOverride)){
+        const next=this.group(key,id);next.lineage.push(oldGroup);this.put('dedup_groups',next.id,next);r.dedup_group_id=next.id;this.saveRecord(r);this.member(r,'model_or_generation_changed');this.retireOrInvalidate(oldGroup,'member_moved');
+      }else{g.key=key;this.put('dedup_groups',g.id,g);}
+    }
     const priorEvidence=this.rows<Evidence>('SELECT data FROM evidence_assertions WHERE record_id=?',id);
     for(const a of p.assertions) {
       const authorized=!!s?.official_fields.includes(a.field) && (a.field!=='official_msrp'||(a.msrp_explicit===true&&['manufacturer','importer'].includes(s.kind)));
@@ -158,9 +211,7 @@ export class CollectorStore {
     };
     for(const e of this.evidence(groupId).filter(e=>!e.withdrawn&&!e.superseded_by)){
       if(['recalls','certifications'].includes(e.field))continue;
-      const conditions={...(e.conditions??{})};
-      const price=['official_msrp','clue_price'].includes(e.field);
-      if(price)conditions.currency=conditions.currency??'KRW';
+      const conditions=normalizedConditions(e.field,e.conditions);
       // Seller offers have independent terms; a model family is not one offer.
       const seller=['clue_price','group_buy_terms'].includes(e.field)?e.seller??new URL(e.url).origin:'';
       const key=stable([e.field,conditions,seller]);
@@ -207,10 +258,10 @@ export class CollectorStore {
   changeGroup(id:string,action:'representative'|'split'|'merge'|'withdraw'|'link',input:{record_id?:string;other_group?:string;assertion_id?:string;other_expected?:Parameters<CollectorStore['expected']>[1]},e:Parameters<CollectorStore['expected']>[1]) {
     return this.transaction(()=>{const g=this.expected(id,e);const members=this.scope(id).members;
       if(action==='representative'){requireThat(members.some(r=>r.id===input.record_id),'not_member');g.representative=input.record_id!;this.put('dedup_groups',id,g);}
-      else if(action==='merge'){const other=this.expected(input.other_group!,input.other_expected!);requireThat(other.id!==id,'same_group');for(const r of this.scope(other.id).members){r.dedup_group_id=id;this.saveRecord(r);this.member(r,'manual_merge');}g.lineage.push(other.id);g.aliases=[...new Set([...(g.aliases??[]),other.key,...(other.aliases??[])])];this.put('dedup_groups',id,g);for(const member of this.scope(id).members)this.put('collector_meta',`dedup_override:${member.id}`,id);this.retireOrInvalidate(other.id,'merge');}
+      else if(action==='merge'){const other=this.expected(input.other_group!,input.other_expected!);requireThat(other.id!==id,'same_group');requireThat(members.every(a=>this.scope(other.id).members.every(b=>!mergeConflict(this.recordAxes(a.id),this.recordAxes(b.id)))),'merge_forbidden',409);for(const r of this.scope(other.id).members){r.dedup_group_id=id;this.saveRecord(r);this.member(r,'manual_merge');}g.lineage.push(other.id);g.aliases=[...new Set([...(g.aliases??[]),other.key,...(other.aliases??[])])];this.put('dedup_groups',id,g);for(const member of this.scope(id).members)this.put('collector_meta',`dedup_override:${member.id}`,id);this.retireOrInvalidate(other.id,'merge');}
       else if(action==='split'){requireThat(members.length>1&&members.some(r=>r.id===input.record_id),'invalid_split');const r=members.find(r=>r.id===input.record_id)!;const next=this.group(`split:${randomUUID()}`,r.id);next.lineage.push(id);this.put('dedup_groups',next.id,next);r.dedup_group_id=next.id;this.saveRecord(r);this.member(r,'manual_split');this.put('collector_meta',`dedup_override:${r.id}`,next.id);this.invalidate(next.id,'split');}
       else if(action==='withdraw'){const a=this.get<Evidence>('evidence_assertions',input.assertion_id!);requireThat(a&&this.evidence(id).some(x=>x.id===a.id),'not_evidence');a!.withdrawn=true;this.db.prepare('UPDATE evidence_assertions SET data=? WHERE id=?').run(JSON.stringify(a),a!.id);}
-      else if(action==='link'){requireThat(this.get('evidence_assertions',input.assertion_id!),'not_evidence');const link=digest([id,input.assertion_id]);this.db.prepare('INSERT OR IGNORE INTO group_evidence_links(id,group_id,assertion_id,data) VALUES(?,?,?,?)').run(link,id,input.assertion_id!,JSON.stringify({group_id:id,assertion_id:input.assertion_id}));}
+      else if(action==='link'){const assertion=this.get<Evidence>('evidence_assertions',input.assertion_id!);requireThat(assertion,'not_evidence');requireThat(members.every(r=>!mergeConflict(this.recordAxes(r.id),this.recordAxes(assertion!.record_id))),'merge_forbidden',409);const link=digest([id,input.assertion_id]);this.db.prepare('INSERT OR IGNORE INTO group_evidence_links(id,group_id,assertion_id,data) VALUES(?,?,?,?)').run(link,id,input.assertion_id!,JSON.stringify({group_id:id,assertion_id:input.assertion_id}));}
       else throw new CollectorError('invalid_action');
       this.detectConflicts(id);this.invalidate(id,action);if(action==='withdraw'){const assertion=this.get<Evidence>('evidence_assertions',input.assertion_id!)!;const owner=this.get<CollectionRecord>('collection_records',assertion.record_id)!;if(owner.dedup_group_id!==id)this.invalidate(owner.dedup_group_id,'withdraw');}this.snapshotInside();return this.scope(id);
     });

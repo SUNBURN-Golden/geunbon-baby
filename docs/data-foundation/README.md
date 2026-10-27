@@ -31,7 +31,7 @@ DESIGN · 2026-10-27 KST · 승인 전 설계안. **원문에 없는 관계를 A
 | --- | --- | --- |
 | `crawler/local-worker.mjs` | 해당 파일 없음. [실제 worker](../../crawler/src/local-worker.ts)는 `serve/discover/sync`. [CLI](../../crawler/collector.mjs) → [cli.ts](../../crawler/src/cli.ts) | 실제 경로를 확장한다 |
 | pm2 `agamajung-local-worker`, `agamajung-discover` | [체크인 설정](../../crawler/ecosystem.config.cjs)에는 `agamajung-crawler`만 있음(09:30·20:30 KST, 종료코드 75) | 로컬 수집함 타이머는 저장소 밖 운영자 관리. 실제 운영 등록 여부 미확인 |
-| 사이트 `0001~0008` | [마이그레이션](../../migrations/)은 `0011`까지. 0009 UTC 정규화, 0010 판매자 등록, 0011 공구 정정·철회와 `deal_revisions` | 향후 사이트 번호 후보 0012. [수집함 migrations](../../crawler/migrations/)의 다음 후보는 0003. 구현 시 다시 확인 |
+| 사이트 `0001~0008` | [마이그레이션](../../migrations/)은 `0011`까지. 0009 UTC 정규화, 0010 판매자 등록, 0011 공구 정정·철회와 `deal_revisions` | 향후 사이트 번호 후보 0012. [수집함 migrations](../../crawler/migrations/)은 공용 엔진 0003까지 적용하며 fact ledger의 다음 후보는 0004. 구현 시 다시 확인 |
 | `verification_status` | [공통 계약](../../shared/collection-schema.ts)의 처리 단계 5개 | pipeline status이며 새 `fact_status`와 별개 |
 | `dedup_group_id` | [store](../../crawler/src/store.ts)의 문서 중복·계보 묶음 | 대상 식별 `entity_id`와 별개 |
 | 외부 수집 enabled | [현행 설정](../../crawler/config/collector.json)의 5개 소스 모두 false | 레거시 [external-sources](../../crawler/config/external-sources.json)의 true는 권한 근거 아님. 현재 worker가 이를 import하지 않음 |
