@@ -1,0 +1,205 @@
+{
+  "id": "agamajung",
+  "profile_version": 1,
+  "stages": [
+    "discover",
+    "fetch",
+    "render",
+    "parse",
+    "label",
+    "extract",
+    "service"
+  ],
+  "categories": [
+    {
+      "id": "stroller",
+      "ko": [
+        "유모차"
+      ],
+      "en": [
+        "stroller",
+        "pram",
+        "pushchair"
+      ]
+    },
+    {
+      "id": "car_seat",
+      "ko": [
+        "카시트"
+      ],
+      "en": [
+        "car seat",
+        "infant carrier"
+      ]
+    },
+    {
+      "id": "bouncer",
+      "ko": [
+        "바운서"
+      ],
+      "en": [
+        "bouncer"
+      ]
+    },
+    {
+      "id": "high_chair",
+      "ko": [
+        "하이체어",
+        "유아의자"
+      ],
+      "en": [
+        "high chair"
+      ]
+    },
+    {
+      "id": "carrier",
+      "ko": [
+        "아기띠",
+        "힙시트"
+      ],
+      "en": [
+        "baby carrier"
+      ]
+    }
+  ],
+  "excluded_keywords": [
+    "기저귀",
+    "분유",
+    "물티슈"
+  ],
+  "domain_policy": {
+    "default": "deny",
+    "start_order": [
+      "manufacturer",
+      "importer",
+      "catalog",
+      "official_seller",
+      "government"
+    ],
+    "denied_hosts": [
+      "instagram.com",
+      "cdninstagram.com",
+      "facebook.com",
+      "fbcdn.net",
+      "gonggumoa.com"
+    ],
+    "on_restricted": "halt_and_report",
+    "sources": {
+      "cpsc": {
+        "tier": "government",
+        "render": false,
+        "raw": "hash_only",
+        "content_types": [
+          "application/json"
+        ]
+      }
+    }
+  },
+  "labels": [
+    {
+      "id": "spec",
+      "ko": "제품사양"
+    },
+    {
+      "id": "manual",
+      "ko": "설명서"
+    },
+    {
+      "id": "compatibility",
+      "ko": "호환성"
+    },
+    {
+      "id": "offer",
+      "ko": "판매제안"
+    },
+    {
+      "id": "recall",
+      "ko": "리콜"
+    },
+    {
+      "id": "launch",
+      "ko": "출시"
+    }
+  ],
+  "merge_forbidden": [
+    {
+      "id": "different_model_year",
+      "axes": [
+        "release_year",
+        "generation"
+      ]
+    },
+    {
+      "id": "body_vs_set",
+      "axis": "bundle",
+      "values": [
+        "body",
+        "set"
+      ]
+    },
+    {
+      "id": "kr_vs_overseas",
+      "axis": "market",
+      "values": [
+        "KR",
+        "overseas"
+      ]
+    }
+  ],
+  "required_fields": [
+    {
+      "field": "official_msrp",
+      "ko": "공식가"
+    },
+    {
+      "field": "bundle_components",
+      "ko": "구성품"
+    },
+    {
+      "field": "shipping_fee",
+      "ko": "배송비"
+    },
+    {
+      "field": "group_buy_terms",
+      "ko": "공구 조건"
+    },
+    {
+      "field": "certifications",
+      "ko": "KC 인증",
+      "conditions": {
+        "scheme": "KC"
+      }
+    },
+    {
+      "field": "compatibility",
+      "ko": "호환성"
+    },
+    {
+      "field": "release_year",
+      "ko": "출시 연식"
+    }
+  ],
+  "limits": {
+    "min_interval_ms": 5000,
+    "max_attempts": 3,
+    "backoff_base_ms": 300000,
+    "backoff_max_ms": 21600000
+  },
+  "cost_caps": {
+    "run": {
+      "requests": 200,
+      "bytes": 104857600,
+      "model_calls": 0
+    },
+    "day": {
+      "requests": 600,
+      "bytes": 314572800,
+      "model_calls": 0
+    }
+  },
+  "model": {
+    "enabled": false
+  },
+  "extractor_version": "agamajung-rules@1",
+  "labeler_version": "agamajung-labeler@1"
+}

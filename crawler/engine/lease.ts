@@ -1,0 +1,4 @@
+import type { Checkpoint, EngineDb } from './types';
+export function acquire(store:EngineDb,id:string,owner:string,ttl=180000){return store.db.prepare("UPDATE engine_checkpoints SET phase='leased',lease_owner=?,lease_until=? WHERE id=? AND (phase IN ('pending','retry_wait','deferred') OR (phase='leased' AND lease_until<=?))").run(owner,store.now()+ttl,id,store.now()).changes===1;}
+export function renew(store:EngineDb,id:string,owner:string,ttl=180000){return store.transaction(()=>store.db.prepare("UPDATE engine_checkpoints SET lease_until=? WHERE id=? AND phase='leased' AND lease_owner=?").run(store.now()+ttl,id,owner).changes===1);}
+export function release(store:EngineDb,c:Checkpoint){store.db.prepare('UPDATE engine_checkpoints SET lease_owner=NULL,lease_until=NULL WHERE id=?').run(c.id);}

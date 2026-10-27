@@ -1,0 +1,4 @@
+Example stroller 설명서 — example_only
+구성품: 본체, 안전바
+호환성: Example adapter
+출시 연식: 2026
