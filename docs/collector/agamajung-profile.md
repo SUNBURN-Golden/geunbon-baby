@@ -22,4 +22,4 @@
 6. 같은 backfill을 다시 실행해 추가 0건을 확인한다. 수집 재개 전에 backfill을 끝낸다. 기존 fulltext:* 메타데이터는 건드리지 않는다.
 7. 기존 report total과 collection_records data를 대조한다. `dedup-audit`로 기존 위반을 확인하고 필요한 경우만 --apply한다. 원본 DB와 백업을 보관한 뒤 수집을 재개한다.
 
-0003은 Linux collector.sqlite 전용이며 사이트 `/migrations`와 독립적이다. fact ledger 후속 마이그레이션은 현재 head를 확인하고 0004부터 번호를 잡는다.
+0003은 Linux collector.sqlite 전용이며 사이트 `/migrations`와 독립적이다. 현재 최신 버전은 [소스 발견기](source-discoverer.md)의 0004이며 후보 큐·조건별 근거·질의·경로만 추가한다. 후속 마이그레이션은 현재 head를 확인하고 0005부터 번호를 잡는다.

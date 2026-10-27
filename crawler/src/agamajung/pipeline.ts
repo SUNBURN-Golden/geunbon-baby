@@ -1,4 +1,8 @@
-import { JobEngine, CostLedger, Downloader, RawStore, SqliteStorage, ToolAdapter, extractPdf, extractImage, renderDocument, DisabledModel } from '../../engine';
+import { JobEngine, Downloader, RawStore, SqliteStorage, ToolAdapter, extractPdf, extractImage, renderDocument, DisabledModel } from '../../engine';
+import type { CostLedger } from '../../engine';
+import { agamajungCosts } from './cost-policy';
+import { extractDocument } from '../discovery/document';
+import { loadDiscoveryConfig, linkCacheTool, type DiscoveryConfig } from '../source-discovery/config';
 import type { Checkpoint, Data, FetchResponse, ModelPort, RenderPort, StageHandler, StageResult } from '../../engine';
 import { digest, stable } from '../dedup';
 import { CollectorStore, requireThat } from '../store';
@@ -19,7 +23,7 @@ import { claimSlots, conditionsKey, subjectRef } from './subject';
 type Capture={id:string;run_id:string;source_id:string;url_norm:string;content_hash:string;content_type:string;etag:string|null;last_modified:string|null;raw_ref:string|null;fetched_at:string;fetch_seq:number;byte_length:number|null;data:string};
 type Parsed={text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[]};
 type Labeled={labels:LabelId[];status:'labeled'|'ambiguous';method:'rule'|'model'};
-export type PipelineOptions={scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void};
+export type PipelineOptions={scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;discoveryConfig?:DiscoveryConfig;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void};
 const string=(data:Data,key:string)=>String(data[key]??'');
 export class AgamajungPipeline {
   readonly engine:JobEngine;
@@ -34,7 +38,7 @@ export class AgamajungPipeline {
     this.profile=validateProfile(profile,store.settings);
     this.parseVersion=`parse@1:${profile.extractor_version}:${profile.labeler_version}:${digest(store.settings.sources.map(s=>[s.id,s.origin,s.selector,s.official_fields,s.kind]))}`;
     this.storage=new SqliteStorage(store,{receipt:id=>store.receipt(id),submit:(id,payload,sourceId)=>store.submit('linux',id,payload,sourceId)});this.tools=options.tools??new ToolAdapter(store);
-    this.ledger=new CostLedger(store,profile.id,profile.cost_caps);this.ledger.recoverOrphans();
+    this.ledger=agamajungCosts(store,profile);this.ledger.recoverOrphans();
     this.scheduler=options.scheduler?new Scheduler(store,options.scheduler.transport,options.scheduler.sleep,this.ledger,profile.limits.min_interval_ms):new Scheduler(store,undefined,undefined,this.ledger,profile.limits.min_interval_ms);
     this.handlers=this.createHandlers();
     this.engine=new JobEngine(store,profile.id,profile.stages,this.handlers,{fault:options.fault,rng:options.rng,maxAttempts:profile.limits.max_attempts,onHalt:(c,code)=>{
@@ -53,7 +57,12 @@ export class AgamajungPipeline {
     return `${version}:${sourceId}:${tool?digest([tool,support??null]):'text'}`;
   }
   private cache<T>(cap:Capture,stage:string,version:string){return this.storage.cached<T>(cap.content_hash,stage,this.cacheTool(cap.source_id,cap.content_type,version));}
-  private reusable(hash:string,source:SourcePolicy,type:string){return !!(this.raw.read(hash)||['parse','label','extract'].every(stage=>this.storage.cached(hash,stage,this.cacheTool(source.id,type,this.version(stage)))));}
+  private reusable(hash:string,source:SourcePolicy,type:string,url:string,depth:number){
+    if(this.raw.read(hash))return true;
+    const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
+    const links=source.adapter==='cpsc'||!/text|xml|html/.test(type)||this.storage.cached(hash,'source-links',linkCacheTool(cfg,url,source.id,depth));
+    return !!links&&['parse','label','extract'].every(stage=>this.storage.cached(hash,stage,this.cacheTool(source.id,type,this.version(stage))));
+  }
   private version(stage:string){return stage==='parse'?this.parseVersion:stage==='label'?this.profile.labeler_version:`${this.profile.extractor_version}:${this.parseVersion}`;}
   private persistReservation(c:Checkpoint,source:SourcePolicy){
     const url=string(c.data,'url'),existing=this.store.recordByUrl(url);
@@ -109,7 +118,7 @@ export class AgamajungPipeline {
         const previous=this.store.db.prepare("SELECT * FROM engine_captures WHERE source_id=? AND url_norm=? AND status IN ('ok','not_modified') ORDER BY fetched_at DESC,rowid DESC LIMIT 1").get(source.id,url) as Capture|undefined;
         if(previous)await this.probeType(previous.content_type);
         let result:Awaited<ReturnType<Downloader['download']>>;
-        try{result=await new Downloader(new SchedulerFetcher(this.scheduler,source)).download(url,{previous,reusable:h=>this.reusable(h,source,previous?.content_type??'text/html'),render:policy.render});}
+        try{result=await new Downloader(new SchedulerFetcher(this.scheduler,source)).download(url,{previous,reusable:h=>this.reusable(h,source,previous?.content_type??'text/html',url,Number(c.data.depth)),render:policy.render});}
         catch(e){
           const code=(e as {code?:string;message?:string}).code??(e as Error).message;
           if(['source_blocked','login_required','access_restricted','empty_page','source_response'].includes(code)){
@@ -129,7 +138,7 @@ export class AgamajungPipeline {
           if(policy.raw==='store'&&clean)rawRef=this.raw.write(result.bytes,true);
         }else if(previous?.raw_ref&&this.raw.read(result.hash))rawRef=previous.raw_ref;
         const seq=(this.store.db.prepare('SELECT coalesce(max(fetch_seq),0)+1 n FROM engine_captures WHERE run_id=? AND source_id=? AND url_norm=?').get(c.run_id,source.id,url) as {n:number}).n;
-        const cap:Data={id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:result.status,content_hash:result.hash,content_type:type,byte_length:result.bytes?.length??(previous?.byte_length??null),etag:result.response.headers.etag??(result.status==='not_modified'?previous?.etag:null)??null,last_modified:result.response.headers['last-modified']??(result.status==='not_modified'?previous?.last_modified:null)??null,raw_ref:rawRef,prev_capture_id:previous?.id??null,data:{final_url:canonicalUrl(result.response.finalUrl??url)}};
+        const cap:Data={id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:result.status,content_hash:result.hash,content_type:type,byte_length:result.bytes?.length??(previous?.byte_length??null),etag:result.response.headers.etag??(result.status==='not_modified'?previous?.etag:null)??null,last_modified:result.response.headers['last-modified']??(result.status==='not_modified'?previous?.last_modified:null)??null,raw_ref:rawRef,prev_capture_id:previous?.id??null,data:{final_url:canonicalUrl(result.response.finalUrl??url),discovery_depth:Number(c.data.depth)}};
         return {outputRef:String(cap.id),data:{capture:cap,capture_id:cap.id,content_hash:result.hash}};
       },(result)=>{
         this.storage.capture(result.data!.capture as Data);
@@ -179,6 +188,11 @@ export class AgamajungPipeline {
         if(parsed)this.storage.cache(cap.content_hash,'parse',this.cacheTool(cap.source_id,cap.content_type,this.parseVersion),parsed);
         // Discovery uses the existing adapter and the same allow policy; never follows external sellers.
         const s=this.source(c),bytes=this.raw.read(cap.content_hash);
+        if(bytes&&s.adapter!=='cpsc'&&/text|xml|html/.test(cap.content_type)){
+          // Preserve candidate identifiers BEFORE discoverLinks/canonicalUrl strips them.
+          const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
+          this.storage.cache(cap.content_hash,'source-links',linkCacheTool(cfg,cap.url_norm,cap.source_id,Number(c.data.depth)),{...extractDocument(new TextDecoder().decode(bytes),cap.url_norm,s.adapter,cfg.url_policies,cfg.pagination_selectors?.[s.id]),depth:Number(c.data.depth),source_id:s.id});
+        }
         if(bytes&&Number(c.data.depth)<this.store.settings.limits.max_depth&&!s.browser&&s.adapter!=='cpsc'){
           const max=Math.min(s.max_pages,this.store.settings.limits.max_pages);
           let count=(this.store.db.prepare("SELECT count(*) n FROM engine_checkpoints WHERE run_id=? AND stage='fetch' AND json_extract(data,'$.source_id')=?").get(c.run_id,s.id) as {n:number}).n;

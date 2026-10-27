@@ -13,28 +13,46 @@ import { DiscoveryRunner } from './discovery/run';
 import { parseTrustedEgress } from './egress';
 import { Scheduler, pinnedRequest } from './scheduler';
 import { syncStatus } from './status-sync';
+import { SourceDiscoveryRunner, DISCOVERY_RUN_ID } from './source-discovery/runner';
+import { SourceCandidateStore } from './source-discovery/store';
+import { loadDiscoveryConfig } from './source-discovery/config';
+import { loadProfile } from './agamajung/profile';
 export async function main(){
   const args=process.argv.slice(2),command=args[0]??'serve';
   const settings=process.env.COLLECTOR_CONFIG?JSON.parse(readFileSync(process.env.COLLECTOR_CONFIG,'utf8')) as CollectorConfig:config;
   const trusted=parseTrustedEgress(process.env.COLLECTOR_TRUSTED_EGRESS_CIDRS);
   if(trusted.length)console.error(`trusted_egress_cidrs=${trusted.map(c=>c.text).join(',')}`);
-  requireThat(['serve','discover','sync','collect','engine-status','failures','backfill-engine','dedup-audit'].includes(command),'command');
-  if(command==='collect'||command==='backfill-engine'||command==='failures'&&args[1]==='retry'){
+  requireThat(['serve','discover','discover-sources','source-candidates','sync','collect','engine-status','failures','backfill-engine','dedup-audit'].includes(command),'command');
+  if(command==='discover-sources')requireThat(process.platform==='linux','linux_required');
+  if(command==='collect'||command==='discover-sources'||command==='backfill-engine'||command==='failures'&&args[1]==='retry'){
     requireThat(process.env.COLLECTOR_DB&&process.env.COLLECTOR_RAW_DIR,'engine_paths_required');
     externalDirectory(dirname(process.env.COLLECTOR_DB!));externalDirectory(process.env.COLLECTOR_RAW_DIR!);
   }
-  if(['engine-status','failures','dedup-audit'].includes(command)){requireThat(process.env.COLLECTOR_DB,'engine_paths_required');externalDirectory(dirname(process.env.COLLECTOR_DB!));}
+  if(['engine-status','failures','dedup-audit','source-candidates'].includes(command)){requireThat(process.env.COLLECTOR_DB,'engine_paths_required');externalDirectory(dirname(process.env.COLLECTOR_DB!));}
   const auth={intakeToken:process.env.COLLECTOR_INTAKE_TOKEN??'',reviewToken:process.env.COLLECTOR_REVIEW_TOKEN??'',extensionOrigin:process.env.COLLECTOR_EXTENSION_ORIGIN??'',host:'127.0.0.1:4318'};
   if(command==='serve')requireThat(auth.intakeToken.length>=24&&auth.reviewToken.length>=24&&auth.intakeToken!==auth.reviewToken&&/^chrome-extension:\/\/[a-p]{32}$/.test(auth.extensionOrigin),'local_auth_config');
   const store=new CollectorStore(resolve(process.env.COLLECTOR_DB??'crawler/.cache/collector.sqlite'),settings);
   try {
-    const kind=command==='serve'?'serve':command==='sync'?'sync':['discover','collect'].includes(command)||command==='failures'&&args[1]==='retry'?'crawl':undefined;
+    const kind=command==='serve'?'serve':command==='sync'?'sync':['discover','collect','discover-sources'].includes(command)||command==='failures'&&args[1]==='retry'?'crawl':undefined;
     if(kind)store.runLock(kind);
   } catch(e) { store.close(); throw e; }
+  if(command==='source-candidates'){
+    try{const index=args.indexOf('--id');if(index>=0)requireThat(args[index+1],'candidate_id_required');console.log(JSON.stringify(new SourceCandidateStore(store,loadDiscoveryConfig()).list(index>=0?args[index+1]:undefined)));}finally{store.close();}return;
+  }
+  if(command==='discover-sources'){
+    try{
+      const scheduler=new Scheduler(store,(u,m,_trusted,opts)=>pinnedRequest(u,m,trusted,opts));
+      const dry=args.includes('--dry-run'),runner=new SourceDiscoveryRunner(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),loadDiscoveryConfig(),{scheduler,offline:dry,health:code=>console.error(`discover_sources reason=${code}`)});
+      if(dry){console.log(JSON.stringify(runner.preview()));return;}
+      const index=args.indexOf('--resume');if(index>=0)requireThat(args[index+1],'run_id_required');
+      const id=index>=0?runner.resume(args[index+1]):runner.start();runner.seed(id);
+      const run=await runner.run(id);console.log(JSON.stringify(runner.report(id)));if(run.state==='halted')process.exitCode=75;
+    }finally{store.close();}return;
+  }
   if(['collect','engine-status','failures','backfill-engine','dedup-audit'].includes(command)){
     try {
       if(command==='engine-status'){
-        console.log(JSON.stringify({runs:store.db.prepare('SELECT id,profile_id,state,started_at,finished_at FROM engine_runs ORDER BY started_at DESC').all(),checkpoints:store.db.prepare('SELECT run_id,stage,phase,count(*) count FROM engine_checkpoints GROUP BY run_id,stage,phase').all(),costs:store.db.prepare('SELECT scope,kind,cap,held,spent FROM engine_costs').all()}));return;
+        console.log(JSON.stringify({runs:store.db.prepare('SELECT id,profile_id,state,started_at,finished_at FROM engine_runs ORDER BY started_at DESC').all(),checkpoints:store.db.prepare('SELECT run_id,stage,phase,count(*) count FROM engine_checkpoints GROUP BY run_id,stage,phase').all(),costs:store.db.prepare('SELECT scope,kind,cap,held,spent FROM engine_costs').all(),next_day_shared_caps:loadProfile().cost_caps.day}));return;
       }
       if(command==='dedup-audit'){console.log(JSON.stringify({violations:store.dedupAudit({apply:args.includes('--apply')})}));return;}
       if(command==='backfill-engine'){console.log(JSON.stringify(backfillEngine(store)));return;}
@@ -44,6 +62,11 @@ export async function main(){
       requireThat(process.env.COLLECTOR_DB&&process.env.COLLECTOR_RAW_DIR,'engine_paths_required');
       externalDirectory(dirname(process.env.COLLECTOR_DB!));
       const scheduler=new Scheduler(store,(u,m,_trusted,opts)=>pinnedRequest(u,m,trusted,opts));
+      if(command==='failures'&&args[1]==='retry'){
+        requireThat(args[2],'command');
+        const row=store.db.prepare('SELECT r.profile_id FROM engine_checkpoints c JOIN engine_runs r ON r.id=c.run_id WHERE c.id=?').get(args[2]) as {profile_id:string}|undefined;
+        if(row?.profile_id===DISCOVERY_RUN_ID){const runner=new SourceDiscoveryRunner(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),loadDiscoveryConfig(),{scheduler});console.log(JSON.stringify({run_id:runner.engine.retryFailure(args[2])}));return;}
+      }
       const pipeline=new AgamajungPipeline(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),undefined,{scheduler,health:code=>console.error(`collect reason=${code}`)});
       if(command==='failures'){
         requireThat(args[1]==='retry'&&args[2],'command');console.log(JSON.stringify({run_id:pipeline.engine.retryFailure(args[2])}));return;

@@ -45,3 +45,9 @@ raw 기본은 hash_only다. 임시 spool은 24시간 TTL, parse 확정 시 삭�
 PDF는 로컬 pdftotext, 이미지 OCR은 tesseract kor+eng을 사용한다. 도구가 없으면 engine_tool_support=unsupported와 체크포인트 skipped/unsupported_tool을 남기고 재시도하지 않는다. 시간 초과는 재시도 대상이다. 설치는 이 명령들이 자동 수행하지 않는다.
 
 오프라인 테스트는 transport·execFile·렌더러·시계·난수·결함 지점을 주입한다. 실제 소켓·fetch·Playwright 실행은 tests/setup.ts가 차단한다.
+
+## 소스 발견기와 공유 비용
+
+[소스 발견기](source-discoverer.md)는 같은 JobEngine·Scheduler·CostLedger·저장 포트를 사용하고 별도 실행 ID `agamajung-source-discovery`와 `source_candidates`를 사용한다. 사이트·기존 자료 접수에는 연결하지 않는다. Linux migration 최신 버전은 0004이며 0003 단독 마이그레이션도 유지한다.
+
+`agamajung/cost-policy.ts`가 두 명령의 공통 비용 소유자 `agamajung`과 `profile.cost_caps.day`를 결정한다. 엔진은 일반적인 추가 `CostScope`만 받는다. 공유 day·run·추가 범위를 원자적으로 예약하고 같은 ticket으로 정산/고아 회수한다. 같은 scope는 중복 예약하거나 공통 cap을 대체할 수 없다. 당일 cap은 동결하며 다음 일일 scope는 현재 프로필 설정을 쓴다. 국소 일일 제한은 해당 작업만 deferred로 두고 다른 작업을 계속한다. 수동 retry는 원래 run 비용 계보와 attempts를 보존하며 접근 제한 실패는 retry로 해제하지 않는다. 발견기의 crawl 잠금은 collect/discover/retry와 공통이다.

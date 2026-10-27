@@ -273,3 +273,9 @@ sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하�
 - 이번 작업에서 시드 계정 핸들을 실시간 검증하지 않았습니다. 기존 환경의 이메일 사용자명을 핸들로 바꾸도록 안내했습니다. 현재 기본값은 `agamajung`입니다.
 - 프로필 그리드의 핸들 포함 URL이 기존 selector 미스 원인이라는 설명은 가설이었으며, 이후 실제 실행의 anchors와 수집 결과로 확인하도록 했습니다.
 - 이미지 URL 전달 당시 기록: “업로드 지원이 없어 이번 구현은 R2에 저장하지 않습니다.” 현재 계약도 CDN URL 직접 표시이며 영구 저장은 별도 설계 대상입니다.
+
+## 새 소스 후보 발견
+
+Linux `npm run collector:worker -- discover-sources --dry-run`은 오프라인 검색·예산 계획을 확인합니다. `discover-sources`, `--resume RUN_ID`로 실행/재개하고 `source-candidates --json`, `source-candidates --id ID`로 별도 `discovered` 후보와 근거를 조회합니다. 저장소 밖 `COLLECTOR_DB`·`COLLECTOR_RAW_DIR`이 필요하며 기본 설정은 비활성입니다. 후보 발견은 수집·공식 출처 권한을 부여하지 않고 기존 자료·건수·outbox나 사이트로 전송하지 않습니다.
+
+collect와 공유 일일 비용 원장 및 crawl 잠금을 사용하며, 발견기·소스/origin·제공자 한도를 추가 적용합니다. 새 명령의 dry-run은 네트워크·후보·비용 소비가 없으며 기존 discover의 네트워크 dry-run과 다릅니다. 설정·약관 확인·상품 URL 정책·검토 인계·복구는 [소스 발견기 운영 문서](../docs/collector/source-discoverer.md)를 따릅니다.

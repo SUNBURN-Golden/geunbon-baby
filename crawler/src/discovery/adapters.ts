@@ -1,3 +1,4 @@
+import { extractRawDocument } from './document';
 import { canonicalUrl } from '../../../shared/privacy-rules';
 export type Found = {url:string;title?:string;recall?:{id:string;name:string;date:string}};
 const decode=(s:string)=>s.replace(/&amp;/g,'&').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').trim();
@@ -14,6 +15,5 @@ export function discoverLinks(body:string,base:string,adapter:'rss'|'sitemap'|'l
     if(!Array.isArray(rows))throw new Error('cpsc_schema');
     return rows.slice(0,500).flatMap(r=>{const url=safe(r.URL,base);return url&&Number.isSafeInteger(r.RecallID)?[{url,title:r.Title,recall:{id:String(r.RecallID),name:r.Products?.map(p=>p.Name).join(', ')??r.Title,date:r.RecallDate}}]:[];});
   }
-  const regex=adapter==='sitemap'?/<loc\b[^>]*>([\s\S]*?)<\/loc>/gi:adapter==='rss'?/<link\b[^>]*href=["']([^"']+)["'][^>]*>|<link\b[^>]*>([\s\S]*?)<\/link>/gi:/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi;
-  return [...body.matchAll(regex)].slice(0,500).flatMap(m=>{const url=safe(m[1]??m[2],base);return url?[{url}]:[];});
+  return extractRawDocument(body,base,adapter).links.flatMap(link=>{const url=safe(link.url,base);return url?[{url}]:[];});
 }
