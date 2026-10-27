@@ -23,3 +23,21 @@ Move the hero before the active ledger, apply the exact owner-approved headline,
 - [x] Hero/order/count and empty-state tests updated in this PR; no cards or prices in the zero state.
 - [x] Review fixes: the hero tally is `aria-hidden` because the list heading announces the same count; the intermediate-width `clamp()` heading size lives here with the hero; README headline updated to the approved text.
 - [ ] Mockup Korean wording and removal of supplemental copy: pending Argon; detailed file/line proposals are in `/workspace/rd-wt/logs/agamajung-copy-todo.md`.
+
+## PR3 — index category tabs
+
+Add native category links on home, deals and models, preserving every category (including car seats) and model search/brand parameters. Active categories use `aria-current="page"`; unsupported home/deal categories safely fall back to all. Home/deals filter joined model categories and keep the hero's global active count.
+
+- [x] `npm run build`, `npm run typecheck`, `npm run lint`.
+- [x] `npm test -- --maxWorkers=2`: 81 files / 1569 tests passed. An unrestricted run encountered unrelated existing timing failures under host contention; reducing workers passed without code changes to those systems.
+- [x] Screenshot render command and `node_modules/.bin/tsx scripts/redesign-screenshots.ts .local/redesign-pr3`: 18 checks passed, 320/390/1440 light/dark, no overflow or undersized targets. Home 320 light and deals desktop dark visually inspected.
+- [x] Link semantics, preserved query parameters and category filtering covered by tests. Tabs scroll within their own nav on mobile.
+- [ ] “전체” is pending Argon; retain existing “모든 종류”.
+
+### Review 2 fix — selected category focus
+
+Use `var(--bg)` for the selected category's inset focus outline against its ink fill. The theme regression check verifies the actual CSS token at 3:1 or greater in both themes.
+
+- [x] `npm run build:worker` (includes the production Next build), `npm test -- --maxWorkers=1` (81 files / 1569 tests), `npm run typecheck`, `npm run lint`.
+- [x] Real local Wrangler app and isolated local D1: Playwright captured home, deals and models at 390px and 1440px, light and dark, including native keyboard focus on the selected tab. All 24 page/focus checks passed; zero page overflow, loaded fonts, 44px targets, focus contrast above 3:1.
+- [x] Screenshots and metrics: `/workspace/rd-wt/logs/agamajung-shots/fix2-pr3/`. Mobile light and desktop dark focus screenshots visually inspected. Server stopped; no production access or data changes.

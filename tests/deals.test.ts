@@ -391,6 +391,9 @@ describe('theme contrast', () => {
     for (const background of ['bg', 'surface']) {
       expect(contrast(token('accent'), token(background))).toBeGreaterThanOrEqual(3);
     }
+    // The selected category's inset ring sits on ink rather than the page.
+    const selectedFocus = css.match(/\.category-tabs a\[aria-current='page'\]:focus-visible\s*\{\s*outline-color:\s*var\(--([\w-]+)\)/)![1];
+    expect(contrast(token(selectedFocus), token('ink'))).toBeGreaterThanOrEqual(3);
   });
 });
 

@@ -199,3 +199,17 @@ test('the same deal without a seller renders byte-identical cards on all four ro
   }
   expect(new Set(cards).size).toBe(1);
 });
+
+
+test('home and deals filter real joined categories while keeping the global hero count', async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(nowMs);
+  for (const page of [Home, DealsPage]) {
+    const selected = renderToStaticMarkup(await page({ searchParams: Promise.resolve({ category: 'high_chair' }) }));
+    expect(detailLinks(selected)).toContain('today');
+    expect(selected).toMatch(/<a(?=[^>]*href="[^"]*category=high_chair")(?=[^>]*aria-current="page")[^>]*>/);
+    const other = renderToStaticMarkup(await page({ searchParams: Promise.resolve({ category: 'carrier' }) }));
+    expect(detailLinks(other)).toEqual([]);
+    const invalid = renderToStaticMarkup(await page({ searchParams: Promise.resolve({ category: '__proto__' }) }));
+    expect(detailLinks(invalid)).toContain('today');
+  }
+});
