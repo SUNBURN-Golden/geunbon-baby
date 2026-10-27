@@ -1,7 +1,7 @@
 import { all, environment } from '../../lib/db';
 import { DEAL_SELECT, dealTiming, sortDeals, type DealWithContext } from '../../lib/deals';
 import { dealsCopy } from '../../lib/deals-copy';
-import { DealList } from './_components';
+import { DealList, PriceLegend } from './_components';
 import { CategoryTabs, selectedCategory } from '../_category-tabs';
 import { ActiveDealCount } from '../_active-deals';
 
@@ -19,6 +19,7 @@ export default async function DealsPage({ searchParams = Promise.resolve({}) }: 
     <main className="page deals-page">
       <div className="deals-heading"><h1>{dealsCopy.title}</h1><p>{dealsCopy.activeHeading} <ActiveDealCount count={activeCount} /></p></div>
       <CategoryTabs category={category} base="/deals" />
+      {deals.some(deal => !category || deal.model_category === category) && <PriceLegend />}
       <DealList deals={sortDeals(category ? deals.filter(deal => deal.model_category === category) : deals, nowMs)} nowMs={nowMs} />
     </main>
   );

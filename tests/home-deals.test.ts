@@ -159,7 +159,7 @@ test('active cards preserve unknown prices, zero prices and comparison direction
   expect(unknown).toContain('500,000원');
   expect(unknown).not.toContain('class="deal-gap"');
   const zeroOfficial = render({ model_official_price: 0 });
-  expect(zeroOfficial).toContain(`${dealsCopy.officialPrice} · 0원`);
+  expect(zeroOfficial.replace(/<[^>]*>/g, '')).toContain(`${dealsCopy.officialPrice} · 0원`);
   expect(zeroOfficial).not.toContain('class="deal-gap"');
   for (const patch of [{ model_official_price: null }, { model_joined_id: null }]) {
     const html = render(patch);
@@ -187,15 +187,18 @@ test('/deals keeps active deals first and displays their count near the h1', asy
   expect(html).toMatch(/<h1>[^<]+<\/h1><p>지금 진행 중 <span class="active-deal-count" aria-label="3개 진행 중이에요">3<\/span><\/p>/);
 });
 
-test('the same deal without a seller renders byte-identical cards on all four routes', async () => {
+test('the same deal without a seller renders byte-identical cards on all four routes, except the discount stamp /models/* forbids', async () => {
   vi.spyOn(Date, 'now').mockReturnValue(nowMs);
+  const stamp = /<span class="ledger-discount"[^>]*>[^<]*<\/span>/;
   const cards = [];
   for (const page of [await Home(), await DealsPage(), await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model' }) })]) {
     const html = renderToStaticMarkup(page);
     const card = [...html.matchAll(/<article class="deal-card">[\s\S]*?<\/article>/g)]
       .map(match => match[0]).find(article => article.includes('href="/deals/today"'));
     expect(card).toBeDefined();
-    cards.push(card);
+    // Home, deals and calendar show the stamp; model detail must not.
+    expect(stamp.test(card!)).toBe(cards.length < 3);
+    cards.push(card!.replace(stamp, ''));
   }
   expect(new Set(cards).size).toBe(1);
 });

@@ -203,7 +203,7 @@ describe('server rendered deals UI', () => {
     expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
     expect(html.endsWith(`<p class="deal-disclaimer">${dealsCopy.disclaimer}</p></article>`)).toBe(true);
     expect(html).not.toContain('id="deal-new-tab"');
-    expect(html).not.toContain('/models/');
+    expect(html).not.toContain('href="/models/');
   });
 
   test('cards without a joined seller retain the source and disclaimer without a dangling trust link', () => {
@@ -337,7 +337,7 @@ describe('server rendered deals UI', () => {
     expect(html).toContain(dealsCopy.unknownSeller);
     expect(html).toContain('390,000');
     expect(html).toContain(fixture.source_url);
-    expect(html).not.toContain('/models/');
+    expect(html).not.toContain('href="/models/');
     expect(html).not.toContain(dealsCopy.secondary);
     expect(html).not.toContain('class="deal-gap"');
   });
@@ -471,7 +471,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
 describe('deal images', () => {
   test('cards and details render images without changing existing text, prices, advertising or notices', () => {
     const image_url = 'https://cdninstagram.com/product.jpg?sig=synthetic%2B&x=1';
-    for (const render of [card, detail]) {
+    for (const render of [detail, (patch: Partial<DealWithContext> = {}) => card({ ...patch, model_id: 'unillustrated' })]) {
       const html = render({ image_url });
       expect(html).toContain('class="deal-image"');
       expect(html).toContain('src="https://cdninstagram.com/product.jpg?sig=synthetic%2B&amp;x=1"');
@@ -497,10 +497,13 @@ describe('deal images', () => {
     }
   });
 
-  test.each([null, '', 'blob:local', 'https://example.com/unapproved.jpg'])('missing/invalid image %s leaves text-only content', image_url => {
+  test.each([null, '', 'blob:local', 'https://example.com/unapproved.jpg'])('missing/invalid image %s retains repository art on cards and text-only detail', image_url => {
     for (const render of [card, detail]) {
       const html = render({ image_url });
-      expect(html).not.toContain('<img');
+      if (render === card) {
+        expect(html).toContain('src="/img/models/model-1-540x540.png"');
+        expect(html).toContain('alt=""');
+      } else expect(html).not.toContain('<img');
       expect(html).toContain(fixture.title);
       expect(html).toContain(dealsCopy.ad);
       expect(html).toContain('390,000');

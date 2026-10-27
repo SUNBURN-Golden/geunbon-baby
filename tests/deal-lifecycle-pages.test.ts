@@ -99,8 +99,8 @@ test('model moves, image restoration and changed schedules reach all applicable 
   expect(await render(() => model())).not.toContain('Revised public title');
   expect(await render(() => model('model-2'))).toContain('Revised public title');
   const page = await render(() => detail(id)); expect(page).toContain('Other model'); expect(page).toContain('/models/model-2'); expect(page).toContain('original.jpg');
-  expect(await render(Home)).toContain('alt="Other model 상품 이미지"');
-  expect(await render(DealsPage)).toContain('alt="Other model 상품 이미지"');
+  expect(await render(Home)).toContain('src="/img/models/model-2-540x540.png"');
+  expect(await render(DealsPage)).toContain('src="/img/models/model-2-540x540.png"');
   // A corrected future schedule removes the deal from active-price cards and counts.
   expect((await call(`admin/deals/${id}`, edit({ expected_version: 2, model_id: 'model-2', starts_at: '2026-11-01T00:00:00Z', ends_at: '2026-11-02T00:00:00Z' }))).status).toBe(200);
   const pages = await surfaces(); counts(pages, 1); expect(pages.home).not.toContain('Revised public title');
