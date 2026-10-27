@@ -1,11 +1,11 @@
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { externalDirectory, RawStore } from '../engine/raw-store';
 import { AgamajungPipeline } from './agamajung/pipeline';
 import { backfillEngine } from './agamajung/backfill';
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { readFileSync } from 'node:fs';
-import { CollectorStore, requireThat } from './store';
+import { CollectorError, CollectorStore, requireThat } from './store';
 import { config, type CollectorConfig } from './source-policy';
 import { handleLocal } from './intake-api';
 import { formatLine } from './discovery/health';
@@ -27,6 +27,10 @@ export async function main(){
   const auth={intakeToken:process.env.COLLECTOR_INTAKE_TOKEN??'',reviewToken:process.env.COLLECTOR_REVIEW_TOKEN??'',extensionOrigin:process.env.COLLECTOR_EXTENSION_ORIGIN??'',host:'127.0.0.1:4318'};
   if(command==='serve')requireThat(auth.intakeToken.length>=24&&auth.reviewToken.length>=24&&auth.intakeToken!==auth.reviewToken&&/^chrome-extension:\/\/[a-p]{32}$/.test(auth.extensionOrigin),'local_auth_config');
   const store=new CollectorStore(resolve(process.env.COLLECTOR_DB??'crawler/.cache/collector.sqlite'),settings);
+  try {
+    const kind=command==='serve'?'serve':command==='sync'?'sync':['discover','collect'].includes(command)||command==='failures'&&args[1]==='retry'?'crawl':undefined;
+    if(kind)store.runLock(kind);
+  } catch(e) { store.close(); throw e; }
   if(['collect','engine-status','failures','backfill-engine','dedup-audit'].includes(command)){
     try {
       if(command==='engine-status'){
@@ -86,4 +90,10 @@ export async function main(){
   server.listen(4318,'127.0.0.1');
   const stop=()=>server.close(()=>store.close());process.once('SIGTERM',stop);process.once('SIGINT',stop);
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch(()=>{console.error('collector_failed');process.exitCode=1;});
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch(error=>{console.error(collectorFailure(error));process.exitCode=1;});
+
+export function collectorFailure(error: unknown): string {
+  const known=error instanceof CollectorError;
+  const fields=known?Object.entries(error.detail??{}).filter(([key])=>['kind','pid','started_at','verify','path','sqlite','node'].includes(key)).map(([key,value])=>`${key}=${String(key==='path'?basename(String(value)):value).replace(/\s/g,'_')}`):[];
+  return [`collector_failed code=${known?error.code:'internal_error'}`,...fields].join(' ');
+}

@@ -33,7 +33,7 @@ Capture는 불변인 한 번의 완료 결과다. HTTP 재시도 등 미완료 �
 
 ## 공통 운영 요건
 
-- 현행 DB `.lock`의 `wx` 생성과 `BEGIN IMMEDIATE`를 유지한다. 현재 serve/discover/sync는 같은 DB를 순차 사용한다. stage lease `job_leases(stage, run_id, key, owner, expires_at)`를 추가하되 DB 단일 실행 제한을 임의로 없애지 않는다. 만료 lease를 회수할 때 체크포인트를 먼저 확인한다. stale 파일 락은 운영자가 이전 프로세스 종료를 확인한 뒤 해제한다.
+- WAL-reset 수정이 포함된 고정 Node 런타임에서 WAL·`BEGIN IMMEDIATE`·busy_timeout_ms/busy_retries로 serve/discover/sync의 같은 DB 동시 접근을 허용한다. 같은 종류만 `${db}.{serve|crawl|sync}.lock` PID 실행 잠금으로 제한하며 discover·collect·failures retry는 crawl을 공유한다. 사망·PID 재사용·이전 부팅이 확인된 잠금만 자동 회수하고 판독 불가/생존 확인 불가 잠금은 보존한다. 기존 DB 전체 `.lock`은 경고 후 무시한다. stage lease `job_leases(stage, run_id, key, owner, expires_at)`를 추가할 때 만료 lease 회수 전 체크포인트를 확인한다. [동시 실행·롤아웃 절차](../../crawler/README.md#동시-실행과-잠금)를 따른다.
 - `stage_checkpoints`에는 입력 digest·정책/추출기 버전·출력 ID·phase·attempts·error_code·다음 실행 가능 시각을 기록한다. 입력 버전이 달라지면 새 stage 작업을 만든다. 성공 stage를 되돌리지 않고 실패한 stage부터 재개한다.
 - 재시도 기본안은 최초 포함 최대 3회, 지수 backoff다. 현행 failure_backoff_ms=300000을 하한으로 삼고 429/5xx는 Retry-After 및 최소 60초 냉각 중 더 긴 값을 따른다. 403·CAPTCHA·로그인·권한 거부는 재시도하지 않고 소스를 중단한다.
 - 상한 소진은 `failed_jobs(run_id, stage, key, code, attempts)`로 보내고 다음 단계 입력으로 쓰지 않는다. 같은 run 재개가 횟수·예산을 초기화해서는 안 된다.

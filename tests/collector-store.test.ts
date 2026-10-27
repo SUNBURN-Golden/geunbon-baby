@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { statSync, readFileSync, writeFileSync, chmodSync, unlinkSync } from 'node:fs';
+import { statSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { CollectorStore, type Group, type Evidence } from '../crawler/src/store';
 import { aggregateCollectionStatus } from '../shared/collection-status';
@@ -76,9 +76,9 @@ test('KST midnight expires only held reservations; spent attempts never refund; 
 import { config } from '../crawler/src/source-policy';
 function fixtureSettings(){return {...config,sources:[source]};}
 
-test('permissions, corruption and exclusive lock fail closed; open WAL and SHM are private',()=>{
+test('permissions, corruption and unsafe files fail closed; open WAL and SHM are private',()=>{
  const f=fixture();try{
-  expect(()=>new CollectorStore(f.file,f.settings)).toThrow();
+  const concurrent=new CollectorStore(f.file,f.settings);concurrent.close();
   for(const suffix of ['','-wal','-shm'])expect(statSync(f.file+suffix).mode&0o777).toBe(0o600);
   f.reopen();expect(statSync(f.dir).mode&0o777).toBe(0o700);
   const bad=f.file+'.bad';writeFileSync(bad,'not SQLite',{mode:0o600});expect(()=>new CollectorStore(bad,f.settings)).toThrow();expect(readFileSync(bad,'utf8')).toBe('not SQLite');
@@ -95,7 +95,7 @@ test.each([false,true])('process termination leaves %s committed state and no pa
     ${commit?"store.db.exec('COMMIT');":''}
     process.kill(process.pid,'SIGKILL');
   `],{cwd:process.cwd(),env:{...process.env,COLLECTOR_TEST_DB:file},encoding:'utf8',timeout:10000});
-  expect(result.signal).toBe('SIGKILL');unlinkSync(file+'.lock');
+  expect(result.signal).toBe('SIGKILL');
   const restored=new CollectorStore(file);try{expect(!!restored.get('collector_meta','crash_marker')).toBe(commit);}finally{restored.close();}
  }finally{remove(dir,{recursive:true,force:true});}
 });

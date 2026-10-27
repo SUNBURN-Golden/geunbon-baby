@@ -1,4 +1,6 @@
 {
+  "busy_timeout_ms": 5000,
+  "busy_retries": 3,
   "policy_version": 1,
   "worker_id": "local-collector",
   "limits": {

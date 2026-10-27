@@ -31,7 +31,7 @@
     "eslint": "9.39.1",
     "eslint-config-next": "^16.4.2",
     "miniflare": "5.20261006.1-alpha",
-    "node": "22.20.0",
+    "node": "22.22.3",
     "playwright": "1.64.1",
     "tsx": "4.20.6",
     "typescript": "5.9.3",

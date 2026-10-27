@@ -22,7 +22,7 @@ npm run collector:worker -- dedup-audit --apply
 
 ## 체크포인트와 중단
 
-단계는 discover → fetch → render(동적 소스만) → parse → label → extract → service다. 단계 입력·버전·출력·attempts가 SQLite에 남는다. 프로세스 락(`.lock`, wx)과 BEGIN IMMEDIATE, 3분 lease 및 1분 갱신을 사용한다. 기존 락은 자동 삭제하지 않는다. 프로세스가 종료됐음을 확인한 뒤에만 운영자가 해제한다.
+단계는 discover → fetch → render(동적 소스만) → parse → label → extract → service다. 단계 입력·버전·출력·attempts가 SQLite에 남는다. WAL-reset 수정이 포함된 고정 Node 런타임에서 WAL과 BEGIN IMMEDIATE, busy_timeout_ms/busy_retries, 3분 lease 및 1분 갱신을 사용한다. serve·discover·sync는 같은 DB를 공유하고, 같은 종류만 PID 실행 잠금(`${db}.{serve|crawl|sync}.lock`)으로 제한한다. discover·collect·failures retry는 crawl을 공유한다. 사망·PID 재사용·이전 부팅이 확인된 잠금만 자동 회수하며 판독 불가/생존 확인 불가 잠금은 보존한다. 기존 DB 전체 `.lock`은 경고 후 무시한다. [동시 실행·롤아웃 절차](../../crawler/README.md#동시-실행과-잠금)를 따른다.
 
 실행 중인 run 또는 일일 상한 대기(cost_wait)가 있으면 같은 run을 채택한다. deferred의 next_at은 다음 KST 자정이다. 재시도는 최초 포함 3회, 최소 5분 지수 백오프·지터, 최대 6시간이며 도메인 냉각을 반영한다. 터미널 오류는 즉시 실패 큐에 기록한다. 실패 큐에는 고정 사유 코드·시도 횟수·다음 시각을 남기며 원문·응답·자격 증명은 출력하지 않는다. 수동 retry는 parent_run으로 연결된 새 run을 만든다. 원래 attempts·비용은 초기화하지 않는다.
 
