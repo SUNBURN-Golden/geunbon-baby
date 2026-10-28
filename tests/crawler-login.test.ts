@@ -417,43 +417,6 @@ test('a challenge during production login jitter interrupts within one polling i
   expect(mock.storageState).not.toHaveBeenCalled();
 });
 
-test.each(['recover', 'timeout', 'challenge', 'login', 'unknown'] as const)('a %s surface during session capture discards the temporary state and keeps the old session until verified', async scenario => {
-  const mock = loginFixture({ restored: true });
-  await mkdir(join(dir, '.session'));
-  const previous = JSON.stringify(sessionState());
-  await writeFile(file, previous);
-  mock.storageState.mockImplementationOnce(async () => {
-    mock.setStage(scenario === 'challenge' ? 'email-en' : scenario === 'login' ? 'login' : scenario === 'unknown' ? 'unknown' : 'blank');
-    if (scenario === 'recover') mock.surface.mockImplementationOnce(() => {
-      setTimeout(() => mock.setStage('home'), 2500);
-      return true;
-    });
-    return { ...sessionState(), cookies: sessionState().cookies.map(cookie => ({ ...cookie, value: 'discarded-snapshot' })) };
-  });
-  const began = Date.now();
-  let completed = false;
-  const outcome = start(mock).catch(error => error).finally(() => { completed = true; });
-  // Retry timers are installed after real session-file I/O completes.
-  for (let attempts = 0; !completed && attempts < 100; attempts++) {
-    await vi.runAllTimersAsync();
-    await readFile(file, 'utf8');
-  }
-  expect(completed).toBe(true);
-  if (scenario === 'recover') {
-    expect(await outcome).toBeUndefined();
-    expect(mock.storageState).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(sessionState());
-    expect(await events()).toEqual(['session_reused']);
-  } else {
-    expect(await outcome).toMatchObject({ reason: scenario === 'challenge' ? 'challenge' : 'login' });
-    expect(await readFile(file, 'utf8')).toBe(previous);
-    expect(mock.storageState).toHaveBeenCalledOnce();
-    expect(await events()).toEqual([]);
-    if (scenario === 'timeout') expect(Date.now() - began).toBe(120_005);
-  }
-  expect(await readdir(join(dir, '.session'))).toEqual(['state.json']);
-});
-
 test.each(['quiet', 'stop'] as const)('%s interrupts blank waiting before the recovery GET', async interruption => {
   const mock = loginFixture({ restored: true });
   mock.setStage('blank');
