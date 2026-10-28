@@ -1,8 +1,8 @@
 import type { AssertionInput, ClipPayload } from '../../../shared/collection-schema';
 import { stable } from '../dedup';
 export function normalizedConditions(field:string,conditions:Record<string,string>={},seller=''){
-  const out={...conditions};if(['official_msrp','clue_price'].includes(field))out.currency??='KRW';
-  if(['clue_price','group_buy_terms'].includes(field)&&seller)out.seller=seller;
+  const out={...conditions};if(['official_msrp','clue_price','shipping_fee'].includes(field))out.currency??='KRW';
+  if(['clue_price','group_buy_terms','shipping_fee'].includes(field)&&seller)out.seller??=seller;
   return Object.fromEntries(Object.entries(out).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,v.trim().normalize('NFKC')]));
 }
 export const conditionsKey=(a:AssertionInput,seller='')=>stable(normalizedConditions(a.field,a.conditions,seller));

@@ -19,9 +19,11 @@ import { JsonApiSearchProvider } from './providers/json-api';
 import { providerApproved, validCursor, type JsonProviderConfig, type SearchProvider } from './providers/types';
 import { candidateUrl } from './url-policy';
 import type { DocumentLinks, SearchQuery, Subject } from './types';
+import { enumerateSlots } from '../missing-field/targets';
+import { inputDigest } from '../missing-field/evaluate';
 export const DISCOVERY_RUN_ID='agamajung-source-discovery';
 const VERSION='source-discovery@1';
-type Work={kind:'document'|'search'|'capture';depth:number;page:number;ancestry:string[];source_id?:string;url?:string;query?:SearchQuery;provider_id?:string;cursor?:string;cursor_history?:string[];parent_id?:string;subject?:Subject;capture_id?:string};
+type Work={kind:'document'|'search'|'capture';depth:number;page:number;ancestry:string[];source_id?:string;url?:string;query?:SearchQuery;provider_id?:string;cursor?:string;cursor_history?:string[];parent_id?:string;origin_capture?:string;subject?:Subject;capture_id?:string};
 type Capture={id:string;run_id:string;url_norm:string;source_id:string;content_hash:string;fetched_at:string;data:string};
 type ResponseCache={document:DocumentLinks;nextCursor?:string};
 export type DiscoveryOptions={scheduler?:Scheduler;profile?:Profile;offline?:boolean;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void;provider?:(config:JsonProviderConfig,scheduler:Scheduler)=>SearchProvider};
@@ -77,6 +79,19 @@ export class SourceDiscoveryRunner {
   seed(runId:string){
     if(!this.config.enabled||this.engine.run(runId)?.state!=='running'||JSON.parse(this.engine.run(runId)!.data).parent_run)return;
     this.store.transaction(()=>{
+      const currentSlots=new Map(enumerateSlots(this.store).map(s=>[s.id,s]));
+      const requests=this.store.db.prepare("SELECT l.action_id,l.ref,l.data,q.provider_id,q.data AS query_data,s.id AS slot_id,m.input_digest AS assessment_digest FROM missing_field_action_links l JOIN source_discovery_queries q ON q.id=l.ref JOIN missing_field_actions a ON a.id=l.action_id JOIN missing_field_slots s ON s.id=a.slot_id AND s.assessment_id=a.assessment_id JOIN missing_field_assessments m ON m.id=a.assessment_id WHERE l.kind='source_query' AND s.stale=0 AND NOT json_extract(m.data,'$.fulfilled') ORDER BY l.id").all() as {action_id:string;ref:string;data:string;provider_id:string;query_data:string;slot_id:string;assessment_digest:string}[];
+      for(const request of requests){
+        const slot=currentSlots.get(request.slot_id);
+        if(!slot||inputDigest(this.store,slot)!==request.assessment_digest)continue;
+        const context=JSON.parse(request.data),query=JSON.parse(request.query_data) as SearchQuery;
+        if(this.searchInside(runId,query,request.provider_id,{depth:context.depth,ancestry:[],origin_capture:context.origin_capture})){
+          const data=stable({run_id:runId,query_id:request.ref}),id=digest([request.action_id,'discovery_run',runId]);
+          if(!this.store.db.prepare('SELECT 1 FROM missing_field_action_links WHERE id=?').get(id))this.store.db.prepare("INSERT INTO missing_field_action_links VALUES(?,?,'discovery_run',?,?)").run(id,request.action_id,runId,data);
+          const checkpoints=this.store.db.prepare("SELECT id FROM engine_checkpoints WHERE run_id=? AND stage='request' AND json_extract(data,'$.query.id')=? AND json_extract(data,'$.provider_id')=?").all(runId,request.ref,request.provider_id);
+          for(const c of checkpoints){const lid=digest([request.action_id,'checkpoint',c.id]),body=stable({run_id:runId,stage:'request'});if(!this.store.db.prepare('SELECT 1 FROM missing_field_action_links WHERE id=?').get(lid))this.store.db.prepare("INSERT INTO missing_field_action_links VALUES(?,?,'checkpoint',?,?)").run(lid,request.action_id,c.id,body);}
+        }
+      }
       this.engine.enqueueInside(runId,'plan','planner',{index:0},digest(0));
       for(const s of this.approvedSources())for(const url of s.entries.slice(0,Math.min(s.max_pages,this.config.max_pages)))this.documentInside(runId,{kind:'document',url,source_id:s.id,depth:0,page:0,ancestry:[]});
       // Reuse only existing collector captures, not this discoverer's own results. Depth
@@ -215,7 +230,7 @@ export class SourceDiscoveryRunner {
         const approved=link.destination.canonical_url&&this.approvedSources().find(s=>visitAllowed(link.destination.canonical_url!,s));
         const cycle=link.destination.canonical_url&&(w.ancestry.includes(link.destination.canonical_url)||w.url===link.destination.canonical_url);
         const deferred=depth>this.config.max_depth?'depth_limit':score.reason??(cycle?'cycle_url':score.score<this.config.min_relevance?'low_relevance':link.relation==='attachment'||!approved?'approval_required':!this.withinPages(c.run_id,approved,link.destination.canonical_url!)?'page_limit':undefined);
-        all.push({destination:link.destination,score:score.score,evidence:{capture_id:cap.id,source_url:String(JSON.parse(cap.data).final_url??cap.url_norm),collected_at:cap.fetched_at,locator:link.locator,relation:link.relation,subject_ref:subject?.subject_ref??w.query?.subject_ref??`entity:${digest(cap.url_norm)}`,conditions:subject?.conditions??w.query?.conditions??{},quote:link.quote,title:link.title,query_id:w.query?.id,parent_id:w.parent_id,depth,fact_status:w.kind==='search'?'unverified':'source_claim',extractor_version:VERSION,...(deferred?{deferred_reason:deferred}:{})}});
+        all.push({destination:link.destination,score:score.score,evidence:{capture_id:cap.id,source_url:String(JSON.parse(cap.data).final_url??cap.url_norm),collected_at:cap.fetched_at,locator:link.locator,relation:link.relation,subject_ref:subject?.subject_ref??w.query?.subject_ref??`entity:${digest(cap.url_norm)}`,conditions:subject?.conditions??w.query?.conditions??{},quote:link.quote,title:link.title,query_id:w.query?.id,parent_id:w.parent_id,origin_capture:w.origin_capture,depth,fact_status:w.kind==='search'?'unverified':'source_claim',extractor_version:VERSION,...(deferred?{deferred_reason:deferred}:{})}});
       }
     }
     // Commit a prefix when a response spans the remaining candidate allowance.
@@ -238,7 +253,7 @@ export class SourceDiscoveryRunner {
       const ancestry=[...w.ancestry,...(w.url?[w.url]:[]),...(w.query?[w.query.id]:[])];
       const inherited=w.subject?.subject_ref===o.evidence.subject_ref?w.subject:{};
       const subject={...inherited,subject_ref:o.evidence.subject_ref,conditions:o.evidence.conditions};
-      const allowed=o.evidence.relation!=='attachment'&&this.documentInside(c.run_id,{kind:'document',url:o.destination.canonical_url,depth:o.evidence.depth,page:o.evidence.relation==='pagination'?w.page+1:0,ancestry,parent_id:this.candidates.candidateId(o.destination,o.evidence),subject});
+      const allowed=o.evidence.relation!=='attachment'&&this.documentInside(c.run_id,{kind:'document',url:o.destination.canonical_url,depth:o.evidence.depth,page:o.evidence.relation==='pagination'?w.page+1:0,ancestry,parent_id:this.candidates.candidateId(o.destination,o.evidence),origin_capture:w.origin_capture,subject});
       if(!allowed){held++;o.evidence.deferred_reason='page_limit';}
     }
     this.candidates.recordInside(observations);
@@ -263,7 +278,7 @@ export class SourceDiscoveryRunner {
     if(w.kind!=='search'&&!textScore.reason&&textScore.score>=this.config.min_relevance&&w.depth+1<this.config.max_depth){
       for(const s of subjects){
         const known=this.store.db.prepare("SELECT subject_ref,field,conditions_key,data FROM engine_extracted WHERE subject_ref IN (?,?) AND fact_status IN ('source_claim','verified')").all(s.subject_ref,`doc:${cap.url_norm}`) as ExistingFact[];
-        for(const p of this.providers())for(const q of feedbackQueries(p.id,s,this.profile,known.map(f=>({field:f.field,subject_ref:f.subject_ref.startsWith('doc:')?`entity:${digest([cap.url_norm,f.subject_ref])}`:f.subject_ref,conditions:JSON.parse(f.conditions_key)}))))if(!this.searchInside(c.run_id,q,p.id,{depth:w.depth+1,ancestry:[...w.ancestry,...(w.url?[w.url]:[])],subject:s,parent_id:w.parent_id}))feedbackStop='query_limit';
+        for(const p of this.providers())for(const q of feedbackQueries(p.id,s,this.profile,known.map(f=>({field:f.field,subject_ref:f.subject_ref.startsWith('doc:')?`entity:${digest([cap.url_norm,f.subject_ref])}`:f.subject_ref,conditions:JSON.parse(f.conditions_key)}))))if(!this.searchInside(c.run_id,q,p.id,{depth:w.depth+1,ancestry:[...w.ancestry,...(w.url?[w.url]:[])],subject:s,parent_id:w.parent_id,origin_capture:w.origin_capture}))feedbackStop='query_limit';
       }
     }
     const stopped=cursorStop??feedbackStop??(observations.some(o=>o.evidence.deferred_reason==='page_limit')?'page_limit':undefined);

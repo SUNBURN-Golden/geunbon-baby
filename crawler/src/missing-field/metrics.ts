@@ -1,0 +1,9 @@
+import type { Slot, Assessment } from './types';
+export const ratio=(numerator:number,denominator:number)=>({numerator,denominator,rate:denominator?numerator/denominator:null,status:denominator?'measured':'not_applicable'});
+export function metrics(slots:Slot[],assessments:Assessment[],baseline:{slots:string[];missing:string[];review_missing?:string[]}){
+  const byId=new Map(assessments.map(a=>[a.slot_id,a])),current=new Set(slots.map(s=>s.id));
+  const count=(subset:Slot[])=>({evidence:ratio(subset.filter(s=>byId.get(s.id)?.fulfilled).length,subset.length),reviewed:ratio(subset.filter(s=>byId.get(s.id)?.reviewed).length,subset.length)});
+  const causes:Record<string,number>={unextracted:0,not_in_source:0,inaccessible:0,conflict:0};
+  for(const a of assessments.filter(a=>!a.fulfilled))for(const d of a.diagnoses)if(d.cause)causes[d.cause]++;
+  return {...count(slots),evidence_gap_resolution:ratio(baseline.missing.filter(id=>current.has(id)&&byId.get(id)?.fulfilled).length,baseline.missing.length),reviewed_gap_resolution:ratio((baseline.review_missing??baseline.missing).filter(id=>current.has(id)&&byId.get(id)?.reviewed).length,(baseline.review_missing??baseline.missing).length),gap_resolution:ratio(baseline.missing.filter(id=>current.has(id)&&byId.get(id)?.fulfilled).length,baseline.missing.length),new_targets:slots.filter(s=>!baseline.slots.includes(s.id)).length,summary_basis:'reviewed',untracked:baseline.slots.filter(id=>!current.has(id)).length,reopened:assessments.filter(a=>a.reopened).length,pending:assessments.filter(a=>a.state==='assessment_pending').length,causes,by_field:Object.fromEntries([...new Set(slots.map(s=>s.field))].map(f=>[f,count(slots.filter(s=>s.field===f))])),by_target_kind:Object.fromEntries(['model','offer'].map(k=>[k,count(slots.filter(s=>s.kind===k))]))};
+}

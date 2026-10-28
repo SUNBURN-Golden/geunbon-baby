@@ -13,6 +13,7 @@ export function validateProfile(p:Profile,c:CollectorConfig=config):Profile {
   check(exact(p.stages,['discover','fetch','render','parse','label','extract','service'])&&p.stages.join(',')==='discover,fetch,render,parse,label,extract,service');
   check(exact(p.labels.map(x=>x.id),Object.keys(AGAMAJUNG_LABELS))&&exact(p.labels.map(x=>x.ko),Object.values(AGAMAJUNG_LABELS))&&p.labels.every(x=>AGAMAJUNG_LABELS[x.id as keyof typeof AGAMAJUNG_LABELS]===x.ko));
   check(exact(p.required_fields.map(x=>x.field),REQUIRED_FIELDS)&&p.required_fields.every(x=>FACT_FIELDS.includes(x.field as typeof FACT_FIELDS[number])));
+  check(p.required_fields.every(f=>f.scope===(['shipping_fee','group_buy_terms'].includes(f.field)?'offer':'model')&&f.applicability===(f.field==='certifications'?'explicit_kr':f.scope==='offer'?'confirmed_offer':'confirmed_target')));
   check(p.required_fields.find(f=>f.field==='certifications')?.conditions?.scheme==='KC');
   check(exact(p.merge_forbidden.map(x=>x.id),['different_model_year','body_vs_set','kr_vs_overseas']));
   check(exact(p.merge_forbidden.flatMap(x=>x.axes??(x.axis?[x.axis]:[])),MERGE_AXES));

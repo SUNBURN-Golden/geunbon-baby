@@ -113,3 +113,7 @@ Linux 전용 `0004_source_discovery.sql`이 후보·불변 근거·질의·추�
 403·HTTP 200 로그인/빈 HTML/challenge는 영속 halt와 안전한 사유 코드로 남긴다. 정상 JSON 빈 배열은 성공이다. 자동 재시도·새 슬롯·수동 실패 retry가 접근 제한을 해제하지 않는다. 운영자가 원인·허가를 확인한 후 기존 도메인 중단 상태 및 해당 halted run을 명시적으로 검토해야 한다. 계정 교체·사람 위장·프록시·robots/약관 우회·공유 계정 로그아웃을 하지 않는다.
 
 테스트는 `tests/source-discovery-*.test.ts` 및 기존 엔진·파서·개인정보·스케줄러 회귀 테스트다. fixture는 비식별 합성 데이터이며 소켓·fetch·브라우저 차단을 유지한다. 필수 검증은 `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, Workers 경계는 `npm run build:worker`다.
+
+## 빈 필드 역검색 요청
+
+[탐색기](missing-field-explorer.md)의 `not_in_source`는 같은 공통 질의 생성기와 질의 ID로 역검색 요청을 등록한다. 현재 미충족 슬롯의 요청만 seed에서 소비하고 원래 capture의 깊이를 계승한다. 여러 슬롯은 검색을 공유하되 원래 작업·슬롯·발견 run·request 체크포인트 연결을 각각 보존한다. 검색 성공은 해결 수에 포함하지 않으며 기존 제공자 승인·공유 비용·재검색 기한·깊이/페이지 상한을 적용한다. Linux 최신 migration은 0005이며 0004 후보 자료를 보존한다.

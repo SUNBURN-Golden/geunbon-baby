@@ -51,3 +51,7 @@ PDF는 로컬 pdftotext, 이미지 OCR은 tesseract kor+eng을 사용한다. 도
 [소스 발견기](source-discoverer.md)는 같은 JobEngine·Scheduler·CostLedger·저장 포트를 사용하고 별도 실행 ID `agamajung-source-discovery`와 `source_candidates`를 사용한다. 사이트·기존 자료 접수에는 연결하지 않는다. Linux migration 최신 버전은 0004이며 0003 단독 마이그레이션도 유지한다.
 
 `agamajung/cost-policy.ts`가 두 명령의 공통 비용 소유자 `agamajung`과 `profile.cost_caps.day`를 결정한다. 엔진은 일반적인 추가 `CostScope`만 받는다. 공유 day·run·추가 범위를 원자적으로 예약하고 같은 ticket으로 정산/고아 회수한다. 같은 scope는 중복 예약하거나 공통 cap을 대체할 수 없다. 당일 cap은 동결하며 다음 일일 scope는 현재 프로필 설정을 쓴다. 국소 일일 제한은 해당 작업만 deferred로 두고 다른 작업을 계속한다. 수동 retry는 원래 run 비용 계보와 attempts를 보존하며 접근 제한 실패는 retry로 해제하지 않는다. 발견기의 crawl 잠금은 collect/discover/retry와 공통이다.
+
+## 빈 필드 탐색기와 서비스 출처 연결
+
+Linux 최신 migration은 0005다. [빈 필드 탐색기](missing-field-explorer.md)는 공용 JobEngine의 별도 run·체크포인트·실패 큐와 crawl 잠금을 사용하며 외부 호출·비용 소비가 없다. 도메인 바인딩의 service 단계는 추출 버전/ID를 `submitExtracted()`에 전달한다. 서비스 assertion·불변 출처 연결·receipt는 원자적으로 저장되고 복구는 payload/출처 manifest digest를 함께 확인한다. 공용 엔진에는 모델/검수 정책을 추가하지 않는다. 파싱 검사 범위와 값·적용 조건을 통과한 preliminary completeness와 서비스 생명주기를 반영한 최종 커버리지를 구분한다.

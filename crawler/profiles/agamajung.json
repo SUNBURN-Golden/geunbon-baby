@@ -149,34 +149,48 @@
   "required_fields": [
     {
       "field": "official_msrp",
-      "ko": "공식가"
+      "ko": "공식가",
+      "scope": "model",
+      "applicability": "confirmed_target"
     },
     {
       "field": "bundle_components",
-      "ko": "구성품"
+      "ko": "구성품",
+      "scope": "model",
+      "applicability": "confirmed_target"
     },
     {
       "field": "shipping_fee",
-      "ko": "배송비"
+      "ko": "배송비",
+      "scope": "offer",
+      "applicability": "confirmed_offer"
     },
     {
       "field": "group_buy_terms",
-      "ko": "공구 조건"
+      "ko": "공구 조건",
+      "scope": "offer",
+      "applicability": "confirmed_offer"
     },
     {
       "field": "certifications",
       "ko": "KC 인증",
       "conditions": {
         "scheme": "KC"
-      }
+      },
+      "scope": "model",
+      "applicability": "explicit_kr"
     },
     {
       "field": "compatibility",
-      "ko": "호환성"
+      "ko": "호환성",
+      "scope": "model",
+      "applicability": "confirmed_target"
     },
     {
       "field": "release_year",
-      "ko": "출시 연식"
+      "ko": "출시 연식",
+      "scope": "model",
+      "applicability": "confirmed_target"
     }
   ],
   "limits": {
@@ -200,6 +214,6 @@
   "model": {
     "enabled": false
   },
-  "extractor_version": "agamajung-rules@1",
+  "extractor_version": "agamajung-rules@3",
   "labeler_version": "agamajung-labeler@1"
 }

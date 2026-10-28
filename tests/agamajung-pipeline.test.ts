@@ -10,7 +10,7 @@ test('manufacturer HTML traverses four layers with provenance, all six labels, s
   const r=await collect(f);expect(f.pipeline.engine.run(r)?.state).toBe('finished');
   expect(all(f,'engine_captures')).toHaveLength(1);expect(all(f,'engine_labels').map(x=>x.label).sort()).toEqual(['제품사양','설명서','호환성','판매제안','리콜','출시'].sort());
   const facts=all(f,'engine_extracted');expect(facts.length).toBeGreaterThanOrEqual(7);expect(facts.every(a=>a.source_url===f.source.entries[0]&&a.locator&&a.extractor&&a.fact_status==='source_claim'&&a.change_window_start===null)).toBe(true);
-  const checkpoint=all(f,'engine_checkpoints').find(c=>c.stage==='extract')!;expect(Object.values(JSON.parse(String(checkpoint.data)).completeness)).toEqual(Array(7).fill('present'));
+  const checkpoint=all(f,'engine_checkpoints').find(c=>c.stage==='extract')!;expect(JSON.parse(String(checkpoint.data))).toMatchObject({completeness_stage:'preliminary',completeness:{official_msrp:'present',bundle_components:'present',shipping_fee:'present',group_buy_terms:'missing',certifications:'missing',compatibility:'missing',release_year:'present'}});
   expect(f.store.report().total).toBe(1);expect(f.store.list('intake_receipts')).toHaveLength(1);expect(f.store.list('evidence_assertions').length).toBe(facts.length);
   expect(all(f,'engine_captures')[0].raw_ref).toBeNull();expect(f.raw.read(String(all(f,'engine_captures')[0].content_hash))).toBeUndefined();
   expect(f.calls).toHaveLength(2);

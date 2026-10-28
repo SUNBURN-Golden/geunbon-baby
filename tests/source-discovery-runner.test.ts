@@ -95,8 +95,8 @@ test('explicit source entities produce depth-one reverse queries without filling
  const f=discoveryFixture();try{
   f.cfg.source_ids=['fixture'];f.cfg.max_queries=40;f.profile.categories=f.profile.categories.slice(0,1);f.cfg.languages=['ko'];f.cfg.events=f.cfg.events.slice(0,1);
   f.response(url=>({status:200,headers:{'content-type':url.hostname==='search.example.org'?'application/json':'text/html'},body:url.hostname==='search.example.org'?'{"results":[]}':discoveryAsset('entities.html')}));
-  await discover(f);expect(rows(f,'source_discovery_queries').some(q=>q.query_text==='Example EX-100 KC 인증번호')).toBe(true);
-  const reverse=rows(f,'engine_checkpoints').find(c=>c.stage==='request'&&JSON.parse(String(c.data)).query?.text==='Example EX-100 KC 인증번호');expect(JSON.parse(String(reverse!.data)).depth).toBe(1);
+  await discover(f);expect(rows(f,'source_discovery_queries').some(q=>q.query_text==='Example Line EX-100 2026 body KR Blue Example Shop KC 인증번호')).toBe(true);
+  const reverse=rows(f,'engine_checkpoints').find(c=>c.stage==='request'&&JSON.parse(String(c.data)).query?.text==='Example Line EX-100 2026 body KR Blue Example Shop KC 인증번호');expect(JSON.parse(String(reverse!.data)).depth).toBe(1);
   expect(rows(f,'engine_extracted')).toHaveLength(0);expect(rows(f,'engine_labels')).toHaveLength(0);expect(rows(f,'collection_records')).toHaveLength(0);
  }finally{f.close();}
 });
@@ -126,7 +126,7 @@ test('predecessor captures without link caches reuse sanitized parse text and or
     new SqliteStorage(f.store).cache(hash,'parse','legacy-parse:fixture:text',{text:extractDocument(discoveryAsset('entities.html'),'https://gear.example.org/list','links').text});
     f.store.db.prepare("UPDATE engine_checkpoints SET phase='done' WHERE id=?").run(checkpoint);f.store.db.prepare("UPDATE engine_runs SET state='finished' WHERE id=?").run(run);
   });
-  await discover(f);expect(rows(f,'source_discovery_queries').some(q=>q.query_text==='Example EX-100 KC 인증번호')).toBe(true);
+  await discover(f);expect(rows(f,'source_discovery_queries').some(q=>q.query_text==='Example Line EX-100 2026 body KR Blue Example Shop KC 인증번호')).toBe(true);
   expect(f.calls.every(c=>new URL(c.url).hostname==='search.example.org')).toBe(true);expect(rows(f,'engine_extracted')).toHaveLength(0);
  }finally{f.close();}
 });
