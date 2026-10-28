@@ -279,3 +279,7 @@ sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하�
 Linux `npm run collector:worker -- discover-sources --dry-run`은 오프라인 검색·예산 계획을 확인합니다. `discover-sources`, `--resume RUN_ID`로 실행/재개하고 `source-candidates --json`, `source-candidates --id ID`로 별도 `discovered` 후보와 근거를 조회합니다. 저장소 밖 `COLLECTOR_DB`·`COLLECTOR_RAW_DIR`이 필요하며 기본 설정은 비활성입니다. 후보 발견은 수집·공식 출처 권한을 부여하지 않고 기존 자료·건수·outbox나 사이트로 전송하지 않습니다.
 
 collect와 공유 일일 비용 원장 및 crawl 잠금을 사용하며, 발견기·소스/origin·제공자 한도를 추가 적용합니다. 새 명령의 dry-run은 네트워크·후보·비용 소비가 없으며 기존 discover의 네트워크 dry-run과 다릅니다. 설정·약관 확인·상품 URL 정책·검토 인계·복구는 [소스 발견기 운영 문서](../docs/collector/source-discoverer.md)를 따릅니다.
+
+## 빈 필드 탐색기
+
+Linux `explore-missing --dry-run`, `explore-missing`, `explore-missing --resume RUN_ID`는 기존 자료의 필수 슬롯을 오프라인 검사한다. `missing-fields`, `missing-field-actions`, `missing-field-metrics --run RUN_ID`로 정제된 로컬 진단·후속 작업·고정 기준 지표를 조회한다. 실제 출처·본문 위치·추출/서비스 연결이 없는 값은 정보 없음으로 유지한다. 사이트로 진단을 보내지 않는다. 외부 저장 경로·네 분류·발견기 연결·검수/철회·복구는 [운영 문서](../docs/collector/missing-field-explorer.md)를 따른다.

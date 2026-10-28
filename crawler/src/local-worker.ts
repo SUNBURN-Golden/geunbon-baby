@@ -1,3 +1,4 @@
+import { MissingFieldRunner, EXPLORER_RUN_ID } from './missing-field/runner';
 import { basename, dirname, resolve } from 'node:path';
 import { externalDirectory, RawStore } from '../engine/raw-store';
 import { AgamajungPipeline } from './agamajung/pipeline';
@@ -18,24 +19,35 @@ import { SourceCandidateStore } from './source-discovery/store';
 import { loadDiscoveryConfig } from './source-discovery/config';
 import { loadProfile } from './agamajung/profile';
 export async function main(){
-  const args=process.argv.slice(2),command=args[0]??'serve';
+  const args=process.argv.slice(2),command=args[0]==='explore-missing-fields'?'explore-missing':args[0]??'serve';
   const settings=process.env.COLLECTOR_CONFIG?JSON.parse(readFileSync(process.env.COLLECTOR_CONFIG,'utf8')) as CollectorConfig:config;
   const trusted=parseTrustedEgress(process.env.COLLECTOR_TRUSTED_EGRESS_CIDRS);
   if(trusted.length)console.error(`trusted_egress_cidrs=${trusted.map(c=>c.text).join(',')}`);
-  requireThat(['serve','discover','discover-sources','source-candidates','sync','collect','engine-status','failures','backfill-engine','dedup-audit'].includes(command),'command');
-  if(command==='discover-sources')requireThat(process.platform==='linux','linux_required');
-  if(command==='collect'||command==='discover-sources'||command==='backfill-engine'||command==='failures'&&args[1]==='retry'){
+  requireThat(['serve','discover','discover-sources','source-candidates','sync','collect','engine-status','failures','backfill-engine','dedup-audit','explore-missing','missing-fields','missing-field-actions','missing-field-metrics'].includes(command),'command');
+  if(['discover-sources','explore-missing'].includes(command))requireThat(process.platform==='linux','linux_required');
+  if(command==='explore-missing'||command==='collect'||command==='discover-sources'||command==='backfill-engine'||command==='failures'&&args[1]==='retry'){
     requireThat(process.env.COLLECTOR_DB&&process.env.COLLECTOR_RAW_DIR,'engine_paths_required');
     externalDirectory(dirname(process.env.COLLECTOR_DB!));externalDirectory(process.env.COLLECTOR_RAW_DIR!);
   }
-  if(['engine-status','failures','dedup-audit','source-candidates'].includes(command)){requireThat(process.env.COLLECTOR_DB,'engine_paths_required');externalDirectory(dirname(process.env.COLLECTOR_DB!));}
+  if(['engine-status','failures','dedup-audit','source-candidates','missing-fields','missing-field-actions','missing-field-metrics'].includes(command)){requireThat(process.env.COLLECTOR_DB,'engine_paths_required');externalDirectory(dirname(process.env.COLLECTOR_DB!));}
   const auth={intakeToken:process.env.COLLECTOR_INTAKE_TOKEN??'',reviewToken:process.env.COLLECTOR_REVIEW_TOKEN??'',extensionOrigin:process.env.COLLECTOR_EXTENSION_ORIGIN??'',host:'127.0.0.1:4318'};
   if(command==='serve')requireThat(auth.intakeToken.length>=24&&auth.reviewToken.length>=24&&auth.intakeToken!==auth.reviewToken&&/^chrome-extension:\/\/[a-p]{32}$/.test(auth.extensionOrigin),'local_auth_config');
   const store=new CollectorStore(resolve(process.env.COLLECTOR_DB??'crawler/.cache/collector.sqlite'),settings);
   try {
-    const kind=command==='serve'?'serve':command==='sync'?'sync':['discover','collect','discover-sources'].includes(command)||command==='failures'&&args[1]==='retry'?'crawl':undefined;
+    const kind=command==='serve'?'serve':command==='sync'?'sync':['discover','collect','discover-sources','explore-missing'].includes(command)||command==='failures'&&args[1]==='retry'?'crawl':undefined;
     if(kind)store.runLock(kind);
   } catch(e) { store.close(); throw e; }
+  if(['explore-missing','missing-fields','missing-field-actions','missing-field-metrics'].includes(command)){
+    try{
+      const runner=new MissingFieldRunner(store);
+      if(command==='missing-fields'){const index=args.indexOf('--id');if(index>=0)requireThat(args[index+1],'slot_id_required');console.log(JSON.stringify(runner.storage.current(index>=0?args[index+1]:undefined)));return;}
+      if(command==='missing-field-actions'){console.log(JSON.stringify(runner.storage.actions()));return;}
+      if(command==='missing-field-metrics'){const index=args.indexOf('--run');requireThat(index>=0&&args[index+1],'run_id_required');console.log(JSON.stringify(store.readSnapshot(()=>({current:runner.currentMetrics(args[index+1]),snapshots:runner.snapshots(args[index+1])}))));return;}
+      if(args.includes('--dry-run')){console.log(JSON.stringify(runner.preview()));return;}
+      const index=args.indexOf('--resume');if(index>=0)requireThat(args[index+1],'run_id_required');
+      const id=index>=0?runner.resume(args[index+1]):runner.start();await runner.run(id);console.log(JSON.stringify(runner.report(id)));
+    }finally{store.close();}return;
+  }
   if(command==='source-candidates'){
     try{const index=args.indexOf('--id');if(index>=0)requireThat(args[index+1],'candidate_id_required');console.log(JSON.stringify(new SourceCandidateStore(store,loadDiscoveryConfig()).list(index>=0?args[index+1]:undefined)));}finally{store.close();}return;
   }
@@ -65,6 +77,7 @@ export async function main(){
       if(command==='failures'&&args[1]==='retry'){
         requireThat(args[2],'command');
         const row=store.db.prepare('SELECT r.profile_id FROM engine_checkpoints c JOIN engine_runs r ON r.id=c.run_id WHERE c.id=?').get(args[2]) as {profile_id:string}|undefined;
+        if(row?.profile_id===EXPLORER_RUN_ID){const runner=new MissingFieldRunner(store);console.log(JSON.stringify({run_id:runner.retryFailure(args[2])}));return;}
         if(row?.profile_id===DISCOVERY_RUN_ID){const runner=new SourceDiscoveryRunner(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),loadDiscoveryConfig(),{scheduler});console.log(JSON.stringify({run_id:runner.engine.retryFailure(args[2])}));return;}
       }
       const pipeline=new AgamajungPipeline(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),undefined,{scheduler,health:code=>console.error(`collect reason=${code}`)});

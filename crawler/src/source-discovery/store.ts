@@ -22,6 +22,7 @@ export class SourceCandidateStore {
       if(!Number.isSafeInteger(e.depth)||e.depth<0||!e.subject_ref||!(/^(?:entity:[a-f0-9]{64}|profile:agamajung)$/.test(e.subject_ref)||/^[A-Za-z0-9_.:-]{1,200}$/.test(e.subject_ref)&&cleanText(e.subject_ref,200)===e.subject_ref)||!e.locator||cleanText(e.locator,200)!==e.locator||cleanText(e.extractor_version,100)!==e.extractor_version)throw new Error('candidate_evidence_invalid');
       const cap=this.store.db.prepare('SELECT url_norm,fetched_at,data FROM engine_captures WHERE id=?').get(e.capture_id) as {url_norm:string;fetched_at:string;data:string}|undefined;
       if(!cap||e.collected_at!==cap.fetched_at||e.source_url!==(JSON.parse(cap.data).final_url??cap.url_norm))throw new Error('candidate_provenance_invalid');
+      if(e.origin_capture&&!this.store.db.prepare('SELECT 1 FROM engine_captures WHERE id=?').get(e.origin_capture))throw new Error('candidate_provenance_invalid');
       if(!this.config.providers.some(p=>p.endpoint===e.source_url)&&canonicalUrl(e.source_url)!==e.source_url&&candidateUrl(e.source_url,this.config.url_policies).canonical_url!==e.source_url)throw new Error('candidate_source_invalid');
       const allowedReasons=['unsafe_url','fragment_identity','sensitive_parameter','duplicate_identifier','unknown_parameter','invalid_identifier','missing_identifier'];
       if(d.reasons.some(r=>!allowedReasons.includes(r))||cleanText(d.policy_version,100)!==d.policy_version)throw new Error('candidate_url_invalid');
@@ -44,7 +45,8 @@ export class SourceCandidateStore {
         const id=digest([g.id,e.capture_id,e.locator,e.relation,subject,conditions_key,slot,e.extractor_version]);
         const inserted=this.store.db.prepare('INSERT INTO source_candidate_evidence VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,g.id,e.capture_id,e.locator,e.relation,subject,conditions_key,slot,e.extractor_version,e.source_url,e.collected_at,e.effective_at??e.collected_at,e.effective_basis??'observed',e.fact_status,stable({claim:JSON.parse(claim),conditions}));
         for(const pathEvidence of same){
-        const path={query_id:pathEvidence.query_id??null,parent_id:pathEvidence.parent_id??null,depth:pathEvidence.depth,deferred_reason:pathEvidence.deferred_reason??null};
+        // Capture provenance is independent of candidate ancestry (parent_id's FK).
+        const path={query_id:pathEvidence.query_id??null,parent_id:pathEvidence.parent_id??null,depth:pathEvidence.depth,deferred_reason:pathEvidence.deferred_reason??null,...(pathEvidence.origin_capture?{origin_capture:pathEvidence.origin_capture}:{})};
         const pid=digest([id,path]);
         const old=this.store.db.prepare('SELECT data FROM source_discovery_paths WHERE id=?').get(pid) as {data:string}|undefined;
         if(old&&old.data!==stable(path))throw new Error('immutable_id_conflict');
@@ -70,7 +72,7 @@ export class SourceCandidateStore {
       const evidence=id?this.store.db.prepare('SELECT * FROM source_candidate_evidence WHERE candidate_id=? ORDER BY id').all(String(row.id)).map(e=>({
         ...e,data:JSON.parse(String(e.data)),
         capture:this.store.db.prepare('SELECT content_hash,raw_ref,status,fetched_at FROM engine_captures WHERE id=?').get(String(e.capture_id)),
-        paths:this.store.db.prepare('SELECT query_id,parent_id,depth,deferred_reason FROM source_discovery_paths WHERE evidence_id=? ORDER BY id').all(String(e.id))
+        paths:this.store.db.prepare("SELECT query_id,parent_id,depth,deferred_reason,json_extract(data,'$.origin_capture') AS origin_capture FROM source_discovery_paths WHERE evidence_id=? ORDER BY id").all(String(e.id))
       })):undefined;
       return {...row,reasons:JSON.parse(String(row.reasons)),...(evidence?{evidence}:{})};
     });

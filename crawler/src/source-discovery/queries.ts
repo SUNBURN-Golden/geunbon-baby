@@ -5,7 +5,7 @@ import { discoveryConditions } from './store';
 import { normalizedConditions } from '../agamajung/subject';
 import type { DiscoveryConfig } from './config';
 import type { SearchQuery, Subject } from './types';
-export const PLANNER_VERSION='source-planner@1';
+export const PLANNER_VERSION='source-planner@2';
 export function query(provider:string,input:Omit<SearchQuery,'id'|'planner_version'>):SearchQuery {
   const q={...input,text:cleanText(input.text,300),conditions:discoveryConditions(input.conditions),planner_version:PLANNER_VERSION};
   return {...q,id:digest(['agamajung',provider,q.text,q.region,q.language,q.year,q.subject_ref,q.conditions,q.planner_version])};
@@ -32,7 +32,7 @@ export function feedbackQueries(provider:string,s:Subject,p:Profile,known:{field
       if(required.field==='certifications'&&s.conditions.market!=='KR')continue;
       const conditions=discoveryConditions(normalizedConditions(required.field,{...s.conditions,...('conditions' in required?required.conditions:{})}));
       const present=known.some(f=>f.subject_ref===s.subject_ref&&f.field===required.field&&JSON.stringify(discoveryConditions(normalizedConditions(f.field,f.conditions)))===JSON.stringify(conditions));
-      if(!present)out.push(query(provider,{...base,conditions,text:[s.brand,s.model_number,required.field==='certifications'?'KC 인증번호':required.ko].filter(Boolean).join(' '),kind:'missing_field'}));
+      if(!present)out.push(query(provider,{...base,conditions,text:[s.brand,s.product_line,s.model_number,s.release_year??s.conditions.release_year,s.conditions.generation,s.conditions.bundle,s.conditions.market,s.option??s.conditions.option,s.seller??s.conditions.seller,s.conditions.channel,s.conditions.offer,required.field==='certifications'?'KC 인증번호':required.ko].filter(Boolean).join(' '),kind:'missing_field'}));
     }
   }
   return [...new Map(out.filter(q=>q.text).map(q=>[q.id,q])).values()];

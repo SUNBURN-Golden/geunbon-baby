@@ -14,7 +14,7 @@ test('Cartesian cursor is deterministic, bilingual and freezes current year at K
 test('explicit entities feed ordered prefixes and reverse queries only for the same subject and normalized conditions',()=>{
  const doc=extractDocument(discoveryAsset('entities.html'),'https://gear.example.org/','links'),s=explicitSubjects(doc.text,'fixture')[0],p=loadProfile();
  expect(s).toMatchObject({brand:'Example',model_number:'EX-100',conditions:{release_year:'2026',market:'KR',bundle:'body'}});
- const all=feedbackQueries('fixture',s,p),reverse=all.find(q=>q.text==='Example EX-100 KC 인증번호')!;expect(reverse.kind).toBe('missing_field');
+ const all=feedbackQueries('fixture',s,p),reverse=all.find(q=>q.text==='Example Line EX-100 2026 body KR Blue Example Shop KC 인증번호')!;expect(reverse.kind).toBe('missing_field');
  expect(all[0].text).toBe('Example');expect(all[2].text).toBe('Example Line EX-100');
  expect(feedbackQueries('fixture',s,p,[{field:'certifications',subject_ref:s.subject_ref,conditions:{scheme:'KC',...s.conditions}}]).some(q=>q.text.includes('KC 인증번호'))).toBe(false);
  for(const different of [{...s.conditions,release_year:'2025'},{...s.conditions,bundle:'set'},{...s.conditions,market:'overseas'}])expect(feedbackQueries('fixture',s,p,[{field:'certifications',subject_ref:s.subject_ref,conditions:{scheme:'KC',...different}}]).some(q=>q.text.includes('KC 인증번호'))).toBe(true);

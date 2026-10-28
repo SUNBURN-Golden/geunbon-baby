@@ -43,3 +43,27 @@ test('stored URL policy remains valid on lookup after configuration changes; dup
   f.cfg.url_policies=[];expect(new SourceCandidateStore(f.store,f.cfg).list()[0].canonical_url).toBe('https://new-gear.example.org/item?product_no=A');
  }finally{f.close();}
 });
+
+test('capture provenance and candidate ancestry persist independently when a claim is replayed on multiple paths',()=>{
+ const f=setup();try{
+  const s=new SourceCandidateStore(f.store,f.cfg),a=observation(f,{});
+  const parent={...a,destination:candidateUrl('https://new-gear.example.org/item?product_no=P',f.cfg.url_policies)};
+  const [parentId]=f.store.transaction(()=>s.recordInside([parent]));
+  const run=rows(f,'engine_runs')[0];
+  f.store.transaction(()=>new SqliteStorage(f.store).capture({id:'origin-b',run_id:run.id,source_id:'fixture',url_norm:'https://gear.example.org/b',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',data:{}}));
+  const paths=['fixture-capture','origin-b'].map(origin_capture=>({...a,evidence:{...a.evidence,parent_id:parentId,origin_capture}}));
+  f.store.transaction(()=>s.recordInside(paths));
+  const before=rows(f,'source_discovery_paths');
+  f.store.transaction(()=>s.recordInside(paths.slice().reverse()));
+  expect(rows(f,'source_discovery_paths')).toEqual(before);
+  const [child]=s.list(s.candidateId(a.destination,a.evidence));
+  expect(child.evidence).toHaveLength(1);
+  expect(child.evidence![0].paths).toEqual(expect.arrayContaining([
+   expect.objectContaining({parent_id:parentId,origin_capture:'fixture-capture'}),
+   expect.objectContaining({parent_id:parentId,origin_capture:'origin-b'})
+  ]));
+  expect(child.evidence![0].paths).toHaveLength(2);
+  expect(()=>f.store.transaction(()=>s.recordInside([{...a,evidence:{...a.evidence,origin_capture:'absent-capture'}}]))).toThrow('candidate_provenance_invalid');
+  expect(f.store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+ }finally{f.close();}
+});

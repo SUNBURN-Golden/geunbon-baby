@@ -16,12 +16,14 @@ import { aiData, privacyFilter } from '../privacy-filter';
 import { sourceFor, visitAllowed, type SourcePolicy } from '../source-policy';
 import { loadProfile, validateProfile, type Profile } from './profile';
 import { SchedulerFetcher } from './fetcher';
+import { requiredClaimValid } from '../evidence-policy';
+import type { ProvenanceInput } from '../evidence-provenance';
 import { extractRules } from './rules';
 import { labelRules, type LabelId } from './labeler';
 import { AGAMAJUNG_LABELS, REQUIRED_FIELDS } from './vocab';
 import { claimSlots, conditionsKey, subjectRef } from './subject';
 type Capture={id:string;run_id:string;source_id:string;url_norm:string;content_hash:string;content_type:string;etag:string|null;last_modified:string|null;raw_ref:string|null;fetched_at:string;fetch_seq:number;byte_length:number|null;data:string};
-type Parsed={text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[]};
+export type Parsed={inspection?:{version:string;complete:boolean;truncated:boolean;region:string;tool_status:string;locator_base:string;locator_space?:string;filter_changed?:boolean};text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[]};
 type Labeled={labels:LabelId[];status:'labeled'|'ambiguous';method:'rule'|'model'};
 export type PipelineOptions={scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;discoveryConfig?:DiscoveryConfig;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void};
 const string=(data:Data,key:string)=>String(data[key]??'');
@@ -36,7 +38,7 @@ export class AgamajungPipeline {
   readonly parseVersion:string;
   constructor(readonly store:CollectorStore,readonly raw:RawStore,profile=loadProfile(store.settings),readonly options:PipelineOptions={}){
     this.profile=validateProfile(profile,store.settings);
-    this.parseVersion=`parse@1:${profile.extractor_version}:${profile.labeler_version}:${digest(store.settings.sources.map(s=>[s.id,s.origin,s.selector,s.official_fields,s.kind]))}`;
+    this.parseVersion=`parse@3:${profile.extractor_version}:${profile.labeler_version}:${digest(store.settings.sources.map(s=>[s.id,s.origin,s.selector,s.official_fields,s.kind]))}`;
     this.storage=new SqliteStorage(store,{receipt:id=>store.receipt(id),submit:(id,payload,sourceId)=>store.submit('linux',id,payload,sourceId)});this.tools=options.tools??new ToolAdapter(store);
     this.ledger=agamajungCosts(store,profile);this.ledger.recoverOrphans();
     this.scheduler=options.scheduler?new Scheduler(store,options.scheduler.transport,options.scheduler.sleep,this.ledger,profile.limits.min_interval_ms):new Scheduler(store,undefined,undefined,this.ledger,profile.limits.min_interval_ms);
@@ -98,14 +100,18 @@ export class AgamajungPipeline {
   }
   async run(runId:string){this.ledger.open(runId);return this.engine.runUntilIdle(runId);}
   private parsed(cap:Capture){const p=this.cache<Parsed>(cap,'parse',this.parseVersion);if(!p)throw new Error('input_unavailable');return p;}
-  private buildPayload(c:Checkpoint):ClipPayload {
-    const cap=this.capture(c),parsed=this.parsed(cap);
-    const rows=this.store.db.prepare('SELECT data FROM engine_extracted WHERE capture_id=? ORDER BY id').all(cap.id) as {data:string}[];
-    return privacyFilter({title:parsed.title,document_origin:parsed.document_origin,target_model_id:c.data.target_model_id,assertions:rows.map(r=>(JSON.parse(r.data) as {assertion:AssertionInput}).assertion)});
+  private serviceInput(c:Checkpoint):{payload:ClipPayload;provenance:ProvenanceInput} {
+    const cap=this.capture(c),extractor=String(c.data.extractor_version??this.profile.extractor_version);
+    const rows=this.store.db.prepare('SELECT id,data FROM engine_extracted WHERE capture_id=? AND extractor=? ORDER BY id').all(cap.id,extractor) as {id:string;data:string}[];
+    // Filter each claim separately so rejected claims cannot shift its identity.
+    const parseTool=rows[0]?JSON.parse(rows[0].data).parse_tool:undefined;
+    const parsed=(parseTool?this.storage.cached<Parsed>(cap.content_hash,'parse',parseTool):undefined)??this.parsed(cap);
+    const claims=rows.flatMap(r=>privacyFilter({assertions:[JSON.parse(r.data).assertion]}).assertions.map(a=>({id:r.id,assertion:a})));
+    return {payload:privacyFilter({title:parsed.title,document_origin:parsed.document_origin,target_model_id:c.data.target_model_id,assertions:claims.map(c=>c.assertion)}),provenance:{capture_id:cap.id,extractor,ids:claims.map(c=>c.id)}};
   }
   private serviceRecovery(c:Checkpoint):StageResult|undefined {
     const receipt=this.storage.service!.receipt(string(c.data,'reservation_id'));if(!receipt)return;
-    requireThat(receipt.digest===digest(this.buildPayload(c)),'payload_changed');return {outputRef:receipt.id};
+    const input=this.serviceInput(c);requireThat(receipt.digest===digest(input.payload)&&this.store.receipt(receipt.id)?.provenance_digest===digest(input.provenance),'payload_changed');return {outputRef:receipt.id};
   }
   private createHandlers():Record<string,StageHandler>{
     const handler=(version:string,run:StageHandler['run'],commit?:StageHandler['commit']):StageHandler=>({kind:'transactional',version,run,commit});
@@ -121,9 +127,9 @@ export class AgamajungPipeline {
         try{result=await new Downloader(new SchedulerFetcher(this.scheduler,source)).download(url,{previous,reusable:h=>this.reusable(h,source,previous?.content_type??'text/html',url,Number(c.data.depth)),render:policy.render});}
         catch(e){
           const code=(e as {code?:string;message?:string}).code??(e as Error).message;
-          if(['source_blocked','login_required','access_restricted','empty_page','source_response'].includes(code)){
+          if(['source_blocked','login_required','access_restricted','empty_page','source_response','robots_denied','visit_not_allowed'].includes(code)){
             const seq=(this.store.db.prepare('SELECT coalesce(max(fetch_seq),0)+1 n FROM engine_captures WHERE run_id=? AND source_id=? AND url_norm=?').get(c.run_id,source.id,url) as {n:number}).n;
-            this.store.transaction(()=>this.storage.capture({id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:code==='source_response'?'http_error':code==='source_blocked'?'blocked':'restricted',content_hash:null,content_type:null,byte_length:null,etag:null,last_modified:null,raw_ref:null,prev_capture_id:previous?.id??null,data:{reason:code}}));
+            this.store.transaction(()=>this.storage.capture({id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:code==='source_response'&&Number((e as {http_status?:number}).http_status)!==401?'http_error':code==='source_blocked'?'blocked':'restricted',content_hash:null,content_type:null,byte_length:null,etag:null,last_modified:null,raw_ref:null,prev_capture_id:previous?.id??null,data:{reason:code}}));
           }
           throw e;
         }
@@ -153,7 +159,8 @@ export class AgamajungPipeline {
         const document:FetchResponse={status:200,body:new TextDecoder().decode(bytes),bytes,finalUrl,headers:{'content-type':cap.content_type}};
         const port=this.options.renderer??{render:(url:string,doc:FetchResponse)=>browserDocument(url,s,this.scheduler,{document:doc})};
         const snap=await renderDocument(port,finalUrl,document,true);
-        const parsed:Parsed={text:this.cleanLines(snap.regionText??snap.text),eligible:this.eligible(`${snap.text} ${snap.title??''}`),title:filterText(snap.title??'',200),...(snap.documentOrigin?{document_origin:canonicalUrl(snap.documentOrigin)}:{})};
+        const renderedText=snap.regionText??snap.text;
+        const parsed:Parsed={text:this.cleanLines(renderedText),inspection:this.inspection(renderedText,s,'supported'),eligible:this.eligible(`${snap.text} ${snap.title??''}`),title:filterText(snap.title??'',200),...(snap.documentOrigin?{document_origin:canonicalUrl(snap.documentOrigin)}:{})};
         return {data:{rendered:parsed}};
       },(result,c)=>{if(result.data?.rendered){const cap=this.capture(c);this.storage.cache(cap.content_hash,'render',this.cacheTool(cap.source_id,cap.content_type,this.parseVersion),result.data.rendered);}return {data:{}};}),
       parse:handler(this.parseVersion,async c=>{
@@ -168,7 +175,7 @@ export class AgamajungPipeline {
             this.raw.write(bytes);
             const extracted=cap.content_type==='application/pdf'?await extractPdf(this.tools,path):await extractImage(this.tools,path);
             if(extracted.status==='unsupported')throw Object.assign(new Error('unsupported'),{tool:extracted.tool});
-            parsed={text:this.cleanLines(extracted.text)};
+            parsed={text:this.cleanLines(extracted.text),inspection:this.inspection(extracted.text,s,'supported')};
           } else if(s.adapter==='cpsc'){
             const found=discoverLinks(new TextDecoder().decode(bytes),cap.url_norm,'cpsc').filter(f=>this.eligible(`${f.title??''} ${f.recall?.name??''}`));
             parsed={text:found.map(f=>filterText(`Recall: ${f.title??f.recall?.name??''}`)).join('\n'),assertions:privacyFilter({assertions:found.filter(f=>f.recall).slice(0,30).map(f=>({field:'recalls',value:f.recall,quote:f.title??f.recall!.name,locator:`$.Recall[RecallID=${f.recall!.id}]`}))}).assertions};
@@ -177,7 +184,7 @@ export class AgamajungPipeline {
             requireThat(region,'region_missing');
             const rows=selectAll(region,'tr');
             const text=rows.length?[...selectAll(region,'h1,h2').map(textOf),...rows.map(row=>selectAll(row,'th,td').map(cell=>textOf(cell).trim()).join(' | '))].join('\n'):linesOf(region).join('\n');
-            parsed={text:this.cleanLines(text),title:filterText(selectAll(root,'h1,h2,title').map(textOf)[0]??'',200)};
+            parsed={text:this.cleanLines(text),inspection:this.inspection(text,s,rows.length?'partial_table':'supported'),title:filterText(selectAll(root,'h1,h2,title').map(textOf)[0]??'',200)};
             const origin=selectAll(root,'link[rel=original]')[0]?.attrs.href;
             if(origin)parsed.document_origin=canonicalUrl(new URL(origin,cap.url_norm).href);
           }
@@ -240,22 +247,26 @@ export class AgamajungPipeline {
         this.storage.cache(cap.content_hash,'extract',this.cacheTool(cap.source_id,cap.content_type,this.version('extract')),neutral);
         const assertions=neutral.map(a=>a.field==='official_msrp'&&!(source.official_fields.includes('official_msrp')&&a.msrp_explicit&&['manufacturer','importer'].includes(source.kind))?{...a,field:'clue_price' as const}:a),subject=subjectRef({target_model_id:c.data.target_model_id as string|undefined,assertions},cap.url_norm),slots=claimSlots(assertions);
         assertions.forEach((a,index)=>{
-          const key=conditionsKey(a,['clue_price','group_buy_terms'].includes(a.field)?new URL(cap.url_norm).origin:'');
+          const key=conditionsKey(a,['clue_price','group_buy_terms','shipping_fee'].includes(a.field)?new URL(cap.url_norm).origin:'');
           const previous=this.store.db.prepare('SELECT e.* FROM engine_extracted e JOIN engine_captures c ON e.capture_id=c.id WHERE e.subject_ref=? AND e.field=? AND e.conditions_key=? AND c.source_id=? AND e.collected_at<? ORDER BY e.collected_at DESC,e.id DESC LIMIT 1').get(subject,a.field,key,cap.source_id,cap.fetched_at) as {data:string;collected_at:string;change_window_start:string|null}|undefined;
           const stated=a.conditions?.effective_at,validDate=stated&&Number.isFinite(Date.parse(stated));
           const window=previous?(stable(JSON.parse(previous.data).assertion.value)===stable(a.value)?previous.change_window_start:previous.collected_at):null;
-          this.storage.extracted({id:digest([cap.id,this.profile.extractor_version,subject,a.field,key,slots[index]]),capture_id:cap.id,subject_ref:subject,field:a.field,conditions_key:key,claim_slot:slots[index],source_url:cap.url_norm,locator:a.locator,quote:a.quote.slice(0,300),collected_at:cap.fetched_at,effective_from:validDate?new Date(stated!).toISOString():cap.fetched_at,effective_from_basis:validDate?'stated':'observed',change_window_start:window,fact_status:'source_claim',extractor:this.profile.extractor_version,data:{assertion:a}});
+          this.storage.extracted({id:digest([cap.id,this.profile.extractor_version,subject,a.field,key,slots[index]]),capture_id:cap.id,subject_ref:subject,field:a.field,conditions_key:key,claim_slot:slots[index],source_url:cap.url_norm,locator:a.locator,quote:a.quote.slice(0,300),collected_at:cap.fetched_at,effective_from:validDate?new Date(stated!).toISOString():cap.fetched_at,effective_from_basis:validDate?'stated':'observed',change_window_start:window,fact_status:'source_claim',extractor:this.profile.extractor_version,data:{assertion:a,parse_tool:this.cacheTool(cap.source_id,cap.content_type,this.parseVersion),discovery_depth:Number(c.data.depth)}});
         });
-        return {data:{completeness:Object.fromEntries(REQUIRED_FIELDS.map(field=>[field,assertions.some(a=>a.field===field)?'present':'missing']))}};
+        return {data:{extractor_version:this.profile.extractor_version,completeness_stage:'preliminary',completeness:Object.fromEntries(REQUIRED_FIELDS.map(field=>[field,assertions.some(a=>a.field===field&&requiredClaimValid(a))?'present':'missing']))}};
       }),
       service:{kind:'external',version:'service@1',recover:c=>this.serviceRecovery(c),run:async c=>{
         const old=this.serviceRecovery(c);if(old)return old;
         const oldReservation=c.data.reservation_id?this.store.reservation('linux',String(c.data.reservation_id)):undefined;
         if(!oldReservation||((c.data.parent_run||c.data.carried_from)&&(oldReservation.submit_until??0)<this.store.now()))this.persistReservation(c,this.source(c));
-        const source=this.source(c),receipt=await this.storage.service!.submit(string(c.data,'reservation_id'),this.buildPayload(c),source.adapter==='cpsc'?source.id:undefined);
+        const source=this.source(c),input=this.serviceInput(c),receipt=this.store.submitExtracted(string(c.data,'reservation_id'),input.payload,input.provenance,source.adapter==='cpsc'?source.id:undefined);
         return {outputRef:receipt.id};
       }},
     };
+  }
+  private inspection(text:string,s:SourcePolicy,toolStatus:string){
+    const lines=text.split(/[\r\n]+/),filterChanged=lines.some(l=>filterText(l,Number.MAX_SAFE_INTEGER)!==l.normalize('NFKC').trim()),truncated=lines.some(l=>l.trim().length>1000)||lines.map(l=>filterText(l,1000)).filter(Boolean).join('\n').length>20000;
+    return {version:'inspection@1',complete:!truncated&&!filterChanged&&toolStatus==='supported',truncated,region:s.selector||'document',locator_base:s.selector||'document',tool_status:toolStatus,locator_space:'sanitized_text',filter_changed:filterChanged};
   }
   private eligible(text:string){const normalized=text.toLocaleLowerCase();return !this.profile.excluded_keywords.some(k=>normalized.includes(k.toLocaleLowerCase()))&&this.profile.categories.some(category=>[...category.ko,...category.en].some(k=>normalized.includes(k.toLocaleLowerCase())));}
   private cleanLines(text:string){return text.split(/[\r\n]+/).map(line=>filterText(line,1000)).filter(Boolean).join('\n').slice(0,20000);}
