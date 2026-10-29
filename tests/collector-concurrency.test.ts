@@ -58,7 +58,7 @@ async function pair(file:string,body:string,c=settings()) {
   workers.forEach(w=>w.go());return workers;
 }
 function integrity(store:CollectorStore) {
-  expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:5});
+  expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:6});
   expect(store.db.prepare('PRAGMA quick_check').get()).toMatchObject({quick_check:'ok'});
   expect(store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
 }

@@ -1,4 +1,5 @@
 import { sqliteRuntimeSafe } from './sqlite-runtime';
+import { initializeSourceRegistry } from './source-registry/store';
 import { acquireRunLock, type RunKind, type RunLock, type ProcReader } from './run-lock';
 import { supersedes, evaluateConflictSet, EVIDENCE_POLICY_VERSION } from './conflict-policy';
 import { reviewScopeValidity, ordered, REVIEW_POLICY_VERSION, type ReviewScopeSnapshot } from './evidence-policy';
@@ -66,6 +67,7 @@ export class CollectorStore {
       }
       if(uv()<4)this.transaction(()=>{if(uv()<4)this.db.exec(readFileSync(new URL('../migrations/0004_source_discovery.sql',import.meta.url),'utf8'));});
       if(uv()<5)this.transaction(()=>{if(uv()<5)this.db.exec(readFileSync(new URL('../migrations/0005_missing_field_explorer.sql',import.meta.url),'utf8'));});
+      initializeSourceRegistry(this);
       requireThat(!this.db.prepare('PRAGMA foreign_key_check').all().length,'database_foreign_key');
       requireThat((this.db.prepare('PRAGMA quick_check').get() as {quick_check:string}).quick_check==='ok','database_corrupt');
       this.secureFiles();

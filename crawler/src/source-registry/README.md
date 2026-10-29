@@ -1,0 +1,10 @@
+- [x] Linux SQLite 전용 0006: `CollectorStore`에는 원자적 마이그레이션·시드 연결만 추가한다. 실행기 적용은 후속 작업이다.
+- [x] 제조사·수입사/공공 DB는 기존 근거를 보존한다. 카탈로그·판매처 미확인 endpoint는 null, 경로 규칙 없는 호스트는 빈 허용 범위다.
+- [x] 초기 robots·약관은 unknown이다. 등록·기존 enabled·재시드는 수집 승인이 아니다.
+- [x] 판정은 요청 ID의 origin·정확한 호스트·접두사·원래 제품 정규식·필드·권한·기한과 기존 설정의 교집합을 요구한다.
+- [x] 좁은 범위가 우선하며, 정규식 포함 관계를 증명할 수 없거나 동률이면 거부한다. 다른 ID·설정으로 fallback하지 않는다.
+- [x] `approveRevision()`만 기준 revision·전체 새 정책·결정자·근거·승인 시각·만료를 결속하여 확장한다. 만료 후 이전 revision으로 돌아가지 않는다.
+- [x] 시드 충돌·revision·승인 기록은 덮어쓰지 않는다. DB/raw는 저장소 밖에 두며 원문 저장 기능은 추가하지 않는다.
+- [x] Instagram 자동 로그인·접근 제한 우회·이미지 보관·직접 게시를 미지원 사유와 함께 명시한다.
+- [x] 핵심 재현: `node_modules/node/bin/node node_modules/vitest/vitest.mjs run tests/source-registry-*.test.ts --configLoader runner --no-cache --no-experimental.fsModuleCache`
+- [x] 해당 세 파일만 threads 풀을 사용한다. 메모리 SQLite·고정 시계·네트워크 차단이며, 전체 파일시스템을 읽기 전용으로 마운트한 환경에서도 위 명령을 검증한다.

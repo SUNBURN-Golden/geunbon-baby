@@ -45,7 +45,7 @@ test.each([false,true])('0004 migration preserves %s conflict history; pure read
   expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
   const retained=['collection_records','dedup_groups','evidence_assertions','evidence_conflicts','review_events','engine_captures','engine_extracted'].map(t=>({table:t,rows:db.prepare(`SELECT * FROM ${t} ORDER BY id`).all()}));db.close();
   store=new CollectorStore(file,f.settings,f.now);
-  expect(store.db.prepare('PRAGMA user_version').get()?.user_version).toBe(5);
+  expect(store.db.prepare('PRAGMA user_version').get()?.user_version).toBe(6);
   for(const saved of retained)expect(store.db.prepare(`SELECT * FROM ${saved.table} ORDER BY id`).all()).toEqual(saved.rows);
   expect(store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
   const slot=enumerateSlots(store).find(s=>s.field==='compatibility'&&s.record_ids.includes(record.id))!,before=inputDigest(store,slot);
