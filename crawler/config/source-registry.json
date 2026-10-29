@@ -1,0 +1,2329 @@
+[
+  {
+    "source_id": "official:stokke:www.stokke.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.stokke.com",
+    "scope_hosts": [
+      "www.stokke.com"
+    ],
+    "allowed_path_prefixes": [
+      "/KOR/ko-kr/"
+    ],
+    "path_patterns": [
+      "^/KOR/ko-kr/.+\\.html$"
+    ],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Stokke",
+        "details": {
+          "importer": "스토케코리아",
+          "importer_basis": {
+            "url": "https://www.stokke.com/KOR/ko-kr/home",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:bugaboo:www.bugaboo.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.bugaboo.com",
+    "scope_hosts": [
+      "www.bugaboo.com"
+    ],
+    "allowed_path_prefixes": [
+      "/kr-ko/"
+    ],
+    "path_patterns": [
+      "^/kr-ko/.+(?:PM|PV)\\d+\\.html$"
+    ],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Bugaboo",
+        "details": {
+          "importer": "부가부코리아(유)",
+          "importer_basis": {
+            "url": "https://www.bugaboo.com/kr-ko/folder-user_guides.html",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:cybex:www.cybex-online.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.cybex-online.com",
+    "scope_hosts": [
+      "www.cybex-online.com"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Cybex",
+        "details": {
+          "importer": "(주)싸이벡스코리아",
+          "importer_basis": {
+            "url": "https://www.cybex-online.com/ko/kr",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:cybex:cybex-shop.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://cybex-shop.co.kr",
+    "scope_hosts": [
+      "cybex-shop.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Cybex",
+        "details": {
+          "importer": "(주)싸이벡스코리아",
+          "importer_basis": {
+            "url": "https://www.cybex-online.com/ko/kr",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:cybex:www.cybex-shop.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.cybex-shop.co.kr",
+    "scope_hosts": [
+      "www.cybex-shop.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Cybex",
+        "details": {
+          "importer": "(주)싸이벡스코리아",
+          "importer_basis": {
+            "url": "https://www.cybex-online.com/ko/kr",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:nuna:nunababy.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://nunababy.com",
+    "scope_hosts": [
+      "nunababy.com"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Nuna",
+        "details": {
+          "importer": "(주)에이원월드",
+          "importer_basis": {
+            "url": "https://nunababy.com/kr/storelocator",
+            "checked_at": "2026-10-23T14:42:22+09:00",
+            "summary": "제조사 한국 사이트 하단: 접수 주문은 에이원에서 처리, 상호는 주식회사 에이원월드"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:nuna:aonebaby.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://aonebaby.co.kr",
+    "scope_hosts": [
+      "aonebaby.co.kr"
+    ],
+    "allowed_path_prefixes": [
+      "/product/"
+    ],
+    "path_patterns": [
+      "^/product/"
+    ],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Nuna",
+        "details": {
+          "importer": "(주)에이원월드",
+          "importer_basis": {
+            "url": "https://nunababy.com/kr/storelocator",
+            "checked_at": "2026-10-23T14:42:22+09:00",
+            "summary": "제조사 한국 사이트 하단: 접수 주문은 에이원에서 처리, 상호는 주식회사 에이원월드"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:nuna:www.aonebaby.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.aonebaby.co.kr",
+    "scope_hosts": [
+      "www.aonebaby.co.kr"
+    ],
+    "allowed_path_prefixes": [
+      "/product/"
+    ],
+    "path_patterns": [
+      "^/product/"
+    ],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Nuna",
+        "details": {
+          "importer": "(주)에이원월드",
+          "importer_basis": {
+            "url": "https://nunababy.com/kr/storelocator",
+            "checked_at": "2026-10-23T14:42:22+09:00",
+            "summary": "제조사 한국 사이트 하단: 접수 주문은 에이원에서 처리, 상호는 주식회사 에이원월드"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:joie:joiebaby.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://joiebaby.com",
+    "scope_hosts": [
+      "joiebaby.com"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Joie",
+        "details": {
+          "importer": "(주)에이원",
+          "importer_basis": {
+            "url": "https://joiebaby.com/en",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:joie:aonebaby.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://aonebaby.co.kr",
+    "scope_hosts": [
+      "aonebaby.co.kr"
+    ],
+    "allowed_path_prefixes": [
+      "/product/"
+    ],
+    "path_patterns": [
+      "^/product/"
+    ],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Joie",
+        "details": {
+          "importer": "(주)에이원",
+          "importer_basis": {
+            "url": "https://joiebaby.com/en",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:joie:www.aonebaby.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.aonebaby.co.kr",
+    "scope_hosts": [
+      "www.aonebaby.co.kr"
+    ],
+    "allowed_path_prefixes": [
+      "/product/"
+    ],
+    "path_patterns": [
+      "^/product/"
+    ],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Joie",
+        "details": {
+          "importer": "(주)에이원",
+          "importer_basis": {
+            "url": "https://joiebaby.com/en",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:joie:joiebaby.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://joiebaby.co.kr",
+    "scope_hosts": [
+      "joiebaby.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Joie",
+        "details": {
+          "importer": "(주)에이원",
+          "importer_basis": {
+            "url": "https://joiebaby.com/en",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:joie:www.joiebaby.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.joiebaby.co.kr",
+    "scope_hosts": [
+      "www.joiebaby.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Joie",
+        "details": {
+          "importer": "(주)에이원",
+          "importer_basis": {
+            "url": "https://joiebaby.com/en",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:babybjorn:www.babybjorn.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.babybjorn.kr",
+    "scope_hosts": [
+      "www.babybjorn.kr"
+    ],
+    "allowed_path_prefixes": [
+      "/products/"
+    ],
+    "path_patterns": [
+      "^/products/[^/]+/[^/]+/"
+    ],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#BabyBjorn",
+        "details": {
+          "importer": "베이비뵨㈜",
+          "importer_basis": {
+            "url": "https://www.babybjorn.kr/pages/general-warranty-policies/",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:babybjorn:next.babybjorn.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://next.babybjorn.kr",
+    "scope_hosts": [
+      "next.babybjorn.kr"
+    ],
+    "allowed_path_prefixes": [
+      "/products/"
+    ],
+    "path_patterns": [
+      "^/products/[^/]+/[^/]+/"
+    ],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#BabyBjorn",
+        "details": {
+          "importer": "베이비뵨㈜",
+          "importer_basis": {
+            "url": "https://www.babybjorn.kr/pages/general-warranty-policies/",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:egg:eggstroller.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://eggstroller.com",
+    "scope_hosts": [
+      "eggstroller.com"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Egg",
+        "details": {
+          "importer": "베이비스타일아시아홀딩스",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://eggstroller.com/stockists/",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:egg:eggstroller.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://eggstroller.co.kr",
+    "scope_hosts": [
+      "eggstroller.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Egg",
+        "details": {
+          "importer": "베이비스타일아시아홀딩스",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://eggstroller.com/stockists/",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:egg:www.eggstroller.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.eggstroller.co.kr",
+    "scope_hosts": [
+      "www.eggstroller.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Egg",
+        "details": {
+          "importer": "베이비스타일아시아홀딩스",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://eggstroller.com/stockists/",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:dthrone:www.dthrone.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.dthrone.com",
+    "scope_hosts": [
+      "www.dthrone.com"
+    ],
+    "allowed_path_prefixes": [
+      "/102/"
+    ],
+    "path_patterns": [
+      "^/102/$"
+    ],
+    "query_keys": [
+      "idx"
+    ],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [
+      "official_msrp",
+      "bundle_components",
+      "manual_url"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#D.THRONE",
+        "details": {
+          "importer": "디트로네 주식회사(국내 브랜드)",
+          "importer_basis": {
+            "url": "https://www.dthrone.com/102/?idx=58",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "summary": "한국 공식 사이트 사업자 또는 국내 보증 안내 확인"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:britax:www.britax-roemer.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.britax-roemer.com",
+    "scope_hosts": [
+      "www.britax-roemer.com"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Britax",
+        "details": {
+          "importer": "세피앙",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://www.britax-roemer.com/service-support/user-instructions",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:britax:britaxmall.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://britaxmall.co.kr",
+    "scope_hosts": [
+      "britaxmall.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Britax",
+        "details": {
+          "importer": "세피앙",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://www.britax-roemer.com/service-support/user-instructions",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:britax:www.britaxmall.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.britaxmall.co.kr",
+    "scope_hosts": [
+      "www.britaxmall.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Britax",
+        "details": {
+          "importer": "세피앙",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://www.britax-roemer.com/service-support/user-instructions",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:maxi-cosi:www.maxi-cosi.com",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.maxi-cosi.com",
+    "scope_hosts": [
+      "www.maxi-cosi.com"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Maxi-Cosi",
+        "details": {
+          "importer": "엠베이비",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://www.maxi-cosi.com/international/retailers",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:maxi-cosi:mbaby.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://mbaby.co.kr",
+    "scope_hosts": [
+      "mbaby.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Maxi-Cosi",
+        "details": {
+          "importer": "엠베이비",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://www.maxi-cosi.com/international/retailers",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:maxi-cosi:www.mbaby.co.kr",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": "https://www.mbaby.co.kr",
+    "scope_hosts": [
+      "www.mbaby.co.kr"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Maxi-Cosi",
+        "details": {
+          "importer": "엠베이비",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://www.maxi-cosi.com/international/retailers",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          },
+          "host_note": "국내 기존 공식몰 호스트 보존; 이번 접속 실패는 공식 관계 부정 근거가 아니며 가격은 본문 재확인 전 채택하지 않음"
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:silver-cross",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": null,
+    "scope_hosts": [],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Silver Cross",
+        "details": {
+          "importer": null,
+          "importer_basis": {
+            "url": "https://www.silvercrossbaby.com/",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "unconfirmed",
+            "reason": "제조사 본문에서 국내 수입사 관계를 확인하지 못함"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:ergobaby",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": null,
+    "scope_hosts": [],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Ergobaby",
+        "details": {
+          "importer": "(주)스엔코",
+          "importer_basis": {
+            "status": "recheck_failed",
+            "reason": "기존 시드 수입사 정보 보존; 국내 사이트 접속 실패로 재확인하지 못함",
+            "attempted_url": "https://ergobaby.com/en-us/pages/international-distributors",
+            "attempted_at": "2026-10-23T14:24:18+09:00"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "official:doona",
+    "revision": 1,
+    "kind": "manufacturer_importer",
+    "origin": null,
+    "scope_hosts": [],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [
+      "/article/",
+      "/board/",
+      "/review",
+      "/community",
+      "/event"
+    ],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "제품 경로 규칙 미확인; 기존 공식 관계나 호스트만으로 수집 범위를 승인하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "seed/official-sources.json#Doona",
+        "details": {
+          "importer": null,
+          "importer_basis": {
+            "url": "https://www.doona.com/en/store-locator",
+            "checked_at": "2026-10-23T14:24:18+09:00",
+            "status": "unconfirmed",
+            "reason": "제조사 본문에서 국내 수입사 관계를 확인하지 못함"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "public:cpsc",
+    "revision": 1,
+    "kind": "public_db",
+    "origin": "https://www.saferproducts.gov",
+    "scope_hosts": [
+      "www.saferproducts.gov"
+    ],
+    "allowed_path_prefixes": [
+      "/RestWebServices/Recall"
+    ],
+    "path_patterns": [],
+    "query_keys": [
+      "format",
+      "ProductName"
+    ],
+    "blocked_paths": [],
+    "collectable_fields": [
+      "recalls"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": 86400000,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "domestic_applicability",
+        "reason": "해외 리콜의 국내 모델·로트 적용은 별도 검토"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "crawler/config/collector.json#cpsc",
+        "details": {
+          "id": "cpsc",
+          "origin": "https://www.saferproducts.gov",
+          "brand": "unknown",
+          "kind": "government",
+          "paths": [
+            "/RestWebServices/Recall"
+          ],
+          "query_keys": [
+            "format",
+            "ProductName"
+          ],
+          "entries": [
+            "https://www.saferproducts.gov/RestWebServices/Recall?format=json&ProductName=Toddler"
+          ],
+          "adapter": "cpsc",
+          "browser": false,
+          "selector": "",
+          "official_fields": [
+            "recalls"
+          ],
+          "full_text_allowed": false,
+          "recheck_ms": 86400000,
+          "max_pages": 1,
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "group:pangpang",
+    "revision": 1,
+    "kind": "group_buy",
+    "origin": "https://09pangpang.com",
+    "scope_hosts": [
+      "09pangpang.com"
+    ],
+    "allowed_path_prefixes": [
+      "/"
+    ],
+    "path_patterns": [],
+    "query_keys": [
+      "id",
+      "page",
+      "p"
+    ],
+    "blocked_paths": [],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": 21600000,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "confirmed_price",
+        "reason": "공구 모음은 가격 단서이며 확정 가격의 근거가 아님"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "crawler/config/collector.json#pangpang",
+        "details": {
+          "id": "pangpang",
+          "origin": "https://09pangpang.com",
+          "brand": "unknown",
+          "kind": "event",
+          "paths": [
+            "/"
+          ],
+          "query_keys": [
+            "id",
+            "page",
+            "p"
+          ],
+          "entries": [
+            "https://09pangpang.com"
+          ],
+          "adapter": "links",
+          "browser": false,
+          "selector": "main",
+          "official_fields": [],
+          "full_text_allowed": false,
+          "recheck_ms": 21600000,
+          "max_pages": 20,
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "group:momcalendar",
+    "revision": 1,
+    "kind": "group_buy",
+    "origin": "https://momcalendar.com",
+    "scope_hosts": [
+      "momcalendar.com"
+    ],
+    "allowed_path_prefixes": [
+      "/"
+    ],
+    "path_patterns": [],
+    "query_keys": [
+      "id",
+      "page",
+      "p"
+    ],
+    "blocked_paths": [],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": 21600000,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "confirmed_price",
+        "reason": "공구 모음은 가격 단서이며 확정 가격의 근거가 아님"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "crawler/config/collector.json#momcalendar",
+        "details": {
+          "id": "momcalendar",
+          "origin": "https://momcalendar.com",
+          "brand": "unknown",
+          "kind": "event",
+          "paths": [
+            "/"
+          ],
+          "query_keys": [
+            "id",
+            "page",
+            "p"
+          ],
+          "entries": [
+            "https://momcalendar.com"
+          ],
+          "adapter": "links",
+          "browser": false,
+          "selector": "main",
+          "official_fields": [],
+          "full_text_allowed": false,
+          "recheck_ms": 21600000,
+          "max_pages": 20,
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "group:buyg",
+    "revision": 1,
+    "kind": "group_buy",
+    "origin": "https://buyg.kr",
+    "scope_hosts": [
+      "buyg.kr"
+    ],
+    "allowed_path_prefixes": [
+      "/"
+    ],
+    "path_patterns": [],
+    "query_keys": [
+      "id",
+      "page",
+      "p"
+    ],
+    "blocked_paths": [],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": 21600000,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "confirmed_price",
+        "reason": "공구 모음은 가격 단서이며 확정 가격의 근거가 아님"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "crawler/config/collector.json#buyg",
+        "details": {
+          "id": "buyg",
+          "origin": "https://buyg.kr",
+          "brand": "unknown",
+          "kind": "event",
+          "paths": [
+            "/"
+          ],
+          "query_keys": [
+            "id",
+            "page",
+            "p"
+          ],
+          "entries": [
+            "https://buyg.kr"
+          ],
+          "adapter": "links",
+          "browser": false,
+          "selector": "main",
+          "official_fields": [],
+          "full_text_allowed": false,
+          "recheck_ms": 21600000,
+          "max_pages": 20,
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "group:snapup",
+    "revision": 1,
+    "kind": "group_buy",
+    "origin": "https://snapup.co.kr",
+    "scope_hosts": [
+      "snapup.co.kr"
+    ],
+    "allowed_path_prefixes": [
+      "/"
+    ],
+    "path_patterns": [],
+    "query_keys": [
+      "id",
+      "page",
+      "p"
+    ],
+    "blocked_paths": [],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": 21600000,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "confirmed_price",
+        "reason": "공구 모음은 가격 단서이며 확정 가격의 근거가 아님"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "crawler/config/collector.json#snapup",
+        "details": {
+          "id": "snapup",
+          "origin": "https://snapup.co.kr",
+          "brand": "unknown",
+          "kind": "event",
+          "paths": [
+            "/"
+          ],
+          "query_keys": [
+            "id",
+            "page",
+            "p"
+          ],
+          "entries": [
+            "https://snapup.co.kr"
+          ],
+          "adapter": "links",
+          "browser": false,
+          "selector": "main",
+          "official_fields": [],
+          "full_text_allowed": false,
+          "recheck_ms": 21600000,
+          "max_pages": 20,
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "source_id": "catalog:unconfirmed",
+    "revision": 1,
+    "kind": "catalog",
+    "origin": null,
+    "scope_hosts": [],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "카탈로그 endpoint·수집 범위·이용 권한 미확인"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "crawler/src/agamajung/profile.ts"
+      }
+    ]
+  },
+  {
+    "source_id": "official-seller:unconfirmed",
+    "revision": 1,
+    "kind": "official_seller",
+    "origin": null,
+    "scope_hosts": [],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "개별 공식 판매처의 endpoint·관계·수집 범위 승인 미확인"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "docs/data-foundation/05-source-registry.md"
+      }
+    ]
+  },
+  {
+    "source_id": "public:safetykorea",
+    "revision": 1,
+    "kind": "public_db",
+    "origin": null,
+    "scope_hosts": [],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "API 키 발급 전 not_connected; endpoint·약관·KC·리콜 수집 범위 미확인"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "README.md"
+      }
+    ]
+  },
+  {
+    "source_id": "social:instagram",
+    "revision": 1,
+    "kind": "social",
+    "origin": "https://www.instagram.com",
+    "scope_hosts": [
+      "www.instagram.com"
+    ],
+    "allowed_path_prefixes": [],
+    "path_patterns": [],
+    "query_keys": [],
+    "blocked_paths": [],
+    "collectable_fields": [],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "보관 조건과 기간의 명시 승인 전 원문·이미지 보관 불가"
+    },
+    "unsupported": [
+      {
+        "scope": "*",
+        "reason": "게시물·스토리별 범위와 robots·약관 승인 미확인"
+      },
+      {
+        "scope": "automatic_login",
+        "reason": "로그인 요구 시 중단·기록; 자동 로그인 미지원"
+      },
+      {
+        "scope": "access_bypass",
+        "reason": "접근 제한 시 중단·기록; 계정 교체·프록시 등 우회 금지"
+      },
+      {
+        "scope": "images",
+        "reason": "이미지·사진 보관 권한 미확인"
+      },
+      {
+        "scope": "direct_publication",
+        "reason": "단서를 확정 데이터로 직접 승격하지 않음"
+      }
+    ],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "docs/data-foundation/05-source-registry.md"
+      },
+      {
+        "reference": "crawler/README.md"
+      }
+    ]
+  }
+]
