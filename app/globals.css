@@ -1,47 +1,40 @@
+@font-face {
+  font-family: 'Gowun Batang'; font-style: normal; font-weight: 700;
+  src: url('/fonts/GowunBatang-Bold.woff2') format('woff2'); font-display: swap;
+}
+@font-face {
+  font-family: 'Spoqa Han Sans Neo'; font-style: normal; font-weight: 400;
+  src: url('/fonts/SpoqaHanSansNeo-Regular.woff2') format('woff2'); font-display: swap;
+}
+@font-face {
+  font-family: 'Spoqa Han Sans Neo'; font-style: normal; font-weight: 700;
+  src: url('/fonts/SpoqaHanSansNeo-Bold.woff2') format('woff2'); font-display: swap;
+}
 :root {
-  color-scheme: light;
-  --bg: #f8f6f0;
-  --surface: #fff;
-  --surface-2: #efeee6;
-  --text: #334338;
-  --ink: var(--text);
-  --muted: #596052;
-  --border: #d5d9ce;
-  --control-border: #7b826f;
-  --accent: #8b6344;
-  --on-accent: #fff;
-  --sage: #e6eadf;
-  --clay: #ece3d6;
-  --neutral: #e6e7e3;
-  --verified: #dce4d3;
-  --nav-glass: rgb(255 255 255 / 94%);
-  --art-1: #ece9dd;
-  --art-2: #f5f0db;
-  --art-3: #d2d6c3;
-  --art-4: #e0e3d3;
-  --art-5: #b5936f;
-  --art-6: #c7a780;
-
-  --dark-bg: #1b211c;
-  --dark-surface: #242c25;
-  --dark-surface-2: #30382f;
-  --dark-text: #e8ece2;
-  --dark-muted: #b7beb0;
-  --dark-border: #555e50;
-  --dark-control-border: #929b89;
-  --dark-accent: #c79a74;
-  --dark-on-accent: #211e19;
-  --dark-sage: #303a31;
-  --dark-clay: #3c332a;
-  --dark-neutral: #32382f;
-  --dark-verified: #34432e;
-  --dark-nav-glass: rgb(36 44 37 / 94%);
-  --dark-art-1: #30362c;
-  --dark-art-2: #504935;
-  --dark-art-3: #424d3b;
-  --dark-art-4: #525d47;
-  --dark-art-5: #9c7b58;
-  --dark-art-6: #b18d65;
+  color-scheme: light dark;
+  --bg: #FAF7F0;
+  --paper: #FAF7F0;
+  --surface: var(--bg);
+  --surface-2: var(--bg);
+  --text: #22262B;
+  --ink: #1D3557;
+  --muted: #5B5F66;
+  --border: var(--ink);
+  --control-border: var(--ink);
+  --stamp: #D93829;
+  --stamp-text: #B42318;
+  --accent: var(--stamp-text);
+  --on-accent: #FFFFFF;
+  --sage: var(--bg);
+  --clay: var(--bg);
+  --neutral: var(--bg);
+  --verified: var(--bg);
+  --art-1: var(--paper);
+  --art-2: var(--paper);
+  --art-3: var(--paper);
+  --art-4: var(--paper);
+  --art-5: var(--ink);
+  --art-6: var(--ink);
 
   --s-1: 4px;
   --s-2: 8px;
@@ -53,14 +46,14 @@
   --s-8: 48px;
   --s-9: 64px;
   --s-10: 80px;
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 20px;
-  --r-pill: 999px;
-  --shadow-sm: 0 1px 2px rgb(51 67 56 / 4%), 0 4px 12px rgb(51 67 56 / 6%);
-  --shadow-lg: 0 2px 8px rgb(51 67 56 / 4%), 0 12px 32px rgb(51 67 56 / 8%);
-  --dark-shadow-sm: 0 1px 2px rgb(0 0 0 / 12%), 0 4px 12px rgb(0 0 0 / 16%);
-  --dark-shadow-lg: 0 2px 8px rgb(0 0 0 / 12%), 0 12px 32px rgb(0 0 0 / 20%);
+  --r-sm: 0px;
+  --r-md: 0px;
+  --r-lg: 0px;
+  --r-pill: 0px;
+  --shadow-sm: none;
+  --shadow-lg: none;
+  --dark-shadow-sm: none;
+  --dark-shadow-lg: none;
   --dur-fast: 150ms;
   --dur: 250ms;
   --dur-slow: 400ms;
@@ -70,35 +63,17 @@
   --z-nav: 20;
   --control-height: 44px;
   --tab-height: 56px;
-  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', sans-serif;
-  --font-serif: 'Noto Serif KR', 'AppleMyungjo', 'Batang', ui-serif, Georgia, serif;
+  --font-sans: 'Spoqa Han Sans Neo', sans-serif;
+  --font-serif: 'Gowun Batang', serif;
 }
 
 @media (prefers-color-scheme: dark) {
   html[lang] {
-    color-scheme: dark;
-    --bg: var(--dark-bg);
-    --surface: var(--dark-surface);
-    --surface-2: var(--dark-surface-2);
-    --text: var(--dark-text);
-    --muted: var(--dark-muted);
-    --border: var(--dark-border);
-    --control-border: var(--dark-control-border);
-    --accent: var(--dark-accent);
-    --on-accent: var(--dark-on-accent);
-    --sage: var(--dark-sage);
-    --clay: var(--dark-clay);
-    --neutral: var(--dark-neutral);
-    --verified: var(--dark-verified);
-    --nav-glass: var(--dark-nav-glass);
-    --art-1: var(--dark-art-1);
-    --art-2: var(--dark-art-2);
-    --art-3: var(--dark-art-3);
-    --art-4: var(--dark-art-4);
-    --art-5: var(--dark-art-5);
-    --art-6: var(--dark-art-6);
-    --shadow-sm: var(--dark-shadow-sm);
-    --shadow-lg: var(--dark-shadow-lg);
+    --bg: #161B22;
+    --text: #E6E1D6;
+    --ink: #A9BEDC;
+    --muted: #9AA4B2;
+    --stamp-text: #FF6B5B;
   }
 }
 
@@ -107,8 +82,9 @@ html { scroll-padding-bottom: calc(var(--tab-height) + var(--s-5) + env(safe-are
 body {
   margin: 0;
   background: var(--bg);
-  color: var(--ink);
+  color: var(--text);
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 16px;
   line-height: 1.6;
   word-break: keep-all;
@@ -123,7 +99,8 @@ main, section, article, form, .hero > *, .manifesto > *, .model-grid > *, .compa
 h1, h2, h3, p { margin-top: 0; }
 h1, h2, h3 {
   font-family: var(--font-serif);
-  font-weight: 500;
+  font-weight: 700;
+  color: var(--ink);
   line-height: 1.55;
   word-break: keep-all;
 }
@@ -190,13 +167,6 @@ em { font-style: normal; color: var(--muted); }
 .nav-link svg { width: 20px; height: 20px; flex-shrink: 0; }
 .nav-link:hover { background: var(--surface-2); }
 .nav-link[aria-current='page'] { color: var(--accent); font-weight: 600; }
-@supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
-  .primary-nav {
-    background: var(--nav-glass);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-  }
-}
 
 .hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-6); padding: var(--s-8) 6%; align-items: center; }
 .eyebrow { font: 10px/1.6 var(--font-sans); letter-spacing: 2.7px; margin-bottom: var(--s-5); color: var(--muted); }
@@ -212,7 +182,7 @@ em { font-style: normal; color: var(--muted); }
   padding: var(--s-3) var(--s-5);
   border: 0;
   border-radius: var(--r-pill);
-  background: var(--accent);
+  background: var(--stamp);
   color: var(--on-accent);
   font: inherit;
   line-height: 1.6;
@@ -240,7 +210,7 @@ em { font-style: normal; color: var(--muted); }
 .hero-art > p { position: absolute; bottom: var(--s-4); margin: 0; padding-inline: var(--s-4); font-family: var(--font-serif); font-size: 13px; color: var(--muted); text-align: center; }
 .art-label { display: none; position: absolute; bottom: var(--s-5); font: 8px var(--font-sans); letter-spacing: 2px; color: var(--muted); }
 .sun { position: absolute; width: 170px; height: 170px; border-radius: var(--r-pill); background: var(--art-2); top: var(--s-6); right: var(--s-6); }
-.arch { flex-shrink: 0; width: 220px; height: 250px; background: linear-gradient(100deg, var(--art-3), var(--art-4)); border-radius: 130px 130px 0 0; margin-top: var(--s-8); position: relative; }
+.arch { flex-shrink: 0; width: 220px; height: 250px; background: var(--art-3); border-radius: 130px 130px 0 0; margin-top: var(--s-8); position: relative; }
 .chair { position: absolute; top: var(--s-9); left: var(--s-8); width: 130px; height: 185px; transform: rotate(-6deg); border-left: 13px solid var(--art-5); border-right: 13px solid var(--art-5); }
 .chair::after, .chair::before { content: ''; position: absolute; width: 140px; height: 12px; background: var(--art-6); left: -20px; box-shadow: var(--shadow-sm); }
 .chair::before { top: 65px; }
@@ -450,7 +420,7 @@ form { max-width: 100%; }
 .deals-page .deal-source-action { display: flex; flex-direction: column; gap: var(--s-2); }
 .deals-page .deal-source-action small { color: var(--muted); font-size: 13px; text-align: center; }
 :is(.deal-card, .deal-detail) .deal-primary, :is(.deal-card, .deal-detail) .deal-secondary { padding: var(--s-2) var(--s-4); text-decoration: none; }
-:is(.deal-card, .deal-detail) .deal-primary { background: var(--accent); color: var(--on-accent); }
+:is(.deal-card, .deal-detail) .deal-primary { background: var(--stamp); color: var(--on-accent); }
 :is(.deal-card, .deal-detail) .deal-secondary { background: var(--surface-2); color: var(--text); }
 :is(.deal-card, .deal-detail) .deal-primary:hover, :is(.deal-card, .deal-detail) .deal-secondary:hover { text-decoration: underline; }
 .deals-page .deal-empty { padding: var(--s-6) var(--s-5); border-radius: var(--r-lg); background: var(--surface); }
@@ -483,7 +453,7 @@ form { max-width: 100%; }
   min-height: var(--s-6);
   padding-inline: var(--s-2);
   border-radius: var(--r-pill);
-  background: var(--accent);
+  background: var(--stamp);
   color: var(--on-accent);
   font: 600 16px/1.5 var(--font-sans);
   font-variant-numeric: tabular-nums;
@@ -532,3 +502,7 @@ form { max-width: 100%; }
 .auth-buttons { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-5); }
 .consent { display: flex; align-items: center; gap: .6rem; }
 .consent input { width: auto; margin-top: 0; }
+
+/* Shared identity and minimum pointer targets. */
+.logo { color: var(--ink); font-weight: 700; min-height: 44px; }
+.account-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
