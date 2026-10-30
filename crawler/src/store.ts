@@ -1,6 +1,6 @@
 import { sqliteRuntimeSafe } from './sqlite-runtime';
 import { initializeSourceRegistry } from './source-registry/store';
-import { acquireRunLock, type RunKind, type RunLock, type ProcReader } from './run-lock';
+import { acquireRunLock, acquireRunLockWithRetry, type RunKind, type RunLock, type ProcReader, type RunLockOptions } from './run-lock';
 import { supersedes, evaluateConflictSet, EVIDENCE_POLICY_VERSION } from './conflict-policy';
 import { reviewScopeValidity, ordered, REVIEW_POLICY_VERSION, type ReviewScopeSnapshot } from './evidence-policy';
 import { validateProvenance, linkExtractedInside, type ProvenanceInput } from './evidence-provenance';
@@ -89,11 +89,28 @@ export class CollectorStore {
       }
     }
   }
-  runLock(kind: RunKind, procReader?: ProcReader) {
-    requireThat(!this.closed,'store_closed');
-    const lock=acquireRunLock(this,kind,procReader);
+  private ownRunLock(lock: RunLock) {
+    if(this.closed) {lock.release();throw new CollectorError('store_closed');}
     if (!this.runLocks.length) process.once('exit',this.releaseRunLocks);
     this.runLocks.push(lock);
+  }
+  runLock(kind: RunKind, options?: RunLockOptions | ProcReader) {
+    requireThat(!this.closed,'store_closed');
+    this.ownRunLock(acquireRunLock(this,kind,options));
+  }
+  async waitForRunLock(kind: RunKind, options?: RunLockOptions) {
+    requireThat(!this.closed,'store_closed');
+    const result=await acquireRunLockWithRetry(this,kind,options);
+    if(result.acquired)this.ownRunLock(result.lock);
+    return result;
+  }
+  runLockTransaction<T>(task:()=>T): T {
+    requireThat(!this.closed,'store_closed');
+    requireThat(!this.inTransaction,'nested_transaction');
+    const {timeout}=this.db.prepare('PRAGMA busy_timeout').get() as {timeout:number};
+    this.db.exec('PRAGMA busy_timeout=0');
+    try {return this.transaction(task,0);}
+    finally {this.db.exec(`PRAGMA busy_timeout=${timeout}`);}
   }
   close() {
     if (this.closed) return;
@@ -105,11 +122,11 @@ export class CollectorStore {
     const e=error as {errcode?:number;message?:string}|null;
     return !!e && (typeof e.errcode==='number' && (e.errcode&0xff)===5 || /database is locked|SQLITE_BUSY/i.test(e.message??''));
   }
-  private retryBusy<T>(task:()=>T): T {
+  private retryBusy<T>(task:()=>T, retries=this.settings.busy_retries): T {
     for (let attempt=0;;attempt++) {
       try { return task(); } catch(e) {
         if (!this.isBusy(e)) throw e;
-        if (attempt>=this.settings.busy_retries) throw new CollectorError('database_busy',503);
+        if (attempt>=retries) throw new CollectorError('database_busy',503);
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,50+Math.floor(Math.random()*201));
       }
     }
@@ -123,8 +140,8 @@ export class CollectorStore {
       if(!g.retired)for(const key of new Set([g.key,...(g.aliases??[])]))this.db.prepare('INSERT INTO dedup_keys(key,group_id) VALUES(?,?)').run(key,id);
     }
   }
-  transaction<T>(task:()=>T): T {
-    requireThat(!this.inTransaction,'nested_transaction'); this.retryBusy(()=>this.db.exec('BEGIN IMMEDIATE')); this.inTransaction=true;this.snapshotTime=this.now();
+  transaction<T>(task:()=>T, busyRetries=this.settings.busy_retries): T {
+    requireThat(!this.inTransaction,'nested_transaction'); this.retryBusy(()=>this.db.exec('BEGIN IMMEDIATE'),busyRetries); this.inTransaction=true;this.snapshotTime=this.now();
     try { const result=task(); this.fault('before_commit'); this.db.exec('COMMIT'); this.secureFiles(); return result; }
     catch(e) { if (this.db.isTransaction) this.db.exec('ROLLBACK'); if(this.isBusy(e))throw new CollectorError('database_busy',503); throw e; }
     finally { this.inTransaction=false;this.snapshotTime=undefined; }
