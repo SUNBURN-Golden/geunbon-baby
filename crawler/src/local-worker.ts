@@ -35,7 +35,14 @@ export async function main(){
   const store=new CollectorStore(resolve(process.env.COLLECTOR_DB??'crawler/.cache/collector.sqlite'),settings);
   try {
     const kind=command==='serve'?'serve':command==='sync'?'sync':['discover','collect','discover-sources','explore-missing'].includes(command)||command==='failures'&&args[1]==='retry'?'crawl':undefined;
-    if(kind)store.runLock(kind);
+    if(kind){
+      const result=await store.waitForRunLock(kind);
+      if(!result.acquired){
+        store.close();
+        console.error(`collector_skipped command=${command} reason=${result.reason} kind=${kind} attempts=${result.attempts} waited_ms=${result.waitedMs}`);
+        return;
+      }
+    }
   } catch(e) { store.close(); throw e; }
   if(['explore-missing','missing-fields','missing-field-actions','missing-field-metrics'].includes(command)){
     try{

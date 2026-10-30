@@ -159,7 +159,7 @@ npm run collector:worker -- sync
 
 `serve`는 loopback 127.0.0.1:4318만 엽니다. COLLECTOR_INTAKE_TOKEN·COLLECTOR_REVIEW_TOKEN은 서로 다른 24자 이상의 비밀로 주입하고 COLLECTOR_EXTENSION_ORIGIN에는 등록한 Chrome 확장 origin을 넣습니다. Host·Origin·토큰·JSON 형식·32KB 크기 제한을 검사합니다. 인테이크 토큰은 예약/조회/시작/취소/제출만 가능하고, CLI·검토 API는 별도 검토 토큰이 필요합니다. 토큰을 인자로 넘기거나 로그로 남기지 마세요. COLLECTOR_DB/COLLECTOR_CONFIG로 전용 경로를 바꿀 수 있습니다. 예시 환경 파일은 값의 목록일 뿐 자동 로드하지 않습니다. 환경을 프로세스에 주입하세요.
 
-serve·discover·sync와 짧은 CLI 작업은 같은 로컬 DB를 동시에 열 수 있습니다. 같은 종류 작업의 중복 실행은 PID 실행 잠금으로 거부합니다([동시 실행과 잠금](#동시-실행과-잠금)). 수집을 자동 운영하려면 운영자가 Linux timer/cron으로 discover와 sync를 예약합니다. 저장소는 해당 타이머를 제공하지 않습니다. CLI 변경 명령은 실행 중인 serve API를 거치며 DB를 직접 수정하지 않습니다.
+serve·discover·sync와 짧은 CLI 작업은 같은 로컬 DB를 동시에 열 수 있습니다. 같은 종류 작업의 중복 실행은 PID 실행 잠금을 짧게 기다린 뒤 해당 회차를 건너뜁니다([동시 실행과 잠금](#동시-실행과-잠금)). 수집을 자동 운영하려면 운영자가 Linux timer/cron으로 discover와 sync를 예약합니다. 저장소는 해당 타이머를 제공하지 않습니다. CLI 변경 명령은 실행 중인 serve API를 거치며 DB를 직접 수정하지 않습니다.
 
 설정의 sources에는 출처 종류·브랜드 예산·origin/경로/쿼리 범위·시작점·어댑터·브라우저 승인/selector·공식 근거 권한·전문 보관 허가·재확인 간격·페이지 상한이 있습니다. 기본 소스는 모두 disabled입니다. 사이트별 robots/DOM과 범위를 운영자가 확인하고 아래 활성화 절차를 통과한 뒤 활성화하세요. 언론·인터뷰·블로그·행사·검색 링크도 발견 후보로 수용하지만 등록되지 않은 호스트를 방문하지 않습니다. 검색 쿼리를 생성하지 않으며 달력·페이지 조합을 제한합니다. 수동 담기에서 등록되지 않은 사이트는 선택한 공개 영역과 제한된 정형 사실만 받습니다.
 
@@ -241,10 +241,24 @@ DB 디렉터리는 0700, DB/WAL/SHM/journal은 0600이고 심볼릭 링크·잘�
 
 - serve·discover·sync·짧은 CLI는 같은 호스트의 같은 DB를 WAL로 공유합니다. 마이그레이션·정책 변경 무효화·쓰기는 `BEGIN IMMEDIATE`로 직렬화합니다. WAL-reset 수정이 포함된 고정 런타임 **Node 22.22.3 / SQLite 3.51.3**만 사용하세요(`node_modules/node/bin/node`). [SQLite 수정 버전](https://www.sqlite.org/wal.html#walresetbug)과 [Node 릴리스](https://nodejs.org/en/blog/release/v22.22.3)를 기준으로 합니다. 사이트/Cloudflare D1과는 별개입니다.
 - `busy_timeout_ms` 기본 5000(100~600000), `busy_retries` 기본 3(0~10)입니다. `BEGIN IMMEDIATE`만 재시도하며 작업 본문은 반복하지 않습니다. 재시도 사이 50~250ms 지터 후 소진하면 `database_busy`(503)로 실패합니다. 기본 최대 대기는 약 20.75초입니다. 동기 SQLite 대기 중에는 serve 이벤트 루프도 멈추므로 쓰기 트랜잭션을 짧게 유지하세요.
-- `${db}.{serve|crawl|sync}.lock`에는 PID·Linux `/proc` 시작 ticks·boot ID·시각·소유 토큰을 기록합니다. serve는 `serve`, discover(dry-run 포함)·collect·failures retry는 `crawl`, sync는 `sync`를 잡습니다. engine-status·failures list·dedup-audit·backfill-engine에는 실행 잠금이 없습니다. 살아 있는 중복 작업은 `run_locked kind=crawl pid=<n> started_at=<ISO>`로 거부합니다.
-- 죽은 PID, PID 재사용, 이전 부팅의 잠금만 자동 회수합니다. close/정상 종료는 자기 소유 잠금만 삭제하며 SIGKILL 뒤에도 다음 실행에서 회수합니다. `/proc`을 확인할 수 없으면 새 잠금을 만들지 않습니다(`run_lock_unverifiable`).
-- `run_lock_unreadable`(빈 파일·잘못된 JSON 포함)이나 `run_locked verify=unavailable`은 자동 회수하지 않습니다. 운영자가 잠금의 PID·시작 시각과 실제 프로세스를 대조하고 **해당 작업의 점유 프로세스가 없음을 확인한 뒤에만** 해당 실행 잠금 파일을 수동 삭제하세요. 기존 `${db}.lock`은 읽거나 지우지 않고 `collector_warning legacy_lock_present path=<basename>` 경고만 냅니다.
+- `${db}.{serve|crawl|sync}.lock`에는 PID·Linux `/proc` 시작 ticks·boot ID·생성 시각·소유 토큰을 권한 0600으로 기록합니다. fsync한 임시 파일을 hard link로 게시합니다. serve는 `serve`, discover(dry-run 포함)·collect·discover-sources·explore-missing(별칭 explore-missing-fields 포함)·failures retry는 `crawl`, sync는 `sync`를 잡습니다. 조회 명령·dedup-audit·backfill-engine에는 실행 잠금이 없습니다.
+- 즉시 1회 시도하고 100ms 간격으로 비동기 재시도합니다. 단조 시계 기준 2초 또는 총 21회 중 먼저 소진되는 상한을 적용하며, 대기 중 트랜잭션을 유지하지 않습니다. 이 상한은 **DB 초기화 이후 실행 잠금 획득 단계**에 적용됩니다. 회수 트랜잭션에만 SQLite busy timeout·내부 재시도를 0으로 설정해 경합을 외부 대기로 돌리고, `finally`에서 기존 timeout을 복원합니다. 일반 DB 쓰기는 위 busy 정책을 유지합니다.
+- **생성 후 30초 이상이며 기존 소유자가 종료됐다는 근거가 있는 잠금만** 회수합니다. PID 확인은 `ESRCH`만 사망으로 인정하고, PID 재사용·이전 부팅은 시작 ticks·boot ID로 확인합니다. 동일 소유자가 살아 있거나 PID 확인이 `EPERM`·확인 불가이면 나이와 무관하게 보존합니다. 죽었어도 최근 30초 이내·미래 시각이면 보존합니다. 트랜잭션 안에서 소유자·나이를 확인하고 inode·device·내용이 동일한 경우에만 삭제합니다. close/정상 종료·실패 정리는 자기 소유 토큰만 삭제합니다. SIGKILL 뒤에는 30초 조건을 만족하는 다음 실행에서 회수할 수 있습니다.
+- 대기 소진은 `run_locked`, 회수 트랜잭션 경합 소진은 `run_lock_busy` 사유로 건너뜁니다. `run_lock_unreadable`(빈 파일·잘못된 JSON·읽기 권한 부족 포함)·`run_lock_unverifiable`(새 소유자의 `/proc` 확인 불가)은 즉시 건너뜁니다. 자동 삭제하지 않으며 운영자가 잠금과 실제 프로세스를 대조하고 **해당 작업의 점유 프로세스가 없음을 확인한 뒤에만** 해당 실행 잠금 파일을 수동 삭제하세요. 기존 `${db}.lock`은 읽거나 지우지 않고 `collector_warning legacy_lock_present path=<basename>` 경고만 냅니다.
+- 건너뛴 CLI 호출은 DB를 닫고 **종료코드 0**, stdout 결과 없이 stderr에 `collector_skipped command=discover reason=run_locked kind=crawl attempts=21 waited_ms=2000` 형태의 로그를 한 번 남깁니다. 실제 시도 횟수·경과 시간은 스케줄링에 따라 달라집니다. runner·HTTP listen·수집/동기화 네트워크 호출은 시작하지 않습니다. 중복 serve 호출도 새 호출만 종료하며 기존 서버는 유지합니다. 로그에는 허용된 명령·고정 사유·종류·숫자만 포함하고 토큰·파일 원문·환경변수·원래 예외를 출력하지 않습니다. DB 손상·인증 설정 오류·안전하지 않은 파일·쓰기 실패는 기존 실패 처리(종료코드 1)를 유지합니다.
 - serve와 discover는 같은 `COLLECTOR_CONFIG`를 사용해야 합니다. `policy_version`을 바꾸면 serve를 재시작하세요. `backfill-engine`과 `dedup-audit --apply`는 실행 중 serve의 쓰기를 지연시킬 수 있습니다.
+
+과거 #66 이전에는 생성자의 `${db}.lock` 배타 생성(`openSync(..., 'wx')`)에 PID·시각 기록이나 `EEXIST` 처리가 없어 serve와 discover의 DB 열기 충돌이 전파됐습니다. 현재 코드는 이 DB 전체 잠금을 사용하지 않습니다. 보고된 `local-worker.mjs:9` 진입점과 discover/local-worker PM2 정의는 저장소에 없으며, 당시 실행 코드·원본 로그를 확인하지 않아 **92회 재시작의 실제 운영 원인은 확정하지 않았습니다**. 운영자는 실행 경로·코드 버전·재시작 정책을 확인하세요. 외부 PM2가 무조건 재시작하도록 설정돼 있으면 종료코드 0이어도 반복 실행할 수 있습니다. 이 변경은 PM2·운영 파일을 수정하지 않습니다.
+
+고정 런타임을 PATH에 넣고 루트에서 아래 오프라인 검증을 실행합니다. 실행 잠금 테스트는 벽시계·단조 시계·sleep·PID 확인을 주입하며 실제 30초를 기다리지 않습니다. 실제 프로세스 회수 경합·SIGKILL·serve/discover 공존과 CLI 종료 계약도 회귀 검증합니다.
+
+```sh
+export PATH="$PWD/node_modules/node/bin:$PATH"
+npm test -- tests/collector-run-lock.test.ts tests/collector-concurrency.test.ts tests/source-discovery-cli.test.ts
+npm test
+npm run lint
+npm run typecheck
+```
 
 병합 후 다음 순서로 **운영자가 직접** 롤아웃합니다. 구버전 serve는 수정 전 SQLite로 DB를 열고 있으므로 새 discover를 먼저 실행하지 마세요. 새 코드는 다른 프로세스의 SQLite 버전을 감지하지 못합니다.
 
@@ -257,7 +271,7 @@ DB 디렉터리는 0700, DB/WAL/SHM/journal은 0600이고 심볼릭 링크·잘�
 
 ### 건수 동기화
 
-전송 진입점은 `npm run collector:worker -- sync`(`crawler/src/local-worker.ts` → `crawler/src/status-sync.ts`)이며 사이트의 `POST /api/v1/collector/status`만 호출합니다. 별도 동기화 프로세스로 실행하며 같은 DB의 serve/discover와 공존합니다. 같은 sync의 중복 실행은 자동 거부합니다.
+전송 진입점은 `npm run collector:worker -- sync`(`crawler/src/local-worker.ts` → `crawler/src/status-sync.ts`)이며 사이트의 `POST /api/v1/collector/status`만 호출합니다. 별도 동기화 프로세스로 실행하며 같은 DB의 serve/discover와 공존합니다. 같은 sync의 중복 실행은 실행 잠금을 짧게 기다린 뒤 해당 회차를 건너뜁니다.
 
 sync는 별도 COLLECTOR_STATUS_TOKEN과 HTTPS COLLECTOR_SITE_URL만 사용하여 트랜잭션 outbox를 전송합니다. COLLECTOR_STATUS_TOKEN은 사이트에 바인딩한 것과 같은 값이며 `crawler/.env.crawler.example`에는 포함하지 않으므로 비밀 저장소에서 별도로 주입합니다. 전송 전에 검토 만료와 재확인 건수를 갱신하고, 최신 스냅샷을 만든 지 15분 이상 지났으면 더 높은 버전의 새 스냅샷을 추가합니다. 빈 수집함의 첫 sync도 0건인 버전 1을 만듭니다. 운영 타이머는 `npm run collector:worker -- sync`를 15분 이하 간격으로 실행하세요. 사이트는 스냅샷 생성 후 60분을 넘기면 동기화 지연으로 표시합니다. 대기 중인 항목은 변경하지 않고 새 버전만 추가하므로 응답 유실 후에도 같은 payload를 재전송합니다.
 
