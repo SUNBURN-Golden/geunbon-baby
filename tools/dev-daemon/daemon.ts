@@ -1,4 +1,4 @@
-import { readFile, readlink, realpath, lstat } from 'node:fs/promises';
+import { readFile, readlink, lstat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fallback } from './fallback';
@@ -7,6 +7,7 @@ import { chains, readOnly, verdict } from './stages';
 import { promptFor } from './prompts';
 import { buildReviewContext } from './review-context';
 import { cleanupWorktree } from './worktrees';
+import { prepareWorktree } from './prepare-worktree';
 import type { Execute, ModelsConfig, Result, Stage, State, Task } from './types';
 
 const REPOSITORY = 'SUNBURN-Golden/geunbon-baby';
@@ -117,14 +118,8 @@ export class Daemon {
     if (task.kind === 'audit' && !await exists(join(this.options.queue.root, 'running', task.file))) {
       await atomicWrite(join(this.options.queue.root, 'running', task.file), `# ${task.title}\n\n${task.body}\n`);
     }
-    if (!await exists(task.worktree)) {
-      await this.command('git', ['check-ref-format', '--branch', task.branch], this.options.repo, 'check-branch');
-      await this.command('git', ['fetch', 'origin', '+refs/heads/main:refs/remotes/origin/main'], this.options.repo, 'fetch-main');
-      await this.command('git', ['worktree', 'add', '-b', task.branch, task.worktree, 'origin/main'], this.options.repo, 'worktree-add');
-    } else {
-      const common = await this.command('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], task.worktree, 'verify-worktree');
-      if (await realpath(common.answer.trim()) !== await realpath(this.commonDir)) throw new Error('Existing worktree belongs to another repository');
-    }
+    await prepareWorktree({ task, repo: this.options.repo, commonDir: this.commonDir,
+      execute: this.options.execute, log: label => this.log(label), scrub: this.options.queue.scrub, now: this.now });
     await this.checkBranch(task);
     if (task.kind === 'task') await this.command('npm', ['ci', '--include=dev', '--no-audit', '--no-fund'], task.worktree, 'npm-ci');
     await this.advance(task.kind === 'audit' ? 'audit' : 'design');

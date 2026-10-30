@@ -10,7 +10,7 @@ interface CleanupOptions {
   execute: Execute;
   log: (label: string) => string;
 }
-interface Registration { path: string; rawPath: string; bare: boolean }
+export interface Registration { path: string; rawPath: string; bare: boolean; branch?: string }
 
 // Include equality, and compare directory boundaries rather than name prefixes.
 function contains(parent: string, child: string): boolean {
@@ -42,7 +42,7 @@ async function checkTargetPath(target: string): Promise<boolean> {
   return present;
 }
 
-function registrations(output: string): Registration[] {
+export function registrations(output: string): Registration[] {
   if (!output.endsWith('\0\0')) throw new Error('Cannot parse worktree registrations');
   const records = output.slice(0, -2).split('\0\0').map(record => {
     const [header, ...fields] = record.split('\0');
@@ -55,7 +55,8 @@ function registrations(output: string): Registration[] {
     if (new Set(keys).size !== keys.length || fields.filter(field => /^(HEAD |bare$)/.test(field)).length !== 1) {
       throw new Error('Ambiguous worktree registration');
     }
-    return { path: normalize(path), rawPath: path, bare: fields.includes('bare') };
+    return { path: normalize(path), rawPath: path, bare: fields.includes('bare'),
+      branch: fields.find(field => field.startsWith('branch '))?.slice(7) };
   });
   if (!records.length || new Set(records.map(record => record.path)).size !== records.length) {
     throw new Error('Ambiguous worktree registrations');

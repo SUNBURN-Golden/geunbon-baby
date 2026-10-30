@@ -38,7 +38,19 @@ TASK
 mv /workspace/agamajung/dev-queue/001-model-page.tmp /workspace/agamajung/dev-queue/inbox/001-model-page.md
 ```
 
-Inbox filenames sort lexically. A claimed task gets a unique ID and moves to `running/<id>.md`. Default branches are `dev-daemon/<id>`. Explicit branches must be valid, new Git branches; `main`, `master` and `HEAD` are rejected. Every task gets a fresh `worktrees/<id>` from fetched `origin/main` and its own `npm ci --include=dev`, so validation tools are installed even under `NODE_ENV=production`. When the active task reaches `done` or `failed`, the daemon validates its worktree, removes it with `git worktree remove --force`, checks prune scope, and runs `git worktree prune --expire now` before archiving. **Failed tasks also lose uncommitted edits, untracked/ignored files and `node_modules`.** Branches, original task Markdown, summaries, logs and audit reports are retained. A task renamed just before a crash is recovered from `running/` before inbox work.
+Inbox filenames sort lexically. A claimed task gets a unique ID and moves to `running/<id>.md`. Default branches are `dev-daemon/<id>`. Explicit branches must be valid Git branch names; `main`, `master` and `HEAD` are rejected. Existing local branch names are handled by the preparation rules below. Every new worktree starts from fetched `origin/main` and gets its own `npm ci --include=dev`, so validation tools are installed even under `NODE_ENV=production`. When the active task reaches `done` or `failed`, the daemon validates its worktree, removes it with `git worktree remove --force`, checks prune scope, and runs `git worktree prune --expire now` before archiving. **Failed tasks also lose uncommitted edits, untracked/ignored files and `node_modules`.** Branches, original task Markdown, summaries, logs and audit reports are retained. A task renamed just before a crash is recovered from `running/` before inbox work.
+
+## Worktree preparation and existing branches
+
+An existing task worktree resumes after shared Git directory and current branch checks. This path performs no preparation PR lookup or stale rename, and retains interrupted edits. For a new worktree, preparation validates the branch name and reads `git worktree list --porcelain -z`. Any registration using the exact `refs/heads/<branch>` blocks preparation, including the main worktree, locked worktrees and registrations whose directories are missing. The summary identifies the branch and quoted worktree path. Preparation does not unlock, remove or prune those registrations.
+
+Local branch existence is determined by exact ref comparison in successful `git for-each-ref` output. If the branch is absent, preparation never invokes `gh`. If it exists and no worktree uses it, preparation runs the read-only `gh pr list --repo SUNBURN-Golden/geunbon-baby --head <branch> --state open --json number,url,headRefName,baseRefName` lookup. An open PR to **any base branch** blocks preparation; its number and URL appear in the summary. Lookup errors, invalid JSON, missing fields or mismatched results fail with `open PR lookup failed; branch unchanged; see task logs`. Git inspection failures also stop preparation before rename/add.
+
+After these checks, preparation fetches `origin/main` and resolves its commit. Fetch/resolution failure leaves the old branch intact. An existing unused branch without an open PR is renamed with `git branch -m <branch> <branch>-stale-<UTC timestamp>`, for example `dev-daemon/example-stale-20261031T123456789Z`. Timestamp collisions advance by one millisecond, up to 100 candidates; existing preservation refs are never overwritten. Immediately before rename, preparation rechecks worktree usage, the original ref/commit and open PR absence. It verifies the preserved commit and records the original name, preservation name and commit in the existing private, redacted task logs.
+
+The fresh branch/worktree is created with `git worktree add -b <branch> <path> <resolved-main-commit>`. Worktree usage and branch absence are checked again immediately before creation. A branch appearing after the initial absence check causes failure; it is never renamed without PR checks. If creation fails after rename, the summary identifies the preserved branch, which remains available for recovery. No branch is deleted, force-renamed or force-pushed. Remote branch collisions retain the existing ordinary push failure policy.
+
+Preparation runs under the queue lock. External Git operations and GitHub PR creation cannot be locked atomically with it: do not modify worktrees/refs or open PRs for these branches concurrently. Rechecks reduce races but cannot eliminate them. Interruption after rename resumes through the absent-branch path and keeps the stale ref. Interruption after successful worktree creation resumes the existing worktree. If a failed add left just the original branch name, preparation applies all existing-branch checks on restart. A task already checkpointed as `failed` only retries cleanup/archival; it is not automatically rerun. Preparation errors use the existing failed checkpoint, cleanup and `Queue.finish()` flow; blocked cleanup retains the original failure summary until successful archival.
 
 ## Stages and model IDs
 
@@ -116,11 +128,15 @@ Stop PM2 before manually recovering work or editing state. Inspect `status.json`
 ## Offline verification
 
 ```sh
+npx vitest run --config tools/dev-daemon/vitest.config.ts
+npx vitest run tests/dev-daemon-*.test.ts
 npm run lint
 npm run typecheck
 npm test
 npm run build
 ```
+
+The separate configuration above is **required** when validating preparation changes: root `npm test` collects only `tests/**/*.test.ts` and does not include `tools/dev-daemon/prepare-worktree.test.ts`. The new suite uses temporary local origin/clone repositories and real Git commands, with `gh`, npm and model calls mocked, and shares `tests/setup.ts` network blocking. It covers absent branches (no preparation `gh`), unique stale commit preservation, occupied/locked/missing/main worktrees, PRs to any base, lookup/parsing/Git/fetch failures, stale-name collisions/exhaustion, state changes before rename/add, failed creation, interruption/restart, existing worktree ownership, audits, redacted logs/summaries and failed checkpoint/archival behavior. It never touches the live repository or queue and adds no dependencies.
 
 `tests/dev-daemon-*.test.ts` use temporary queues and mocked model/Git/GitHub runners. They cover fallback chains, reset parsing, CLI arguments, stdin/file input, stream redaction, final-answer extraction, queue transitions, pause/restart, bounded review loops, check failures, publication gates, merge-count recovery and audit fix enqueueing. `tests/dev-daemon-worktrees.test.ts` also creates temporary local Git repositories to check dirty/ignored file removal, preserved branches/artifacts/siblings, terminal task/audit archival, path and ownership protection, nested registrations (present/locked/missing), prune scope, cleanup failures and restart after removal or partial archival. These fixtures create only local test commits/worktrees and never use the live queue. The lock test invokes local `flock`. No tests call models/network, push, publish, merge or start PM2.
 
