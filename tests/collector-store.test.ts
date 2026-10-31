@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { CollectorStore, type Group, type Evidence } from '../crawler/src/store';
 import { aggregateCollectionStatus } from '../shared/collection-status';
 import { fixture, binding, price, intake, expected, ready, source } from './helpers/collector';
-import type { CollectionRecord } from '../shared/collection-schema';
+import type { ClipPayload, CollectionRecord } from '../shared/collection-schema';
 
 test('all five counts are real, approvals are explicit, nonrepresentatives retain their evidence',()=>{
  const f=fixture();try{
@@ -107,6 +107,124 @@ test('merge, split, replacement and linked withdrawal never copy review approval
   ready(f.store,group);f.store.changeGroup(group,'split',{record_id:b.record_id},expected(f.store,group));const other=f.store.get<CollectionRecord>('collection_records',b.record_id)!.dedup_group_id;expect(other).not.toBe(group);
   f.store.changeGroup(group,'merge',{other_group:other,other_expected:expected(f.store,other)},expected(f.store,group));expect(f.store.get<Group>('dedup_groups',other)?.retired).toBe(true);
   ready(f.store,group);const assertion=f.store.list<Evidence>('evidence_assertions')[0];f.store.changeGroup(group,'withdraw',{assertion_id:assertion.id},expected(f.store,group));expect(f.store.scope(group).group.ready_evidence_version).toBeNull();
+ }finally{f.close();}
+});
+
+const priceFields=['official_msrp','clue_price'] as const;
+function samePagePrices(field:typeof priceFields[number],values:unknown[],conditions:Record<string,string>[]=[]):ClipPayload {
+ return {target_model_id:'model-1',assertions:values.map((value,i)=>({field,value,quote:`example_only 가격 근거 ${i+1}`,locator:`main .price-${i+1}`,msrp_explicit:field==='official_msrp',conditions:{currency:'KRW',market:'KR',...conditions[i]}}))};
+}
+function expectReviewBlocked(store:CollectorStore,group:string) {
+ const before=store.scope(group),events=store.list('review_events');
+ for(const decision of ['verify','ready'] as const){
+  expect(()=>store.review(group,{...expected(store,group),decision,reviewer:'fixture-reviewer'})).toThrow('review_requirements');
+  expect(store.scope(group)).toEqual(before);
+  expect(store.list('review_events')).toEqual(events);
+ }
+}
+
+test.each(priceFields)('same-page %s contradictions preserve both assertions and block both review transitions',field=>{
+ const f=fixture();try{
+  const payload=samePagePrices(field,[390000,400000]);
+  const a=intake(f.store,`${source.origin}/same-page`,payload),group=f.store.recordByUrl(`${source.origin}/same-page`)!.dedup_group_id;
+  const scope=f.store.scope(group),ids=scope.evidence.map(e=>e.id).sort();
+  expect(scope.evidence).toHaveLength(2);
+  for(const assertion of payload.assertions)expect(scope.evidence).toContainEqual(expect.objectContaining({...assertion,record_id:a.record_id}));
+  expect(new Set(ids).size).toBe(2);
+  expect(scope.evidence.every(e=>!e.withdrawn&&!e.superseded_by)).toBe(true);
+  expect(scope.conflicts).toEqual([expect.objectContaining({assertions:ids,resolved:false})]);
+  expect(scope.members).toEqual([expect.objectContaining({id:a.record_id,conflict_detected:true,verification_status:'source_check_needed'})]);
+  expect(f.store.report()).toMatchObject({unresolved_conflicts:1,counts:{verified_waiting:0,ready_to_publish:0}});
+  expectReviewBlocked(f.store,group);
+  f.reopen();expect(f.store.scope(group)).toEqual(scope);expectReviewBlocked(f.store,group);
+ }finally{f.close();}
+});
+
+test.each(priceFields)('same-page equivalent normalized %s prices remain visible and reviewable',field=>{
+ const f=fixture();try{
+  intake(f.store,`${source.origin}/same-page`,samePagePrices(field,[390000,'390,000원',{amount:390000,currency:'KRW'}]));
+  const group=f.store.recordByUrl(`${source.origin}/same-page`)!.dedup_group_id,scope=f.store.scope(group);
+  expect(scope.evidence.map(e=>e.value)).toEqual(expect.arrayContaining([390000,'390,000원',{amount:390000,currency:'KRW'}]));
+  expect(scope.evidence).toHaveLength(3);expect(scope.evidence.every(e=>!e.superseded_by)).toBe(true);
+  expect(scope.conflicts).toEqual([]);expect(scope.members[0].conflict_detected).toBe(false);
+  expect(f.store.report().unresolved_conflicts).toBe(0);
+  ready(f.store,group);expect(f.store.report().counts.ready_to_publish).toBe(1);
+ }finally{f.close();}
+});
+
+const separatePriceConditions:{name:string;conditions:Record<string,string>[];mergeSafe:boolean}[]=[
+ {name:'options',conditions:[{option:'blue'},{option:'red'}],mergeSafe:true},
+ {name:'bundles',conditions:[{bundle:'body'},{bundle:'set'}],mergeSafe:false},
+ {name:'markets',conditions:[{market:'KR'},{market:'overseas'}],mergeSafe:false},
+ {name:'offers',conditions:[{offer:'offer-a'},{offer:'offer-b'}],mergeSafe:true},
+ {name:'effective periods',conditions:[{effective_at:'2026-10-01',effective_until:'2026-10-20'},{effective_at:'2026-10-21',effective_until:'2026-10-30'}],mergeSafe:true}
+];
+test.each(priceFields.flatMap(field=>separatePriceConditions.map(c=>({...c,field}))))('same-page $field prices for separate $name do not conflict',({field,conditions,mergeSafe})=>{
+ const f=fixture();try{
+  const payload=samePagePrices(field,[390000,400000],conditions);
+  intake(f.store,`${source.origin}/same-page`,payload);
+  const group=f.store.recordByUrl(`${source.origin}/same-page`)!.dedup_group_id,scope=f.store.scope(group);
+  expect(scope.evidence).toHaveLength(2);expect(scope.evidence.every(e=>!e.superseded_by)).toBe(true);
+  for(const assertion of payload.assertions)expect(scope.evidence).toContainEqual(expect.objectContaining(assertion));
+  expect(scope.conflicts).toEqual([]);expect(scope.members[0].conflict_detected).toBe(false);
+  expect(f.store.report().unresolved_conflicts).toBe(0);
+  expect(f.store.groupMergeSafe(group)).toBe(mergeSafe);
+  if(mergeSafe)ready(f.store,group);else expectReviewBlocked(f.store,group);
+ }finally{f.close();}
+});
+
+test.each(priceFields)('later same-page %s observations retain history without hiding new sibling contradictions',field=>{
+ const f=fixture();try{
+  const url=`${source.origin}/same-page`;
+  intake(f.store,url,samePagePrices(field,[380000]));
+  const group=f.store.recordByUrl(url)!.dedup_group_id,original=f.store.scope(group).evidence[0];
+  f.advance(1000);intake(f.store,url,samePagePrices(field,[390000]));
+  const scope=f.store.scope(group),replacement=scope.evidence.find(e=>!e.superseded_by)!;
+  expect(scope.evidence).toHaveLength(2);
+  expect(scope.evidence).toContainEqual({...original,superseded_by:replacement.id});
+  expect(scope.conflicts).toEqual([]);expect(f.store.report().unresolved_conflicts).toBe(0);ready(f.store,group);
+  f.advance(1000);intake(f.store,url,samePagePrices(field,[400000,410000]));
+  const next=f.store.scope(group),active=next.evidence.filter(e=>!e.superseded_by);
+  expect(next.evidence).toHaveLength(4);expect(active).toHaveLength(2);
+  expect(active.map(e=>e.value)).toEqual(expect.arrayContaining([400000,410000]));
+  expect(next.evidence).toContainEqual({...original,superseded_by:replacement.id});
+  expect(next.evidence.find(e=>e.id===replacement.id)?.superseded_by).toBeOneOf(active.map(e=>e.id));
+  expect(next.conflicts).toEqual([expect.objectContaining({assertions:active.map(e=>e.id).sort(),resolved:false})]);
+  expect(next.group).toMatchObject({verified_evidence_version:null,ready_evidence_version:null});
+  expect(f.store.report().unresolved_conflicts).toBe(1);expectReviewBlocked(f.store,group);
+ }finally{f.close();}
+});
+
+test.each(priceFields)('same-page %s resolution keeps evidence, requires fresh verification, and does not approve renewed contradictions',field=>{
+ const f=fixture();try{
+  const url=`${source.origin}/same-page`;
+  intake(f.store,url,samePagePrices(field,[390000,400000]));
+  const group=f.store.recordByUrl(url)!.dedup_group_id,before=f.store.scope(group),conflict=before.conflicts[0],selected=conflict.assertions[0];
+  const stale=expected(f.store,group),events=f.store.list('review_events');
+  for(const [selection,reason] of [[selected,'   '],['missing-assertion','example_only source reviewed']]){
+   expect(()=>f.store.resolveConflict(group,conflict.id,selection,reason,expected(f.store,group))).toThrow('conflict_resolution');
+   expect(f.store.scope(group)).toEqual(before);expect(f.store.list('review_events')).toEqual(events);
+  }
+  f.store.resolveConflict(group,conflict.id,selected,'example_only source reviewed',expected(f.store,group));
+  const resolved=f.store.scope(group);
+  expect(resolved.evidence).toEqual(before.evidence);
+  expect(resolved.conflicts).toEqual([expect.objectContaining({id:conflict.id,resolved:true,selected,resolution:'example_only source reviewed'})]);
+  expect(resolved.members[0].conflict_detected).toBe(false);expect(f.store.report().unresolved_conflicts).toBe(0);
+  expect(()=>f.store.review(group,{...stale,decision:'verify',reviewer:'fixture-reviewer'})).toThrow('stale_review');
+  expect(()=>f.store.review(group,{...expected(f.store,group),decision:'ready',reviewer:'fixture-reviewer'})).toThrow('verification_required');
+  const history=f.store.list('review_events');
+  expect(history).toContainEqual(expect.objectContaining({decision:'conflict_resolution',conflict_id:conflict.id,selected,reason:'example_only source reviewed'}));
+  f.reopen();expect(f.store.scope(group)).toEqual(resolved);expect(f.store.list('review_events')).toEqual(history);
+  ready(f.store,group);expect(f.store.report().counts.ready_to_publish).toBe(1);
+  const approved=expected(f.store,group);
+  f.advance(1000);intake(f.store,url,samePagePrices(field,[410000,420000]));
+  expect(f.store.scope(group).group).toMatchObject({verified_evidence_version:null,ready_evidence_version:null});
+  expect(f.store.scope(group).evidence).toHaveLength(4);
+  expect(f.store.conflictHistory(group)).toContainEqual(expect.objectContaining({id:conflict.id,resolved:true,selected}));
+  expect(f.store.report()).toMatchObject({unresolved_conflicts:1,counts:{verified_waiting:0,ready_to_publish:0}});
+  expect(()=>f.store.review(group,{...approved,decision:'ready',reviewer:'fixture-reviewer'})).toThrow('stale_review');
+  expectReviewBlocked(f.store,group);
+  f.reopen();expectReviewBlocked(f.store,group);
  }finally{f.close();}
 });
 

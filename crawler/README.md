@@ -231,7 +231,7 @@ npm run collector -- sellers export-account instagram:<handle>
 npm run collector -- import-legacy-candidates --state <읽기전용-state.json-경로>
 ```
 
-검토 JSON의 decision은 verify/ready이며 reviewer와 위 세 버전 필드를 넣습니다. ready에는 현재 근거 버전의 verify, 미해결 충돌 없음, 개인정보 검사·근거 위치·최신성이 필요합니다. 공개 대기는 게시하지 않습니다. 합계는 다섯 상태의 합이며 대표는 묶음마다 정확히 하나, 비대표는 dedup_excluded입니다. 예약/전달 대기·셀러는 레코드 건수에 더하지 않습니다.
+검토 JSON의 decision은 verify/ready이며 reviewer와 위 세 버전 필드를 넣습니다. 같은 페이지의 한 제출 안에서도 비교 조건이 같은 official_msrp 또는 clue_price가 서로 다르면 두 근거의 값·인용·위치를 모두 보존하고 verify와 ready를 모두 막습니다. 선택할 assertion과 비어 있지 않은 이유, 현재 세 버전 필드로 명시적으로 해소한 뒤 새 verify를 거쳐야 ready가 가능합니다. 후속 제출은 같은 조건의 이전 관측을 대체할 수 있지만 과거 근거를 삭제하지 않으며, 같은 제출의 근거끼리는 서로 대체하지 않습니다. ready에는 현재 근거 버전의 verify, 미해결 충돌 없음, 개인정보 검사·근거 위치·최신성이 필요합니다. 공개 대기는 게시하지 않습니다. 합계는 다섯 상태의 합이며 대표는 묶음마다 정확히 하나, 비대표는 dedup_excluded입니다. 예약/전달 대기·셀러는 레코드 건수에 더하지 않습니다.
 
 기존 state.json 후보는 읽기만 하여 멱등 가져옵니다. 최초 found_via·표본 URL·모델·최초/최근 시각을 보존하고 기존 hits는 legacy_hits로 분리합니다. 잃어버린 후속 출처는 legacy_imports에 복구 불가로 표시합니다. 새 발견은 source 행과 hits로 누적하되 ACK 재전송에는 증가하지 않습니다. export-account는 verified/follow/collect_images 모두 false인 검토용 조각만 출력합니다. accounts.json·실제 팔로잉은 변경하지 않습니다. Instagram 태그 발견은 기존 상태 파일을 계속 사용합니다.
 

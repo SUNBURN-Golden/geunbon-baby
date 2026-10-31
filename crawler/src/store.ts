@@ -302,6 +302,7 @@ export class CollectorStore {
       }else{g.key=key;this.put('dedup_groups',g.id,g);}
     }
     const created:Evidence[]=[];
+    // Only prior submissions may be superseded; sibling assertions must remain independent evidence.
     const priorEvidence=this.rows<Evidence>('SELECT data FROM evidence_assertions WHERE record_id=?',id);
     for(const a of p.assertions) {
       const authorized=!!s?.official_fields.includes(a.field) && (a.field!=='official_msrp'||(a.msrp_explicit===true&&['manufacturer','importer'].includes(s.kind)));
