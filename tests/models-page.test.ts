@@ -1,8 +1,12 @@
 import { readdir, readFile } from 'node:fs/promises';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest';
 import Models from '../app/models/page';
+import { ModelCard } from '../app/models/_card';
 import { verification } from '../lib/data';
+import { buildModelCards } from '../lib/model-cards';
+import seed from '../seed/models.json';
 import { memoryD1 } from './helpers/sqlite';
 
 const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined }));
@@ -90,12 +94,13 @@ test('cards show name, art or placeholder, official price and the lowest active 
     expect(card).not.toContain('model-discount');
     expect(card).not.toContain('%');
     expect(card.match(/<h2 /g)).toHaveLength(1);
+    expect(card).toContain(`<h2 class="model-name">Stokke ${names[id as keyof typeof names]}</h2>`);
     expect(card.match(/<p /g)).toHaveLength(2);
     expect(card.match(/class="model-art(?: model-art-line)?"/g)).toHaveLength(1);
   }
 
   const one = cardOf(html, 'model-1');
-  expect(one).toContain(`alt="${names['model-1']}"`);
+  expect(one).toContain(`alt="Stokke ${names['model-1']}"`);
   expect(one).toContain('-540x540.png');
   expect(one).toContain('model-deal-price');
   expect(one).toContain('model-art-line');
@@ -118,7 +123,7 @@ test('cards show name, art or placeholder, official price and the lowest active 
   const three = cardOf(html, 'model-3');
   expect(three).toContain('정보 없음');
   expect(three).toContain('model-3-540x540.png');
-  expect(three).toContain(`alt="${names['model-3']}"`);
+  expect(three).toContain(`alt="Stokke ${names['model-3']}"`);
   expect(three).toContain('380,000');
   expect(three).not.toContain('model-discount');
   expect(three).not.toContain('<s>');
@@ -127,11 +132,39 @@ test('cards show name, art or placeholder, official price and the lowest active 
   expect(twenty).toContain('model-art-line');
   expect(twenty).toContain('width="540" height="540"');
   expect(twenty).toContain('model-20-540x540.png');
-  expect(twenty).toContain(`alt="${names['model-20']}"`);
+  expect(twenty).toContain(`alt="Stokke ${names['model-20']}"`);
   expect(twenty).toContain('670,000원');
 
   const hrefs = [...html.matchAll(/class="model-card" href="([^"]+)"/g)].map(m => m[1]);
   expect(hrefs).toEqual(['/models/model-1', '/models/model-3', '/models/model-42', '/models/model-20']);
+});
+
+test.each(seed.models.map((model, index) => ({ ...model, id: `model-${index + 1}` })))('$id renders its seeded brand and model within the four card elements', model => {
+  const [card] = buildModelCards([{
+    id: model.id, brand: model.brand, name: model.model,
+    official_price: model.kr_official_price_krw, verify_level: model.verify_level,
+  }], [], Date.parse('2026-10-21T03:00:00Z'));
+  const html = renderToStaticMarkup(createElement(ModelCard, { card }));
+  const displayName = renderToStaticMarkup(`${model.brand} ${model.model}`);
+  expect(html).toContain(`<h2 class="model-name">${displayName}</h2>`);
+  expect(html.match(/<h2 /g)).toHaveLength(1);
+  expect(html.match(/<p /g)).toHaveLength(2);
+  expect(html.match(/class="model-art(?: model-art-line)?"/g)).toHaveLength(1);
+  expect(html.match(/<div /g)).toHaveLength(2); // Illustration and price wrappers only.
+  expect(html.match(/<a /g)).toHaveLength(1);
+  expect(html).toContain('진행 중인 공구 없음');
+  expect(html).toContain('class="model-official model-official-solo"');
+  for (const forbidden of ['<time', '<button', 'badge', 'eyebrow', '광고', 'checked', 'page_body', 'https://']) {
+    expect(html).not.toContain(forbidden);
+  }
+  if (['model-32', 'model-39'].includes(model.id)) {
+    expect(html).not.toContain('<img');
+    expect(html).toContain(`<span class="model-art-mark" aria-hidden="true">${[...model.brand][0]}</span>`);
+  } else {
+    expect(html.match(/<img /g)).toHaveLength(1);
+    expect(html).toContain(`alt="${displayName}"`);
+    expect(html).not.toContain('model-art-mark');
+  }
 });
 
 test('the page carries no check dates, sources, ads, other prices or verification levels', async () => {
