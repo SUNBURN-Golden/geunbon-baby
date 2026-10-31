@@ -8,9 +8,9 @@ export function ModelCard({ card }: { card: ModelCardData }) {
   const displayName = `${card.brand} ${card.name}`;
   const art = modelIllustration(card.id);
   const official = money(card.official_price);
-  // Static pre-sized PNGs from public/; no image optimizer. Models without art render no <img> at all.
+  // Static square SVGs from public/; no image optimizer. Models without art render no <img> at all.
   /* eslint-disable-next-line @next/next/no-img-element */
-  const image = art && <img src={art.src} srcSet={art.srcSet} sizes="(max-width: 767px) 45vw, (max-width: 1023px) 30vw, 280px" width={art.width} height={art.height} alt={displayName} loading="lazy" decoding="async" />;
+  const image = art && <img src={art.src} width={art.width} height={art.height} alt={displayName} loading="lazy" decoding="async" />;
   return (
     <Link className="model-card" href={`/models/${card.id}`}>
       <div className={`model-art${art ? ' model-art-line' : ''}`}>

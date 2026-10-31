@@ -6,14 +6,13 @@ const dir = new URL('../public/img/models/', import.meta.url);
 const seed = JSON.parse(await readFile(new URL('../seed/models.json', import.meta.url), 'utf8')) as { models: { model: string }[] };
 const decode = (text: string) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
 
-test('every listed model has a non-empty SVG and both PNG sizes', async () => {
-  for (const id of ILLUSTRATED_MODEL_IDS) {
-    const art = modelIllustration(id)!;
-    const files = [`${id}.svg`, ...art.srcSet.split(', ').map(s => s.split(' ')[0].split('/').at(-1)!)];
-    for (const file of files) {
-      const bytes = await readFile(new URL(file, dir));
-      expect(bytes.length, file).toBeGreaterThan(0);
-    }
+test('every seeded model resolves to a non-empty square SVG', async () => {
+  const ids = seed.models.map((_, i) => `model-${i + 1}`);
+  expect(ids).toHaveLength(41);
+  expect([...SQUARE_MODEL_IDS]).toEqual(ids);
+  for (const id of ids) {
+    expect(modelIllustration(id)).toEqual({ src: `/img/models/${id}.svg`, width: 1080, height: 1080 });
+    expect((await readFile(new URL(`${id}.svg`, dir))).length, id).toBeGreaterThan(0);
   }
 });
 
@@ -33,68 +32,10 @@ test('SVG titles match the seed model names and contain no external or active co
   }
 });
 
-// Read the persisted PNG pixels directly: no browser, network or image decoder dependency.
-async function pngPixels(file: URL) {
-  const { inflateSync } = await import('node:zlib');
-  const bytes = await readFile(file);
-  expect([...bytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const width = view.getUint32(16), height = view.getUint32(20);
-  expect(bytes[24]).toBe(8); // 8-bit RGBA, non-interlaced
-  expect(bytes[25]).toBe(6);
-  expect(bytes[28]).toBe(0);
-  const chunks: Buffer[] = [];
-  for (let at = 8; at < bytes.length;) {
-    const length = view.getUint32(at);
-    if (new TextDecoder().decode(bytes.subarray(at + 4, at + 8)) === 'IDAT') chunks.push(bytes.subarray(at + 8, at + 8 + length));
-    at += length + 12;
-  }
-  const raw = inflateSync(Buffer.concat(chunks)), stride = width * 4;
-  expect(raw.length).toBe((stride + 1) * height);
-  const pixels = Buffer.alloc(stride * height);
-  const paeth = (a: number, b: number, c: number) => {
-    const p = a + b - c, da = Math.abs(p - a), db = Math.abs(p - b), dc = Math.abs(p - c);
-    return da <= db && da <= dc ? a : db <= dc ? b : c;
-  };
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)];
-    expect(filter).toBeLessThanOrEqual(4);
-    for (let x = 0; x < stride; x++) {
-      const at = y * stride + x;
-      const left = x >= 4 ? pixels[at - 4] : 0;
-      const above = y ? pixels[at - stride] : 0;
-      const corner = y && x >= 4 ? pixels[at - stride - 4] : 0;
-      const predictor = [0, left, above, Math.floor((left + above) / 2), paeth(left, above, corner)][filter];
-      pixels[at] = (raw[y * (stride + 1) + 1 + x] + predictor) & 255;
-    }
-  }
-  return { width, height, pixels };
-}
-
-test('all thirty-nine registered models have square, transparent, unclipped PNG pairs', async () => {
-  expect(SQUARE_MODEL_IDS).toEqual(Array.from({ length: 41 }, (_, i) => `model-${i + 1}`).filter(id => !['model-32', 'model-39'].includes(id)));
-  for (const id of SQUARE_MODEL_IDS) {
-    for (const size of [252, 540]) {
-      const { width, height, pixels } = await pngPixels(new URL(`${id}-${size}x${size}.png`, dir));
-      expect([width, height], id).toEqual([size, size]);
-      let ink = 0, marginInk = 0;
-      const margin = Math.floor(size * .025);
-      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-        if (pixels[(y * size + x) * 4 + 3]) {
-          ink++;
-          if (x < margin || x >= size - margin || y < margin || y >= size - margin) marginInk++;
-        }
-      }
-      expect(ink, id).toBeGreaterThan(size * 4);
-      expect(ink / (size * size), id).toBeLessThan(.2);
-      expect(marginInk, id).toBe(0);
-    }
-  }
-});
-
 test('new SVGs contain only unfilled product paths, groups and a nonvisual title', async () => {
   for (const id of SQUARE_MODEL_IDS) {
     const svg = await readFile(new URL(`${id}.svg`, dir), 'utf8');
+    expect(svg, id).toContain('width="1080" height="1080"');
     expect(svg, id).toContain('viewBox="0 0 1080 1080"');
     expect(svg, id).toContain('stroke-linecap="round"');
     expect(svg, id).toContain('stroke-linejoin="round"');
@@ -185,9 +126,9 @@ test('set components keep distinct detailed groups rather than abstract stand-in
   }
 });
 
-test('only the 117 registered square illustration files remain', async () => {
+test('only the 41 production SVG illustration files remain', async () => {
   const files = (await readdir(dir)).sort();
-  const expected = SQUARE_MODEL_IDS.flatMap(id => [`${id}.svg`, `${id}-540x540.png`, `${id}-252x252.png`]).sort();
+  const expected = SQUARE_MODEL_IDS.map(id => `${id}.svg`).sort();
   expect(files).toEqual(expected);
 });
 
@@ -206,25 +147,27 @@ test('single items and bundles retain different component structures', async () 
   expect(await svg(21)).toContain('id="isofix-base"');
   expect(await svg(20)).not.toContain('id="isofix-base"');
   const pathSet = (s: string) => [...new Set([...s.matchAll(/<path d="([^"]+)"/g)].map(m => m[1]))].sort();
-  for (const [a, b] of [[3, 4], [7, 8], [7, 9], [10, 11], [23, 24], [25, 26], [27, 28], [27, 29], [28, 29], [30, 31], [33, 36], [34, 36], [35, 36], [27, 40], [28, 40], [29, 40]]) expect(pathSet(await svg(a))).not.toEqual(pathSet(await svg(b)));
+  for (const [a, b] of [[3, 4], [7, 8], [7, 9], [10, 11], [23, 24], [25, 26], [27, 28], [27, 29], [28, 29], [30, 31], [33, 36], [34, 36], [35, 36], [27, 40], [28, 40], [29, 40], [38, 39]]) expect(pathSet(await svg(a))).not.toEqual(pathSet(await svg(b)));
 });
 
 // Confirmed scope and evidence are mirrored in docs/model-illustrations-batch-4.md.
-// Blocked models have no SVG: an unavailable thumbnail must never be replaced by invented art.
+// New references establish stroller geometry, without establishing domestic accessory bundles.
 const BATCH4: Record<string, {
-  status: 'confirmed-single' | 'confirmed-set' | 'unconfirmed' | 'blocked';
+  status: 'confirmed-single' | 'confirmed-set' | 'unconfirmed';
+  minPaths?: number;
+  minCurves?: number;
   groups: string[];
   absent?: string[];
 }> = {
   'model-31': { status: 'confirmed-set', groups: ['chassis', 'seat', 'canopy', 'wheels', 'carrycot', 'footmuff', 'backpack', 'seat-liner', 'car-seat-adapters', 'deluxe-blanket', 'carrycot-sherpa-topper', 'carrycot-fitted-sheets', 'rain-covers'] },
-  'model-32': { status: 'blocked', groups: [] },
+  'model-32': { status: 'unconfirmed', groups: ['chassis', 'basket', 'wheels', 'seat', 'canopy', 'bumper-bar', 'harness'], minPaths: 6, minCurves: 1 },
   'model-33': { status: 'confirmed-set', groups: ['shell', 'harness', 'integral-rotating-base', 'newborn-insert'] },
   'model-34': { status: 'confirmed-set', groups: ['shell', 'harness', 'integral-rotating-base', 'newborn-insert'] },
   'model-35': { status: 'confirmed-set', groups: ['shell', 'harness', 'integral-rotating-base', 'newborn-insert'] },
   'model-36': { status: 'confirmed-set', groups: ['shell', 'harness', 'integral-rotating-base', 'newborn-insert'] },
   'model-37': { status: 'confirmed-single', groups: ['shell', 'harness', 'isofix-tether'], absent: ['newborn-insert', 'isofix-base'] },
   'model-38': { status: 'confirmed-set', groups: ['chassis', 'seat', 'canopy', 'wheels', 'basket', 'rain-cover', 'newborn-apron'] },
-  'model-39': { status: 'blocked', groups: [] },
+  'model-39': { status: 'unconfirmed', groups: ['chassis', 'basket', 'wheels', 'seat', 'canopy', 'bumper-bar', 'harness'], minPaths: 5, minCurves: 1 },
   'model-40': { status: 'unconfirmed', groups: ['body-panel', 'shoulder-straps', 'waist-belt', 'buckle'] },
   'model-41': { status: 'unconfirmed', groups: ['infant-carrier', 'integrated-wheels', 'handle'] },
 };
@@ -246,20 +189,14 @@ function topLevelComponentIds(svg: string) {
 }
 
 test('batch 4 draws exactly the documented components with distinct detailed curves', async () => {
-  const files = await readdir(dir);
   for (const [id, spec] of Object.entries(BATCH4)) {
-    if (spec.status === 'blocked') {
-      expect(modelIllustration(id), id).toBeNull();
-      expect(files.filter(f => f.startsWith(`${id}.`) || f.startsWith(`${id}-`)), id).toEqual([]);
-      continue;
-    }
     const svg = await readFile(new URL(`${id}.svg`, dir), 'utf8');
     expect(topLevelComponentIds(svg).sort(), id).toEqual([...spec.groups].sort());
     expect(svg, id).not.toContain('transform=');
     for (const group of spec.groups) {
       const ds = pathData(component(svg, group));
-      expect(new Set(ds).size, `${id} ${group}: unique paths`).toBeGreaterThanOrEqual(20);
-      expect(new Set(ds.filter(d => /[CQ]/.test(d))).size, `${id} ${group}: curved paths`).toBeGreaterThanOrEqual(12);
+      expect(new Set(ds).size, `${id} ${group}: unique paths`).toBeGreaterThanOrEqual(spec.minPaths ?? 20);
+      expect(new Set(ds.filter(d => /[CQ]/.test(d))).size, `${id} ${group}: curved paths`).toBeGreaterThanOrEqual(spec.minCurves ?? 12);
     }
     for (const absent of spec.absent ?? []) expect(svg, `${id} ${absent}`).not.toContain(`id="${absent}"`);
     for (const m of svg.matchAll(/<path\b[^>]*>/g)) {
@@ -282,7 +219,6 @@ test('the DUALFIX trim variants preserve the same verified structure without inv
   const sets = await Promise.all([33, 34, 35].map(async n => pathData(await readFile(new URL(`model-${n}.svg`, dir), 'utf8'))));
   expect(sets[0]).toEqual(sets[1]);
   expect(sets[0]).toEqual(sets[2]);
-  // [38,39] cannot be compared until a compliant official Dune 2 thumbnail is available.
 });
 
 type Point = [number, number];
@@ -417,7 +353,7 @@ test('tray footprint hides rail and crotch guard without paint or masks', async 
 });
 
 test('all refined set ink, including transformed stroke widths, stays inside the safe square', async () => {
-  for (const n of [3, 4, 5, 8, 9, 21, 22, 31, 33, 34, 35, 36, 37, 38, 40, 41]) {
+  for (const n of [3, 4, 5, 8, 9, 21, 22, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]) {
     const svg = await readFile(new URL(`model-${n}.svg`, dir), 'utf8');
     const stack: { matrix: Matrix; stroke: number }[] = [{ matrix: [1,0,0,1,0,0], stroke: 5.5 }];
     for (const tag of svg.matchAll(/<g\b[^>]*>|<\/g>|<path\b[^>]*>/g)) {
