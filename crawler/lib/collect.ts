@@ -13,7 +13,7 @@ import { sendItem } from './ingest';
 import { extract, toSuggestions } from './extract';
 import { postImageUrl, selectMedia, readMediaUrl, propagateMediaInterruption } from './media';
 import { isImageUrl } from '../../lib/image-url';
-import { maskPersonal } from './external/filter';
+import { filterText } from '../../shared/privacy-rules';
 
 const exec = promisify(execFile);
 async function pauseReadyStory(page: Page, account: string, previousPath: string | null): Promise<boolean> {
@@ -130,10 +130,11 @@ async function ocrStory(page: Page, image: Locator, crawlerDir: string, settings
   }
 }
 export type CollectContext = { account: string; crawlerDir: string; state: CrawlerState; settings: Settings; api: URL; token: string; scanPosts: boolean; scanStories: boolean; collectImages?: boolean };
-// collect_images=false 이면 마스킹한 텍스트에서 suggestions까지 추출해 개인정보가 전송되지 않게 한다.
-function prepareText(raw: string, collectImages: boolean) {
-  const text = collectImages ? raw : maskPersonal(raw);
-  return { text, suggestions: toSuggestions(extract(text)) };
+function prepareText(raw: string) {
+  // Keep surviving lines separate for standalone OCR prices and price context.
+  // Text privacy is independent of whether image URLs are collected.
+  const text = raw.split(/[\r\n]+/).map(line => filterText(line, 6000)).filter(Boolean).join('\n').slice(0, 6000);
+  return text ? { text, suggestions: toSuggestions(extract(text)) } : null;
 }
 export async function collectAccount(page: Page, ctx: CollectContext): Promise<{ posts: number; stories: number }> {
   const { account, state, settings, api, token } = ctx;
@@ -156,8 +157,10 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
       await assertHuman(page);
       const caption = await readCaption(page);
       if (!caption.trim()) { health('selector_miss', { scope: 'caption', account }); continue; }
+      const prepared = prepareText(caption);
+      if (!prepared) continue;
       const image_url = collectImages ? await postImageUrl(page) : undefined;
-      const { text, suggestions } = prepareText(caption, collectImages);
+      const { text, suggestions } = prepared;
       await sendItem(api, token, { source_url: canonical, account, kind: 'post', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions });
       state.markSeen(canonical);
       await state.save();
@@ -188,11 +191,14 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
         if (new URL(page.url()).pathname !== url.pathname) break;
         const { text: ocrText, image_url } = await ocrStory(page, media.element, ctx.crawlerDir, settings, collectImages);
         if (ocrText.trim() && new URL(page.url()).pathname.replace(/\/$/, '') === url.pathname.replace(/\/$/, '')) {
-          const { text, suggestions } = prepareText(ocrText, collectImages);
-          await sendItem(api, token, { source_url: canonical, account, kind: 'story', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions });
-          state.markSeen(canonical);
-          await state.save();
-          result.stories++;
+          const prepared = prepareText(ocrText);
+          if (prepared) {
+            const { text, suggestions } = prepared;
+            await sendItem(api, token, { source_url: canonical, account, kind: 'story', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions });
+            state.markSeen(canonical);
+            await state.save();
+            result.stories++;
+          }
         }
       }
       if (n + 1 >= settings.per_tick.max_stories_per_account) break;
