@@ -101,10 +101,10 @@ test('cards show name, art or placeholder, official price and the lowest active 
 
   const one = cardOf(html, 'model-1');
   expect(one).toContain(`alt="Stokke ${names['model-1']}"`);
-  expect(one).toContain('-540x540.png');
+  expect(one).toContain('.svg');
   expect(one).toContain('model-deal-price');
   expect(one).toContain('model-art-line');
-  expect(one).toContain('width="540" height="540"');
+  expect(one).toContain('width="1080" height="1080"');
   expect(one).toContain('390,000');
   expect(one).not.toContain('%');
   expect(one).toContain('<s>430,000원</s>');
@@ -122,7 +122,7 @@ test('cards show name, art or placeholder, official price and the lowest active 
 
   const three = cardOf(html, 'model-3');
   expect(three).toContain('정보 없음');
-  expect(three).toContain('model-3-540x540.png');
+  expect(three).toContain('model-3.svg');
   expect(three).toContain(`alt="Stokke ${names['model-3']}"`);
   expect(three).toContain('380,000');
   expect(three).not.toContain('model-discount');
@@ -130,8 +130,8 @@ test('cards show name, art or placeholder, official price and the lowest active 
 
   const twenty = cardOf(html, 'model-20');
   expect(twenty).toContain('model-art-line');
-  expect(twenty).toContain('width="540" height="540"');
-  expect(twenty).toContain('model-20-540x540.png');
+  expect(twenty).toContain('width="1080" height="1080"');
+  expect(twenty).toContain('model-20.svg');
   expect(twenty).toContain(`alt="Stokke ${names['model-20']}"`);
   expect(twenty).toContain('670,000원');
 
@@ -157,14 +157,13 @@ test.each(seed.models.map((model, index) => ({ ...model, id: `model-${index + 1}
   for (const forbidden of ['<time', '<button', 'badge', 'eyebrow', '광고', 'checked', 'page_body', 'https://']) {
     expect(html).not.toContain(forbidden);
   }
-  if (['model-32', 'model-39'].includes(model.id)) {
-    expect(html).not.toContain('<img');
-    expect(html).toContain(`<span class="model-art-mark" aria-hidden="true">${[...model.brand][0]}</span>`);
-  } else {
-    expect(html.match(/<img /g)).toHaveLength(1);
-    expect(html).toContain(`alt="${displayName}"`);
-    expect(html).not.toContain('model-art-mark');
-  }
+  expect(html.match(/<img /g)).toHaveLength(1);
+  expect(html).toContain(`src="/img/models/${model.id}.svg"`);
+  expect(html).toContain('width="1080" height="1080"');
+  expect(html).toContain(`alt="${displayName}"`);
+  expect(html).toContain('loading="lazy" decoding="async"');
+  expect(html).not.toMatch(/srcSet|srcset|sizes=|\.png|\/_next\/image/);
+  expect(html).not.toContain('model-art-mark');
 });
 
 test('the page carries no check dates, sources, ads, other prices or verification levels', async () => {

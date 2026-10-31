@@ -73,3 +73,31 @@ npm test && npm run lint && npm run typecheck && npm run build && npm run build:
 git diff --check
 find .local/ref-batch4 -mindepth 1 | wc -l   # 0
 ```
+
+## 8. SVG 직접 표시 및 누락 모델 보완 (2026-10-31)
+
+위 1–7절은 2026-10-23 제작 당시의 기록이다. 현재는 두 blocked 모델의 시각 자료를 확보하여 보완했다. **시드 41개 모두 1080×1080 SVG로 등록되어 직접 표시되며 누락된 그림은 없다.** 기존 SVG 39개는 보존하고 32·39만 새로 그렸다. 사용하지 않는 PNG 파생 파일 78개는 소비 코드 검색 후 삭제했다. 카드의 상품명·손그림·공식가·현재 공구가 네 항목, 접근 가능한 상품명, lazy loading·async decoding은 유지한다. 런타임 정적 허용 목록에 시드를 import하지 않는다.
+
+### 새 시각 근거와 범위
+
+모두 2026-10-31에 직접 열람했다. 아래 사진·PDF는 gitignore된 `.local/illustration-references/`에서만 확인했으며 저장소에 추가하지 않는다. 과거 300px 썸네일 실패 기록은 그대로 보존하고, 이번에는 실제 내려받을 수 있는 제품 사진과 설명서 도해를 확인했다. 가격·국내 구성 근거·시드는 변경하지 않는다.
+
+| 모델 | 출처·세대 확인 | 관찰하여 그린 형태 | 구성 판단 |
+| --- | --- | --- | --- |
+| 32 D.THRONE 이니셜 신생아 디럭스 유모차 | [D.THRONE 공식 상품 페이지](https://www.dthrone.com/102/?idx=58)의 상품명과 연결 갤러리 [750px JPEG](https://cdn-optimized.imweb.me/upload/S202101149e6675f8ef655/e477bf0e73af4.jpg?w=750). 웹 읽기로 본문·갤러리 연결 확인, CDN 사진 직접 열람 성공. 별도 HTML 다운로드는 403이어서 사진 출처를 다른 제품으로 대체하지 않았다. | 왼쪽을 향한 시트·낮아진 발받침, 넓고 둥근 분절 캐노피, 구부러진 범퍼, 오른쪽 위 푸시 핸들, 원형 시트 연결부, 앞쪽으로 휘는 프레임과 뒷다리, 큰 뒤 휠·작은 앞 휠, 깊은 하부 바스켓, 시트 하네스. 뒤쪽 먼 휠은 바스켓 아래 보이는 부분만 그렸다. | 조립 본체 외 분리 부품 없음. 모터·구동 장치·별도 어댑터·커버·캐리콧 등은 확인하지 못했으므로 추가하지 않음. 국내 포함품 묶음은 `unconfirmed` 유지. |
+| 39 Silver Cross 듄2 | [Silver Cross Thailand 설명서 목록](https://silvercrossthailand.com/instruction-manuals/)의 **DUNE 2** 항목이 같은 세대 [제품 사진](https://silvercrossthailand.com/wp-content/uploads/2026/07/Dune_2_Mocha_3Q_World_Facing-1-600x600.webp)과 [Dune 2 Chassis & Seat PDF](https://silvercrossthailand.com/wp-content/uploads/2026/07/dune-seat-and-chassis-have-thai.pdf)를 함께 연결한다. 600px WEBP 직접 열람, PDF 표지·인쇄 페이지 3·6 도해 직접 렌더링·열람. 표지의 Dune 2 표기와 본문의 Silver Cross 제조사 연락처·silvercrossbaby.com 표기를 확인했다. 태국 지역 브랜드 사이트가 호스팅하는 제조사 설명서이며 국내 공식 구성 자료는 아니다. | 오른쪽을 향한 패딩 시트와 짧은 발받침, 앞쪽 활 모양 캐노피 림과 뒤쪽 분절, 푸시 핸들, 중앙 원형 접이 관절, 교차 프레임, 낮은 바스켓, 뒤쪽 큰 휠과 앞쪽 작은 스위블 휠, 곡선 범퍼, 가운데 버클과 어깨 하네스. 사진에서 가려진 먼 휠은 일부 윤곽만 표시. 설명서의 섀시·시트 조립 형태와 대조. | 본체만 그림. 설명서의 캐리콧·일부 액세서리 별매 표기는 국내 번들 포함 목록을 확정하지 않는다. 레인커버·에이프런·카시트·어댑터·캐리콧은 추가하지 않음. 1세대 Dune 또는 Reef 2 그림을 재사용하지 않았다. 국내 구성은 `unconfirmed`. |
+
+두 SVG의 최상위 그룹은 `chassis`, `basket`, `wheels`, `seat`, `canopy`, `bumper-bar`, `harness`다. 제품 사진에서 관찰한 윤곽·접합부·봉제선·휠만 그리고 로고나 글자는 생략했다. 경로 수를 맞추기 위한 장식선을 추가하지 않았다. 테스트는 이 두 모델에 관찰한 그룹과 최소 윤곽 수(32: 6개, 39: 5개; 각 그룹 곡선 1개 이상)를 검사하며 기존 배치의 20개/12개 조건은 보존한다. 제품 충실도는 경로 수가 아니라 사진·설명서와 시각 대조하여 확인했다. Reef 2와 Dune 2의 경로 집합 차이도 이제 검사한다. DUALFIX 33–35의 동일 구조와 다른 모델의 기존 글로벌 구성 근거·불확실성은 변경하지 않았다.
+
+### 현재 도구 계약
+
+- `render-model-illustrations.ts`: 기본 대상은 레지스트리가 아니라 시드 전체. 누락 등록·파일을 실패로 처리한다. 허용 태그·정사각 크기·문자/활성 콘텐츠 금지 검사 후 252px·540px로 메모리 렌더링해 기존 잉크량(최소 크기×4, 면적 20% 미만)·2.5% 투명 여백을 확인한다. 기본은 파일 생성 없음. `--out .local/illustration-previews`를 명시해야 PNG 미리보기를 저장하며 `public/` 출력은 거부한다.
+- `card-screenshots.ts`: 시드 41개와 알 수 없는 `model-42` fixture를 사용. `image/svg+xml` data URL로 SVG를 인라인하여 네트워크를 차단한다. 기본 전체 화면 4장·카드 164장을 저장한다. 41개 모두 디코딩·정사각 이미지·자리표시 없음, 네 항목 카드, 같은 행 높이·공구가 행 높이·가로 넘침을 확인하며 미등록 fixture의 자리표시는 별도로 유지한다. 네 항목 회귀는 `tests/models-page.test.ts`에서 시드 전체로 검증한다.
+
+### 이번 검증 결과
+
+- 영향받는 테스트 3개 파일: **72개 통과**. SVG 파일 목록 41개, 시드 전체 등록, 크기·허용 태그·비표시 제목·외부/활성 콘텐츠 금지, 구성 구별, unknown ID, 네 항목 카드 검사 통과.
+- 오프라인 SVG 검사: **41/41**, 252px·540px 모두 투명 여백·잉크량·잘림 검사 통과. 기본 실행은 파일을 만들지 않음.
+- 스크린샷: `.local/card-qa/`에 390px·1280px × 라이트·다크 전체 4장과 개별 카드 164장. 전체 네 화면 및 32·39의 네 모드 개별 카드를 직접 열어 확인했다. 제품 그림 안 글자·로고 없음, 잘림·가로 넘침 없음, 정사각 비율·행 높이·밝고 어두운 화면의 선 대비 확인. 기존 소형 부속품은 여전히 작게 표시되며 33–35의 트림을 선화만으로 구분할 수 없다는 한계는 유지한다. 자동 검사는 사람의 최종 제품 감수를 대신하지 않는다.
+- `npm run lint`, `npm run typecheck`, `npm run build:worker`(Next.js 빌드 포함), `git diff --check` 통과.
+- Wrangler 로컬 smoke: 격리된 `.local/svg-smoke-state` D1에 기존 마이그레이션·시드를 적용하고 `wrangler dev --local --persist-to .local/svg-smoke-state --port 8797`로 실행했다. 네 화면 모드 모두 실제 `/models`의 카드 41개·SVG 41개 디코딩·네 항목·자리표시 없음·가로 넘침 없음 확인. 각 SVG는 HTTP 200과 `image/svg+xml` 응답, 이미지 요청 41개는 모두 직접 SVG 경로였으며 PNG나 `/_next/image` 요청은 없었다. 실제 사이트 캡처도 `.local/card-qa/worker-*.png`에 저장했다. 원격 DB·배포·크롤러는 사용하지 않았다.

@@ -84,10 +84,9 @@ test('strikethrough follows the same condition as the pill', () => {
 test('illustrations resolve only for listed IDs', () => {
   for (const id of ILLUSTRATED_MODEL_IDS) {
     expect(modelIllustration(id)).toEqual({
-      src: `/img/models/${id}-540x540.png`,
-      srcSet: `/img/models/${id}-252x252.png 252w, /img/models/${id}-540x540.png 540w`,
-      width: 540, height: 540,
+      src: `/img/models/${id}.svg`,
+      width: 1080, height: 1080,
     });
   }
-  for (const id of ['model-42', 'model-0', 'model-32', 'model-39', '../model-1', 'model-1/../model-2', '', 'MODEL-1']) expect(modelIllustration(id)).toBeNull();
+  for (const id of ['model-42', 'model-0', '../model-1', 'model-1/../model-2', '', 'MODEL-1']) expect(modelIllustration(id)).toBeNull();
 });

@@ -251,7 +251,6 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 4. `/me`, `/sellers`, `/api/v1/images/:key`(R2 `public/`만), 관리자 판매자·공구 정정/철회·후보 API가 추가되어 있습니다.
 5. legacy **`kind: "external_listing"` ingest는 여전히 쓰기 가능**합니다. 새 external_candidates 삽입과 candidate 갱신만 하며 dismissed는 보존합니다. 관리자는 조회·dismiss만 할 수 있고 후보를 공구로 승격하는 경로는 없습니다. price_hint/price_raw는 공구가나 공식가로 표시되지 않습니다.
 6. Workers Cron은 **로그 전용 stub**입니다. 모든 수집은 Linux에서 실행합니다.
-7. 블루프린트의 **SVG 카드**와 달리 SVG는 편집 원본이고 실제 표시 에셋은 투명 PNG입니다. `public/img/models/model-N.svg`는 1080×1080이며 `lib/model-illustrations.ts`는 540×540 `src`와 252×252·540×540 `srcSet`을 반환합니다. 등록 모델은 39개이며 model-32·model-39는 null을 반환해 자리표시를 표시합니다.
 
 ## 검증
 
@@ -274,15 +273,20 @@ Worker 빌드 후 `wrangler dev --local --test-scheduled`와 로컬 `/__schedule
 
 ## 상품 손그림 에셋
 
-`lib/model-illustrations.ts`가 모델별 이미지 규격을 반환합니다. model-1–41 중 등록된 39개(model-32·39 제외)의 편집 원본은 `public/img/models/model-N.svg`(`1080×1080`)입니다. 사이트의 카드에는 SVG를 표시하지 않으며 `model-N-540x540.png`를 `src`로, `model-N-252x252.png 252w, model-N-540x540.png 540w`를 `srcSet`으로 사용합니다. 표시 파일은 투명 PNG입니다. 이는 블루프린트의 “SVG 카드” 표현과 의도적으로 다릅니다. 신규 에셋은 1:1 정사각 순수 선화로 만들고 세트 구성품을 구별할 수 있도록 그립니다. 제품 경로만 넣고 글자·로고·종이 배경·액자·그림자를 넣지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다.
+`lib/model-illustrations.ts`는 시드 41개 모델 모두에 `/img/models/model-N.svg`와 `1080×1080` 크기를 반환합니다. `public/img/models/`에는 1:1 정사각 SVG 41개만 있으며 카드는 `<img>`로 직접 표시합니다. `srcSet`·`sizes`·PNG 파생 파일·이미지 최적화 서버를 사용하지 않습니다. 런타임은 정적 ID 허용 목록만 사용하며 시드를 import하지 않습니다. 알 수 없는 ID는 `null`을 반환하고 브랜드 첫 글자 자리표시를 유지합니다.
+
+그림은 투명 배경의 순수 선화이며 제품과 확인된 구성품만 그립니다. 글자·글자 모양 경로·로고·배경·액자·그림자·내장 래스터·외부 참조·스크립트는 허용하지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다. 카드의 네 항목(상품명·손그림·공식가·현재 공구가)은 그대로입니다.
 
 ```sh
-npx tsx scripts/render-model-illustrations.ts            # 등록된 39개 전부 두 크기로 재생성
-npx tsx scripts/render-model-illustrations.ts model-13   # 특정 모델만
+npx tsx scripts/render-model-illustrations.ts            # 시드 41개 SVG 검증, 파일 생성 없음
+npx tsx scripts/render-model-illustrations.ts model-32 model-39
+npx tsx scripts/render-model-illustrations.ts --out .local/illustration-previews
 npx tsx scripts/card-screenshots.ts --out .local/card-qa
 ```
 
-렌더링·스크린샷은 기존 Playwright를 쓰며 서버나 네트워크가 필요 없습니다. 스크린샷은 등록된 39개 모델과 미등록 자리표시 1개를 모바일 390px·데스크톱 1280px × 라이트·다크에서 확인하며 이미지 디코딩 완료 후 전체 화면 4장과 기본 model-31–41 중 등록된 9개 카드 36장(`--cards model-31,model-33`으로 선택 가능)을 저장합니다. 모든 공구가 행의 높이(40px 이하), 정사각 이미지 디코딩, 같은 행 카드 높이, 자리표시와 가로 넘침을 검사합니다. model-32·39는 기준 내 공식 썸네일을 확보하지 못해 자리표시를 유지합니다. 참조 사진은 임시 확인 후 삭제하며 저장소에 보관하지 않습니다. 서버 축소 요청의 제한은 배치 1 제작 기록에 남겼습니다.
+검증·스크린샷은 Playwright로 서버·네트워크 없이 실행합니다. SVG를 252px·540px로 메모리 렌더링하여 정사각 크기·투명 여백(2.5%)·잉크 밀도(20% 미만)·잘림을 검사하며, PNG 미리보기는 명시한 `.local/` 하위 디렉터리에만 저장합니다. 스크린샷은 레지스트리가 아닌 **시드 전체**를 기준으로 하여 누락 등록도 실패시킵니다. 390px 모바일·1280px 데스크톱 × 라이트·다크 전체 화면 4장과 기본 41개 카드 164장을 저장합니다(`--cards model-32,model-39`로 개별 카드 저장 범위 선택). 이미지 디코딩·정사각 크기·공구가 행 높이(40px 이하)·같은 행 카드 높이·가로 넘침과 시드 밖 `model-42` 자리표시를 검사합니다. 경로 수나 자동 검사만으로 제품 충실도를 판정하지 않으며 출처와 렌더링을 눈으로 대조합니다.
+
+model-32는 D.THRONE 공식 이니셜 갤러리 사진, model-39는 Silver Cross Thailand의 Dune 2 사진과 해당 세대 설명서로 외형을 확인했습니다(2026-10-31). 두 모델 모두 조립된 본체를 그렸으며 국내 부속품 묶음은 미확인입니다. 기존 모델의 글로벌 구성·작은 부속품 가독성·DUALFIX 트림 간 동일 구조 한계도 유지합니다. 새 근거·실행 결과와 과거 기록은 [배치 4 제작 기록](docs/model-illustrations-batch-4.md#8-svg-직접-표시-및-누락-모델-보완-2026-10-31)을 참고하세요. 참조 사진·설명서는 저장소에 추가하지 않습니다.
 
 ## 구현 기록 (참고용)
 

@@ -1,4 +1,4 @@
-// Renders all registered illustrated models plus one placeholder fixture into a static page and screenshots them in
+// Renders all seeded models plus one placeholder fixture into a static page and screenshots them in
 // mobile/desktop x light/dark. No server, no network: images are inlined.
 //   npx tsx scripts/card-screenshots.ts --out <dir> [--cards model-31,model-33]
 import { mkdir, readFile } from 'node:fs/promises';
@@ -9,7 +9,6 @@ import { chromium } from 'playwright';
 import { ModelCard } from '../app/models/_card';
 import type { ModelCardData } from '../lib/model-cards';
 import { priceGap } from '../lib/deals';
-import { SQUARE_MODEL_IDS } from '../lib/model-illustrations';
 
 const root = new URL('..', import.meta.url).pathname;
 const DARK_BG = 'rgb(27, 33, 28)';
@@ -17,17 +16,19 @@ const outIndex = process.argv.indexOf('--out');
 if (outIndex < 0 || !process.argv[outIndex + 1]) throw new Error('Usage: tsx scripts/card-screenshots.ts --out <dir> [--cards model-31,model-33]');
 const out = resolve(process.argv[outIndex + 1]);
 
-const cardsIndex = process.argv.indexOf('--cards');
-const cardIds: readonly string[] = cardsIndex < 0 ? SQUARE_MODEL_IDS.slice(30) : [...new Set((process.argv[cardsIndex + 1] ?? '').split(','))];
-if (cardIds.some(id => !(SQUARE_MODEL_IDS as readonly string[]).includes(id))) throw new Error('--cards requires comma-separated registered model IDs');
-
 const seed = JSON.parse(await readFile(join(root, 'seed/models.json'), 'utf8')) as { models: { brand: string; model: string; kr_official_price_krw: number | null }[] };
+// Coverage comes from seed, independently of the runtime illustration allowlist.
+const seedIds = seed.models.map((_, i) => `model-${i + 1}`);
+const cardsIndex = process.argv.indexOf('--cards');
+const cardIds: readonly string[] = cardsIndex < 0 ? seedIds : [...new Set((process.argv[cardsIndex + 1] ?? '').split(','))];
+if (cardIds.some(id => !seedIds.includes(id))) throw new Error('--cards requires comma-separated seeded model IDs');
+
 const base = (n: number) => ({ id: `model-${n}`, name: seed.models[n - 1].model, brand: seed.models[n - 1].brand, official_price: seed.models[n - 1].kr_official_price_krw });
 const withDeal = (card: ReturnType<typeof base>, price: number): ModelCardData => ({ ...card, deal: { price }, gap: priceGap(price, card.official_price) });
 const noDeal = (card: ReturnType<typeof base>): ModelCardData => ({ ...card, deal: null, gap: null });
 // Synthetic prices only exercise screenshot layout; never written to seed or DB.
 const cards: ModelCardData[] = [
-  ...SQUARE_MODEL_IDS.map(id => {
+  ...seedIds.map(id => {
     const n = Number(id.slice(6)), card = base(n);
     if (n === 3) return { ...card, deal: { price: null }, gap: null };
     const price = ({ 1: 390000, 5: 780000, 10: 1990000 } as Record<number, number>)[n];
@@ -40,11 +41,11 @@ const css = await readFile(join(root, 'app/globals.css'), 'utf8');
 const markup = renderToStaticMarkup(createElement('div', { className: 'model-grid' }, cards.map(card => createElement(ModelCard, { key: card.id, card }))));
 const imageData = new Map<string, string>();
 async function dataUrl(path: string) {
-  if (!imageData.has(path)) imageData.set(path, `data:image/png;base64,${Buffer.from(await readFile(join(root, 'public', path))).toString('base64')}`);
+  if (!imageData.has(path)) imageData.set(path, `data:image/svg+xml;base64,${Buffer.from(await readFile(join(root, 'public', path))).toString('base64')}`);
   return imageData.get(path)!;
 }
 let html = markup;
-for (const path of new Set(markup.match(/\/img\/models\/[\w.-]+\.png/g) ?? [])) html = html.split(path).join(await dataUrl(path));
+for (const path of new Set(markup.match(/\/img\/models\/[\w.-]+\.svg/g) ?? [])) html = html.split(path).join(await dataUrl(path));
 if (/\/img\//.test(html)) throw new Error('Unreplaced /img/ path remains in markup');
 const pageHtml = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body><main class="page">${html}</main></body></html>`;
 
@@ -73,7 +74,8 @@ try {
         }));
         await document.fonts.ready;
       });
-      if (await page.locator('.model-art-line img').count() !== SQUARE_MODEL_IDS.length) throw new Error('Illustrated model coverage is incomplete');
+      if (await page.locator('.model-art-line img').count() !== seedIds.length) throw new Error('Illustrated model coverage is incomplete');
+      if (await page.locator('img[srcset], img[sizes]').count()) throw new Error('SVG cards must not have raster source selection');
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       if (overflow) throw new Error(`${name}-${scheme}: horizontal overflow`);
       const broken = await page.evaluate(() => [...document.images].filter(img => !img.complete || img.naturalWidth === 0 || img.naturalWidth !== img.naturalHeight).length);
@@ -93,7 +95,7 @@ try {
       });
       if (layout.invalidDeals || layout.unevenRows) throw new Error(`${name}-${scheme}: ${JSON.stringify(layout)}`);
       if (await page.locator('.model-art-mark').count() !== 1 || await page.locator('a[href="/models/model-42"] .model-art-mark').count() !== 1) throw new Error('Placeholder coverage is incorrect');
-      for (const id of SQUARE_MODEL_IDS) {
+      for (const id of seedIds) {
         if (await page.locator(`a[href="/models/${id}"] .model-art-mark`).count()) throw new Error(`Unexpected placeholder: ${id}`);
       }
       for (const id of cardIds) {
