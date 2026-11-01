@@ -23,7 +23,7 @@ test('v2 synthetic 518 records and all legacy data survive 0003, with private ba
   db.exec('COMMIT');
   const before=db.prepare('SELECT * FROM collection_records ORDER BY id').all(),groups=db.prepare('SELECT * FROM dedup_groups ORDER BY id').all();db.close();
   const store=new CollectorStore(file);try{
-   expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:6});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(before);expect(store.db.prepare('SELECT * FROM dedup_groups ORDER BY id').all()).toEqual(groups);
+   expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:7});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(before);expect(store.db.prepare('SELECT * FROM dedup_groups ORDER BY id').all()).toEqual(groups);
    const backups=readdirSync(dir).filter(x=>x.includes('.pre-0003-'));expect(backups).toHaveLength(1);expect(statSync(join(dir,backups[0])).mode&0o777).toBe(0o600);
    expect(store.db.prepare('PRAGMA quick_check').get()).toMatchObject({quick_check:'ok'});expect(store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
    expect(backfillEngine(store)).toEqual({captures:518,extracted:0,total:518});expect(backfillEngine(store)).toEqual({captures:0,extracted:0,total:518});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(before);

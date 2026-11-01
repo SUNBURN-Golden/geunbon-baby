@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { CollectorError, type CollectorStore } from './store';
 
-export type RunKind = 'serve'|'crawl'|'sync';
+export type RunKind = 'serve'|'crawl'|'sync'|'schedule';
 export type ProcReader = (path: string) => string;
 export type RunLock = { release: () => void };
 export type RunLockOptions = {

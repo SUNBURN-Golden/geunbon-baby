@@ -19,6 +19,8 @@
 
 **Workers Cron은 수집기를 실행하지 않는 로그 stub입니다. Playwright와 OCR은 Linux에서만 실행합니다.** 사이트는 로컬 수집 레코드·URL·원문·셀러·근거를 가져오지 않습니다. 로컬 `seller_candidates`를 사이트 판매자로 자동 등록하지도 않습니다. 수집함의 `ready_to_publish`는 사람의 공개 검토를 마친 로컬 상태이며 실제 게시 동작이 아닙니다. Instagram pending → 사이트 관리자 승인 → deals 경로와 별개입니다.
 
+Linux 수집 예약은 `npm run collector:worker -- schedule`의 상주 슬롯 관리로 실행합니다. KST 누락 슬롯 병합, 수동·예약 공통 실행, 상태 기록과 전환 절차는 [수집 일정 운영](docs/collector/scheduling.md)을 참고하세요. 운영 PM2 전환은 별도로 수행합니다.
+
 3경로는 자동 RSS/API/사이트맵/링크 발견(`auto_discovery`), 승인된 공개 브라우저 추출(`browser_extract`), Chrome 수동 담기(`manual_clip`)입니다. 저장 전·AI 전달 전 공통 개인정보 필터(`shared/privacy-rules.ts`)를 적용하고 자료를 `untrusted_source_data`로 격리합니다. AI는 필수가 아니며 자료 속 지시로 도구 실행·상태 승격·게시를 하지 않습니다.
 
 설치·운영은 [Linux 수집 시스템](crawler/README.md), [독립 로컬 수집함](crawler/README.md#독립-로컬-수집함), [건수 동기화](crawler/README.md#건수-동기화), [외부 공구 모음 이관](crawler/README.md#외부-공구-모음-이관), [Chrome 확장 안내](tools/chrome-clipper/README.md)를 참고하세요. 개발 작업 데몬 [tools/dev-daemon](tools/dev-daemon/README.md)과 PM2 앱 `agamajung-dev-daemon`은 위 수집·사이트 운영과 무관한 별도 도구입니다.
@@ -237,11 +239,11 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 | Instagram 직접 연속 모드 | 알림·홈 스토리 트레이 1–2분 지터, 프로필 재확인 최소 90분·스토리 최소 30분, 태그 발견 최소 6시간 간격. 작업 시간·행동 한도·휴식에 따라 지연 | `crawler/config/settings.json`, `crawler/index.ts` |
 | Instagram systemd 대안 | 연속 모드, 실패 시 600초 뒤 재시작. `RestartPreventExitStatus=75`로 차단·챌린지 시 자동 재시작 금지 | `crawler/agamajung-crawler.service`. PM2와 동시 실행 금지 |
 | Workers Cron | `0 */6 * * *`(UTC, 6시간 간격), 로그만 기록 | `wrangler.jsonc`, `worker.ts`. Linux 수집을 호출하지 않음 |
-| 독립 discover | 제공되는 timer 없음. 운영자가 Linux timer/cron으로 예약 | `crawler/src/local-worker.ts`. 같은 DB의 serve/discover/sync 동시 실행 가능, 같은 종류는 실행 잠금으로 1개. [동시 실행과 잠금](crawler/README.md#동시-실행과-잠금) |
+| 독립 discover/collect | Linux 상주 `schedule`: KST 09:20·15:20·21:20 / 09:40·15:40·21:40, 누락 병합 | `crawler/config/schedule.json`, `crawler/collector-scheduler.ecosystem.config.cjs`. 수집은 crawl 잠금으로 1개. [슬롯 운영](docs/collector/scheduling.md). [동시 실행과 잠금](crawler/README.md#동시-실행과-잠금) |
 | 건수 sync | heartbeat 15분(`STATUS_HEARTBEAT_MS`). sync 호출 때 새 스냅샷 필요 여부 확인, 내장 timer 없음. 운영자는 15분 이하 간격으로 실행(같은 sync 중복은 자동 거부) | `crawler/src/status-sync.ts`, [동기화 운영](crawler/README.md#건수-동기화) |
 | 사이트 현황 | 스냅샷 **생성** 후 60분 초과 시 동기화 지연 | `lib/collection-status.ts`. 수신 시각 기준이 아님 |
 
-`pm2 start crawler/ecosystem.config.cjs`는 등록 즉시 한 번 실행합니다. 예약만 등록하는 절차와 보안 중단 후 수동 확인은 수집기 운영 문서를 따르세요. discover/sync 타이머는 저장소에 포함되어 있지 않습니다.
+`pm2 start crawler/ecosystem.config.cjs`는 등록 즉시 한 번 실행합니다. 예약만 등록하는 절차와 보안 중단 후 수동 확인은 수집기 운영 문서를 따르세요. discover/collect는 별도 상주 스케줄러 정의를 제공하며 sync 타이머는 운영자가 관리합니다.
 
 ## 블루프린트와 다른 점
 
