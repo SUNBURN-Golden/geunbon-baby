@@ -1,10 +1,135 @@
 import { expect, test, vi } from 'vitest';
 import { asset, engineFixture } from './helpers/engine';
 import * as rules from '../crawler/src/agamajung/rules';
+import { digest } from '../crawler/src/dedup';
 const all=(f:ReturnType<typeof engineFixture>,table:string)=>f.store.db.prepare(`SELECT * FROM ${table}`).all() as Record<string,unknown>[];
 async function collect(f:ReturnType<typeof engineFixture>,slot='one'){
  const r=f.pipeline.start({kind:'test',at:slot});f.pipeline.seed(r);await f.pipeline.run(r);return r;
 }
+const day=86400000;
+const seedPage='<main><h1>Example stroller example_only</h1><p>출시 연식: 2026</p></main>';
+function recheckRecord(f:ReturnType<typeof engineFixture>,url:string,due:string|null,source=f.source.id){
+ const record={...f.store.discover(url),source,last_checked_at:new Date(f.now()-10*day).toISOString(),next_recheck_at:due};
+ f.store.db.prepare('UPDATE collection_records SET data=? WHERE id=?').run(JSON.stringify(record),record.id);
+ return record;
+}
+function seeds(f:ReturnType<typeof engineFixture>,runId:string){
+ const rows=f.store.db.prepare("SELECT item_key,data FROM engine_checkpoints WHERE run_id=? AND stage='discover' ORDER BY rowid").all(runId) as {item_key:string;data:string}[];
+ return rows.map(r=>({item_key:r.item_key,data:JSON.parse(r.data) as {source_id:string;url:string;depth:number}}));
+}
+test('one-page runs prioritize the oldest overdue record and advance the persisted backlog through successful submissions',async()=>{
+ const f=engineFixture(seedPage,{max_pages:1});try{
+  const origin=f.source.origin;
+  f.source.entries=['entry-one','entry-two','entry-three'].map(path=>`${origin}/${path}`);
+  const inserted=[recheckRecord(f,`${origin}/middle`,new Date(f.now()-2*day).toISOString()),
+   recheckRecord(f,`${origin}/newest`,new Date(f.now()-day).toISOString()),
+   recheckRecord(f,`${origin}/oldest`,new Date(f.now()-3*day).toISOString())];
+  const expected=[inserted[2],inserted[0],inserted[1]];
+  for(const [index,record] of expected.entries()){
+   const before=f.store.list('collection_records'),budgets=f.store.list('daily_budgets');
+   const run=f.pipeline.start({kind:'test',at:`overdue-${index}`});f.pipeline.seed(run);
+   expect(seeds(f,run)).toEqual([{item_key:digest([f.source.id,record.url]),data:{source_id:f.source.id,url:record.url,depth:0}}]);
+   expect(f.store.list('collection_records')).toEqual(before);expect(f.store.list('daily_budgets')).toEqual(budgets);
+   await f.pipeline.run(run);expect(f.pipeline.engine.run(run)?.state).toBe('finished');
+   expect(f.store.list('intake_receipts')).toHaveLength(index+1);
+   const saved=f.store.recordByUrl(record.url)!;
+   expect(saved.last_checked_at).not.toBe(record.last_checked_at);
+   expect(Date.parse(saved.next_recheck_at!)).toBe(Date.parse(saved.last_checked_at!)+f.source.recheck_ms);
+   expect(Date.parse(saved.next_recheck_at!)).toBeGreaterThan(f.now());
+   for(const remaining of expected.slice(index+1))expect(f.store.recordByUrl(remaining.url)).toEqual(remaining);
+   f.reopen();expect(f.store.recordByUrl(record.url)).toEqual(saved);f.advance(60000);
+  }
+  expect(f.calls.filter(c=>!c.url.endsWith('/robots.txt')).map(c=>c.url)).toEqual(expected.map(r=>r.url));
+ }finally{f.close();}
+});
+test.each([['z','a'],['a','z']])('equal parsed due dates use canonical URL ordering regardless of insertion order: %s, %s',(first,second)=>{
+ const f=engineFixture(seedPage,{max_pages:1});try{
+  const records=[first,second].map((path,index)=>recheckRecord(f,`${f.source.origin}/${path}`,index?'2026-10-22T09:00:00+09:00':'2026-10-22T00:00:00Z'));
+  // Exercise both record-ID iteration orders and legacy URL normalization variants.
+  const list=vi.spyOn(f.store,'list').mockReturnValue(records.map(r=>({...r,url:r.url.endsWith('/z')?`${f.source.origin}//z/`:`${r.url}/`})));
+  const run=f.pipeline.start({kind:'test',at:'ties'});f.pipeline.seed(run);
+  expect(seeds(f,run).map(r=>r.data.url)).toEqual([`${f.source.origin}/a`]);
+  expect(list).toHaveBeenCalledExactlyOnceWith('collection_records');
+ }finally{f.close();}
+});
+test('overdue URLs lead unique entries in configured order; normalization overlaps consume one checkpoint and page slot',async()=>{
+ const f=engineFixture(seedPage,{max_pages:4});try{
+  const origin=f.source.origin;
+  f.source.entries=[`${origin}//shared/#first`,`${origin}/shared/`,`${origin}/entry-b/`,`${origin}/entry-b#duplicate`,`${origin}/entry-a`];
+  recheckRecord(f,`${origin}/shared`,new Date(f.now()-day).toISOString());
+  recheckRecord(f,`${origin}/oldest`,new Date(f.now()-2*day).toISOString());
+  const run=f.pipeline.start({kind:'test',at:'overlap'});f.pipeline.seed(run);
+  const expected=['oldest','shared','entry-b','entry-a'].map(path=>`${origin}/${path}`);
+  expect(seeds(f,run)).toEqual(expected.map(url=>({item_key:digest([f.source.id,url]),data:{source_id:f.source.id,url,depth:0}})));
+  await f.pipeline.run(run);expect(f.pipeline.engine.run(run)?.state).toBe('finished');
+  expect(f.calls.map(c=>c.url)).toEqual([`${origin}/robots.txt`,...expected]);
+  expect(f.store.list('intake_receipts')).toHaveLength(4);
+ }finally{f.close();}
+});
+test.each([[2,4],[4,2]])('the smaller source (%i) and global (%i) page budget governs overdue seeding',(sourceLimit,globalLimit)=>{
+ const f=engineFixture(seedPage,{max_pages:sourceLimit});try{
+  f.settings.limits.max_pages=globalLimit;
+  for(const [path,age] of [['newest',1],['oldest',3],['middle',2]] as const)recheckRecord(f,`${f.source.origin}/${path}`,new Date(f.now()-age*day).toISOString());
+  const run=f.pipeline.start({kind:'test',at:'limits'});f.pipeline.seed(run);
+  expect(seeds(f,run).map(r=>r.data.url)).toEqual(['oldest','middle'].map(path=>`${f.source.origin}/${path}`));
+ }finally{f.close();}
+});
+test('future, null and invalid dates do not receive priority, but configured entries remain eligible',()=>{
+ const f=engineFixture(seedPage,{max_pages:4});try{
+  const origin=f.source.origin;
+  f.source.entries=['future','null','invalid'].map(path=>`${origin}/${path}`);
+  recheckRecord(f,`${origin}/future`,new Date(f.now()+day).toISOString());
+  recheckRecord(f,`${origin}/null`,null);recheckRecord(f,`${origin}/invalid`,'invalid-date');
+  recheckRecord(f,`${origin}/due-now`,new Date(f.now()).toISOString());
+  recheckRecord(f,`${origin}/wrong-source`,new Date(f.now()-day).toISOString(),'another-source');
+  const run=f.pipeline.start({kind:'test',at:'eligibility'});f.pipeline.seed(run);
+  expect(seeds(f,run).map(r=>r.data.url)).toEqual([`${origin}/due-now`,...f.source.entries]);
+ }finally{f.close();}
+});
+test('source enablement, profile allowlisting and tier order still govern overdue records and entries',()=>{
+ const f=engineFixture(seedPage,{max_pages:1});try{
+  const extra=(id:string,enabled=true)=>({...f.source,id,enabled,origin:`https://${id}.example.org`,entries:[`https://${id}.example.org/entry`]});
+  const catalog=extra('catalog'),disabled=extra('disabled',false),excluded=extra('excluded');
+  f.settings.sources=[catalog,disabled,excluded,f.source];
+  f.profile.domain_policy.sources.catalog={...f.profile.domain_policy.sources[f.source.id],tier:'catalog'};
+  f.profile.domain_policy.sources.disabled={...f.profile.domain_policy.sources[f.source.id]};
+  for(const s of f.settings.sources)recheckRecord(f,`${s.origin}/due`,new Date(f.now()-day).toISOString(),s.id);
+  f.reopen();const list=vi.spyOn(f.store,'list');
+  const run=f.pipeline.start({kind:'test',at:'policy'});f.pipeline.seed(run);
+  expect(seeds(f,run).map(r=>r.data)).toEqual([f.source,catalog].map(s=>({source_id:s.id,url:`${s.origin}/due`,depth:0})));
+  expect(list).toHaveBeenCalledExactlyOnceWith('collection_records');
+ }finally{f.close();}
+});
+test('repeated seeding and reopen/resume of the same run preserve checkpoints, transport, receipts and budgets',async()=>{
+ const f=engineFixture(seedPage,{max_pages:1});try{
+  recheckRecord(f,`${f.source.origin}/due`,new Date(f.now()-day).toISOString());
+  const run=f.pipeline.start({kind:'test',at:'idempotent'});f.pipeline.seed(run);
+  const snapshot=()=>['engine_checkpoints','engine_costs','engine_cost_holds','intake_reservations','intake_receipts','daily_budgets','collection_records'].map(table=>all(f,table));
+  const seeded=snapshot();f.pipeline.seed(run);expect(snapshot()).toEqual(seeded);expect(f.calls).toEqual([]);
+  f.reopen();expect(f.pipeline.resume(run)).toBe(run);f.pipeline.seed(run);
+  expect(snapshot()).toEqual(seeded);expect(f.calls).toEqual([]);
+  await f.pipeline.run(run);expect(f.pipeline.engine.run(run)?.state).toBe('finished');
+  const completed=snapshot(),calls=[...f.calls];
+  expect(f.store.list('intake_receipts')).toHaveLength(1);
+  f.reopen();expect(f.pipeline.start({kind:'test',at:'idempotent'})).toBe(run);
+  f.pipeline.seed(run);await f.pipeline.run(run);
+  expect(snapshot()).toEqual(completed);expect(f.calls).toEqual(calls);
+ }finally{f.close();}
+});
+test.each(['run','day'] as const)('overdue backlog respects a tight %s request cap including robots',async scope=>{
+ const f=engineFixture(seedPage,{max_pages:2});try{
+  for(const [path,age] of [['newest',1],['oldest',3],['middle',2]] as const)recheckRecord(f,`${f.source.origin}/${path}`,new Date(f.now()-age*day).toISOString());
+  f.profile.cost_caps[scope].requests=1;f.reopen();
+  const records=f.store.list('collection_records'),run=await collect(f,'request-cap');
+  expect(seeds(f,run).map(r=>r.data.url)).toEqual(['oldest','middle'].map(path=>`${f.source.origin}/${path}`));
+  expect(f.calls.map(c=>c.url)).toEqual([`${f.source.origin}/robots.txt`]);
+  expect(f.pipeline.engine.run(run)?.state).toBe(scope==='run'?'exhausted':'cost_wait');
+  expect(all(f,'engine_checkpoints').find(c=>c.stage==='fetch')).toMatchObject({phase:scope==='run'?'pending':'deferred',attempts:0,error_code:`cost_${scope}`});
+  expect(all(f,'engine_costs').filter(c=>c.kind==='requests')).toEqual([expect.objectContaining({spent:1,held:0}),expect.objectContaining({spent:1,held:0})]);
+  expect(all(f,'engine_cost_holds')).toEqual([]);expect(f.store.list('intake_receipts')).toEqual([]);
+  expect(f.store.list('collection_records')).toEqual(records);
+ }finally{f.close();}
+});
 test('manufacturer HTML traverses four layers with provenance, all six labels, seven required fields and no permanent raw',async()=>{
  const f=engineFixture();try{
   const r=await collect(f);expect(f.pipeline.engine.run(r)?.state).toBe('finished');

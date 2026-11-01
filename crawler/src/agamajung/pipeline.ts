@@ -92,11 +92,22 @@ export class AgamajungPipeline {
   seed(runId:string){
     const run=this.engine.run(runId);
     if(run?.state!=='running'||JSON.parse(run.data).collection_seeded)return;
+    const now=this.store.now(),records=this.store.list<{url:string;source:string;next_recheck_at:string|null}>('collection_records');
     const policy=this.profile.domain_policy;
     const sources=this.store.settings.sources.filter(s=>s.enabled&&policy.sources[s.id]).sort((a,b)=>policy.start_order.indexOf(policy.sources[a.id].tier)-policy.start_order.indexOf(policy.sources[b.id].tier));
     for(const source of sources){
-      const due=this.store.list<{url:string;source:string;next_recheck_at:string|null}>('collection_records').filter(r=>r.source===source.id&&r.next_recheck_at&&Date.parse(r.next_recheck_at)<=this.store.now()).map(r=>r.url);
-      for(const url of [...new Set([...source.entries,...due])].slice(0,Math.min(source.max_pages,this.store.settings.limits.max_pages)))this.engine.enqueue(runId,'discover',digest([source.id,canonicalUrl(url)]),{source_id:source.id,url:canonicalUrl(url),depth:0});
+      const due=records.filter(r=>r.source===source.id).flatMap(r=>{
+        const at=r.next_recheck_at?Date.parse(r.next_recheck_at):NaN;
+        return Number.isFinite(at)&&at<=now?[{url:canonicalUrl(r.url),at}]:[];
+      }).sort((a,b)=>a.at-b.at||(a.url<b.url?-1:a.url>b.url?1:0));
+      const seen=new Set<string>(),limit=Math.min(source.max_pages,this.store.settings.limits.max_pages);
+      for(const candidate of [...due.map(r=>r.url),...source.entries]){
+        const url=canonicalUrl(candidate);
+        if(seen.has(url))continue;
+        seen.add(url);
+        this.engine.enqueue(runId,'discover',digest([source.id,url]),{source_id:source.id,url,depth:0});
+        if(seen.size>=limit)break;
+      }
     }
     this.store.transaction(()=>this.store.db.prepare("UPDATE engine_runs SET data=json_set(data,'$.collection_seeded',1) WHERE id=?").run(runId));
   }
