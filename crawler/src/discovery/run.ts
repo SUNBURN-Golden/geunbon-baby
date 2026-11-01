@@ -1,8 +1,8 @@
-import { Scheduler } from '../scheduler';
+import { Scheduler, type DomainState } from '../scheduler';
 import { CollectorStore, requireThat } from '../store';
 import { RunHealth, failureCode } from './health';
 import { measurePage, measureBrowser } from './measure';
-import { sourceFor, type SourcePolicy } from '../source-policy';
+import { sourceFor, visitAllowed, type SourcePolicy } from '../source-policy';
 import { browserExtract } from './browser';
 import { extractFacts } from '../../../shared/fact-extract';
 import { parseHtml, selectAll, textOf } from '../../lib/external/parse';
@@ -15,10 +15,22 @@ export type Job={id:string;url:string;source_id:string;depth:number;operation:'d
 export class DiscoveryRunner {
   constructor(readonly store:CollectorStore,readonly scheduler=new Scheduler(store)) {}
   enqueue(raw:string,source:SourcePolicy,depth=0,operation:Job['operation']='discovery') {
-    requireThat(depth<=this.store.settings.limits.max_depth,'depth_limit');const url=canonicalUrl(raw),id=digest([url,operation]),old=this.store.get<Job>('collection_jobs',id);
-    const wait=old?.phase==='failed'?this.store.settings.limits.failure_backoff_ms:source.recheck_ms;
-    if(old&&(old.phase==='pending'||old.phase==='leased'||(old.finished_at??0)+wait>this.store.now()))return;
-    this.store.transaction(()=>this.store.put('collection_jobs',id,{id,url,source_id:source.id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:(old?.attempt??0)+1} satisfies Job));
+    const url=canonicalUrl(raw),id=digest([url,operation]),old=this.store.get<Job>('collection_jobs',id);
+    if(old?.phase==='failed'){this.retryFailed(old);return;}
+    requireThat(depth<=this.store.settings.limits.max_depth,'depth_limit');
+    if(old&&(old.phase==='pending'||old.phase==='leased'||(old.finished_at??0)+source.recheck_ms>this.store.now()))return;
+    this.store.transaction(()=>this.store.put('collection_jobs',id,{id,url,source_id:source.id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:old?(old.attempt??1)+1:1} satisfies Job));
+  }
+  private retryFailed(job:Job) {
+    if(job.finished_at===undefined||job.finished_at+this.store.settings.limits.failure_backoff_ms>this.store.now())return;
+    const source=this.store.settings.sources.find(s=>s.id===job.source_id&&s.enabled);
+    if(!source||!visitAllowed(job.url,source))return;
+    if(!Number.isSafeInteger(job.depth)||job.depth<0||job.depth>this.store.settings.limits.max_depth)return;
+    const domain=this.store.get<DomainState>('domain_state',new URL(job.url).hostname);
+    if(domain?.stopped||(domain?.next_at??0)>this.store.now())return;
+    // Keep the original binding and spent attempts; the next reservation must be fresh.
+    const {id,url,source_id,depth,operation}=job;
+    this.store.transaction(()=>this.store.put('collection_jobs',id,{id,url,source_id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:(job.attempt??1)+1} satisfies Job));
   }
   seed(){for(const source of this.store.settings.sources.filter(s=>s.enabled))for(const url of source.entries)this.enqueue(url,source);}
   async run(dryRun=false) {
@@ -34,6 +46,8 @@ export class DiscoveryRunner {
     return {mode,status,sources,review:sources.filter(s=>s.status==='review').map(s=>s.source_id)};
   }
   private async runJobs(health:RunHealth) {
+    // One scan per normal run, including children whose successful parent is still fresh.
+    for(const job of this.store.list<Job>('collection_jobs'))if(job.phase==='failed')this.retryFailed(job);
     for(const r of this.store.list<CollectionRecord>('collection_records').filter(r=>r.next_recheck_at&&Date.parse(r.next_recheck_at)<=this.store.now())){const s=sourceFor(r.url,this.store.settings);if(s?.enabled)this.enqueue(r.url,s,0,'recheck');}
     const pages=new Map<string,number>();
     for(;;){
