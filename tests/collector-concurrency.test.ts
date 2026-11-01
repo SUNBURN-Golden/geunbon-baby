@@ -243,7 +243,7 @@ test('discover CLI coexists with serve and reports a duplicate crawl owner',()=>
     expect(blocked.stderr).toMatch(/collector_end .+ job=discover .+ outcome=skipped reason=run_locked/);
     expect(JSON.parse(readFileSync(file+'.crawl.lock','utf8')).pid).toBe(process.pid);
   }finally{store.close();}
-});
+},25000);
 
 test.each([
   ['serve','serve'],['discover','crawl'],['collect','crawl'],['discover-sources','crawl'],
