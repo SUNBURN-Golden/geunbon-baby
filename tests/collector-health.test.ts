@@ -20,7 +20,7 @@ function setup(sources:SourcePolicy[]=[source],depth=0,maxPages=20){
   const f=fixture(settings);f.settings.limits.max_depth=depth;return f;
 }
 function leakGuard(sources:SourceHealth[]){
-  const output=JSON.stringify(sources)+sources.filter(s=>s.pages_attempted>0).map(formatLine).join('\n');
+  const output=JSON.stringify(sources)+sources.filter(s=>s.pages_attempted>0).map(h=>formatLine(h,{at:0})).join('\n');
   expect(output).not.toMatch(/https:|스토케|트립트랩|베이비뵨|Synthetic recall|synthetic_seller|@handle|a > b|329|390|259|9,007/);
   for(const h of sources)for(const code of [...h.flags,...h.notes,...Object.keys(h.failures),...Object.keys(h.blocked_reasons),...Object.keys(h.subrequest_failures)])expect(code).toMatch(/^[a-z_]{1,40}$/);
 }
@@ -230,9 +230,19 @@ test.each([false,true])('discover CLI prints health JSON and one terminal line p
     process.argv=['node','local-worker.ts','discover',...(dry?['--dry-run']:[])];await main();
     expect(stdout).toHaveBeenCalledTimes(1);const output=JSON.parse(stdout.mock.calls[0][0]);expect(output.dry_run).toBe(dry?true:undefined);
     expect(output.health.status).toBe('review');expect(output.health.sources).toHaveLength(2);leakGuard(output.health.sources);
-    expect(stderr).toHaveBeenCalledTimes(2);
-    for(const h of output.health.sources)expect(stderr.mock.calls.map(c=>c[0]).filter(line=>line===formatLine(h))).toHaveLength(1);
-    expect(stderr.mock.calls[0][0]).toContain('status=ok');expect(stderr.mock.calls[1][0]).toContain('reason=network_error');
+    const details=stderr.mock.calls.map(c=>String(c[0])).filter(line=>line.startsWith('discover at='));
+    expect(details).toHaveLength(2);
+    for(const h of output.health.sources)expect(details.filter(line=>line.includes(` source=${h.source_id} `))).toHaveLength(1);
+    expect(details.every(line=>/at=.+\+09:00/.test(line))).toBe(true);
+    expect(details[0]).toContain('status=ok');expect(details[1]).toContain('reason=network_error');
     if(!dry)expect(output.jobs.sources.failed.failures).toEqual({network_error:1});
   }finally{process.argv=argv;rmSync(dir,{recursive:true,force:true});}
+});
+
+test('lowercase exception text is never treated as a loggable reason code',async()=>{
+  const {failureCode}=await import('../crawler/src/discovery/health');
+  expect(failureCode(new Error('credentialneverprint'))).toBe('error');
+  const health=new RunHealth();health.source('fixture','run');health.pageFailed('fixture','credentialneverprint');
+  const sourceHealth=health.finish(new Map(),new Map([['fixture','links']]))[0];
+  expect(formatLine(sourceHealth)).not.toContain('credentialneverprint');
 });

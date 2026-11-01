@@ -1,9 +1,12 @@
 import { CollectorError } from '../store';
+import { kstTime } from '../collection-schedule';
 import type { SourcePolicy } from '../source-policy';
 
+// Exception messages are untrusted, even when they look like lowercase codes.
+const FAILURE_CODES=new Set(['error','network_error','request_timeout','source_response','source_blocked','source_cooldown','robots_denied','robots_unavailable','visit_not_allowed','domain_stopped','private_network','redirect_missing','response_size','login_required','access_restricted','empty_page','region_missing','region_required','selector_invalid','browser_not_approved','document_changed','daily_limit','execution_expired','submission_expired','payload_shape','payload_changed','cpsc_schema','depth_limit','source_mismatch','brand_mismatch','reservation_expired']);
 export function failureCode(error:unknown):string {
   const code=error instanceof CollectorError?error.code:error instanceof Error?error.message:'';
-  return /^[a-z_]{1,40}$/.test(code)?code:'error';
+  return FAILURE_CODES.has(code)?code:'error';
 }
 export const BLOCKED_CODES = new Set(['robots_denied','robots_unavailable','visit_not_allowed','domain_stopped','source_blocked','source_cooldown','private_network']);
 export type PageKind = 'listing'|'feed'|'recalls'|'browser';
@@ -71,7 +74,7 @@ export class RunHealth {
     });
   }
 }
-export function formatLine(h:SourceHealth):string {
+export function formatLine(h:SourceHealth,context:{at:number;callId?:string}={at:Date.now()}):string {
   const reason=Object.entries(h.failures).sort((a,b)=>b[1]-a[1])[0]?.[0]??'error';
-  return `discover source=${h.source_id} status=${h.status} pages=${h.pages_ok}/${h.pages_attempted} review_pages=${h.pages_review} links=${h.links_found} parsed=${h.parsed} eligible=${h.eligible} price_checked=${h.price_checked} price_hints=${h.price_hints} sent=${h.sent} blocked=${h.blocked} failed=${h.pages_failed} subrequest_failed=${Object.values(h.subrequest_failures).reduce((a,b)=>a+b,0)}${h.pages_failed?` reason=${/^[a-z_]{1,40}$/.test(reason)?reason:'error'}`:''} flags=${h.flags.join(',')}`;
+  return `discover at=${kstTime(context.at)}${context.callId?` call_id=${context.callId}`:''} source=${/^[a-zA-Z0-9_-]{1,80}$/.test(h.source_id)?h.source_id:'source'} status=${h.status} pages=${h.pages_ok}/${h.pages_attempted} review_pages=${h.pages_review} links=${h.links_found} parsed=${h.parsed} eligible=${h.eligible} price_checked=${h.price_checked} price_hints=${h.price_hints} sent=${h.sent} blocked=${h.blocked} failed=${h.pages_failed} subrequest_failed=${Object.values(h.subrequest_failures).reduce((a,b)=>a+b,0)}${h.pages_failed?` reason=${FAILURE_CODES.has(reason)?reason:'error'}`:''} flags=${h.flags.join(',')}`;
 }

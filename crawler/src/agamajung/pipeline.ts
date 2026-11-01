@@ -25,7 +25,7 @@ import { claimSlots, conditionsKey, subjectRef } from './subject';
 type Capture={id:string;run_id:string;source_id:string;url_norm:string;content_hash:string;content_type:string;etag:string|null;last_modified:string|null;raw_ref:string|null;fetched_at:string;fetch_seq:number;byte_length:number|null;data:string};
 export type Parsed={inspection?:{version:string;complete:boolean;truncated:boolean;region:string;tool_status:string;locator_base:string;locator_space?:string;filter_changed?:boolean};text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[]};
 type Labeled={labels:LabelId[];status:'labeled'|'ambiguous';method:'rule'|'model'};
-export type PipelineOptions={scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;discoveryConfig?:DiscoveryConfig;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void};
+export type PipelineOptions={offline?:boolean;scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;discoveryConfig?:DiscoveryConfig;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void};
 const string=(data:Data,key:string)=>String(data[key]??'');
 export class AgamajungPipeline {
   readonly engine:JobEngine;
@@ -40,7 +40,7 @@ export class AgamajungPipeline {
     this.profile=validateProfile(profile,store.settings);
     this.parseVersion=`parse@3:${profile.extractor_version}:${profile.labeler_version}:${digest(store.settings.sources.map(s=>[s.id,s.origin,s.selector,s.official_fields,s.kind]))}`;
     this.storage=new SqliteStorage(store,{receipt:id=>store.receipt(id),submit:(id,payload,sourceId)=>store.submit('linux',id,payload,sourceId)});this.tools=options.tools??new ToolAdapter(store);
-    this.ledger=agamajungCosts(store,profile);this.ledger.recoverOrphans();
+    this.ledger=agamajungCosts(store,profile);if(!options.offline)this.ledger.recoverOrphans();
     this.scheduler=options.scheduler?new Scheduler(store,options.scheduler.transport,options.scheduler.sleep,this.ledger,profile.limits.min_interval_ms):new Scheduler(store,undefined,undefined,this.ledger,profile.limits.min_interval_ms);
     this.handlers=this.createHandlers();
     this.engine=new JobEngine(store,profile.id,profile.stages,this.handlers,{fault:options.fault,rng:options.rng,maxAttempts:profile.limits.max_attempts,onHalt:(c,code)=>{
@@ -48,7 +48,7 @@ export class AgamajungPipeline {
       const state=store.get<DomainState>('domain_state',host)??{next_at:0,stopped:false};
       state.stopped=true;state.reason='access_restricted';store.put('domain_state',host,state);options.health?.(code);
     }});
-    raw.cleanup(store.now());
+    if(!options.offline)raw.cleanup(store.now());
   }
   private source(c:Checkpoint){const source=this.store.settings.sources.find(s=>s.id===c.data.source_id&&s.enabled);requireThat(source&&this.profile.domain_policy.sources[source.id],'visit_not_allowed',403);return source!;}
   private capture(c:Checkpoint){const row=this.store.db.prepare('SELECT * FROM engine_captures WHERE id=?').get(string(c.data,'capture_id')) as Capture|undefined;requireThat(row,'capture_missing');return row!;}
@@ -74,7 +74,7 @@ export class AgamajungPipeline {
     this.store.transaction(()=>this.store.db.prepare('UPDATE engine_checkpoints SET data=? WHERE id=?').run(stable(c.data),c.id));
     return r.id;
   }
-  start(slot={kind:'daily',at:new Date(this.store.now()+9*3600000).toISOString().slice(0,10)}){
+  start(slot:{kind:string;at:string;data?:Data}={kind:'daily',at:new Date(this.store.now()+9*3600000).toISOString().slice(0,10)}){
     const halted=this.store.db.prepare("SELECT id FROM engine_runs WHERE profile_id=? AND state='halted' ORDER BY started_at DESC LIMIT 1").get(this.profile.id) as {id:string}|undefined;
     if(halted&&this.store.list<DomainState>('domain_state').some(d=>d.stopped))return halted.id;
     const id=this.engine.startRun(slot);this.ledger.open(id);return id;
@@ -90,13 +90,15 @@ export class AgamajungPipeline {
     this.engine.resume(id);this.ledger.open(id);return id;
   }
   seed(runId:string){
-    if(this.engine.run(runId)?.state!=='running')return;
+    const run=this.engine.run(runId);
+    if(run?.state!=='running'||JSON.parse(run.data).collection_seeded)return;
     const policy=this.profile.domain_policy;
     const sources=this.store.settings.sources.filter(s=>s.enabled&&policy.sources[s.id]).sort((a,b)=>policy.start_order.indexOf(policy.sources[a.id].tier)-policy.start_order.indexOf(policy.sources[b.id].tier));
     for(const source of sources){
       const due=this.store.list<{url:string;source:string;next_recheck_at:string|null}>('collection_records').filter(r=>r.source===source.id&&r.next_recheck_at&&Date.parse(r.next_recheck_at)<=this.store.now()).map(r=>r.url);
       for(const url of [...new Set([...source.entries,...due])].slice(0,Math.min(source.max_pages,this.store.settings.limits.max_pages)))this.engine.enqueue(runId,'discover',digest([source.id,canonicalUrl(url)]),{source_id:source.id,url:canonicalUrl(url),depth:0});
     }
+    this.store.transaction(()=>this.store.db.prepare("UPDATE engine_runs SET data=json_set(data,'$.collection_seeded',1) WHERE id=?").run(runId));
   }
   async run(runId:string){this.ledger.open(runId);return this.engine.runUntilIdle(runId);}
   private parsed(cap:Capture){const p=this.cache<Parsed>(cap,'parse',this.parseVersion);if(!p)throw new Error('input_unavailable');return p;}

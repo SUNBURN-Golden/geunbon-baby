@@ -60,10 +60,10 @@ export class SourceDiscoveryRunner {
   private approvedSources(){return this.store.settings.sources.filter(s=>s.enabled&&this.config.source_ids.includes(s.id)&&this.profile.domain_policy.sources[s.id]&&!s.browser&&s.adapter!=='cpsc'&&!this.denied(new URL(s.origin).hostname)).sort((a,b)=>this.profile.domain_policy.start_order.indexOf(this.profile.domain_policy.sources[a.id].tier)-this.profile.domain_policy.start_order.indexOf(this.profile.domain_policy.sources[b.id].tier));}
   private denied(host:string){return [...this.profile.domain_policy.denied_hosts,'instagram.com','facebook.com','cdninstagram.com','fbcdn.net'].some(h=>host===h||host.endsWith(`.${h}`));}
   preview(){return {dry_run:true,enabled:this.config.enabled,providers:this.providers().map(p=>p.id),sources:this.approvedSources().map(s=>s.id),years:resolvedYears(this.config,this.store.now()),planned_combinations:combinationCount(this.config,this.profile),query_limit:this.config.max_queries,max_depth:this.config.max_depth,min_relevance:this.config.min_relevance,shared_owner:'agamajung',shared_day_caps:this.profile.cost_caps.day,cost_caps:this.config.cost_caps,sample_queries:this.providers().flatMap(p=>{const q=combinationAt(0,this.config,this.profile,resolvedYears(this.config,this.store.now()),p.id);return q?[q.text]:[];})};}
-  start(slot={kind:'daily',at:dayKey(this.store.now())}){
+  start(slot:{kind:string;at:string;data?:Data}={kind:'daily',at:dayKey(this.store.now())}){
     const halted=this.store.db.prepare("SELECT id FROM engine_runs WHERE profile_id=? AND state='halted' ORDER BY started_at DESC LIMIT 1").get(DISCOVERY_RUN_ID) as {id:string}|undefined;
     if(halted)return halted.id;
-    const id=this.engine.startRun({...slot,data:{years:resolvedYears(this.config,this.store.now()),planner_version:VERSION,plan:{regions:this.config.regions,languages:this.config.languages,events:this.config.events,categories:this.profile.categories,providers:this.providers().map(p=>p.id),max_queries:this.config.max_queries}}});this.ledger.open(id);return id;
+    const id=this.engine.startRun({...slot,data:{...slot.data,years:resolvedYears(this.config,this.store.now()),planner_version:VERSION,plan:{regions:this.config.regions,languages:this.config.languages,events:this.config.events,categories:this.profile.categories,providers:this.providers().map(p=>p.id),max_queries:this.config.max_queries}}});this.ledger.open(id);return id;
   }
   resume(id:string){
     const run=this.engine.run(id);
@@ -77,7 +77,7 @@ export class SourceDiscoveryRunner {
     this.engine.resume(id);this.ledger.open(id);return id;
   }
   seed(runId:string){
-    if(!this.config.enabled||this.engine.run(runId)?.state!=='running'||JSON.parse(this.engine.run(runId)!.data).parent_run)return;
+    if(!this.config.enabled||this.engine.run(runId)?.state!=='running'||JSON.parse(this.engine.run(runId)!.data).parent_run||JSON.parse(this.engine.run(runId)!.data).collection_seeded)return;
     this.store.transaction(()=>{
       const currentSlots=new Map(enumerateSlots(this.store).map(s=>[s.id,s]));
       const requests=this.store.db.prepare("SELECT l.action_id,l.ref,l.data,q.provider_id,q.data AS query_data,s.id AS slot_id,m.input_digest AS assessment_digest FROM missing_field_action_links l JOIN source_discovery_queries q ON q.id=l.ref JOIN missing_field_actions a ON a.id=l.action_id JOIN missing_field_slots s ON s.id=a.slot_id AND s.assessment_id=a.assessment_id JOIN missing_field_assessments m ON m.id=a.assessment_id WHERE l.kind='source_query' AND s.stale=0 AND NOT json_extract(m.data,'$.fulfilled') ORDER BY l.id").all() as {action_id:string;ref:string;data:string;provider_id:string;query_data:string;slot_id:string;assessment_digest:string}[];
@@ -107,10 +107,11 @@ export class SourceDiscoveryRunner {
         const work:Work={kind:'capture',capture_id:cap.id,source_id:cap.source_id,depth,page:0,ancestry:[cap.url_norm]};
         this.enqueueInside(runId,work);
       }
+      this.store.db.prepare("UPDATE engine_runs SET data=json_set(data,'$.collection_seeded',1) WHERE id=?").run(runId);
     });
   }
   async run(id:string){this.ledger.open(id);return this.engine.runUntilIdle(id);}
-  report(id:string){return {run_id:id,state:this.engine.run(id)?.state,candidates:(this.store.db.prepare('SELECT count(*) n FROM source_candidates').get() as {n:number}).n,truncated_checkpoints:(this.store.db.prepare("SELECT count(*) n FROM engine_checkpoints WHERE run_id=? AND json_extract(data,'$.truncated')=1").get(id) as {n:number}).n,checkpoints:this.store.db.prepare('SELECT phase,count(*) count FROM engine_checkpoints WHERE run_id=? GROUP BY phase').all(id)};}
+  report(id:string){return sourceDiscoveryReport(this.store,id); }
   private enqueueInside(run:string,work:Work){const key=digest(work);this.engine.enqueueInside(run,'request',key,work as unknown as Data,digest(work));}
   private withinPages(run:string,source:SourcePolicy,url:string){
     if(this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND stage='request' AND json_extract(data,'$.kind')='document' AND json_extract(data,'$.source_id')=? AND json_extract(data,'$.url')=? LIMIT 1").get(run,source.id,url))return true;
@@ -285,3 +286,5 @@ export class SourceDiscoveryRunner {
     return {nextStage:null,data:{candidate_observations:observations.length,truncated:doc.truncated||!!stopped,...(stopped?{stopped_reason:stopped}:{}),held_relations:held}};
   }
 }
+
+export function sourceDiscoveryReport(store:CollectorStore,id:string){return {run_id:id,state:store.db.prepare('SELECT state FROM engine_runs WHERE id=?').get(id)?.state,candidates:(store.db.prepare('SELECT count(*) n FROM source_candidates').get() as {n:number}).n,truncated_checkpoints:(store.db.prepare("SELECT count(*) n FROM engine_checkpoints WHERE run_id=? AND json_extract(data,'$.truncated')=1").get(id) as {n:number}).n,checkpoints:store.db.prepare('SELECT phase,count(*) count FROM engine_checkpoints WHERE run_id=? GROUP BY phase').all(id)};}

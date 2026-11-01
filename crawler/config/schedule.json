@@ -1,0 +1,8 @@
+{
+  "jobs": [
+    {"job": "discover", "enabled": true, "times": ["09:20", "15:20", "21:20"]},
+    {"job": "collect", "enabled": true, "times": ["09:40", "15:40", "21:40"]},
+    {"job": "discover-sources", "enabled": false, "times": ["10:05"]},
+    {"job": "backfill-engine", "enabled": false, "times": ["03:30"]}
+  ]
+}

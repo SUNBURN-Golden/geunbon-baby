@@ -18,7 +18,7 @@ test('offline dry-run spends nothing, recovers no orphan holds, inserts no candi
   expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({dry_run:true,max_depth:2,shared_owner:'agamajung'});expect(rows(f,'source_candidates')).toHaveLength(0);expect(rows(f,'engine_runs')).toHaveLength(1);expect(rows(f,'engine_costs')).toEqual(before);expect(rows(f,'engine_cost_holds')).toHaveLength(1);
   const skipped=vi.spyOn(console,'error').mockImplementation(()=>{}),run=vi.spyOn(SourceDiscoveryRunner.prototype,'run'),preview=vi.spyOn(SourceDiscoveryRunner.prototype,'preview'),calls=log.mock.calls.length;
   f.store.runLock('crawl');await expect(main()).resolves.toBeUndefined();expect(f.runner.engine.run(id)).toBeTruthy();
-  expect(skipped.mock.calls).toHaveLength(1);expect(skipped.mock.calls[0][0]).toMatch(/^collector_skipped command=discover-sources reason=run_locked kind=crawl attempts=\d+ waited_ms=\d+$/);
+  expect(skipped.mock.calls).toHaveLength(2);expect(skipped.mock.calls[0][0]).toMatch(/^collector_start at=.+\+09:00 job=discover-sources /);expect(skipped.mock.calls[1][0]).toMatch(/^collector_end .+ outcome=skipped reason=run_locked$/);
   expect(log.mock.calls).toHaveLength(calls);expect(run).not.toHaveBeenCalled();expect(preview).not.toHaveBeenCalled();
  }finally{process.argv=argv;f.close();}
 });

@@ -22,7 +22,7 @@ npm run collector:worker -- dedup-audit --apply
 
 ## 체크포인트와 중단
 
-단계는 discover → fetch → render(동적 소스만) → parse → label → extract → service다. 단계 입력·버전·출력·attempts가 SQLite에 남는다. WAL-reset 수정이 포함된 고정 Node 런타임에서 WAL과 BEGIN IMMEDIATE, busy_timeout_ms/busy_retries, 3분 lease 및 1분 갱신을 사용한다. serve·discover·sync는 같은 DB를 공유하고, 같은 종류만 PID 실행 잠금(`${db}.{serve|crawl|sync}.lock`)으로 제한한다. discover·collect·failures retry는 crawl을 공유한다. 사망·PID 재사용·이전 부팅이 확인된 잠금만 자동 회수하며 판독 불가/생존 확인 불가 잠금은 보존한다. 기존 DB 전체 `.lock`은 경고 후 무시한다. [동시 실행·롤아웃 절차](../../crawler/README.md#동시-실행과-잠금)를 따른다.
+단계는 discover → fetch → render(동적 소스만) → parse → label → extract → service다. 단계 입력·버전·출력·attempts가 SQLite에 남는다. WAL-reset 수정이 포함된 고정 Node 런타임에서 WAL과 BEGIN IMMEDIATE, busy_timeout_ms/busy_retries, 3분 lease 및 1분 갱신을 사용한다. serve·discover·sync는 같은 DB를 공유하고, 같은 종류만 PID 실행 잠금(`${db}.{serve|crawl|sync|schedule}.lock`)으로 제한한다. discover·collect·failures retry는 crawl을 공유한다. 사망·PID 재사용·이전 부팅이 확인된 잠금만 자동 회수하며 판독 불가/생존 확인 불가 잠금은 보존한다. 기존 DB 전체 `.lock`은 경고 후 무시한다. [동시 실행·롤아웃 절차](../../crawler/README.md#동시-실행과-잠금)를 따른다.
 
 실행 중인 run 또는 일일 상한 대기(cost_wait)가 있으면 같은 run을 채택한다. deferred의 next_at은 다음 KST 자정이다. 재시도는 최초 포함 3회, 최소 5분 지수 백오프·지터, 최대 6시간이며 도메인 냉각을 반영한다. 터미널 오류는 즉시 실패 큐에 기록한다. 실패 큐에는 고정 사유 코드·시도 횟수·다음 시각을 남기며 원문·응답·자격 증명은 출력하지 않는다. 수동 retry는 parent_run으로 연결된 새 run을 만든다. 원래 attempts·비용은 초기화하지 않는다.
 
@@ -55,3 +55,7 @@ PDF는 로컬 pdftotext, 이미지 OCR은 tesseract kor+eng을 사용한다. 도
 ## 빈 필드 탐색기와 서비스 출처 연결
 
 Linux 최신 migration은 0005다. [빈 필드 탐색기](missing-field-explorer.md)는 공용 JobEngine의 별도 run·체크포인트·실패 큐와 crawl 잠금을 사용하며 외부 호출·비용 소비가 없다. 도메인 바인딩의 service 단계는 추출 버전/ID를 `submitExtracted()`에 전달한다. 서비스 assertion·불변 출처 연결·receipt는 원자적으로 저장되고 복구는 payload/출처 manifest digest를 함께 확인한다. 공용 엔진에는 모델/검수 정책을 추가하지 않는다. 파싱 검사 범위와 값·적용 조건을 통과한 preliminary completeness와 서비스 생명주기를 반영한 최종 커버리지를 구분한다.
+
+## 영속 슬롯 실행 계약
+
+최신 Linux migration은 0007이다. collect와 예약 실행은 [슬롯·따라잡기 운영](scheduling.md)의 공통 crawl 잠금·실행 의도를 사용한다. 기본 수동 collect는 현재 도래 슬롯 또는 기존 미완료 엔진을 처리한다. 날짜 단위 ID를 새 슬롯으로 재귀속하지 않는다. 완료 ID의 --resume·dry-run·disabled는 슬롯 성공을 갱신하지 않는다. pending은 체크포인트 기한 이후 같은 엔진을 재개하고 seed 완료 표시를 보존한다. 이전 실행이 다음 슬롯 뒤에 끝나도 최초 슬롯만 성공 처리한다. 같은 슬롯에서 새 논리 실행을 만드는 자동 재실행과 기존 엔진의 기한 기반 재개를 구분한다.

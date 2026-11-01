@@ -58,7 +58,7 @@ async function pair(file:string,body:string,c=settings()) {
   workers.forEach(w=>w.go());return workers;
 }
 function integrity(store:CollectorStore) {
-  expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:6});
+  expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:7});
   expect(store.db.prepare('PRAGMA quick_check').get()).toMatchObject({quick_check:'ok'});
   expect(store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
 }
@@ -239,8 +239,8 @@ test('discover CLI coexists with serve and reports a duplicate crawl owner',()=>
   try {
     store.runLock('serve');const allowed=run();expect(allowed.status).toBe(0);expect(JSON.parse(allowed.stdout)).toMatchObject({dry_run:true});
     store.runLock('crawl');const blocked=run();expect(blocked.status).toBe(0);expect(blocked.stdout).toBe('');
-    expect(blocked.stderr.match(/^collector_skipped .+$/gm)).toHaveLength(1);
-    expect(blocked.stderr).toMatch(/collector_skipped command=discover reason=run_locked kind=crawl attempts=\d+ waited_ms=\d+/);
+    expect(blocked.stderr.match(/^collector_(?:start|end) .+$/gm)).toHaveLength(2);
+    expect(blocked.stderr).toMatch(/collector_end .+ job=discover .+ outcome=skipped reason=run_locked/);
     expect(JSON.parse(readFileSync(file+'.crawl.lock','utf8')).pid).toBe(process.pid);
   }finally{store.close();}
 });
@@ -271,8 +271,14 @@ test.each([
     });
     expect(result.status,result.stderr).toBe(0);expect(result.stdout).toBe('');
     const lines=result.stderr.split('\n').filter(line=>line.startsWith('collector_'));
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(new RegExp(`^collector_skipped command=${command==='explore-missing-fields'?'explore-missing':command} reason=run_locked kind=${kind} attempts=\\d+ waited_ms=\\d+$`));
+    if(['discover','collect','discover-sources'].includes(command)){
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toMatch(new RegExp(`^collector_start at=.+\\+09:00 job=${command} `));
+      expect(lines[1]).toMatch(/outcome=skipped reason=run_locked$/);
+    }else{
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(new RegExp(`^collector_skipped command=${command==='explore-missing-fields'?'explore-missing':command} reason=run_locked kind=${kind} attempts=\\d+ waited_ms=\\d+$`));
+    }
     expect(readFileSync(path,'utf8')).toBe(bytes);
     expect(store.db.prepare('SELECT count(*) n FROM engine_runs').get()).toMatchObject({n:0});
   }finally{store.close();}
@@ -288,7 +294,7 @@ test.each(['unreadable','unsafe'])('CLI preserves %s lock metadata and logs only
       env:{...process.env,COLLECTOR_DB:file,COLLECTOR_CONFIG:cfg,COLLECTOR_TRUSTED_EGRESS_CIDRS:''},encoding:'utf8',timeout:10000,
     });
     expect(result.status).toBe(kind==='unreadable'?0:1);expect(result.stdout).toBe('');
-    expect(result.stderr).toContain(kind==='unreadable'?'collector_skipped command=discover reason=run_lock_unreadable kind=crawl attempts=1':'collector_failed code=unsafe_file');
+    expect(result.stderr).toContain(kind==='unreadable'?'outcome=skipped reason=run_lock_unreadable':'collector_failed code=unsafe_file');
     expect(result.stderr).not.toContain(bytes);expect(result.stderr).not.toContain(file);expect(readFileSync(path,'utf8')).toBe(bytes);
   }finally{store.close();}
 });
