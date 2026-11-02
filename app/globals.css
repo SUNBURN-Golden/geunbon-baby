@@ -57,6 +57,8 @@
   --r-md: 12px;
   --r-lg: 20px;
   --r-pill: 999px;
+  /* Apple-style smooth corners; applied only where corner-shape is supported. */
+  --corner-card: squircle;
   --shadow-sm: 0 1px 2px rgb(51 67 56 / 4%), 0 4px 12px rgb(51 67 56 / 6%);
   --shadow-lg: 0 2px 8px rgb(51 67 56 / 4%), 0 12px 32px rgb(51 67 56 / 8%);
   --dark-shadow-sm: 0 1px 2px rgb(0 0 0 / 12%), 0 4px 12px rgb(0 0 0 / 16%);
@@ -532,3 +534,10 @@ form { max-width: 100%; }
 .auth-buttons { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-5); }
 .consent { display: flex; align-items: center; gap: .6rem; }
 .consent input { width: auto; margin-top: 0; }
+
+/* Smooth card corners (Chrome 139+). Other browsers keep the plain border-radius above. */
+@supports (corner-shape: squircle) {
+  .model-card,
+  .model-art,
+  :is(.deal-card, .deal-detail) { corner-shape: var(--corner-card); }
+}
