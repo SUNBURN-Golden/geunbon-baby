@@ -18,8 +18,10 @@ async function deps():Promise<DeliveryDeps>{
     extract:async job=>{
       const source=approved.find(s=>new URL(job.url).origin===s.origin);
       if(job.collection_method==='browser_extract'&&(!source||!await chrome.permissions.contains({origins:[`${source.origin}/*`]})))throw new Error('permission_revoked');
-      // The function validates document identity before reading, and returns only filtered fields.
-      const result=await chrome.scripting.executeScript({target:{tabId:job.tab_id},world:'ISOLATED',func:extractRegion,args:[source?.selector??'',!source,job.url]});
+      const expectedUrl=canonicalUrl(job.url);
+      // Bind extraction to the durable reservation, including identity query parameters.
+      // The injected function checks location.href before reading any DOM.
+      const result=await chrome.scripting.executeScript({target:{tabId:job.tab_id},world:'ISOLATED',func:extractRegion,args:[source?.selector??'',!source,expectedUrl]});
       const region=result[0]?.result;if(!region)throw new Error('region_missing');
       return {title:region.title,document_origin:region.documentOrigin,assertions:extractFacts(region.text,region.locator)};
     },
