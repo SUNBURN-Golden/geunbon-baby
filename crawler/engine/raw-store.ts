@@ -13,11 +13,15 @@ export function externalDirectory(path:string,repository=process.cwd()){
   if(realpathSync(target)!==target||!lstatSync(target).isDirectory()||(lstatSync(target).mode&0o777)!==0o700)throw new Error('unsafe_directory');
   return target;
 }
+export type InspectedArtifact={text:string;fullTextAllowed:boolean;permissionBasis:string};
+export type ArtifactValidator=(artifact:InspectedArtifact)=>void;
+// This store has no response-body or spool interface. The Linux binding supplies
+// a runtime privacy/schema validator; a caller flag alone never permits a write.
 export class RawStore {
   readonly root:string;
-  constructor(path:string,readonly profile:string,repository=process.cwd(),readonly now=Date.now){
+  constructor(path:string,readonly profile:string,repository=process.cwd(),readonly now=Date.now,readonly validate?:ArtifactValidator){
     if(!/^[a-z0-9_-]{1,80}$/.test(profile))throw new Error('profile_id');
-    this.root=externalDirectory(path,repository);this.directory(join(this.root,profile));this.directory(join(this.root,'spool'));
+    this.root=externalDirectory(path,repository);this.directory(join(this.root,profile));
   }
   private directory(path:string){
     if(realpathSync(this.root)!==this.root||(lstatSync(this.root).mode&0o777)!==0o700)throw new Error('unsafe_directory');
@@ -25,17 +29,33 @@ export class RawStore {
     for(const segment of rel.split('/').filter(Boolean)){cursor=join(cursor,segment);if(!entry(cursor))mkdirSync(cursor,{mode:0o700});if(lstatSync(cursor).isSymbolicLink()||!lstatSync(cursor).isDirectory()||(lstatSync(cursor).mode&0o777)!==0o700)throw new Error('unsafe_directory');}
   }
   private safeFile(path:string){const stat=entry(path);if(stat&&(!stat.isFile()||stat.isSymbolicLink()||(stat.mode&0o777)!==0o600))throw new Error('unsafe_file');}
-  path(hash:string,spool=false){if(!/^[a-f0-9]{64}$/.test(hash))throw new Error('content_hash');return spool?join(this.root,'spool',hash):join(this.root,this.profile,'sha256',hash.slice(0,2),hash.slice(2,4),hash);}
-  write(bytes:Buffer,permanent=false){
-    const hash=hashBytes(bytes),path=this.path(hash,!permanent);this.directory(dirname(path));this.safeFile(path);
-    if(existsSync(path)){if(hashBytes(readFileSync(path))!==hash)throw new Error('raw_corrupt');return path;}
+  path(hash:string){if(!/^[a-f0-9]{64}$/.test(hash))throw new Error('content_hash');return join(this.root,this.profile,'inspected-v1','sha256',hash.slice(0,2),hash.slice(2,4),hash);}
+  writeInspected(artifact:InspectedArtifact){
+    if(!this.validate||artifact.fullTextAllowed!==true||typeof artifact.permissionBasis!=='string'||!artifact.permissionBasis.trim())throw new Error('retention_not_allowed');
+    this.validate(artifact);
+    const bytes=Buffer.from(artifact.text),hash=hashBytes(bytes),path=this.path(hash);
+    this.directory(dirname(path));this.safeFile(path);
+    if(existsSync(path)){if(hashBytes(readFileSync(path))!==hash)throw new Error('artifact_corrupt');return {path,hash};}
     const temp=join(dirname(path),`.${randomUUID()}.tmp`),fd=openSync(temp,'wx',0o600);
     try{
       try{writeFileSync(fd,bytes);futimesSync(fd,new Date(this.now()),new Date(this.now()));fsyncSync(fd);}finally{closeSync(fd);}
-      renameSync(temp,path);const directory=openSync(dirname(path),'r');try{fsyncSync(directory);}finally{closeSync(directory);}}finally{rmSync(temp,{force:true});}
-    return path;
+      renameSync(temp,path);const directory=openSync(dirname(path),'r');try{fsyncSync(directory);}finally{closeSync(directory);}
+    }finally{rmSync(temp,{force:true});}
+    return {path,hash};
   }
-  read(hash:string):Buffer|undefined {for(const spool of [false,true]){const path=this.path(hash,spool);this.safeFile(path);if(!existsSync(path))continue;this.directory(dirname(path));if(spool&&this.now()-lstatSync(path).mtimeMs>=86400000){rmSync(path);continue;}const bytes=readFileSync(path);if(hashBytes(bytes)!==hash)throw new Error('raw_corrupt');return bytes;}}
-  removeSpool(hash:string){this.directory(join(this.root,'spool'));const path=this.path(hash,true);this.safeFile(path);rmSync(path,{force:true});}
-  cleanup(now=Date.now(),ttl=86400000){this.directory(join(this.root,'spool'));for(const name of readdirSync(join(this.root,'spool'))){const path=join(this.root,'spool',name);this.safeFile(path);if(now-lstatSync(path).mtimeMs>=ttl)rmSync(path);}}
+  readArtifact(hash:string):Buffer|undefined {
+    const path=this.path(hash);this.safeFile(path);if(!existsSync(path))return;
+    this.directory(dirname(path));const bytes=readFileSync(path);if(hashBytes(bytes)!==hash)throw new Error('artifact_corrupt');return bytes;
+  }
+  // Called under the crawl lock. Legacy raw/spool files are deliberately untouched.
+  cleanup(references:ReadonlySet<string>,now=this.now(),ttl=86400000){
+    const base=join(this.root,this.profile,'inspected-v1');if(!existsSync(base))return;
+    const scan=(dir:string)=>{this.directory(dir);for(const name of readdirSync(dir)){
+      const path=join(dir,name),stat=lstatSync(path);
+      if(stat.isSymbolicLink())throw new Error('unsafe_file');
+      if(stat.isDirectory()){scan(path);continue;}
+      this.safeFile(path);
+      if(!references.has(path)&&now-stat.mtimeMs>=ttl&&(/^[a-f0-9]{64}$/.test(name)||/^\.[a-f0-9-]+\.tmp$/.test(name)))rmSync(path);
+    }};scan(base);
+  }
 }

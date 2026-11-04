@@ -4,11 +4,10 @@
 
 ## 실행
 
-고정 Node 22.22.3과 저장소 밖 `COLLECTOR_DB`, `COLLECTOR_RAW_DIR`을 사용한다. 기존 0700 디렉터리·0600 파일·심볼릭 링크 검사와 `crawl` 실행 잠금을 공유한다. CLI는 `.env.crawler`를 자동으로 읽지 않는다.
+고정 Node 22.22.3과 저장소 밖 `COLLECTOR_DB`를 사용한다. 오프라인 탐색에는 원본 파일 디렉터리를 요구하지 않는다. 기존 0700 디렉터리·0600 파일·심볼릭 링크 검사와 `crawl` 실행 잠금을 공유한다. CLI는 `.env.crawler`를 자동으로 읽지 않는다.
 
 ```sh
 export COLLECTOR_DB=/workspace/agamajung/data/collector/collector.sqlite
-export COLLECTOR_RAW_DIR=/workspace/agamajung/data/collector/raw
 npm run collector:worker -- explore-missing --dry-run
 npm run collector:worker -- explore-missing
 npm run collector:worker -- explore-missing --resume RUN_ID
@@ -45,7 +44,7 @@ npm run collector:worker -- failures retry CHECKPOINT_ID
 
 `배송비는 무료입니다.`처럼 필드 단서가 있으나 지원하는 추출 구문이 아닌 문장은 진단기의 거부 후보와 위치를 남기고 `field_candidate_rejected`로 판정 대기한다. 이를 원문 부재로 분류하거나 역검색 요청으로 보내지 않는다. 진단 단서는 값을 추출·보완하는 근거로 사용하지 않는다.
 
-필드 단서는 정제된 검사 영역의 각 줄 전체에서 검사한다. 진단 인용의 300자 제한 때문에 뒤쪽 단서를 버리지 않는다. 접근 실패는 최신 capture의 상태·사유 또는 그 capture ID에 결속된 실패 체크포인트로만 판정한다. 렌더링 중 HTTP 200 로그인/빈 페이지도 보류하지만, 이후 정상 capture나 같은 체크포인트의 성공적 재개에는 과거 실패를 적용하지 않는다. 접근 실패 상태는 평가 입력 digest에 포함하며 `missing-field@4`에서 이전 진단을 재평가한다.
+필드 단서는 정제된 검사 영역의 각 줄 전체에서 검사한다. 진단 인용의 300자 제한 때문에 뒤쪽 단서를 버리지 않는다. 접근 실패는 최신 capture의 상태·사유 또는 그 capture ID에 결속된 실패 체크포인트로만 판정한다. 취득 중 렌더링의 HTTP 200 로그인/빈 페이지도 보류하지만, 이후 새 정상 capture에는 과거 실패를 적용하지 않는다. 접근 실패 상태는 평가 입력 digest에 포함하며 `missing-field@4`에서 이전 진단을 재평가한다.
 
 파싱 캐시에는 검사 영역·도구 상태·잘림·정제 변화·`sanitized_text` locator 공간을 기록한다. 부재는 그 capture의 검사 영역과 시점에만 적용한다. 구버전/모호한 캐시는 부재 증거가 아니다. 원문을 못 본 경우 다른 출처 검색 성공만으로 부재를 확정하지 않는다.
 
@@ -114,3 +113,6 @@ engine_captures → engine_extracted → engine_labels
 serve의 변경과 공존하므로 실행 잠금만으로 일관성을 가정하지 않는다. 입력 digest에는 서비스 assertion 상태·그룹 버전/검수·현재 충돌·capture/parse/출처 연결과 정책 버전을 포함한다. commit 전 변경되면 BEGIN IMMEDIATE 안에서 재평가한다. 근거·그룹·검수 변경은 슬롯을 stale로 표시하고 조회도 digest·기한을 다시 검사한다. stale 결과는 `fulfilled:false,value:null`이다. 집계는 하나의 일관된 트랜잭션에서 생성하고 스냅샷의 `current`는 조회 시 현재 입력과 비교한다. 과거 스냅샷을 현재 수치로 사용하지 않는다.
 
 롤아웃 시 기존 [동시 실행·고정 SQLite 절차](../../crawler/README.md#동시-실행과-잠금)를 따른다. 0004 자료는 보존되며 0005의 연결·진단·작업·평가·지표는 외래키와 불변성 제약을 가진다. 테스트는 비식별 fixture와 임시 외부 DB로 네트워크를 차단한다.
+
+
+collect의 render 실패는 이제 fetch 취득 단계에서 기록된다. 실패한 취득 capture를 나중에 렌더 완료 상태로 바꾸지 않고, 복구된 취득은 새 불변 capture를 만든다. 탐색기는 inspection@2의 검사된 parse 파생물과 명시적 filter_changed/truncated를 사용한다. 필터링/절단/불완전 도구 결과는 완전한 부재 판정에 사용할 수 없다. 원본 응답 본문은 제공되지 않으며 선택적인 raw_ref도 정제된 허가 텍스트만 가리킨다. parser/preparation 변경 또는 필수 파생물 손실은 원본 재파싱 대신 새 계량 요청으로 복구한다. 과거 raw/spool 존재 여부로 검사 신뢰를 높이지 않는다.

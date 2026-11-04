@@ -1,3 +1,4 @@
+import { ParseBudget, boundedJson } from '../../../lib/external/parse-budget';
 import { cleanText } from '../../discovery/document';
 import { hashBytes } from '../../../engine/util';
 import type { Scheduler } from '../../scheduler';
@@ -16,7 +17,8 @@ export class JsonApiSearchProvider implements SearchProvider {
     const credential=c.auth_env?this.env[c.auth_env]:undefined;
     if(c.auth_env){if(!credential||credential.length>4096||/[\r\n]/.test(credential))throw new Error('search_auth_missing');headers.authorization=`Bearer ${credential}`;}
     const response=await this.scheduler.searchApi(c.endpoint,{[c.query_param]:query.text,...(cursor?{[c.cursor_param]:cursor}:{})},headers);
-    let data:unknown;try{data=JSON.parse(response.body);}catch{throw new Error('search_schema');}
+    if((response.bytes?.length??Buffer.byteLength(response.body))>this.scheduler.store.settings.limits.max_bytes)throw new Error('preparation_limit');
+    const data=boundedJson(response.body,new ParseBudget(this.scheduler.store.settings.limits.max_bytes));
     const rows=field(data,c.results_path);if(!Array.isArray(rows))throw new Error('search_schema');
     const scrub=(v:unknown)=>typeof v==='string'&&(!credential||!v.includes(credential))?v:'';
     const capture={contentHash:hashBytes(response.bytes??Buffer.from(response.body)),byteLength:response.bytes?.length??Buffer.byteLength(response.body)};

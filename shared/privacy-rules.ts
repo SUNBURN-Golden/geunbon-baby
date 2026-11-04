@@ -12,8 +12,13 @@ export function filterText(value: string, max = 300): string {
     .replace(/\b(?:\d[ -]?){13,19}\b/g, '[redacted]')
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,'[redacted]').trim().slice(0,max);
 }
-export function canonicalUrl(raw: string): string {
-  if (typeof raw !== 'string' || raw.length > 2048) throw new Error('unsafe_url');
+// True when privacy filtering would redact, drop, or otherwise alter a value.
+// Callers compare this against the original extraction, never a cleaned value.
+export function filterChanged(value: string): boolean {
+  const normalized = value.normalize('NFKC').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return filterText(value, Number.MAX_SAFE_INTEGER) !== normalized;
+}
+export function canonicalUrl(raw: string): string {  if (typeof raw !== 'string' || raw.length > 2048) throw new Error('unsafe_url');
   const u = new URL(raw);
   if (u.protocol !== 'https:' || u.username || u.password || u.port || !u.hostname.includes('.') || /(?:^|\.)(?:localhost|local|internal)$/.test(u.hostname) || /^[\d.]+$/.test(u.hostname) || u.hostname.includes(':') || /(?:^|\.)gonggumoa\.com$/.test(u.hostname)) throw new Error('unsafe_url');
   let path: string; try { path = decodeURIComponent(u.pathname); } catch { throw new Error('unsafe_url'); }

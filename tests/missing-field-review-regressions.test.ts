@@ -11,7 +11,7 @@ import { evaluateSlot } from '../crawler/src/missing-field/evaluate';
 
 const claim=(field:AssertionInput['field'],value:unknown,conditions:Record<string,string>={}):AssertionInput=>({field,value,conditions,quote:'example_only',locator:'main'});
 const groupFor=(store:ReturnType<typeof fixture>['store'],id:string)=>store.get<CollectionRecord>('collection_records',id)!.dedup_group_id;
-async function collect(f:ReturnType<typeof engineFixture>,at:string){const run=f.pipeline.start({kind:'test',at});f.pipeline.seed(run);await f.pipeline.run(run);}
+async function collect(f:ReturnType<typeof engineFixture>,at:string){const run=f.pipeline.start({kind:'test',at});f.pipeline.seed(run);await f.pipeline.run(run);return run;}
 
 test.each([
  ['release_year','2025','2026'],['generation','G1','G2'],['bundle','body','set'],['market','KR','overseas']
@@ -102,7 +102,7 @@ test.each([301,800])('field cues after %i characters stay pending without revers
 test.each(['fetch','render'])('a recovered %s login failure does not hold a later successful capture',async stage=>{
  let restricted=true;
  const body='<main><h1>Example stroller example_only</h1></main>',login='<main><form action="/login"><input type="password"></form>로그인이 필요합니다.</main>';
- const f=engineFixture(body,{browser:stage==='render'},stage==='render'?{renderer:{render:async()=>({finalUrl:source.origin+'/model',html:restricted?login:body,text:restricted?'로그인이 필요합니다.':'Example stroller example_only',regionText:'Example stroller example_only'})}}:{});try{
+ const f=engineFixture(body,{browser:stage==='render'},stage==='render'?{renderer:{capability:{nonpersistent:true,version:'fixture-render@1'},render:async()=>({finalUrl:source.origin+'/model',html:restricted?login:body,text:restricted?'로그인이 필요합니다.':'Example stroller example_only',regionText:'Example stroller example_only'})}}:{});try{
   if(stage==='fetch')f.response(()=>({status:200,headers:{'content-type':'text/html'},body:restricted?login:body}));
   await collect(f,'blocked');const runner=new MissingFieldRunner(f.store),run=runner.start();await runner.run(run);
   const blocked=runner.storage.current().find(s=>s.slot.field==='shipping_fee')!;
@@ -119,23 +119,19 @@ test.each(['fetch','render'])('a recovered %s login failure does not hold a late
  }finally{f.close();}
 });
 
-test('render failure and successful resume invalidate assessments for the same capture',async()=>{
+test('acquisition-time render failure and successful resume create distinct immutable captures',async()=>{
  let restricted=true;
- const f=engineFixture('<main><h1>Example stroller example_only</h1></main>',{browser:true},{renderer:{render:async()=>({finalUrl:source.origin+'/model',html:restricted?'<form action="/login"><input type="password"></form>':'',text:restricted?'로그인이 필요합니다.':'Example stroller example_only',regionText:'Example stroller example_only'})}});try{
-  const run=f.pipeline.start({kind:'test',at:'same-capture'});f.pipeline.seed(run);
-  // Assess the fetched capture before its renderer runs, then persist the render failure.
-  for(let n=0;n<2;n++)await f.pipeline.engine.step(run);
-  const slot=enumerateSlots(f.store).find(s=>s.field==='shipping_fee')!,before=evaluateSlot(f.store,slot);
-  await f.pipeline.run(run);const failed=evaluateSlot(f.store,slot);
-  expect(failed.input_digest).not.toBe(before.input_digest);
+ const body='<main><h1>Example stroller example_only</h1></main>';
+ const f=engineFixture(body,{browser:true},{renderer:{capability:{nonpersistent:true,version:'fixture-render@1'},render:async()=>({finalUrl:source.origin+'/model',html:restricted?'<form action="/login"><input type="password"></form>':body,text:restricted?'로그인이 필요합니다.':'Example stroller example_only'})}});try{
+  const run=await collect(f,'render-recovery'),slot=enumerateSlots(f.store).find(s=>s.field==='shipping_fee')!;
+  const failed=evaluateSlot(f.store,slot);
   expect(failed.diagnoses).toContainEqual(expect.objectContaining({cause:'inaccessible',reason:'login_required'}));
-  const runner=new MissingFieldRunner(f.store),exploration=runner.start();await runner.run(exploration);
-  restricted=false;f.store.put('domain_state',new URL(source.origin).hostname,{next_at:0,stopped:false});
+  const first=f.store.db.prepare('SELECT * FROM engine_captures').get();
+  restricted=false;f.store.put('domain_state',new URL(source.origin).hostname,{next_at:0,stopped:false});f.advance(1000);
   f.pipeline.resume(run);await f.pipeline.run(run);
-  expect(runner.storage.current().find(s=>s.slot.id===slot.id)?.stale).toBe(true);
-  runner.resume(exploration);await runner.run(exploration);
-  expect(runner.storage.current().find(s=>s.slot.id===slot.id)?.assessment?.diagnoses).toContainEqual(expect.objectContaining({cause:'not_in_source'}));
-  expect(f.store.db.prepare('SELECT id FROM engine_captures').all()).toHaveLength(1);
+  expect(evaluateSlot(f.store,slot).diagnoses).toContainEqual(expect.objectContaining({cause:'not_in_source'}));
+  expect(f.store.db.prepare('SELECT * FROM engine_captures').all()).toHaveLength(2);
+  expect(f.store.db.prepare('SELECT * FROM engine_captures WHERE id=?').get(first!.id)).toEqual(first);
  }finally{f.close();}
 });
 

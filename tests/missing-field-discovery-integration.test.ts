@@ -22,7 +22,7 @@ test.each([false,true])('reverse requests reach existing discovery with provenan
   const before=f.store.db.prepare('SELECT * FROM extracted_assertion_links ORDER BY extracted_id').all();
   const requests:string[]=[];
   const scheduler=new Scheduler(f.store,async url=>{requests.push(url.href);return {status:200,headers:{'content-type':'application/json'},body:'{"results":[{"url":"https://new-gear.example.org/item?product_no=A","title":"유모차 신제품 2026","summary":"Example stroller example_only"}]}'};},async ms=>f.advance(ms));
-  const discovery=new SourceDiscoveryRunner(f.store,f.raw,cfg,{scheduler,profile:f.profile}),discoveryRun=discovery.start({kind:'test',at:'reverse'});
+  const discovery=new SourceDiscoveryRunner(f.store,cfg,{scheduler,profile:f.profile}),discoveryRun=discovery.start({kind:'test',at:'reverse'});
   discovery.seed(discoveryRun);
   const linked=f.store.db.prepare("SELECT data FROM missing_field_action_links WHERE kind='discovery_run'").all();
   if(changed){expect(linked).toEqual([]);}else{

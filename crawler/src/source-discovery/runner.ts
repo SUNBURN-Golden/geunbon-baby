@@ -1,9 +1,11 @@
+import { ParseBudget } from '../../lib/external/parse-budget';
+import { collectionParseVersion } from '../agamajung/pipeline';
+import { PREPARATION_VERSION, inspectDocument, validatePrepared, type Prepared } from '../agamajung/pre-storage';
 import { JobEngine } from '../../engine/state-machine';
 import { Downloader } from '../../engine/download';
-import { RawStore } from '../../engine/raw-store';
 import { SqliteStorage } from '../../engine/storage';
 import { CostCapError, type Checkpoint, type Data, type StageHandler } from '../../engine/types';
-import { dayKey, digest, hashBytes, stable } from '../../engine/util';
+import { dayKey, digest, stable } from '../../engine/util';
 import { agamajungCosts } from '../agamajung/cost-policy';
 import { loadProfile, validateProfile, type Profile } from '../agamajung/profile';
 import { CollectorStore, requireThat } from '../store';
@@ -22,10 +24,10 @@ import type { DocumentLinks, SearchQuery, Subject } from './types';
 import { enumerateSlots } from '../missing-field/targets';
 import { inputDigest } from '../missing-field/evaluate';
 export const DISCOVERY_RUN_ID='agamajung-source-discovery';
-const VERSION='source-discovery@1';
+const VERSION=`source-discovery@2:${PREPARATION_VERSION}`;
 type Work={kind:'document'|'search'|'capture';depth:number;page:number;ancestry:string[];source_id?:string;url?:string;query?:SearchQuery;provider_id?:string;cursor?:string;cursor_history?:string[];parent_id?:string;origin_capture?:string;subject?:Subject;capture_id?:string};
 type Capture={id:string;run_id:string;url_norm:string;source_id:string;content_hash:string;fetched_at:string;data:string};
-type ResponseCache={document:DocumentLinks;nextCursor?:string};
+type ResponseCache={document:DocumentLinks;nextCursor?:string;inspection?:string;hash?:string};
 export type DiscoveryOptions={scheduler?:Scheduler;profile?:Profile;offline?:boolean;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void;provider?:(config:JsonProviderConfig,scheduler:Scheduler)=>SearchProvider};
 export class SourceDiscoveryRunner {
   readonly engine:JobEngine;
@@ -35,7 +37,7 @@ export class SourceDiscoveryRunner {
   readonly profile:Profile;
   readonly transport:Scheduler;
   private schedulers=new Map<string,Scheduler>();
-  constructor(readonly store:CollectorStore,readonly raw:RawStore,readonly config:DiscoveryConfig=loadDiscoveryConfig(),readonly options:DiscoveryOptions={}){
+  constructor(readonly store:CollectorStore,readonly config:DiscoveryConfig=loadDiscoveryConfig(),readonly options:DiscoveryOptions={}){
     validateDiscoveryConfig(config);this.profile=validateProfile(options.profile??loadProfile(store.settings),store.settings);this.transport=options.scheduler??new Scheduler(store);
     this.candidates=new SourceCandidateStore(store,config);this.storage=new SqliteStorage(store);
     this.ledger=agamajungCosts(store,this.profile,config.cost_caps.run);if(!options.offline)this.ledger.recoverOrphans();
@@ -43,7 +45,7 @@ export class SourceDiscoveryRunner {
       plan:{kind:'transactional',version:VERSION,run:async()=>({nextStage:null}),commit:(_r,c)=>this.planInside(c)},
       request:{kind:'transactional',version:VERSION,run:c=>this.request(c),commit:(r)=>{
         const cap=r.data?.capture as Data|undefined,cache=r.data?.cache as ResponseCache|undefined;
-        if(cap){this.storage.capture(cap);this.storage.cache(String(cap.content_hash),'source-discovery',this.responseTool(String(cap.id)),cache);}
+        if(cap){this.validateCache(cache!);this.storage.capture(cap);this.storage.cache(String(cap.content_hash),'source-discovery',this.responseTool(String(cap.id)),cache);}
         return {data:{capture_id:r.data!.capture_id}};
       }},
       apply:{kind:'transactional',version:VERSION,run:async()=>({nextStage:null}),commit:(_r,c)=>this.applyInside(c)}
@@ -54,10 +56,9 @@ export class SourceDiscoveryRunner {
       if(origin){const host=new URL(origin).hostname,d=store.get<DomainState>('domain_state',host)??{stopped:false,next_at:0};d.stopped=true;d.reason=code;store.put('domain_state',host,d);}
       options.health?.(code);
     }});
-    if(!options.offline)raw.cleanup(store.now());
   }
   private providers(){return this.config.providers.filter(providerApproved);}
-  private approvedSources(){return this.store.settings.sources.filter(s=>s.enabled&&this.config.source_ids.includes(s.id)&&this.profile.domain_policy.sources[s.id]&&!s.browser&&s.adapter!=='cpsc'&&!this.denied(new URL(s.origin).hostname)).sort((a,b)=>this.profile.domain_policy.start_order.indexOf(this.profile.domain_policy.sources[a.id].tier)-this.profile.domain_policy.start_order.indexOf(this.profile.domain_policy.sources[b.id].tier));}
+  private approvedSources(){return this.store.settings.sources.filter(s=>s.enabled&&this.config.source_ids.includes(s.id)&&this.profile.domain_policy.sources[s.id]&&!s.browser&&!this.profile.domain_policy.sources[s.id].render&&s.adapter!=='cpsc'&&!this.denied(new URL(s.origin).hostname)).sort((a,b)=>this.profile.domain_policy.start_order.indexOf(this.profile.domain_policy.sources[a.id].tier)-this.profile.domain_policy.start_order.indexOf(this.profile.domain_policy.sources[b.id].tier));}
   private denied(host:string){return [...this.profile.domain_policy.denied_hosts,'instagram.com','facebook.com','cdninstagram.com','fbcdn.net'].some(h=>host===h||host.endsWith(`.${h}`));}
   preview(){return {dry_run:true,enabled:this.config.enabled,providers:this.providers().map(p=>p.id),sources:this.approvedSources().map(s=>s.id),years:resolvedYears(this.config,this.store.now()),planned_combinations:combinationCount(this.config,this.profile),query_limit:this.config.max_queries,max_depth:this.config.max_depth,min_relevance:this.config.min_relevance,shared_owner:'agamajung',shared_day_caps:this.profile.cost_caps.day,cost_caps:this.config.cost_caps,sample_queries:this.providers().flatMap(p=>{const q=combinationAt(0,this.config,this.profile,resolvedYears(this.config,this.store.now()),p.id);return q?[q.text]:[];})};}
   start(slot:{kind:string;at:string;data?:Data}={kind:'daily',at:dayKey(this.store.now())}){
@@ -152,15 +153,25 @@ export class SourceDiscoveryRunner {
     const scheduler=new Scheduler(this.store,this.transport.transport,this.transport.sleep,meter,this.profile.limits.min_interval_ms);this.schedulers.set(key,scheduler);return scheduler;
   }
   private capture(id:string){const cap=this.store.db.prepare('SELECT * FROM engine_captures WHERE id=?').get(id) as Capture|undefined;if(!cap)throw new Error('capture_missing');return cap;}
-  private responseTool(id:string){return `${VERSION}:${id}:${digest(this.config.url_policies)}`;}
+  private responseTool(id:string){return `${VERSION}:${id}:${digest([this.config.url_policies,this.config.pagination_selectors,this.store.settings.sources,this.config.providers])}`;}
   private findCached(cap:Capture):ResponseCache|undefined {
-    const own=this.storage.cached<ResponseCache>(cap.content_hash,'source-discovery',this.responseTool(cap.id));if(own)return own;
-    const links=this.storage.cached<DocumentLinks>(cap.content_hash,'source-links',linkCacheTool(this.config,cap.url_norm,cap.source_id,Number(JSON.parse(cap.data).discovery_depth??0)));if(links)return {document:links};
-    if(this.engine.run(cap.run_id)?.profile_id==='agamajung'){
-      const parse=this.store.db.prepare("SELECT data FROM engine_cache WHERE content_hash=? AND stage='parse' AND instr(tool,?)>0 ORDER BY tool DESC LIMIT 1").get(cap.content_hash,`:${cap.source_id}:`) as {data:string}|undefined;
-      const parsed=parse?JSON.parse(parse.data):undefined;
-      if(parsed?.text)return {document:{kind:'html',links:[],text:String(parsed.text).split('\n').map(l=>cleanText(l,500)).join('\n').slice(0,20000),truncated:false}};
-    }
+    try {
+      const own=this.storage.cached<ResponseCache>(cap.content_hash,'source-discovery',this.responseTool(cap.id));if(own){this.validateCache(own);return own;}
+      if(this.engine.run(cap.run_id)?.profile_id!=='agamajung')return;
+      const meta=JSON.parse(cap.data),version=collectionParseVersion(this.store,this.profile,{discoveryConfig:this.config});
+      if(meta.preparation_identity!==version||meta.preparation_version!==PREPARATION_VERSION||meta.preparation_mode!=='static')return;
+      const links=this.storage.cached<DocumentLinks>(cap.content_hash,'source-links',`${linkCacheTool(this.config,cap.url_norm,cap.source_id,Number(meta.discovery_depth))}:${version}`);
+      const parseTool=`${version}:${cap.source_id}:${(cap as Capture&{content_type:string}).content_type}:${digest(cap.url_norm)}`;
+      const parsed=this.storage.cached(cap.content_hash,'parse',parseTool);
+      if(!parsed||!links)return;
+      // The collect pipeline's prepared parse derivative must pass the same
+      // schema/integrity validation before its links are trusted here.
+      validatePrepared({version:PREPARATION_VERSION,mode:'static',parsed:parsed as Prepared['parsed'],links:links as Prepared['links'],hash:String(meta.derivative_hash)},this.config);
+      return {document:links};
+    }catch{return;}
+  }
+  private validateCache(cache:ResponseCache){
+    if(!cache||cache.inspection!==VERSION||cache.hash!==digest([cache.document,cache.nextCursor??null])||stable(inspectDocument(cache.document,this.config))!==stable(cache.document)||cache.nextCursor&&!validCursor(cache.nextCursor))throw new Error('preparation_schema');
   }
   private cached(cap:Capture):ResponseCache {
     const cache=this.findCached(cap);if(!cache)throw new Error('capture_cache_missing');return cache;
@@ -186,23 +197,30 @@ export class SourceDiscoveryRunner {
     }
     const scheduler=this.scheduler(w,new URL(url).origin,provider);
     let cache:ResponseCache,hash:string,bytes:number,type:string,finalUrl=url;
+    const budget=new ParseBudget(this.store.settings.limits.max_bytes);
     try{
       if(provider){
         // The provider maps transient raw results; URLs are immediately passed to the
         // candidate policy, before ordinary canonicalUrl can erase product IDs.
         const adapter=this.options.provider?.(provider,scheduler)??new JsonApiSearchProvider(provider,scheduler);
         const page=await adapter.search(w.query!,w.cursor);
-        cache={document:{kind:'html',text:'',truncated:page.truncated??false,links:page.results.slice(0,500).map((h,i)=>({destination:candidateUrl(h.url,this.config.url_policies),title:cleanText(h.title??'',200),quote:cleanText(h.summary??''),locator:h.locator??`results[${i}]`,relation:'search_result'}))},...(page.nextCursor?{nextCursor:page.nextCursor}:{})};
-        // The API adapter supplies a raw body hash only; raw API bodies, request
-        // URLs and authorization headers are never persisted by this component.
-        const encoded=Buffer.from(stable(cache));hash=page.capture?.contentHash??hashBytes(encoded);bytes=page.capture?.byteLength??encoded.length;type='application/json';
+        requireThat(page.capture&&/^[a-f0-9]{64}$/.test(page.capture.contentHash)&&Number.isSafeInteger(page.capture.byteLength)&&page.capture.byteLength>=0&&page.capture.byteLength<=this.store.settings.limits.max_bytes,'search_capture');
+        if(!Array.isArray(page.results)||page.results.length>500)throw new Error('preparation_limit');
+        let fieldBytes=0;
+        for(const hit of page.results)for(const value of [hit.url,hit.title,hit.summary,hit.locator]){if(value!==undefined&&(typeof value!=='string'||value.length>this.store.settings.limits.max_bytes||(fieldBytes+=Buffer.byteLength(value))>this.store.settings.limits.max_bytes))throw new Error('preparation_limit');}
+        const cursor=provider.terms.cursor_storage&&validCursor(page.nextCursor)?page.nextCursor:undefined;
+        cache={document:{kind:'html',text:'',truncated:page.truncated===true||!!page.nextCursor&&!cursor,links:page.results.map((h,i)=>({destination:candidateUrl(h.url,this.config.url_policies),title:provider!.terms.storage==='snippets'?cleanText(h.title??'',200):'',quote:provider!.terms.storage==='snippets'?cleanText(h.summary??''):'',locator:cleanText(h.locator??`results[${i}]`,160)||`results[${i}]`,relation:'search_result'}))},...(cursor?{nextCursor:cursor}:{})};
+        hash=page.capture!.contentHash;bytes=page.capture!.byteLength;type='application/json';
       }else{
         const result=await new Downloader({get:(u,o)=>scheduler.get(u,source!,{...o,validateUrl:raw=>candidateUrl(raw,this.config.url_policies).identity==='preserved'})}).download(url,{reusable:()=>false,render:false});
         type=(result.response.headers['content-type']??'text/html').split(';')[0];
         requireThat(/^(?:text\/(?:html|plain|xml)|application\/(?:xml|rss\+xml|atom\+xml))$/i.test(type),'discovery_content_type');
-        hash=result.hash;bytes=result.bytes!.length;finalUrl=result.response.finalUrl??url;
+        hash=result.hash;bytes=result.bytes!.length;
+        if(bytes>this.store.settings.limits.max_bytes)throw new Error('preparation_limit');
+        const destination=candidateUrl(result.response.finalUrl??url,this.config.url_policies);
+        requireThat(destination.identity==='preserved','redirect_identity');finalUrl=destination.canonical_url!;
         const adapter=/<sitemapindex\b|<urlset\b/i.test(result.response.body)?'sitemap':/<rss\b|<feed\b/i.test(result.response.body)?'rss':source!.adapter as 'links'|'rss'|'sitemap';
-        cache={document:extractDocument(result.response.body,finalUrl,adapter,this.config.url_policies,this.config.pagination_selectors?.[source!.id])};
+        cache={document:extractDocument(result.response.body,finalUrl,adapter,this.config.url_policies,this.config.pagination_selectors?.[source!.id],budget)};
       }
     }catch(e){
       const code=(e as {code?:string;message?:string}).code??(e as Error).message;
@@ -212,6 +230,8 @@ export class SourceDiscoveryRunner {
       });
       throw e;
     }
+    cache.document=inspectDocument(cache.document,this.config);
+    cache.inspection=VERSION;cache.hash=digest([cache.document,cache.nextCursor??null]);this.validateCache(cache);
     const sourceId=source?.id??`search:${provider!.id}`,seq=this.sequence(c.run_id,sourceId,url);
     const cap={id:digest([c.run_id,sourceId,url,seq]),run_id:c.run_id,source_id:sourceId,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:'ok',content_hash:hash,content_type:type,byte_length:bytes,raw_ref:null,data:{query_id:w.query?.id??null,cursor:w.cursor??null,final_url:finalUrl,discovery_depth:w.depth}};
     return {data:{capture:cap,cache,capture_id:cap.id}};

@@ -1,19 +1,15 @@
 import { failureCode } from '../discovery/health';
-import { extractPangpang, isPangpang, pangpangIdentityAllowed, PANGPANG_VERSION, type PangpangPage, type PangpangProduct } from '../../lib/external/pangpang';
+import { isPangpang, pangpangIdentityAllowed, PANGPANG_VERSION, type PangpangPage, type PangpangProduct } from '../../lib/external/pangpang';
 import { pangpangLog, pangpangContext, reportPangpang, type PangpangLog } from '../discovery/pangpang-diagnostics';
-import { JobEngine, Downloader, RawStore, SqliteStorage, ToolAdapter, extractPdf, extractImage, renderDocument, DisabledModel } from '../../engine';
+import { JobEngine, Downloader, RawStore, SqliteStorage, ToolAdapter, DisabledModel, errorCode } from '../../engine';
 import type { CostLedger } from '../../engine';
 import { agamajungCosts } from './cost-policy';
-import { extractDocument } from '../discovery/document';
 import { loadDiscoveryConfig, linkCacheTool, type DiscoveryConfig } from '../source-discovery/config';
-import type { Checkpoint, Data, FetchResponse, ModelPort, RenderPort, StageHandler, StageResult } from '../../engine';
+import type { Checkpoint, Data, ModelPort, RenderPort, StageHandler, StageResult } from '../../engine';
 import { digest, stable } from '../dedup';
 import { CollectorStore, requireThat } from '../store';
 import { Scheduler, type DomainState } from '../scheduler';
-import { renderDocument as browserDocument } from '../discovery/browser';
-import { discoverLinks } from '../discovery/adapters';
-import { parseHtml, selectAll, textOf, linesOf } from '../../lib/external/parse';
-import { canonicalUrl, filterText } from '../../../shared/privacy-rules';
+import { canonicalUrl } from '../../../shared/privacy-rules';
 import type { AssertionInput, ClipPayload } from '../../../shared/collection-schema';
 import { aiData, privacyFilter } from '../privacy-filter';
 import { sourceFor, visitAllowed, type SourcePolicy } from '../source-policy';
@@ -29,7 +25,9 @@ type Capture={id:string;run_id:string;source_id:string;url_norm:string;content_h
 export type Parsed={inspection?:{version:string;complete:boolean;truncated:boolean;region:string;tool_status:string;locator_base:string;locator_space?:string;filter_changed?:boolean};text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[];pangpang?:PangpangPage};
 type Labeled={labels:LabelId[];status:'labeled'|'ambiguous';method:'rule'|'model'};
 export type PipelineOptions={offline?:boolean;scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;discoveryConfig?:DiscoveryConfig;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void;linkLog?:PangpangLog};
+import { prepare, validatePrepared, requireMemoryRenderer, safeEtag, safeModified, PREPARATION_VERSION, type Prepared } from './pre-storage';
 const string=(data:Data,key:string)=>String(data[key]??'');
+export const collectionParseVersion=(store:CollectorStore,profile:Profile,options:PipelineOptions={})=>`parse@5:${PREPARATION_VERSION}:${PANGPANG_VERSION}:${profile.extractor_version}:${profile.labeler_version}:${digest([store.settings.sources,options.discoveryConfig??loadDiscoveryConfig(),options.renderer?.capability??null,options.tools?.memory?.capability??null,profile.domain_policy])}`;
 export class AgamajungPipeline {
   readonly engine:JobEngine;
   readonly ledger:CostLedger;
@@ -41,7 +39,7 @@ export class AgamajungPipeline {
   readonly parseVersion:string;
   constructor(readonly store:CollectorStore,readonly raw:RawStore,profile=loadProfile(store.settings),readonly options:PipelineOptions={}){
     this.profile=validateProfile(profile,store.settings);
-    this.parseVersion=`parse@4:${PANGPANG_VERSION}:${profile.extractor_version}:${profile.labeler_version}:${digest(store.settings.sources.map(s=>[s.id,s.origin,s.selector,s.official_fields,s.kind]))}`;
+    this.parseVersion=collectionParseVersion(store,profile,options);
     this.storage=new SqliteStorage(store,{receipt:id=>store.receipt(id),submit:(id,payload,sourceId)=>store.submit('linux',id,payload,sourceId)});this.tools=options.tools??new ToolAdapter(store);
     this.ledger=agamajungCosts(store,profile);if(!options.offline)this.ledger.recoverOrphans();
     this.scheduler=options.scheduler?new Scheduler(store,options.scheduler.transport,options.scheduler.sleep,this.ledger,profile.limits.min_interval_ms):new Scheduler(store,undefined,undefined,this.ledger,profile.limits.min_interval_ms);
@@ -51,33 +49,32 @@ export class AgamajungPipeline {
       const state=store.get<DomainState>('domain_state',host)??{next_at:0,stopped:false};
       state.stopped=true;state.reason='access_restricted';store.put('domain_state',host,state);options.health?.(code);
     }});
-    if(!options.offline)raw.cleanup(store.now());
+    if(!options.offline)raw.cleanup(new Set((store.db.prepare('SELECT raw_ref FROM engine_captures WHERE raw_ref IS NOT NULL').all() as {raw_ref:string}[]).map(c=>c.raw_ref)),store.now());
   }
   private source(c:Checkpoint){const source=this.store.settings.sources.find(s=>s.id===c.data.source_id&&s.enabled);requireThat(source&&this.profile.domain_policy.sources[source.id],'visit_not_allowed',403);return source!;}
   private capture(c:Checkpoint){const row=this.store.db.prepare('SELECT * FROM engine_captures WHERE id=?').get(string(c.data,'capture_id')) as Capture|undefined;requireThat(row,'capture_missing');return row!;}
-  private toolFor(type:string){return type==='application/pdf'?'pdftotext':type.startsWith('image/')?'tesseract':undefined;}
-  private async probeType(type:string){const tool=this.toolFor(type);if(tool)await this.tools.probeTool(tool,tool==='pdftotext'?['-v']:['--version']);}
-  private cacheTool(sourceId:string,type:string,version:string,url?:string){
-    const tool=this.toolFor(type),support=tool?this.store.db.prepare('SELECT status,version FROM engine_tool_support WHERE tool=?').get(tool):undefined;
-    return `${version}:${sourceId}:${tool?digest([tool,support??null]):'text'}${this.pangpang(sourceId)?`:${PANGPANG_VERSION}:${digest(url??'')}`:''}`;
-  }
+  private cacheTool(sourceId:string,type:string,version:string,url?:string){return `${version}:${sourceId}:${type}:${digest(url??'')}`;}
   private cache<T>(cap:Capture,stage:string,version:string){return this.storage.cached<T>(cap.content_hash,stage,this.cacheTool(cap.source_id,cap.content_type,version,cap.url_norm));}
-  private reusable(hash:string,source:SourcePolicy,type:string,url:string,depth:number){
-    if(this.raw.read(hash))return true;
-    const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
-    const links=source.adapter==='cpsc'||!/text|xml|html/.test(type)||this.storage.cached(hash,'source-links',this.linksTool(source,url,depth,cfg));
-    if(isPangpang(source)&&links){const parsed=this.storage.cached<Parsed>(hash,'parse',this.cacheTool(source.id,type,this.parseVersion,url));if(parsed?.eligible===false)return true;}
-    return !!links&&['parse','label','extract'].every(stage=>this.storage.cached(hash,stage,this.cacheTool(source.id,type,this.version(stage),url)));
+  private prepared(cap:Capture):Prepared|undefined {
+    try {
+      const meta=JSON.parse(cap.data),source=this.store.settings.sources.find(s=>s.id===cap.source_id);
+      if(!source||meta.preparation_identity!==this.parseVersion)return;
+      const cfg=this.options.discoveryConfig??loadDiscoveryConfig(),parsed=this.cache<Parsed>(cap,'parse',this.parseVersion),links=this.storage.cached<Prepared['links']>(cap.content_hash,'source-links',this.linksTool(source,cap.url_norm,Number(meta.discovery_depth),cfg));
+      if(!parsed||!links)return;
+      const prepared:Prepared={version:meta.preparation_version,mode:meta.preparation_mode,parsed,links,hash:meta.derivative_hash};
+      validatePrepared(prepared,cfg);
+      if((this.profile.domain_policy.sources[source.id].render||source.browser)&&prepared.mode!=='rendered')return;
+      return prepared;
+    }catch{return;}
   }
+  private reusable(cap:Capture|undefined){return !!cap&&!!this.prepared(cap);}
   private version(stage:string){return stage==='parse'?this.parseVersion:stage==='label'?`${this.profile.labeler_version}:${this.parseVersion}`:`${this.profile.extractor_version}:${this.parseVersion}`;}
   private pangpang(id:string){const s=this.store.settings.sources.find(s=>s.id===id);return !!s&&isPangpang(s);}
   private labeler(id:string){return this.pangpang(id)?`${this.profile.labeler_version}:${PANGPANG_VERSION}`:this.profile.labeler_version;}
   private extractor(id:string){return this.pangpang(id)?`${this.profile.extractor_version}:${PANGPANG_VERSION}`:this.profile.extractor_version;}
-  private linksTool(s:SourcePolicy,url:string,depth:number,cfg:DiscoveryConfig){return `${linkCacheTool(cfg,url,s.id,depth)}${isPangpang(s)?`:${PANGPANG_VERSION}`:''}`;}
+  private linksTool(s:SourcePolicy,url:string,depth:number,cfg:DiscoveryConfig){return `${linkCacheTool(cfg,url,s.id,depth)}:${this.parseVersion}`;}
   private current(c:Checkpoint){
-    if(this.pangpang(String(c.data.source_id))&&(c.data.pangpang_version!==PANGPANG_VERSION||c.data.pangpang_parse_version!==this.parseVersion)){
-      const cap=this.capture(c);c.data.restart_stage=this.raw.read(cap.content_hash)?'parse':'fetch';throw new Error('input_unavailable');
-    }
+    if(!this.prepared(this.capture(c))){c.data.restart_stage='fetch';throw new Error('input_unavailable');}
   }
   private productEligibility(p:PangpangProduct):'excluded_category'|'profile_category_mismatch'|null {
     const text=`${p.title} ${p.category_text}`.toLocaleLowerCase();
@@ -139,7 +136,7 @@ export class AgamajungPipeline {
     }
     return result;
   }
-  private parsed(cap:Capture){const p=this.cache<Parsed>(cap,'parse',this.parseVersion);if(!p)throw new Error('input_unavailable');return p;}
+  private parsed(cap:Capture){const p=this.prepared(cap)?.parsed;if(!p)throw new Error('input_unavailable');return p;}
   private serviceInput(c:Checkpoint):{payload:ClipPayload;provenance:ProvenanceInput} {
     const cap=this.capture(c),extractor=String(c.data.extractor_version??this.extractor(cap.source_id));
     const rows=this.store.db.prepare('SELECT id,data FROM engine_extracted WHERE capture_id=? AND extractor=? ORDER BY id').all(cap.id,extractor) as {id:string;data:string}[];
@@ -159,12 +156,12 @@ export class AgamajungPipeline {
       discover:handler('discover@1',async c=>{const s=this.source(c);requireThat(visitAllowed(string(c.data,'url'),s),'visit_not_allowed');this.store.discover(string(c.data,'url'));return {}; }),
       fetch:handler('fetch@1',async c=>{
         const source=this.source(c),policy=this.profile.domain_policy.sources[source.id],url=string(c.data,'url');
+        requireMemoryRenderer(policy.render||source.browser,this.options.renderer);
         // Mirrors the discovery runner: reserve body/recheck/browser before any transport, including robots.
         if(source.adapter==='links'||Number(c.data.depth)>0||this.store.recordByUrl(url)?.last_checked_at||source.browser)this.persistReservation(c,source);
         const previous=this.store.db.prepare("SELECT * FROM engine_captures WHERE source_id=? AND url_norm=? AND status IN ('ok','not_modified') ORDER BY fetched_at DESC,rowid DESC LIMIT 1").get(source.id,url) as Capture|undefined;
-        if(previous)await this.probeType(previous.content_type);
         let result:Awaited<ReturnType<Downloader['download']>>;
-        try{result=await new Downloader(new SchedulerFetcher(this.scheduler,source)).download(url,{previous,reusable:h=>this.reusable(h,source,previous?.content_type??'text/html',url,Number(c.data.depth)),render:policy.render});}
+        try{result=await new Downloader(new SchedulerFetcher(this.scheduler,source),{etag:safeEtag,modified:safeModified}).download(url,{previous,reusable:()=>this.reusable(previous),render:policy.render||source.browser});}
         catch(e){
           const code=(e as {code?:string;message?:string}).code??(e as Error).message;
           if(isPangpang(source))(this.options.linkLog??pangpangLog)({...pangpangContext('collect',c.run_id,url),event:'transport',reason:failureCode(e)});
@@ -177,82 +174,34 @@ export class AgamajungPipeline {
         if(isPangpang(source))requireThat(pangpangIdentityAllowed(url,result.response.finalUrl??url),'redirect_identity');
         const type=(result.response.headers['content-type']??previous?.content_type??'text/html').split(';')[0].trim().toLowerCase();
         requireThat(policy.content_types.some(t=>type===t||t.endsWith('/*')&&type.startsWith(t.slice(0,-1))),'content_type');
-        await this.probeType(type);
-        let rawRef:string|null=null;
-        if(result.bytes){
-          this.raw.write(result.bytes);
-          const text=new TextDecoder().decode(result.bytes);
-          const clean=/text|json|xml|html/.test(type)&&!/<(?:input|textarea|select|script|form)\b|contenteditable|data-private|(?:token|signature|credential|cookie|authorization)\s*["']?\s*[:=]/i.test(text)&&text.split(/[\r\n]+/).every(line=>filterText(line,Number.MAX_SAFE_INTEGER)===line.normalize('NFKC').trim());
-          if(policy.raw==='store'&&clean)rawRef=this.raw.write(result.bytes,true);
-        }else if(previous?.raw_ref&&this.raw.read(result.hash))rawRef=previous.raw_ref;
-        const seq=(this.store.db.prepare('SELECT coalesce(max(fetch_seq),0)+1 n FROM engine_captures WHERE run_id=? AND source_id=? AND url_norm=?').get(c.run_id,source.id,url) as {n:number}).n;
-        const cap:Data={id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:result.status,content_hash:result.hash,content_type:type,byte_length:result.bytes?.length??(previous?.byte_length??null),etag:result.response.headers.etag??(result.status==='not_modified'?previous?.etag:null)??null,last_modified:result.response.headers['last-modified']??(result.status==='not_modified'?previous?.last_modified:null)??null,raw_ref:rawRef,prev_capture_id:previous?.id??null,data:{final_url:canonicalUrl(result.response.finalUrl??url),discovery_depth:Number(c.data.depth)}};
-        return {outputRef:String(cap.id),data:{capture:cap,capture_id:cap.id,content_hash:result.hash}};
-      },(result)=>{
-        this.storage.capture(result.data!.capture as Data);
-        const data={...result.data};delete data.capture;return {...result,data};
-      }),
-      render:handler('render@1',async c=>{
-        const cap=this.capture(c),s=this.source(c),policy=this.profile.domain_policy.sources[s.id];
-        if(isPangpang(s)||!policy.render||!/html/.test(cap.content_type)||this.cache(cap,'parse',this.parseVersion))return {};
-        if(this.cache(cap,'render',this.parseVersion))return {};
-        const bytes=this.raw.read(cap.content_hash);if(!bytes)throw new Error('input_unavailable');
-        const finalUrl=String(JSON.parse(cap.data).final_url??cap.url_norm);
-        const document:FetchResponse={status:200,body:new TextDecoder().decode(bytes),bytes,finalUrl,headers:{'content-type':cap.content_type}};
-        const port=this.options.renderer??{render:(url:string,doc:FetchResponse)=>browserDocument(url,s,this.scheduler,{document:doc})};
-        const snap=await renderDocument(port,finalUrl,document,true);
-        const renderedText=snap.regionText??snap.text;
-        const parsed:Parsed={text:this.cleanLines(renderedText),inspection:this.inspection(renderedText,s,'supported'),eligible:this.eligible(`${snap.text} ${snap.title??''}`),title:filterText(snap.title??'',200),...(snap.documentOrigin?{document_origin:canonicalUrl(snap.documentOrigin)}:{})};
-        return {data:{rendered:parsed}};
-      },(result,c)=>{if(result.data?.rendered){const cap=this.capture(c);this.storage.cache(cap.content_hash,'render',this.cacheTool(cap.source_id,cap.content_type,this.parseVersion,cap.url_norm),result.data.rendered);}return {data:{}};}),
-      parse:handler(this.parseVersion,async c=>{
-        const cap=this.capture(c);await this.probeType(cap.content_type);if(this.cache(cap,'parse',this.parseVersion))return {};
-        const s=this.source(c),rendered=this.cache<Parsed>(cap,'render',this.parseVersion);
-        let parsed:Parsed;
-        if(rendered)parsed=rendered;
-        else {
-          const bytes=this.raw.read(cap.content_hash);if(!bytes)throw new Error('input_unavailable');
-          if(/pdf|^image\//.test(cap.content_type)){
-            const path=this.raw.path(cap.content_hash,true);
-            this.raw.write(bytes);
-            const extracted=cap.content_type==='application/pdf'?await extractPdf(this.tools,path):await extractImage(this.tools,path);
-            if(extracted.status==='unsupported')throw Object.assign(new Error('unsupported'),{tool:extracted.tool});
-            parsed={text:this.cleanLines(extracted.text),inspection:this.inspection(extracted.text,s,'supported')};
-          } else if(s.adapter==='cpsc'){
-            const found=discoverLinks(new TextDecoder().decode(bytes),cap.url_norm,'cpsc').filter(f=>this.eligible(`${f.title??''} ${f.recall?.name??''}`));
-            parsed={text:found.map(f=>filterText(`Recall: ${f.title??f.recall?.name??''}`)).join('\n'),assertions:privacyFilter({assertions:found.filter(f=>f.recall).slice(0,30).map(f=>({field:'recalls',value:f.recall,quote:f.title??f.recall!.name,locator:`$.Recall[RecallID=${f.recall!.id}]`}))}).assertions};
-          } else if(isPangpang(s)){
-            const finalUrl=String(JSON.parse(cap.data).final_url??cap.url_norm);
-            requireThat(pangpangIdentityAllowed(cap.url_norm,finalUrl)&&visitAllowed(finalUrl,s),'redirect_identity');
-            const page=extractPangpang(new TextDecoder().decode(bytes),finalUrl,new Date(cap.fetched_at),url=>visitAllowed(url,s));
-            const product=page.detail?page.products[0]:undefined;
-            if(page.detail&&!product){
-              reportPangpang(page,pangpangContext('collect',c.run_id,cap.id),this.options.linkLog??pangpangLog,p=>this.productEligibility(p));
-              throw new Error('region_missing');
-            }
-            const text=product?.text??'';
-            parsed={text:this.cleanLines(text),eligible:!!product&&!this.productEligibility(product),...(product?{title:product.title}:{}),pangpang:page,
-              inspection:{...this.inspection(text,s,'supported'),region:product?.locator??'pangpang:listing',locator_base:product?.locator??'pangpang:listing'},
-              assertions:product?.dates?[{field:'group_buy_terms',value:{date:product.dates.starts_at,terms:product.dates.raw},quote:product.dates.raw,locator:`${product.locator}:schedule`}]:[]};
-          } else {
-            const body=new TextDecoder().decode(bytes),root=parseHtml(body),region=s.selector?selectAll(root,s.selector)[0]:root;
-            requireThat(region,'region_missing');
-            const rows=selectAll(region,'tr');
-            const text=rows.length?[...selectAll(region,'h1,h2').map(textOf),...rows.map(row=>selectAll(row,'th,td').map(cell=>textOf(cell).trim()).join(' | '))].join('\n'):linesOf(region).join('\n');
-            parsed={text:this.cleanLines(text),inspection:this.inspection(text,s,rows.length?'partial_table':'supported'),title:filterText(selectAll(root,'h1,h2,title').map(textOf)[0]??'',200)};
-            const origin=selectAll(root,'link[rel=original]')[0]?.attrs.href;
-            if(origin)parsed.document_origin=canonicalUrl(new URL(origin,cap.url_norm).href);
-          }
+        const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
+        let prepared:Prepared|undefined;
+        try {prepared=result.bytes?await prepare({bytes:result.bytes,document:result.response,url,type,source,render:policy.render||source.browser,renderer:this.options.renderer,tools:this.tools,config:cfg,now:new Date(this.store.now()),maxBytes:this.store.settings.limits.max_bytes,eligible:text=>this.eligible(text)}):previous?this.prepared(previous):undefined;}catch(e){
+          const reason=errorCode(e),seq=(this.store.db.prepare('SELECT coalesce(max(fetch_seq),0)+1 n FROM engine_captures WHERE run_id=? AND source_id=? AND url_norm=?').get(c.run_id,source.id,url) as {n:number}).n;
+          this.store.transaction(()=>this.storage.capture({id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:['source_blocked','login_required','access_restricted','empty_page'].includes(reason)?'restricted':'skipped_policy',content_hash:result.hash,content_type:type,byte_length:result.bytes?.length??null,raw_ref:null,etag:null,last_modified:null,prev_capture_id:previous?.id??null,data:{reason,preparation_outcome:reason==='unsupported'?'unsupported':'failed',preparation_version:PREPARATION_VERSION}}));
+          throw e;
         }
-        return {data:{parsed}};
+        if(!prepared)throw new Error('input_unavailable');
+        validatePrepared(prepared,cfg);
+        const artifact=policy.raw==='store'&&prepared.parsed.text?this.raw.writeInspected({text:prepared.parsed.text,fullTextAllowed:source.full_text_allowed,permissionBasis:source.permission_basis??''}):undefined;
+        const seq=(this.store.db.prepare('SELECT coalesce(max(fetch_seq),0)+1 n FROM engine_captures WHERE run_id=? AND source_id=? AND url_norm=?').get(c.run_id,source.id,url) as {n:number}).n;
+        const cap:Data={id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:result.status,content_hash:result.hash,content_type:type,byte_length:result.bytes?.length??(previous?.byte_length??null),etag:safeEtag(result.response.headers.etag??(result.status==='not_modified'?previous?.etag:null)),last_modified:safeModified(result.response.headers['last-modified']??(result.status==='not_modified'?previous?.last_modified:null)),raw_ref:artifact?.path??null,prev_capture_id:previous?.id??null,data:{final_url:canonicalUrl(result.response.finalUrl??url),discovery_depth:Number(c.data.depth),preparation_identity:this.parseVersion,preparation_version:prepared.version,preparation_mode:prepared.mode,derivative_hash:prepared.hash,...(artifact?{artifact_hash:artifact.hash,artifact_format:'sanitized_text'}:{})}};
+        return {outputRef:String(cap.id),data:{capture:cap,prepared,capture_id:cap.id,content_hash:result.hash}};
       },(result,c)=>{
-        const cap=this.capture(c),parsed=result.data?.parsed as Parsed|undefined;
-        if(parsed)this.storage.cache(cap.content_hash,'parse',this.cacheTool(cap.source_id,cap.content_type,this.parseVersion,cap.url_norm),parsed);
-        const s=this.source(c),bytes=this.raw.read(cap.content_hash),output=parsed??this.parsed(cap);
+        const cap=result.data!.capture as Data,p=result.data!.prepared as Prepared,s=this.source(c),cfg=this.options.discoveryConfig??loadDiscoveryConfig();
+        validatePrepared(p,cfg); // final runtime gate immediately before binding any content
+        this.storage.capture(cap);
+        this.storage.cache(String(cap.content_hash),'parse',this.cacheTool(s.id,String(cap.content_type),this.parseVersion,String(cap.url_norm)),p.parsed);
+        this.storage.cache(String(cap.content_hash),'source-links',this.linksTool(s,String(cap.url_norm),Number(c.data.depth),cfg),p.links);
+        return {outputRef:String(cap.id),data:{capture_id:cap.id,content_hash:cap.content_hash,preparation_identity:this.parseVersion,restart_stage:'fetch'}};
+      }),
+      render:handler('render@2',async c=>{this.current(c);return {};}),
+      parse:handler(this.parseVersion,async c=>{this.current(c);return {};},(_result,c)=>{
+        const cap=this.capture(c),s=this.source(c),prepared=this.prepared(cap);
+        if(!prepared)throw new Error('input_unavailable');
+        const output=prepared.parsed;
         if(isPangpang(s)){
           const page=output.pangpang;if(!page)throw new Error('input_unavailable');
-          const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
-          this.storage.cache(cap.content_hash,'source-links',this.linksTool(s,cap.url_norm,Number(c.data.depth),cfg),{version:PANGPANG_VERSION,depth:Number(c.data.depth),source_id:s.id,links:page.products.map(p=>({url:p.source_url,locator:p.locator})),outcomes:page.outcomes});
           let scheduled=0;const deferred=new Set<string>();
           if(!page.detail){
             const max=Math.min(s.max_pages,this.store.settings.limits.max_pages);
@@ -266,30 +215,20 @@ export class AgamajungPipeline {
             }
           }
           reportPangpang(page,pangpangContext('collect',c.run_id,cap.id),this.options.linkLog??pangpangLog,p=>this.productEligibility(p),deferred,scheduled);
-        }else {
-        // Discovery uses the existing adapter and the same allow policy; never follows external sellers.
-        if(bytes&&s.adapter!=='cpsc'&&/text|xml|html/.test(cap.content_type)){
-          // Preserve candidate identifiers BEFORE discoverLinks/canonicalUrl strips them.
-          const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
-          this.storage.cache(cap.content_hash,'source-links',linkCacheTool(cfg,cap.url_norm,cap.source_id,Number(c.data.depth)),{...extractDocument(new TextDecoder().decode(bytes),cap.url_norm,s.adapter,cfg.url_policies,cfg.pagination_selectors?.[s.id]),depth:Number(c.data.depth),source_id:s.id});
-        }
-        if(bytes&&Number(c.data.depth)<this.store.settings.limits.max_depth&&!s.browser&&s.adapter!=='cpsc'){
+        }else if(Number(c.data.depth)<this.store.settings.limits.max_depth&&!s.browser&&s.adapter!=='cpsc'){
           const max=Math.min(s.max_pages,this.store.settings.limits.max_pages);
           let count=(this.store.db.prepare("SELECT count(*) n FROM engine_checkpoints WHERE run_id=? AND stage='fetch' AND json_extract(data,'$.source_id')=?").get(c.run_id,s.id) as {n:number}).n;
-          for(const f of discoverLinks(new TextDecoder().decode(bytes),cap.url_norm,s.adapter)){
+          for(const link of prepared.links.links){
             if(count>=max)break;
-            if(!visitAllowed(f.url,s)||sourceFor(f.url,this.store.settings)?.id!==s.id)continue;
-            const url=canonicalUrl(f.url),key=digest([s.id,url]);
+            if(!link.destination.canonical_url)continue;
+            const url=canonicalUrl(link.destination.canonical_url),key=digest([s.id,url]);
+            if(!visitAllowed(url,s)||sourceFor(url,this.store.settings)?.id!==s.id)continue;
             if(this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND stage='discover' AND item_key=?").get(c.run_id,key))continue;
             this.engine.enqueueInside(c.run_id,'discover',key,{source_id:s.id,url,depth:Number(c.data.depth)+1},digest(url));count++;
           }
         }
-        }
-        // Multiple pending captures may share a body while requiring different identity-bound parses.
-        const pendingBody=isPangpang(s)&&this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND id<>? AND stage IN ('render','parse') AND phase IN ('pending','leased','retry_wait','deferred') AND json_extract(data,'$.content_hash')=? LIMIT 1").get(c.run_id,c.id,cap.content_hash);
-        if(!pendingBody)this.raw.removeSpool(cap.content_hash);
         const eligible=output.eligible??this.eligible(output.text);
-        return {nextStage:eligible?undefined:null,data:{eligible,...(isPangpang(s)?{pangpang_version:PANGPANG_VERSION,pangpang_parse_version:this.parseVersion,restart_stage:'fetch'}:{})}};
+        return {nextStage:eligible?undefined:null,data:{eligible,preparation_identity:this.parseVersion,...(isPangpang(s)?{pangpang_version:PANGPANG_VERSION,pangpang_parse_version:this.parseVersion}:{}),restart_stage:'fetch'}};
       }),
       label:handler(this.profile.labeler_version,async c=>{
         this.current(c);
@@ -344,10 +283,5 @@ export class AgamajungPipeline {
       }},
     };
   }
-  private inspection(text:string,s:SourcePolicy,toolStatus:string){
-    const lines=text.split(/[\r\n]+/),filterChanged=lines.some(l=>filterText(l,Number.MAX_SAFE_INTEGER)!==l.normalize('NFKC').trim()),truncated=lines.some(l=>l.trim().length>1000)||lines.map(l=>filterText(l,1000)).filter(Boolean).join('\n').length>20000;
-    return {version:'inspection@1',complete:!truncated&&!filterChanged&&toolStatus==='supported',truncated,region:s.selector||'document',locator_base:s.selector||'document',tool_status:toolStatus,locator_space:'sanitized_text',filter_changed:filterChanged};
-  }
   private eligible(text:string){const normalized=text.toLocaleLowerCase();return !this.profile.excluded_keywords.some(k=>normalized.includes(k.toLocaleLowerCase()))&&this.profile.categories.some(category=>[...category.ko,...category.en].some(k=>normalized.includes(k.toLocaleLowerCase())));}
-  private cleanLines(text:string){return text.split(/[\r\n]+/).map(line=>filterText(line,1000)).filter(Boolean).join('\n').slice(0,20000);}
 }

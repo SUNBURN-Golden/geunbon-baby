@@ -12,12 +12,12 @@ test.each(['collect-first','discovery-first'])('actual pipelines share one froze
   f.profile.cost_caps.day.requests=5;f.cfg.max_queries=4;f.cfg.cost_caps.run.requests=20;f.cfg.cost_caps.day.requests=20;f.cfg.cost_caps.origin.requests=20;f.cfg.cost_caps.provider.requests=20;
   f.response(url=>({status:200,headers:{'content-type':url.hostname==='search.example.org'?'application/json':'text/html'},body:url.hostname==='search.example.org'?'{"results":[]}':asset('spec.html')}));
   const pipeline=new AgamajungPipeline(f.store,f.raw,f.profile,{scheduler:f.scheduler()});
-  f.cfg.max_queries=3;let discovery=new SourceDiscoveryRunner(f.store,f.raw,f.cfg,{profile:f.profile,scheduler:f.scheduler()});
+  f.cfg.max_queries=3;let discovery=new SourceDiscoveryRunner(f.store,f.cfg,{profile:f.profile,scheduler:f.scheduler()});
   const collect=async()=>{const r=pipeline.start({kind:'test',at:'one'});pipeline.seed(r);return pipeline.run(r);};
   const search=async()=>{const r=discovery.start({kind:'test',at:'one'});discovery.seed(r);return discovery.run(r);};
   if(order==='collect-first'){await collect();expect(f.calls).toHaveLength(2);await search();}else{await search();expect(f.calls).toHaveLength(3);await collect();}
   expect(f.calls).toHaveLength(5);const scope=`day:${dayKey(f.now())}:agamajung`;expect(spent(f,scope)).toMatchObject({cap:5,spent:5,held:0});
-  f.cfg.max_queries=4;discovery=new SourceDiscoveryRunner(f.store,f.raw,f.cfg,{profile:f.profile,scheduler:f.scheduler()});
+  f.cfg.max_queries=4;discovery=new SourceDiscoveryRunner(f.store,f.cfg,{profile:f.profile,scheduler:f.scheduler()});
   const extra=discovery.start({kind:'test',at:'two'});discovery.seed(extra);await discovery.run(extra);
   expect(f.calls).toHaveLength(5);expect(discovery.engine.run(extra)?.state).toBe('cost_wait');expect(spent(f,scope)).toMatchObject({cap:5,spent:5,held:0});expect(rows(f,'engine_cost_holds')).toHaveLength(0);
   expect(rows(f,'engine_costs').filter(r=>String(r.scope).startsWith('day:'))).toHaveLength(3);

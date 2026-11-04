@@ -4,11 +4,10 @@
 
 ## 실행
 
-Node 22 이상, Linux, 외부 `COLLECTOR_DB`와 `COLLECTOR_RAW_DIR`이 필요하다. 디렉터리 0700·파일 0600·심볼릭 링크 검사를 기존 엔진과 공유한다. `collector:worker`는 `.env.crawler`를 자동으로 읽지 않으므로 환경을 직접 주입한다.
+Node 22 이상, Linux, 외부 `COLLECTOR_DB`가 필요하다. 응답 파일을 만들지 않으므로 `COLLECTOR_RAW_DIR`은 필요하지 않다. 디렉터리 0700·파일 0600·심볼릭 링크 검사를 기존 엔진과 공유한다. `collector:worker`는 `.env.crawler`를 자동으로 읽지 않으므로 환경을 직접 주입한다.
 
 ```sh
 export COLLECTOR_DB=/workspace/agamajung/data/collector/collector.sqlite
-export COLLECTOR_RAW_DIR=/workspace/agamajung/data/collector/raw
 export COLLECTOR_DISCOVERY_CONFIG=/workspace/agamajung/data/collector/source-discovery.json
 npm run collector:worker -- discover-sources --dry-run
 npm run collector:worker -- discover-sources
@@ -81,7 +80,7 @@ JSON API 제공자 항목 예시(합성 주소, 실제 서비스 이용 허가�
 
 정확한 호스트·경로에서만 검증된 식별자를 보존한다. `code`는 문자·숫자·밑줄·점·하이픈, `digits`는 숫자만 허용한다. 대소문자는 유지하고 인코딩·매개변수 순서는 정규화한다. 추적 매개변수는 제거한다. 민감 키는 정책보다 우선하여 제거한다. 알 수 없는 키·중복·부적합 값·필수 키 누락·fragment·민감 매개변수로 동일성을 보장할 수 없으면 `identity_loss`, `canonical_url=NULL`로 저장한다. 손실 링크는 정제 표시 URL로 합치지 않고 capture·locator로 식별한다. 위험한 구조는 목적지를 저장하지 않는다. 제거한 원래 URL이나 값을 ID 재료에 넣지 않는다. 후보에는 적용 URL 정책 사본을 보존하고 조회에서도 검증하여 설정 변경 후에도 식별자가 유지된다.
 
-검색 목적지는 기본적으로 후보만 기록한다. 미등록 목적지에는 HEAD·robots·본문 요청을 보내지 않는다. 후속 이동도 이미 승인된 문서 영역·안전한 URL 정책을 모두 통과해야 한다. SNS·주문·첨부는 부모 관계로 남긴다. Instagram 등 금지 호스트에는 방문하지 않는다. 첨부는 승인 후 기존 collect의 PDF/OCR 경로에서 다룬다. 표시 URL만 있고 raw_ref가 없는 손실 후보는 원래 목적지를 복구할 수 없다. 원문 참조·해시는 연결된 capture에서 확인한다.
+검색 목적지는 기본적으로 후보만 기록한다. 미등록 목적지에는 HEAD·robots·본문 요청을 보내지 않는다. 후속 이동도 이미 승인된 문서 영역·안전한 URL 정책을 모두 통과해야 한다. SNS·주문·첨부는 부모 관계로 남긴다. Instagram 등 금지 호스트에는 방문하지 않는다. 기존 경로 기반 PDF/OCR은 collect에서 unsupported다. 승인만으로 비영속 처리 기능을 대신하지 않는다. 표시 URL만 있고 raw_ref가 없는 손실 후보는 원래 목적지를 복구할 수 없다. 원본 응답 해시는 연결된 capture에서 확인한다. 원본 본문은 보관하지 않으며 raw_ref가 있으면 허가된 정제 텍스트만 가리킨다.
 
 시작 깊이는 0, 링크·검색 결과·개체 검색 환류는 +1, 페이지네이션은 같은 깊이다. 경로·조건·깊이는 체크포인트에 남고 재개·환류로 초기화하지 않는다. 순환 URL·cursor·목록 상한·500개 파서 잘림은 중단/잘림으로 기록한다. 관련도는 브랜드/모델 30·카테고리 25·지역/언어 15·연도/행사 15·승인된 직접 관계 15의 중복 없는 규칙 점수다. 제외 품목·명시적 모델 불일치·식별 손실·임계값 미달은 추가 탐색을 막는다.
 
@@ -91,7 +90,7 @@ JSON API 제공자 항목 예시(합성 주소, 실제 서비스 이용 허가�
 
 Linux 전용 `0004_source_discovery.sql`이 후보·불변 근거·질의·추가 경로 근거를 만든다. 기존 0003 및 자료는 보존한다. 후보는 `(profile, canonical_url)`, 근거는 `(candidate,capture,locator,relation,subject,conditions,claim_slot,extractor)`로 멱등이다. 정제된 주장들을 정렬·완전 중복 제거하여 slot을 배정한다. 같은 조건의 상충 주장도 별개다. 동일 ID의 다른 내용은 무결성 오류이고 기존 근거를 덮어쓰지 않는다. 같은 capture의 재처리는 관측 횟수·시각을 늘리지 않는다. 후보 관측 수는 근거의 서로 다른 capture 수다. 같은 주장을 재사용한 경로의 부모·질의·깊이는 별도 추가 기록으로 남긴다.
 
-원문은 기존 외부 raw capture의 참조·해시, 추출은 기존 extracted 사실, 라벨은 기존 여섯 분류, 로컬 후보 큐는 별도 service 용도다. 검색 요약은 제품 사실이 아니며 `unverified`, 직접 본문 링크 단서는 `source_claim`이다. 근거는 URL·위치·관측 시각·적용 시점/근거·extractor 버전을 가진다. 명시적 시점이 없으면 capture 시각과 observed를 쓴다. 연식·세대·body/set·KR/해외·옵션이 다른 근거는 분리한다.
+취득은 원본 응답 해시·안전한 출처와 검사된 파생물, 추출은 기존 extracted 사실, 라벨은 기존 여섯 분류, 로컬 후보 큐는 별도 service 용도다. 검색 요약은 제품 사실이 아니며 `unverified`, 직접 본문 링크 단서는 `source_claim`이다. 근거는 URL·위치·관측 시각·적용 시점/근거·extractor 버전을 가진다. 명시적 시점이 없으면 capture 시각과 observed를 쓴다. 연식·세대·body/set·KR/해외·옵션이 다른 근거는 분리한다.
 
 | 제한 | 기본값 |
 | --- | --- |
@@ -117,3 +116,8 @@ Linux 전용 `0004_source_discovery.sql`이 후보·불변 근거·질의·추�
 ## 빈 필드 역검색 요청
 
 [탐색기](missing-field-explorer.md)의 `not_in_source`는 같은 공통 질의 생성기와 질의 ID로 역검색 요청을 등록한다. 현재 미충족 슬롯의 요청만 seed에서 소비하고 원래 capture의 깊이를 계승한다. 여러 슬롯은 검색을 공유하되 원래 작업·슬롯·발견 run·request 체크포인트 연결을 각각 보존한다. 검색 성공은 해결 수에 포함하지 않으며 기존 제공자 승인·공유 비용·재검색 기한·깊이/페이지 상한을 적용한다. Linux 최신 migration은 0005이며 0004 후보 자료를 보존한다.
+
+
+취득 중 문서/JSON은 제한된 메모리에만 존재한다. 공용 준비 예산은 최대 응답 2MiB, 중첩 128, 노드/토큰 50,000, 공유 순회 작업량과 링크 500 및 직렬화 파생물 상한을 적용한다. 제목·요약·locator·cursor·최종 URL·목적지 모두 저장 전에 검사하며 URL-only 제공자 약관은 제목/요약 보관을 금지한다. 원본 응답 hash/byte length는 제공자 계약의 필수 항목이며 매핑된 결과를 원본처럼 해시하지 않는다. 검색 JSON 어휘 검사는 JSON.parse보다 먼저 실행한다.
+
+확정된 문서/제공자 파생물만 재개에 사용한다. collect 파생물은 현재 privacy/parser/selector/URL 정책과 원본 source/URL/depth identity 및 해시를 정확히 검증한다. 임의 과거 parse-cache 버전의 substring 탐색이나 본문 재사용은 없다. URL 정책/준비 버전 변경은 legacy raw 파일과 무관하게 재취득한다. 발견기는 응답 spool을 만들거나 cleanup하기 위한 RawStore를 생성하지 않는다. 상세한 검사·파일 정책은 [엔진 문서](engine.md)를 따른다.

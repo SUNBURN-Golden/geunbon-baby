@@ -1,2 +1,2 @@
 import { ToolAdapter } from './tools';
-export const extractPdf=(tools:ToolAdapter,file:string)=>tools.run('pdftotext',['-layout','-enc','UTF-8',file,'-'],['-v']);
+export const extractPdf=(tools:ToolAdapter,bytes:Buffer,maxBytes=2097152)=>tools.runBytes('pdftotext',bytes,maxBytes);

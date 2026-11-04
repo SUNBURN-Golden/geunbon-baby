@@ -2,7 +2,7 @@
 
 `crawler/engine/`는 서비스 온톨로지·설정·사이트 D1을 import하지 않는다. SQLite 작업 상태, lease, 제한된 재시도, 비용, 다운로드·렌더·PDF/OCR·저장 포트를 제공한다. 아가마중 바인딩은 `crawler/src/agamajung/`, 도메인 정책·주소 결속·robots·간격은 기존 `Scheduler`, 서비스 계층은 기존 `CollectorStore.reserve/start/submit`을 사용한다. Workers와 사이트 UI에는 연결하지 않는다. 기존 Instagram worker·브라우저 세션은 사용하지 않는다.
 
-Node 22 이상에서 실행한다. 아래 모든 새 명령에는 저장소 밖의 `COLLECTOR_DB`가 필요하며 collect/backfill/retry에는 `COLLECTOR_RAW_DIR`도 필요하다. 디렉터리 0700, 파일 0600, 심볼릭 링크는 거부한다. 환경변수 예시는 `crawler/.env.crawler.example`에 있다. 기존 serve/discover/sync의 기본 경로는 유지된다.
+Node 22 이상에서 실행한다. 아래 모든 새 명령에는 저장소 밖의 `COLLECTOR_DB`가 필요하며 collect와 collect 실패 재시도에는 `COLLECTOR_RAW_DIR`도 필요하다. 소스 발견기는 응답 파일 디렉터리를 요구하지 않는다. 디렉터리 0700, 파일 0600, 심볼릭 링크는 거부한다. 환경변수 예시는 `crawler/.env.crawler.example`에 있다. 기존 serve/discover/sync의 기본 경로는 유지된다.
 
 ```sh
 export COLLECTOR_DB=/workspace/agamajung/data/collector/collector.sqlite
@@ -38,13 +38,45 @@ service는 external 단계다. submit이 자체 트랜잭션으로 commit한 뒤
 
 본문은 기존 new_body/recheck 예약·start를 HTTP 전에 실행한다. 같은 시도의 재진입은 같은 reservation을 사용한다. 모델은 기본 disabled/상한 0이며 규칙 라벨이 모호하고 enabled일 때만 격리한 `aiData()`와 별도 model_calls 예약을 사용한다. 외부 모델 제공자는 포함하지 않는다. DisabledModel은 네트워크 호출 0회로 unsupported를 반환한다. 모델은 라벨만 분류하고 사실이나 필수 필드를 채우지 않는다.
 
-현재 규칙·프로필·로컬 도구 버전의 parse/label/extract 캐시가 모두 있거나 해시 일치 raw/spool이 있을 때만 ETag/Last-Modified를 보낸다. 304도 새 불변 capture를 만들고 새 capture에 캐시 사실을 결합한다. 캐시가 요청 도중 사라지면 무조건 요청을 한 번 더 한다. spool과 캐시가 모두 없으면 fetch부터 다시 열고 fetch_seq를 늘리며 시도 상한을 적용한다. 이전 capture는 변경하지 않는다.
+### 저장 전 준비와 지원 범위
 
-raw 기본은 hash_only다. 임시 spool은 24시간 TTL, parse 확정 시 삭제한다. 영구 원문은 full_text_allowed·permission_basis가 있는 store 정책의 개인정보 필터 및 폼·스크립트·민감 속성 검사를 통과한 텍스트 원본에 한해 저장한다. 바이너리 원본·민감정보가 있는 원문은 임시 spool로만 도구에 전달하고 영구 raw_ref는 NULL로 남긴다. raw 경로는 `<RAW>/<profile>/sha256/ab/cd/<hash>`, 저장은 임시 파일·fsync·rename이다. DB·캐시·라벨·서비스 데이터에는 공통 개인정보 필터를 적용한 결과만 남긴다. fulltext:* 기존 메타데이터는 이 엔진이 수정하지 않는다.
+fetch는 원본을 제한된 메모리에서 취득하고 SHA-256을 계산한 뒤, 필요하면 **파싱 전에** 렌더링한다. 선택 영역·주장·링크·제목·원문 관계·위치 정보까지 개인정보/인젝션 검사를 마치고 스키마와 전체 파생물 해시를 검증한다. 원래 응답·HTML·바이너리·응답 객체·도구 stderr·예외 메시지를 SQLite, 로그, 임시 파일에 넘기지 않는다. checkpoint에는 참조와 제한된 운영 정보만 남기고, 준비 결과는 직렬화 전에 제거한다. 실행 사이 원본 버퍼 맵은 없다. 종료 정리 실행 여부와 무관하게 이 경계가 성립한다.
 
-PDF는 로컬 pdftotext, 이미지 OCR은 tesseract kor+eng을 사용한다. 도구가 없으면 engine_tool_support=unsupported와 체크포인트 skipped/unsupported_tool을 남기고 재시도하지 않는다. 시간 초과는 재시도 대상이다. 설치는 이 명령들이 자동 수행하지 않는다.
+| 취득/도구 경로 | collect의 처리 |
+| --- | --- |
+| 정적 HTML, 지원 XML/RSS/sitemap, CPSC JSON | 제한된 메모리에서 추출·검사 |
+| 기존 Chromium renderer | 비영속 실행 미검증으로 unsupported. HTTP 취득 전 거부 |
+| 기존 경로 기반 pdftotext/tesseract | 원본 임시 파일이 필요하므로 unsupported |
+| 명시적 memory-only 시험 어댑터 | bounded bytes/HTML과 취소 신호, 시간/출력 제한 및 동일 검사 경계 적용 |
 
-오프라인 테스트는 transport·execFile·렌더러·시계·난수·결함 지점을 주입한다. 실제 소켓·fetch·Playwright 실행은 tests/setup.ts가 차단한다.
+`policy.render || source.browser`는 정적 셸 파싱으로 대체하지 않는다. 렌더된 제한/로그인 신호 검사가 영역 없음 판정보다 우선한다. 실행 파일 설치 여부는 비영속 처리 권한이 아니다. 향후 subprocess 구현에는 고정 인수, 제한된 stdin/stdout, 시간 제한/취소, 내용이 있는 임시 파일을 만들지 않는다는 검증이 모두 필요하다. `-` 인수만으로는 허용하지 않는다. unsupported는 fetch에서 skipped/unsupported 및 고정 도구 코드로 끝나며 후속 checkpoint와 자동 재시도가 없다. Instagram worker의 독립 브라우저·세션·OCR은 변경하지 않는다.
+
+검사 예산은 설정된 응답 바이트 상한(최대 2MiB), 중첩 128, 누적 노드/텍스트/속성/토큰 50,000, 공유 작업량 8,000,000, 태그 8,192자로 제한한다. 비공개/숨김/입력/폼/편집 영역도 스캔 예산에 포함한다. 반복 선택·텍스트 순회·조상 검사도 동일 작업 예산을 쓴다. JSON은 JSON.parse 전에 어휘/중첩 검사를 수행하며 DTD/entity 선언 확장은 거부한다. 일반 발견 링크는 500, Pangpang 열거는 별도로 최대 4,096(기존 768링크 계수 포함), 주장은 30, 선택 텍스트는 20,000자/줄 1,000자, 전체 직렬화 파생물은 2MiB다. 구조/작업량 초과는 고정 preparation_limit으로 끝나고 내용 캐시를 남기지 않는다. 의도적인 출력 절단은 truncated 및 불완전 검사를 기록하고 완전한 부재 판정에 사용하지 않는다. 전체 필드 값을 검사한 뒤 길이를 줄이며 이미 정제된 값만으로 filter_changed=false를 추정하지 않는다.
+
+### 보존 정책과 해시
+
+| 정책 | SQLite | 파일 |
+| --- | --- | --- |
+| hash_only | 원본 응답 해시·안전한 출처·검사된 제한 영역의 근거/링크 파생물 | 내용 파일 없음. spool도 없음 |
+| store | 같은 파생물 + 선택적 artifact 참조 | full_text_allowed와 비어 있지 않은 permission_basis를 모두 확인한 정제 텍스트만 |
+
+RawStore에는 원본 byte write/read나 spool API가 없다. Linux 바인딩이 제공한 **런타임 검증기**와 보존 권한 검사를 임시 파일을 열기 전에 통과해야 한다. 경로는 `<RAW>/<profile>/inspected-v1/sha256/ab/cd/<artifact-hash>`이며 파일 0600/디렉터리 0700, 심볼릭 링크 거부·내용 해시 검사·원자적 쓰기를 유지한다. 원래 markup과 바이너리는 저장하지 않는다. 근거 캐시는 전문 보관소가 아니며 별도 JSON 파일이나 collector_meta.fulltext:* 복제본을 만들지 않는다. 기존 서비스 전문 저장도 별도 허가 경계를 유지한다.
+
+engine_captures.content_hash는 **원본 응답 바이트**의 SHA-256이다. capture.data는 preparation identity/version/mode, 정규 직렬화한 검사 파생물의 derivative_hash, 선택적인 artifact_hash/format을 기록한다. raw_ref가 있으면 정제 텍스트만 가리킨다. 원본·파생물·파일 해시는 서로 다른 대상을 증명한다. ETag는 전체 제한 길이 값이 그대로 검사를 통과할 때만, Last-Modified는 제한된 정상 HTTP date일 때만 보관/재전송한다. 정제된 ETag를 새 validator로 쓰지 않는다.
+
+store의 순서는 메모리 검증/직렬화 → 파일 쓰기/fsync/rename/디렉터리 fsync → capture·parse/link caches·fetch 완료·다음 checkpoint의 SQLite 단일 트랜잭션이다. 파일과 DB는 공동 원자적이지 않으므로 DB 확정 전 사망하면 참조 없는 **정제된** 파일이 남을 수 있다. 내용 주소 쓰기는 멱등적이다. crawl 잠금 아래 cleanup이 확정 참조를 조회하여 새 namespace 안에서만 24시간 지난 미참조 파일/임시 파일을 제거한다. **과거 raw/spool은 읽거나 재사용하거나 자동 삭제하지 않는다.** 과거 자료 정리는 별도 운영 작업이며 새 경로의 부재 검증이 과거 파일 삭제를 의미하지 않는다.
+
+### 캐시와 복구
+
+현재 source/URL, privacy/schema/parser/extractor/labeler/render/tool/selector/URL 정책의 정확한 identity와 준비 모드가 일치하고 검사된 parse 및 필요한 link 파생물(정상 빈 결과 포함)이 모두 유효해야 재사용한다. 파생물 해시와 스키마를 다시 검사한다. label/extract 캐시나 선택적인 텍스트 파일은 필수 조건이 아니다. label/extract만 없으면 parse에서 재생성하고 모델이 필요한 경우 원래 모델 기능·비용 제한을 따른다.
+
+유효한 파생물이 있을 때만 conditional validator를 전송한다. 304 뒤에도 재확인하며 요청 중 파생물이 사라지면 기존의 무조건 요청 1회를 유지한다. 유효 304도 새 불변 capture를 만들고 원본 해시를 유지하면서 새 관측을 그 capture에 결속한다. parser/preparation 버전 변경, parse/link 손실, 렌더 모드 불일치는 **legacy raw 유무와 관계없이 fetch부터 다시 시작**한다. 재취득은 새 요청 비용·기존 시도 상한/예약/예산과 fetch_seq를 사용한다. 원본 구조를 보관하지 않아 기존 자료의 재파싱은 지원하지 않는다.
+
+취득 확정 전 중단은 다시 계량하는 새 요청이 필요하다. 확정 후 render/parse는 원본을 읽지 않고 준비 모드를 확인하고 검사된 근거·링크의 후속 작업만 확정한다. 렌더 실패는 취득 실패 capture를 남기며 성공 복구는 새 capture를 만든다. 준비 실패는 원본 해시·안전한 출처와 고정 사유만 남길 수 있고 내용 캐시는 없다. 원래 예외 문자열과 임의 unsupported_tool 값을 실패 큐/로그에 기록하지 않는다. 이미 제출된 receipt 복구가 새 수집보다 우선하며 원래 추출/출처 manifest를 사용한다. 불변 capture/fact/claim slot/provenance/receipt/outbox 계약을 유지한다.
+
+소스 발견기는 같은 문서/JSON 예산과 최종 검사 경계를 쓰며 원본 응답 파일이나 spool cleanup 의존성이 없다. 제공자 locator/cursor도 검사하고 URL-only 약관은 제목/요약을 보존하지 않는다. 제공자가 원본 응답 해시·바이트 길이를 필수 제공하며 매핑 결과의 해시를 원본 해시로 대체하지 않는다. collect cache는 정확한 준비/출처/URL 정책 identity에서만 받으며 legacy parse 버전의 substring fallback은 없다.
+
+오프라인 테스트는 transport·memory-only 도구·렌더러·시계·난수·결함 지점을 주입한다. collector-pre-storage suites는 시도된 파일/SQL 바인딩, DB/WAL, 파생물, 로그, SIGKILL 후 새 프로세스 복구를 검사한다. 검증은 daemon이 고정 Node 22.22.3으로 집중 suite → 전체 tests → lint → typecheck 순서로 실행한다. 실제 소켓·fetch·Playwright 실행은 tests/setup.ts가 차단한다.
 
 ## 소스 발견기와 공유 비용
 

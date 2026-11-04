@@ -1,3 +1,4 @@
+import { validateArtifact } from './agamajung/pre-storage';
 import { RawStore } from '../engine/raw-store';
 import { AgamajungPipeline } from './agamajung/pipeline';
 import { backfillEngine } from './agamajung/backfill';
@@ -16,9 +17,9 @@ export function collectAdapter(pipeline:AgamajungPipeline):JobAdapter {
 }
 export function jobDefinition(store:CollectorStore,job:CollectionJob,trusted:Cidr[]=[]):JobDefinition {
   const scheduler=()=>new Scheduler(store,(u,m,_t,opts)=>pinnedRequest(u,m,trusted,opts));
-  if(job==='collect')return {profileId:'agamajung',create:(offline=false)=>collectAdapter(new AgamajungPipeline(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),undefined,{scheduler:scheduler(),offline}))};
+  if(job==='collect')return {profileId:'agamajung',create:(offline=false)=>collectAdapter(new AgamajungPipeline(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung',process.cwd(),Date.now,validateArtifact),undefined,{scheduler:scheduler(),offline}))};
   if(job==='discover-sources')return {profileId:DISCOVERY_RUN_ID,output:id=>sourceDiscoveryReport(store,id),create:(offline=false)=>{
-    const cfg=loadDiscoveryConfig(),runner=new SourceDiscoveryRunner(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),cfg,{scheduler:scheduler(),offline});
+    const cfg=loadDiscoveryConfig(),runner=new SourceDiscoveryRunner(store,cfg,{scheduler:scheduler(),offline});
     const preview=runner.preview();return {enabled:cfg.enabled&&(preview.providers.length>0||preview.sources.length>0),start:slot=>runner.start(slot),seed:id=>runner.seed(id),resume:id=>runner.resume(id),run:async id=>runner.run(id!),preview:()=>preview};
   }};
   if(job==='backfill-engine')return {create:()=>({enabled:true,run:async()=>backfillEngine(store),result:output=>({status:'succeeded',reason:'completed',output}),preview:()=>({dry_run:true})})};

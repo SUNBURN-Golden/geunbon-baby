@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest';
-import { discover, discoveryAsset, discoveryFixture, rows } from './helpers/source-discovery';
+import { collectedDerivative, discover, discoveryAsset, discoveryFixture, rows } from './helpers/source-discovery';
 import { SourceDiscoveryRunner } from '../crawler/src/source-discovery/runner';
 import { SourceCandidateStore } from '../crawler/src/source-discovery/store';
 import { SqliteStorage } from '../crawler/engine/storage';
@@ -65,7 +65,7 @@ test('durable response checkpoint survives apply crash and reopening without ano
   const id=f.runner.start({kind:'test',at:'one'});f.runner.seed(id);
   await f.runner.engine.step(id);await f.runner.engine.step(id); // plan, request
   expect(rows(f,'engine_captures')).toHaveLength(1);const fault=vi.fn(()=>{throw new Error('injected');});
-  const crashed=new SourceDiscoveryRunner(f.store,f.raw,f.cfg,{scheduler:f.scheduler(),profile:f.profile,fault});
+  const crashed=new SourceDiscoveryRunner(f.store,f.cfg,{scheduler:f.scheduler(),profile:f.profile,fault});
   await expect(crashed.engine.step(id)).rejects.toThrow('engine_crash');f.advance(180001);f.reopen();await f.runner.run(f.runner.resume(id));
   expect(f.calls).toHaveLength(1);expect(rows(f,'source_candidates')).toHaveLength(2);
   expect(rows(f,'engine_cost_holds')).toHaveLength(0);
@@ -75,9 +75,8 @@ test('external existing capture cache preserves product identifiers into candida
  const f=discoveryFixture();try{
   f.cfg.providers=[];
   const run=f.store.transaction(()=>{f.store.db.prepare("INSERT INTO engine_runs VALUES('collected','agamajung','test','one','finished','2026-10-23',NULL,'{}')").run();return 'collected';});
-  const storage=new SqliteStorage(f.store),hash='0'.repeat(64);
-  const { extractDocument }=await import('../crawler/src/discovery/document');const {linkCacheTool}=await import('../crawler/src/source-discovery/config');
-  f.store.transaction(()=>{storage.capture({id:'collected-capture',run_id:run,source_id:'fixture',url_norm:'https://gear.example.org/list',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',content_hash:hash,data:{}});storage.cache(hash,'source-links',linkCacheTool(f.cfg,'https://gear.example.org/list','fixture'),{...extractDocument(discoveryAsset('list.html'),'https://gear.example.org/list','links',f.cfg.url_policies),depth:0,source_id:'fixture'});});
+  const storage=new SqliteStorage(f.store),prepared=await collectedDerivative(f,discoveryAsset('list.html')),hash=prepared.hash;
+  f.store.transaction(()=>{storage.capture({id:'collected-capture',run_id:run,source_id:'fixture',url_norm:'https://gear.example.org/list',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',content_type:'text/html',content_hash:hash,data:prepared.data});storage.cache(hash,'parse',prepared.parseTool,prepared.parsed);storage.cache(hash,'source-links',prepared.linkTool,prepared.links);});
   await discover(f);expect(f.calls).toHaveLength(0);
   const c=rows(f,'source_candidates').find(c=>String(c.canonical_url).includes('product_no=A'))!;expect(c).toBeTruthy();
   expect(JSON.stringify(new SourceCandidateStore(f.store,f.cfg).list(String(c.id)))).toContain('product_no=A');
@@ -104,18 +103,17 @@ test('same collected link and locator fan out to known model conditions without 
  const f=discoveryFixture();try{
   f.cfg.providers=[];
   f.store.transaction(()=>f.store.db.prepare("INSERT INTO engine_runs VALUES('collected','agamajung','test','one','finished','2026-10-23',NULL,'{}')").run());
-  const storage=new SqliteStorage(f.store),hash='1'.repeat(64);
-  const { extractDocument }=await import('../crawler/src/discovery/document'),{linkCacheTool}=await import('../crawler/src/source-discovery/config');
+  const storage=new SqliteStorage(f.store),prepared=await collectedDerivative(f,'<main><a href="https://new-gear.example.org/item?product_no=A">유모차 2026 신제품</a></main>'),hash=prepared.hash;
   f.store.transaction(()=>{
-    storage.capture({id:'collected-capture',run_id:'collected',source_id:'fixture',url_norm:'https://gear.example.org/list',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',content_hash:hash,data:{}});
-    storage.cache(hash,'source-links',linkCacheTool(f.cfg,'https://gear.example.org/list','fixture'),{...extractDocument('<main><a href="https://new-gear.example.org/item?product_no=A">유모차 2026 신제품</a></main>','https://gear.example.org/list','links',f.cfg.url_policies),depth:0,source_id:'fixture'});
+    storage.capture({id:'collected-capture',run_id:'collected',source_id:'fixture',url_norm:'https://gear.example.org/list',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',content_type:'text/html',content_hash:hash,data:prepared.data});
+    storage.cache(hash,'parse',prepared.parseTool,prepared.parsed);storage.cache(hash,'source-links',prepared.linkTool,prepared.links);
     for(const [i,conditions] of [{release_year:'2025',bundle:'body',market:'KR'},{release_year:'2025',bundle:'set',market:'KR'},{release_year:'2026',bundle:'body',market:'KR'},{release_year:'2026',bundle:'body',market:'overseas'}].entries())storage.extracted({id:`fact-${i}`,capture_id:'collected-capture',subject_ref:'model-X',field:'model',conditions_key:JSON.stringify(conditions),claim_slot:0,source_url:'https://gear.example.org/list',locator:'link[0]',collected_at:'2026-10-23T01:00:00.000Z',effective_from:'2026-10-23T01:00:00.000Z',effective_from_basis:'observed',fact_status:'source_claim',extractor:'fixture@1',data:{assertion:{value:'EX-100'}}});
   });
   await discover(f);expect(rows(f,'source_candidates')).toHaveLength(1);expect(rows(f,'source_candidate_evidence')).toHaveLength(4);await discover(f,'two');expect(rows(f,'source_candidate_evidence')).toHaveLength(4);expect(rows(f,'source_candidates')[0].observation_count).toBe(1);
  }finally{f.close();}
 });
 
-test('predecessor captures without link caches reuse sanitized parse text and original checkpoint depth for entity feedback',async()=>{
+test('legacy parse text without exact preparation and link identities cannot supply discovery evidence',async()=>{
  const f=discoveryFixture();try{
   f.cfg.max_queries=40;f.profile.categories=f.profile.categories.slice(0,1);f.cfg.languages=['ko'];f.cfg.events=f.cfg.events.slice(0,1);
   const {JobEngine}=await import('../crawler/engine/state-machine'),{noop}=await import('./helpers/engine'),{extractDocument}=await import('../crawler/src/discovery/document');
@@ -126,7 +124,7 @@ test('predecessor captures without link caches reuse sanitized parse text and or
     new SqliteStorage(f.store).cache(hash,'parse','legacy-parse:fixture:text',{text:extractDocument(discoveryAsset('entities.html'),'https://gear.example.org/list','links').text});
     f.store.db.prepare("UPDATE engine_checkpoints SET phase='done' WHERE id=?").run(checkpoint);f.store.db.prepare("UPDATE engine_runs SET state='finished' WHERE id=?").run(run);
   });
-  await discover(f);expect(rows(f,'source_discovery_queries').some(q=>q.query_text==='Example Line EX-100 2026 body KR Blue Example Shop KC 인증번호')).toBe(true);
+  await discover(f);expect(rows(f,'source_discovery_queries').some(q=>q.query_text==='Example Line EX-100 2026 body KR Blue Example Shop KC 인증번호')).toBe(false);
   expect(f.calls.every(c=>new URL(c.url).hostname==='search.example.org')).toBe(true);expect(rows(f,'engine_extracted')).toHaveLength(0);
  }finally{f.close();}
 });

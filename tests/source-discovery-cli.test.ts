@@ -40,11 +40,11 @@ test('failure retry CLI routes discovery failures to its runner and preserves li
   f.response(()=>({status:200,headers:{'content-type':'application/json'},body:'{"wrong":[]}'}));const original=await discover(f),failure=rows(f,'engine_failures')[0];environment(f);
   const log=vi.spyOn(console,'log').mockImplementation(()=>{});process.argv=['node','local-worker.ts','failures','retry',String(failure.id)];await main();
   const manual=String(JSON.parse(log.mock.calls.at(-1)![0]).run_id),run=f.runner.engine.run(manual)!;expect(run.profile_id).toBe('agamajung-source-discovery');expect(JSON.parse(run.data).parent_run).toBe(original);
-  f.cfg.enabled=false;const offline=new SourceDiscoveryRunner(f.store,f.raw,f.cfg,{offline:true,profile:f.profile});expect(offline.preview().enabled).toBe(false);
+  f.cfg.enabled=false;const offline=new SourceDiscoveryRunner(f.store,f.cfg,{offline:true,profile:f.profile});expect(offline.preview().enabled).toBe(false);
  }finally{process.argv=argv;f.close();}
 });
 
-test('collect requests a fresh body when product URL policy changes after spool removal',async()=>{
+test('collect requests a fresh body when product URL policy changes regardless of historical response files',async()=>{
  const f=discoveryFixture();try{
   f.response(()=>({status:200,headers:{'content-type':'text/html',etag:'"fixture"'},body:asset('spec.html').replace('</main>',discoveryAsset('list.html')+'</main>')}));
   const old=structuredClone(f.cfg);old.url_policies=[];
@@ -52,7 +52,7 @@ test('collect requests a fresh body when product URL policy changes after spool 
   const second=new AgamajungPipeline(f.store,f.raw,f.profile,{scheduler:f.scheduler(),discoveryConfig:f.cfg});id=second.start({kind:'test',at:'second'});second.seed(id);await second.run(id);
   expect(f.calls.filter(c=>new URL(c.url).pathname==='/list').at(-1)?.headers).toEqual({});
   const {linkCacheTool}=await import('../crawler/src/source-discovery/config');
-  const cache=rows(f,'engine_cache').find(c=>c.stage==='source-links'&&c.tool===linkCacheTool(f.cfg,'https://gear.example.org/list','fixture'));
+  const cache=rows(f,'engine_cache').find(c=>c.stage==='source-links'&&String(c.tool).startsWith(linkCacheTool(f.cfg,'https://gear.example.org/list','fixture')+':'+second.parseVersion));
   expect(String(cache?.data)).toContain('product_no=A');
   await discover(f);expect(rows(f,'source_candidates').some(c=>String(c.canonical_url).includes('product_no=A'))).toBe(true);
  }finally{f.close();}

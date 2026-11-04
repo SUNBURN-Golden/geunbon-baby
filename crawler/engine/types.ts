@@ -18,7 +18,8 @@ export interface RequestMeter {hold(maxBytes:number):CostTicket;settle(ticket:Co
 export type FetchResponse = {status:number;headers:Record<string,string>;body:string;bytes?:Buffer;finalUrl?:string};
 export interface FetcherPort {get(url:string,options?:{headers?:Record<string,string>}):Promise<FetchResponse>}
 export type RenderSnapshot = {finalUrl:string;html:string;text:string;regionText?:string;regionError?:string;title?:string;documentOrigin?:string};
-export interface RenderPort {render(url:string,document:FetchResponse):Promise<RenderSnapshot>}
+export type MemoryCapability = {nonpersistent:true;version:string};
+export interface RenderPort {capability?:MemoryCapability;render(url:string,document:FetchResponse,options?:{signal:AbortSignal;maxBytes:number}):Promise<RenderSnapshot>}
 export interface ServicePort {submit(reservationId:string,payload:unknown,trustedSourceId?:string):{id:string;digest:string}|Promise<{id:string;digest:string}>;receipt(reservationId:string):{id:string;digest:string}|undefined}
 export interface StoragePort {service?:ServicePort;capture(row:Data):void;extracted(row:Data):void;label(row:Data):void}
 export interface ModelPort {classify(input:unknown):Promise<{status:'ok'|'unsupported';labels:string[]}>}

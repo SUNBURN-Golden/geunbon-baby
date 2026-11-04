@@ -2,6 +2,8 @@
 // 순수 함수라 합성 픽스처로만 검증한다. 이미지·미디어 URL은 아예 읽지 않는다.
 import { extractDates, extractPrices, type DateSuggestion } from '../extract';
 import { decide } from './robots';
+import type { ParseBudget } from './parse-budget';
+const budgets = new WeakMap<El, ParseBudget>();
 
 export type El = { tag: string; attrs: Record<string, string>; children: (El | string)[]; parent: El | null };
 export type ParsedItem = {
@@ -14,7 +16,7 @@ const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input'
 const SKIP = new Set(['script', 'style', 'noscript', 'template', 'svg', 'textarea', 'select']);
 const BLOCK = new Set(['address', 'article', 'aside', 'br', 'dd', 'div', 'dl', 'dt', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'li', 'main', 'ol', 'p', 'section', 'table', 'tbody', 'td', 'th', 'tr', 'ul']);
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-const decodeEntities = (value: string) => value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, name: string) => {
+export const decodeEntities = (value: string) => value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, name: string) => {
   if (name[0] === '#') {
     const code = name[1].toLowerCase() === 'x' ? parseInt(name.slice(2), 16) : Number(name.slice(1));
     return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
@@ -22,24 +24,29 @@ const decodeEntities = (value: string) => value.replace(/&(#x[0-9a-f]+|#\d+|[a-z
   return ENTITIES[name.toLowerCase()] ?? match;
 });
 
-export function parseHtml(html: string): El {
+export function parseHtml(html: string, budget?: ParseBudget): El {
+  budget?.preflight(html);
   const root: El = { tag: '#root', attrs: {}, children: [], parent: null };
+  if (budget) budgets.set(root, budget);
   let node = root;
-  const tag = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<!(?:doctype|[^>]*)>|<\/([a-z][\w:-]*)\s*>|<([a-z][\w:-]*)((?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
+  let nesting = 0;
+  const depths = new WeakMap<El, number>(); depths.set(root, 0);
+  const tag = /<\?[^>]*\?>|<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<!(?:doctype|[^>]*)>|<\/([a-z][\w:-]*)\s*>|<([a-z][\w:-]*)((?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
   let last = 0;
-  const pushText = (value: string) => { if (value) node.children.push(value); };
+  const pushText = (value: string) => { if (value) { budget?.node(); node.children.push(value); } };
   let match: RegExpExecArray | null;
   while ((match = tag.exec(html))) {
+    budget?.node();
     pushText(html.slice(last, match.index));
     last = tag.lastIndex;
     if (match[1]) {
       const name = match[1].toLowerCase();
-      for (let up: El | null = node; up && up.parent; up = up.parent) if (up.tag === name) { node = up.parent; break; }
+      for (let up: El | null = node; up && up.parent; up = up.parent) { budget?.spend(); if (up.tag === name) { node = up.parent; break; } }
     } else if (match[2]) {
       const name = match[2].toLowerCase();
       const attrs: Record<string, string> = {};
-      for (const attr of match[3].matchAll(/([^\s=/"'>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g)) attrs[attr[1].toLowerCase()] = decodeEntities(attr[2] ?? attr[3] ?? attr[4] ?? '');
-      const excluded = SKIP.has(name) || name === 'input' || attrs.contenteditable !== undefined || attrs.hidden !== undefined || attrs['aria-hidden']?.toLowerCase() === 'true' || attrs['data-private'] !== undefined;
+      for (const attr of match[3].matchAll(/([^\s=/"'>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g)) { budget?.node(); attrs[attr[1].toLowerCase()] = decodeEntities(attr[2] ?? attr[3] ?? attr[4] ?? ''); }
+      const excluded = (!!budget && name === 'form') || SKIP.has(name) || name === 'input' || attrs.contenteditable !== undefined || attrs.hidden !== undefined || attrs['aria-hidden']?.toLowerCase() === 'true' || attrs['data-private'] !== undefined;
       const closed = VOID.has(name) || match[3].trim().endsWith('/');
       if (excluded) {
         if (!closed) {
@@ -53,6 +60,7 @@ export function parseHtml(html: string): El {
           } else {
             let depth = 1, nested: RegExpExecArray | null;
             while (depth && (nested = tag.exec(html))) {
+              budget?.node(); if (budget && depth > 128) throw new Error('preparation_limit');
               if (nested[2] && ['script','style','textarea'].includes(nested[2].toLowerCase())) {
                 const rawClose=new RegExp(`</${nested[2]}\\s*>`,'gi');rawClose.lastIndex=tag.lastIndex;
                 tag.lastIndex=rawClose.exec(html)?rawClose.lastIndex:html.length;
@@ -66,6 +74,9 @@ export function parseHtml(html: string): El {
         continue;
       }
       const element: El = { tag: name, attrs, children: [], parent: node };
+      nesting = (depths.get(node) ?? 0) + 1;
+      if (budget && nesting > 128) throw new Error('preparation_limit');
+      depths.set(element, nesting); if (budget) budgets.set(element, budget);
       node.children.push(element);
       if (!closed) node = element;
     }
@@ -76,6 +87,7 @@ export function parseHtml(html: string): El {
 
 export function textOf(el: El | string): string {
   if (typeof el === 'string') return decodeEntities(el).replace(/[ \t\f\r\n]+/g, ' ');
+  const budget = budgets.get(el); budget?.spend(el.children.length + 1);
   if (SKIP.has(el.tag)) return '';
   const inner = el.children.map(textOf).join('');
   return BLOCK.has(el.tag) ? `\n${inner}\n` : inner;
@@ -84,7 +96,7 @@ export function textOf(el: El | string): string {
 export const linesOf = (el: El) => textOf(el).split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
 
 function* walk(el: El): Generator<El> {
-  for (const child of el.children) if (typeof child !== 'string') { yield child; yield* walk(child); }
+  for (const child of el.children) { budgets.get(el)?.spend(); if (typeof child !== 'string') { yield child; yield* walk(child); } }
 }
 
 // ── 단순 셀렉터: tag, .class, #id, [attr], [attr=value], 쉼표 목록, 공백(자손) 결합자 ───────────────
@@ -116,7 +128,7 @@ export function selectAll(root: El, selector: string): El[] {
       if (!matchSimple(el, chain[chain.length - 1])) return false;
       let up = el.parent;
       for (let i = chain.length - 2; i >= 0; i--) {
-        while (up && !matchSimple(up, chain[i])) up = up.parent;
+        while (up && !matchSimple(up, chain[i])) { budgets.get(root)?.spend(); up = up.parent; }
         if (!up) return false;
         up = up.parent;
       }
@@ -146,7 +158,7 @@ function itemElements(root: El, selector: string): El[] {
   return [...cards];
 }
 function contains(ancestor: El, el: El) {
-  for (let up = el.parent; up; up = up.parent) if (up === ancestor) return true;
+  for (let up = el.parent; up; up = up.parent) { budgets.get(el)?.spend(); if (up === ancestor) return true; }
   return false;
 }
 
