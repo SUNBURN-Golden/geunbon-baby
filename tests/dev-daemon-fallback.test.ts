@@ -1,10 +1,12 @@
+import { readFile } from 'node:fs/promises';
+import manifest from './fixtures/dev-daemon/reviews/manifest.json';
 import { describe, expect, it, vi } from 'vitest';
 import config from '../tools/dev-daemon/models.json';
 import { fallback } from '../tools/dev-daemon/fallback';
 import { isLimited, parseReset } from '../tools/dev-daemon/limits';
 import { modelCommand, redactor } from '../tools/dev-daemon/runner';
 import { chains, readOnly, verdict } from '../tools/dev-daemon/stages';
-import type { ModelsConfig, Result } from '../tools/dev-daemon/types';
+import type { Choice, ModelsConfig, Result, ReviewProgress } from '../tools/dev-daemon/types';
 
 const models = config as ModelsConfig;
 const now = Date.parse('2026-10-21T00:00:00Z');
@@ -194,5 +196,197 @@ describe('runner contracts', () => {
     const scrub = redactor({ API_KEY: 'test-supersecret-value' });
     expect(scrub('test-supersecret-value Bearer abc123 password=hunter2 https://name:pass@example.com'))
       .toBe('[REDACTED] [REDACTED AUTH] password=[REDACTED] https://[REDACTED]@example.com');
+  });
+});
+
+// Synthetic formatting cases are deliberately separate from the real log fixtures.
+describe('precise review verdict grammar (synthetic)', () => {
+  it.each(['VERDICT: APPROVE', 'VERDICT: **APPROVE**', 'VERDICT: *CHANGES*', 'VERDICT: `APPROVE`',
+    'Findings\r\n\x1b[32mVERDICT: APPROVE\x1b[0m\r\n', 'VERDICT: APPROVE\nVERDICT: APPROVE'])('accepts %j', answer => {
+    expect(verdict(answer)).toBe(answer.includes('CHANGES') ? 'CHANGES' : 'APPROVE');
+  });
+  it.each(['**VERDICT: APPROVE**', '*VERDICT: CHANGES*', '`VERDICT: APPROVE`',
+    '```\nVERDICT: APPROVE\n```', '~~~text\nVERDICT: APPROVE\n~~~', '> VERDICT: APPROVE', '    VERDICT: APPROVE',
+    '\tVERDICT: APPROVE', 'VERDICT: APPROVE or CHANGES', 'VERDICT: APPROVE (looks fine)', 'prose VERDICT: APPROVE',
+    'VERDICT: APPROVE\nMore commentary', 'VERDICT: CHANGES\nVERDICT: APPROVE', 'verdict: APPROVE',
+    'VERDICT: approve', 'VERDICT: **APPROVE*\nVERDICT: APPROVE', '**VERDICT: CHANGES**\nVERDICT: APPROVE',
+    'VERDICT: MAYBE\nVERDICT: APPROVE', '** VERDICT: CHANGES **\nVERDICT: APPROVE', '` VERDICT: CHANGES `\nVERDICT: APPROVE', '', 'I will inspect the code.'])('rejects %j', answer => {
+    expect(verdict(answer)).toBeUndefined();
+  });
+  it('does not treat quoted or fenced examples as conflicting decisions', () => {
+    expect(verdict('> VERDICT: CHANGES\n~~~\nVERDICT: CHANGES\n~~~\nCompleted inspection.\nVERDICT: APPROVE')).toBe('APPROVE');
+  });
+});
+
+async function reviewRun(results: Result[], progress: ReviewProgress = { key: 'context', cycle: 0, attempts: [] },
+  choices: Choice[] = chains['build-review']!, onSave?: () => Promise<void>, clockNow = now) {
+  const commands: import('../tools/dev-daemon/types').Command[] = [];
+  const execute = vi.fn(async (command: import('../tools/dev-daemon/types').Command) => {
+    commands.push(command);
+    const next = results.shift();
+    if (!next) throw new Error('Unexpected model call: fixture exhausted');
+    return next;
+  });
+  const outcome = await fallback({ config: models, choices, prompt: 'Original task and complete diff context', cwd: '/repo', readOnly: true,
+    execute, now: () => clockNow, protectedRoots: ['/repo', '/git', '/queue'],
+    review: { progress, save: onSave ?? (async () => {}) },
+    logPath: (choice, index, phase, cycle) => `/logs/${index}-${choice.model}-${phase}-${cycle}.log` });
+  return { outcome, commands, execute, progress };
+}
+
+describe('saved real reviews (historical stream provenance retained)', () => {
+  it.each(manifest)('extracts $file from $answerBoundary ($streamProvenance)', async entry => {
+    const data = JSON.parse(await readFile(new URL(`./fixtures/dev-daemon/reviews/${entry.file}`, import.meta.url), 'utf8'));
+    expect(verdict(data.answer)).toBe(entry.expected ?? undefined);
+    if (entry.file.includes('empty-quota')) {
+      const { outcome, commands } = await reviewRun([{ code: 0, output: data.diagnostics, answer: data.answer,
+        stdout: data.diagnostics, stderr: '' }], undefined, [{ model: 'astra6', effort: 'high' }]);
+      expect(outcome.kind).toBe('pause');
+      expect(commands).toHaveLength(1);
+    } else if (entry.expected) {
+      const model = entry.provider === 'codex' ? 'astra6' : 'swe2';
+      const { outcome } = await reviewRun([result(data.answer)], undefined, [{ model }]);
+      expect(outcome).toMatchObject({ kind: 'success', decision: entry.expected,
+        answerSource: entry.provider === 'codex' ? 'final-answer-file' : 'stream-unknown' });
+    }
+  });
+});
+
+describe('bounded review-aware fallback', () => {
+  it('clarifies once with the same model, effort, full context and read-only protections, then follows the exact chain', async () => {
+    const { outcome, commands, progress } = await reviewRun([
+      result('Inspecting now'), result('Still inspecting'), result('Narration'), result('unclear'),
+      result('Incomplete'), result('no decision'), result('Ready.\nVERDICT: **APPROVE**'),
+    ]);
+    expect(outcome).toMatchObject({ kind: 'success', decision: 'APPROVE', answer: 'Ready.\nVERDICT: **APPROVE**' });
+    expect(commands).toHaveLength(7);
+    for (const index of [0, 2, 4]) {
+      expect(commands[index + 1].bin).toBe(commands[index].bin);
+      expect(commands[index + 1].args).toEqual(commands[index].args.map(arg =>
+        arg === commands[index].answerFile ? commands[index + 1].answerFile! : arg));
+      expect(commands[index + 1].input?.text).toContain('Original task and complete diff context');
+      expect(commands[index + 1].input?.text).toContain('<original_review_json>');
+      expect(commands[index + 1].input?.text).toContain('Incomplete inspection');
+      expect(commands[index + 1].log).not.toBe(commands[index].log);
+    }
+    expect(commands[0].args).toContain('Read');
+    expect(commands[2].args).toContain('medium');
+    expect(commands[4].args).toContain('model_reasoning_effort=high');
+    expect(commands[6].args).toContain('--ro-bind');
+    expect(progress.attempts.map(a => a.modelIndex)).toEqual([0, 1, 2, 3]);
+  });
+  it('returns an original valid CHANGES immediately without asking another model or clarification', async () => {
+    const { outcome, commands } = await reviewRun([result('Blocking defect.\nVERDICT: CHANGES')]);
+    expect(outcome).toMatchObject({ kind: 'success', decision: 'CHANGES' });
+    expect(commands).toHaveLength(1);
+  });
+  it('accepts clarification approval separately and retains the original response', async () => {
+    const { outcome, progress } = await reviewRun([result('I inspected the patch.'), result('VERDICT: APPROVE')]);
+    expect(outcome).toMatchObject({ kind: 'success', answer: 'I inspected the patch.', decision: 'APPROVE' });
+    expect(progress.attempts[0].clarification?.result?.answer).toBe('VERDICT: APPROVE');
+    expect(progress.attempts[0].clarification?.outcome).toBe('APPROVE');
+  });
+  it('terminates on clarification-only CHANGES without requesting another reviewer', async () => {
+    const { outcome, commands } = await reviewRun([result('I will inspect now'), result('VERDICT: CHANGES')]);
+    expect(outcome).toMatchObject({ kind: 'failed', summary: expect.stringContaining('incomplete review') });
+    expect(commands).toHaveLength(2);
+  });
+  it('checks zero-exit restrictions before partial or even valid verdicts, skipping clarification', async () => {
+    for (const answer of ['Reviewing', 'VERDICT: APPROVE']) {
+      const { outcome, commands } = await reviewRun([{ code: 0, answer, output: answer, stdout: answer,
+        stderr: 'Usage limit; resets in 1 hour' }, result('VERDICT: CHANGES')]);
+      expect(outcome).toMatchObject({ kind: 'success', decision: 'CHANGES' });
+      expect(commands).toHaveLength(2);
+      expect(commands.every(c => !c.log.includes('clarification'))).toBe(true);
+    }
+  });
+  it('fails a mixed chain when an unrestricted malformed original has a restricted clarification', async () => {
+    const { outcome, commands } = await reviewRun([result('Inspecting'), diagnostic('quota', 0),
+      diagnostic('quota'), diagnostic('quota'), diagnostic('quota')]);
+    expect(outcome.kind).toBe('failed');
+    expect(commands.filter(c => c.log.includes('clarification'))).toHaveLength(1);
+  });
+  it('pauses only all-original-restricted chains and begins a new cycle after the pause', async () => {
+    const progress: ReviewProgress = { key: 'context', cycle: 0, attempts: [] };
+    const first = await reviewRun(Array.from({ length: 4 }, () => diagnostic('quota resets in 1 hour', 0)), progress);
+    expect(first.outcome).toMatchObject({ kind: 'pause', wakeAt: '2026-10-21T01:00:00.000Z' });
+    expect(progress.attempts.every(a => !a.clarification)).toBe(true);
+    const beforeWake = await reviewRun([], structuredClone(progress));
+    expect(beforeWake.outcome).toEqual(first.outcome);
+    expect(beforeWake.commands).toHaveLength(0);
+    const second = await reviewRun([result('VERDICT: APPROVE')], progress, undefined, undefined, now + 3600001);
+    expect(second.outcome.kind).toBe('success');
+    expect(progress.cycle).toBe(1);
+    expect(second.commands[0].log).toContain('-original-1.log');
+  });
+  it.each(['original-issued', 'original-completed', 'clarification-issued', 'clarification-completed'] as const)(
+    'resumes %s without repeating an issued invocation', async point => {
+      let durable: ReviewProgress = { key: 'context', cycle: 0, attempts: [] };
+      const progress = structuredClone(durable);
+      let interrupted = false;
+      const results = [result('Inspection narration'), result('VERDICT: APPROVE')];
+      const save = async () => {
+        durable = structuredClone(progress);
+        const first = progress.attempts[0];
+        const reached = point === 'original-issued' ? first?.original.status === 'issued' :
+          point === 'original-completed' ? first?.original.status === 'completed' && !first.clarification :
+          point === 'clarification-issued' ? first?.clarification?.status === 'issued' : first?.clarification?.status === 'completed';
+        if (reached && !interrupted) { interrupted = true; throw new Error('Daemon stopping'); }
+      };
+      await expect(reviewRun(results, progress, undefined, save)).rejects.toThrow('Daemon stopping');
+      const restarted = await reviewRun(point === 'original-completed' ? [result('VERDICT: APPROVE')] :
+        point === 'clarification-completed' ? [] : [result('VERDICT: CHANGES')], durable);
+      expect(restarted.commands).toHaveLength(point === 'clarification-completed' ? 0 : 1);
+      if (point.endsWith('issued')) expect(restarted.commands[0].log).toContain('/1-sonnet-original');
+      if (point === 'original-completed') expect(restarted.commands[0].log).toContain('/0-glm-clarification');
+    });
+  it('does not reset exhausted ambiguity or the clarification budget on restart', async () => {
+    const progress: ReviewProgress = { key: 'context', cycle: 0, attempts: [] };
+    expect((await reviewRun(Array.from({ length: 8 }, () => result('Progress only')), progress)).outcome.kind).toBe('failed');
+    const again = await reviewRun([], structuredClone(progress));
+    expect(again.commands).toHaveLength(0);
+    expect(again.outcome.kind).toBe('failed');
+  });
+});
+
+describe('clarification preserves conflicting answer evidence', () => {
+  it('includes both conflicting answer streams in the same-reviewer clarification', async () => {
+    const { outcome, commands } = await reviewRun([
+      { code: 0, output: '', answer: '', stdout: 'VERDICT: APPROVE', stderr: 'Blocking data loss.\nVERDICT: CHANGES' },
+      result('VERDICT: CHANGES'),
+    ]);
+    expect(outcome).toMatchObject({ kind: 'failed', summary: expect.stringContaining('incomplete review') });
+    expect(commands[1].input?.text).toContain('Blocking data loss.');
+    expect(commands[1].input?.text).toContain('VERDICT: APPROVE\\nBlocking data loss.\\nVERDICT: CHANGES');
+  });
+});
+
+describe('durable quota wakeup', () => {
+  it('reuses a pause checkpoint even when shutdown preceded the stage wakeAt checkpoint', async () => {
+    const progress: ReviewProgress = { key: 'context', cycle: 0, attempts: [] };
+    let durable = structuredClone(progress);
+    await expect(reviewRun(Array.from({ length: 4 }, () => diagnostic('quota resets in 1 hour', 0)), progress, undefined, async () => {
+      durable = structuredClone(progress);
+      if (progress.quotaPause) throw new Error('Daemon stopping');
+    })).rejects.toThrow('Daemon stopping');
+    const restarted = await reviewRun([], durable);
+    expect(restarted.outcome).toMatchObject({ kind: 'pause', wakeAt: '2026-10-21T01:00:00.000Z' });
+    expect(restarted.commands).toHaveLength(0);
+  });
+});
+
+describe('restriction classification survives compact Codex checkpoints', () => {
+  it('retains stderr-only quota diagnostics when restoring a code-zero partial approval', async () => {
+    const progress: ReviewProgress = { key: 'context', cycle: 0, attempts: [] };
+    let durable = structuredClone(progress);
+    const choices: Choice[] = [{ model: 'astra6', effort: 'high' }];
+    await expect(reviewRun([{ code: 0, answer: 'VERDICT: APPROVE', output: '',
+      stdout: 'Tool transcript', stderr: 'account limited' }], progress, choices, async () => {
+      durable = structuredClone(progress);
+      if (progress.attempts[0]?.original.status === 'completed') throw new Error('Daemon stopping');
+    })).rejects.toThrow('Daemon stopping');
+    const restarted = await reviewRun([], durable, choices);
+    expect(restarted.outcome.kind).toBe('pause');
+    expect(restarted.commands).toHaveLength(0);
   });
 });

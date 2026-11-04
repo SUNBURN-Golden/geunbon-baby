@@ -64,7 +64,7 @@ export function registrations(output: string): Registration[] {
   return records;
 }
 
-/** Only the active terminal task may be removed. All errors leave archival to a retry. */
+/** Only the active terminal task may be removed. The caller records deferred cleanup independently of archival. */
 export async function cleanupWorktree(options: CleanupOptions): Promise<void> {
   const { task } = options;
   if (task.stage !== 'done' && task.stage !== 'failed') throw new Error('Cannot clean an unfinished task');

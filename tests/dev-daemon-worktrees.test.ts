@@ -48,7 +48,7 @@ async function fixture(stage: 'done' | 'failed' = 'done') {
   const task: Task = { id: 'A', file: 'A.md', title: 'Cleanup', body: 'Original task', branch: 'task-A',
     worktree: target, kind: 'task', stage, round: 2, outputs: { build: 'Completed build' }, attempts: 0,
     summary: stage === 'done' ? 'Merged successfully' : 'Validation failed', pr: 'https://example.invalid/pull/1' };
-  await atomicWrite(join(queue.root, 'running', task.file), task.body);
+  await atomicWrite(join(queue.root, 'running', task.file), `---\ntitle: Cleanup\nbranch: task-A\n---\n\n${task.body}`);
   await atomicWrite(join(queue.root, 'logs', task.id, 'retained.log'), 'Retained log\n');
   await atomicWrite(join(queue.root, 'audits', 'retained.md'), 'Retained audit\n');
   const state = await queue.load();
@@ -94,7 +94,7 @@ describe('terminal cleanup with real local Git worktrees', () => {
     expect(list).not.toContain(`worktree ${f.target}\0`);
     expect(list).toContain(`worktree ${f.sibling}\0`);
     expect(await f.git(['show-ref', '--verify', 'refs/heads/task-A'])).toContain('refs/heads/task-A');
-    expect(await readFile(join(f.queue.root, stage, 'A.md'), 'utf8')).toBe('Original task');
+    expect(await readFile(join(f.queue.root, stage, 'A.md'), 'utf8')).toBe('---\ntitle: Cleanup\nbranch: task-A\n---\n\nOriginal task');
     expect(await readFile(join(f.queue.root, stage, 'A.summary.md'), 'utf8')).toContain(f.task.summary);
     expect(await readFile(join(f.queue.root, 'logs', 'A', 'retained.log'), 'utf8')).toBe('Retained log\n');
     expect(await readFile(join(f.queue.root, 'audits', 'retained.md'), 'utf8')).toBe('Retained audit\n');
@@ -110,29 +110,27 @@ describe('terminal cleanup with real local Git worktrees', () => {
   });
 
   for (const stage of ['done', 'failed'] as const) {
-    it.each(['present', 'locked', 'missing'] as const)(`preserves nested B and the ${stage} checkpoint when B is %s, including restart`, async condition => {
+    it.each(['present', 'locked', 'missing'] as const)(`archives ${stage} once and preserves nested B when B is %s`, async condition => {
       const f = await fixture(stage);
       const nested = await f.nested();
       if (condition === 'locked') await f.git(['worktree', 'lock', nested]);
       if (condition === 'missing') await rm(nested, { recursive: true });
       const beforeList = await f.git(['worktree', 'list', '--porcelain', '-z']);
-      const checkpoint = await readFile(join(f.queue.root, 'status.json'), 'utf8');
+      await f.daemon.tick();
+      const note = await readFile(join(f.queue.root, stage, 'A.summary.md'), 'utf8');
+      expect(note).toContain('cleanup incomplete');
+      expect(note).toContain('another registered worktree');
+      expect(note).toContain(f.task.summary);
       for (const daemon of [f.daemon, new Daemon(f.daemonOptions)]) {
         if (daemon !== f.daemon) await daemon.init();
-        await expect(daemon.tick()).rejects.toThrow('another registered worktree');
-        expect(f.destructive()).toEqual([]); // Even prune dry-run is forbidden.
+        expect(daemon.state.active).toBeUndefined();
+        expect(f.destructive()).toEqual([]);
         expect(await f.git(['worktree', 'list', '--porcelain', '-z'])).toBe(beforeList);
         expect(await readFile(join(f.target, 'tracked.txt'), 'utf8')).toContain('useful uncommitted');
         expect(await readFile(join(f.target, 'untracked.txt'), 'utf8')).toBe('untracked\n');
-        if (condition !== 'missing') {
-          expect(await readFile(join(nested, 'tracked.txt'), 'utf8')).toContain('useful uncommitted');
-          expect(await readFile(join(nested, 'untracked.txt'), 'utf8')).toBe('untracked\n');
-        }
-        const persisted = JSON.parse(await readFile(join(f.queue.root, 'status.json'), 'utf8'));
-        const original = JSON.parse(checkpoint);
-        expect(persisted.active).toEqual(original.active);
-        expect(persisted.mergedPrs).toBe(original.mergedPrs);
-        expect(await readdir(join(f.queue.root, stage))).toEqual([]);
+        if (condition !== 'missing') expect(await readFile(join(nested, 'untracked.txt'), 'utf8')).toBe('untracked\n');
+        expect(daemon.state.mergedPrs).toBe(7);
+        expect(await readdir(join(f.queue.root, stage))).toHaveLength(2);
       }
     });
   }
@@ -144,29 +142,31 @@ describe('terminal cleanup with real local Git worktrees', () => {
       if (command.args[0] === 'worktree' && command.args[1] === 'list' && ++lists === 2) await f.nested();
       return undefined;
     });
-    await expect(f.daemon.tick()).rejects.toThrow('another registered worktree');
+    await f.daemon.tick();
+    expect(await readFile(join(f.queue.root, 'done', 'A.summary.md'), 'utf8')).toContain('another registered worktree');
     expect(f.destructive().map(command => command.args[1])).toEqual(['prune']);
     expect(f.destructive()[0].args).toContain('--dry-run');
-    expect(f.daemon.state.active?.stage).toBe('done');
+    expect(f.daemon.state.active).toBeUndefined();
     expect(await readFile(join(f.target, 'untracked.txt'), 'utf8')).toBe('untracked\n');
   });
 
   it('refuses a locked target without a second force or a filesystem fallback', async () => {
     const f = await fixture('failed');
     await f.git(['worktree', 'lock', f.target]);
-    await expect(f.daemon.tick()).rejects.toThrow('remove failed');
+    await f.daemon.tick();
     expect(f.destructive().filter(command => command.args[1] === 'remove').map(command => command.args))
       .toEqual([['worktree', 'remove', '--force', f.target]]);
-    expect(f.daemon.state.active?.summary).toBe('Validation failed');
+    expect(await readFile(join(f.queue.root, 'failed', 'A.summary.md'), 'utf8')).toContain('Validation failed');
     expect(await readFile(join(f.target, 'untracked.txt'), 'utf8')).toBe('untracked\n');
-    expect(await readdir(join(f.queue.root, 'failed'))).toEqual([]);
+    expect(await readdir(join(f.queue.root, 'failed'))).toHaveLength(2);
   });
 
   it('refuses all deletion when another missing worktree would be pruned', async () => {
     const f = await fixture();
     await rm(f.sibling, { recursive: true });
     const before = await f.git(['worktree', 'list', '--porcelain', '-z']);
-    await expect(f.daemon.tick()).rejects.toThrow('Prune would affect another worktree');
+    await f.daemon.tick();
+    expect(await readFile(join(f.queue.root, 'done', 'A.summary.md'), 'utf8')).toContain('Prune would affect another worktree');
     expect(f.destructive().map(command => command.args)).toEqual([
       ['worktree', 'prune', '--dry-run', '--verbose', '--expire', 'now'],
     ]);
@@ -174,16 +174,17 @@ describe('terminal cleanup with real local Git worktrees', () => {
     expect(await readFile(join(f.target, 'untracked.txt'), 'utf8')).toBe('untracked\n');
   });
 
-  it('rechecks prune scope after remove and preserves the done checkpoint if a new candidate appears', async () => {
+  it('rechecks prune scope after remove and archives done with an incomplete cleanup note if a candidate appears', async () => {
     const f = await fixture();
     let previews = 0;
     f.intercept(async command => {
       if (command.args.includes('--dry-run') && ++previews === 2) await rm(f.sibling, { recursive: true });
       return undefined;
     });
-    await expect(f.daemon.tick()).rejects.toThrow('Prune would affect another worktree');
+    await f.daemon.tick();
+    expect(await readFile(join(f.queue.root, 'done', 'A.summary.md'), 'utf8')).toContain('Prune would affect another worktree');
     expect(f.destructive().some(command => command.args[1] === 'prune' && !command.args.includes('--dry-run'))).toBe(false);
-    expect(f.daemon.state.active?.stage).toBe('done');
+    expect(f.daemon.state.active).toBeUndefined();
     expect(f.daemon.state.mergedPrs).toBe(7);
     expect(await f.git(['worktree', 'list', '--porcelain', '-z'])).toContain(`worktree ${f.sibling}\0`);
   });
@@ -222,9 +223,11 @@ describe('terminal cleanup with real local Git worktrees', () => {
     f.daemon.state.auditedThrough = 10;
     f.daemon.state.mergedPrs = 10;
     await f.queue.save(f.daemon.state);
-    const before = await f.queue.load();
-    await expect(f.daemon.tick()).rejects.toThrow('another registered worktree');
-    expect(await f.queue.load()).toEqual(before);
+    await f.daemon.tick();
+    expect((await f.queue.load()).active).toBeUndefined();
+    expect(f.daemon.state.auditedThrough).toBe(10);
+    expect(f.daemon.state.mergedPrs).toBe(10);
+    expect(await readFile(join(f.queue.root, 'done', 'A.summary.md'), 'utf8')).toContain('cleanup incomplete');
     expect(f.destructive()).toEqual([]);
   });
 
@@ -248,7 +251,7 @@ describe('terminal cleanup with real local Git worktrees', () => {
         await rename(join(f.queue.root, 'running', task.file), join(f.queue.root, 'done', task.file));
         throw new Error('Interrupted archive');
       };
-      await expect(f.daemon.tick()).rejects.toThrow('Interrupted archive');
+      expect(await f.daemon.tick()).toBe(30000);
       f.queue.finish = original;
     }
     const restarted = new Daemon(f.daemonOptions); await restarted.init();
@@ -374,7 +377,7 @@ describe('worktree cleanup safety failures', () => {
     expect(await readFile(join(f.target, 'untracked.txt'), 'utf8')).toBe('untracked\n');
   });
 
-  it.each(['list', 'remove', 'prune', 'signal'] as const)('preserves terminal results on %s failure and retries on restart', async failure => {
+  it.each(['list', 'remove', 'prune', 'signal'] as const)('preserves terminal results on %s failure', async failure => {
     const f = await fixture('failed');
     f.intercept(async command => {
       const match = failure === 'signal' ? command.args[1] === 'remove' : command.args[1] === failure &&
@@ -383,18 +386,83 @@ describe('worktree cleanup safety failures', () => {
       if (failure === 'signal') throw new Error('Daemon stopping');
       return { ...ok(), code: 1 };
     });
-    await expect(f.daemon.tick()).rejects.toThrow();
-    const saved = await f.queue.load();
-    expect(saved.active?.stage).toBe('failed');
-    expect(saved.active?.summary).toBe('Validation failed');
-    expect(saved.active?.outputs).toEqual(f.task.outputs);
-    expect(saved.mergedPrs).toBe(7);
-    expect(await readdir(join(f.queue.root, 'failed'))).toEqual([]);
-    const logs = await readdir(join(f.queue.root, 'logs', 'A'));
-    expect(logs.some(file => basename(file).includes('worktree-cleanup-error'))).toBe(true);
+    if (failure === 'signal') {
+      await expect(f.daemon.tick()).rejects.toThrow('Daemon stopping');
+      const saved = await f.queue.load();
+      expect(saved.active?.stage).toBe('failed');
+      expect(saved.active?.summary).toBe('Validation failed');
+      expect(saved.active?.cleanup).toBeUndefined();
+      expect(await readdir(join(f.queue.root, 'failed'))).toEqual([]);
+    } else {
+      await f.daemon.tick();
+      expect(f.daemon.state.active).toBeUndefined();
+      const note = await readFile(join(f.queue.root, 'failed', 'A.summary.md'), 'utf8');
+      expect(note).toContain('Validation failed');
+      expect(note).toContain('cleanup incomplete');
+      const logs = await readdir(join(f.queue.root, 'logs', 'A'));
+      expect(logs.some(file => basename(file).includes('worktree-cleanup-error'))).toBe(true);
+    }
+    const before = f.destructive().length;
     f.intercept(async () => undefined);
     const restarted = new Daemon(f.daemonOptions); await restarted.init(); await restarted.tick();
     expect(restarted.state.active).toBeUndefined();
+    expect(restarted.state.mergedPrs).toBe(7);
+    if (failure !== 'signal') expect(f.destructive()).toHaveLength(before);
+  });
+});
+
+describe('terminal progress despite deferred cleanup', () => {
+  it('archives the observed prune conflict once, then claims the next inbox task', async () => {
+    const f = await fixture('failed');
+    await rm(f.sibling, { recursive: true });
+    await writeFile(join(f.queue.root, 'inbox', 'next.md'), '# Next task\nIndependent request');
+    f.daemon.state.active!.wakeAt = '2099-01-01T00:00:00Z';
+    await f.queue.save(f.daemon.state);
+    await f.daemon.tick();
+    expect(f.daemon.state.active).toBeUndefined();
+    const note = await readFile(join(f.queue.root, 'failed', 'A.summary.md'), 'utf8');
+    expect(note).toContain('Validation failed');
+    expect(note).toContain('cleanup incomplete');
+    expect(note).toContain('Prune would affect another worktree');
+    expect(note).toContain('Known directory state: present');
+    const cleanupCount = f.destructive().length;
+    await f.daemon.tick();
+    expect(f.daemon.state.active?.title).toBe('Next task');
+    expect(f.destructive()).toHaveLength(cleanupCount);
+    expect(await readdir(join(f.queue.root, 'failed'))).toHaveLength(2);
+    expect(await readFile(join(f.target, 'untracked.txt'), 'utf8')).toBe('untracked\n');
+  });
+  it('checkpoints cleanup before archival retries and never repeats deferred cleanup', async () => {
+    const f = await fixture();
+    await f.nested();
+    const finish = f.queue.finish.bind(f.queue);
+    f.queue.finish = async () => { throw new Error('storage unavailable'); };
+    expect(await f.daemon.tick()).toBe(30000);
+    expect((await f.queue.load()).active?.cleanup?.status).toBe('incomplete');
+    const calls = f.calls.filter(c => c.log.includes('worktree-cleanup')).length;
+    const restarted = new Daemon(f.daemonOptions); await restarted.init();
+    expect(await restarted.tick()).toBe(30000);
+    expect(f.calls.filter(c => c.log.includes('worktree-cleanup'))).toHaveLength(calls);
+    f.queue.finish = finish;
+    await restarted.tick();
+    expect(restarted.state.active).toBeUndefined();
+    expect(restarted.state.mergedPrs).toBe(7);
+    expect(f.calls.filter(c => c.log.includes('worktree-cleanup'))).toHaveLength(calls);
+    expect(await readFile(join(f.queue.root, 'done', 'A.summary.md'), 'utf8')).toContain('Merged successfully');
+  });
+  it('rechecks idempotent cleanup if interrupted before its outcome checkpoint', async () => {
+    const f = await fixture();
+    const save = f.queue.save.bind(f.queue);
+    f.queue.save = async state => {
+      if (state.active?.cleanup) throw new Error('Daemon stopping');
+      await save(state);
+    };
+    await expect(f.daemon.tick()).rejects.toThrow('Daemon stopping');
+    expect((await f.queue.load()).active?.cleanup).toBeUndefined();
+    f.queue.save = save;
+    const restarted = new Daemon(f.daemonOptions); await restarted.init(); await restarted.tick();
+    expect(restarted.state.active).toBeUndefined();
+    expect(f.destructive().filter(c => c.args[1] === 'remove')).toHaveLength(1);
     expect(restarted.state.mergedPrs).toBe(7);
   });
 });

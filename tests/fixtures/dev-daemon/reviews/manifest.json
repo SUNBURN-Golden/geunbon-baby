@@ -1,0 +1,72 @@
+[
+  {
+    "file": "codex-changes.json",
+    "source": "42-pangpang-parse-yield-25e5185d/00040-build-review-0-0-sol61.log",
+    "provider": "codex",
+    "kind": "real",
+    "answerBoundary": "last --- final answer --- marker",
+    "streamProvenance": "final-answer-file; diagnostic stream unknown",
+    "sanitization": "environment/token redaction; worktree root replaced; transcript omitted for Codex; recognized quota lines only",
+    "expected": "CHANGES"
+  },
+  {
+    "file": "swe2-approve.json",
+    "source": "audit-000050-fix-02-97f189bf/00018-design-review-0-2-swe2.log",
+    "provider": "devin",
+    "kind": "real",
+    "answerBoundary": "entire historical merged log",
+    "streamProvenance": "stream unknown",
+    "sanitization": "environment/token redaction; worktree root replaced; transcript omitted for Codex; recognized quota lines only",
+    "expected": "APPROVE"
+  },
+  {
+    "file": "pangpang-incomplete.json",
+    "source": "42-pangpang-parse-yield-25e5185d/00069-re-review-2-0-devinauto.log",
+    "provider": "devin",
+    "kind": "real",
+    "answerBoundary": "entire historical merged log",
+    "streamProvenance": "stream unknown",
+    "sanitization": "environment/token redaction; worktree root replaced; transcript omitted for Codex; recognized quota lines only",
+    "expected": null
+  },
+  {
+    "file": "audit-build-incomplete.json",
+    "source": "audit-000050-fix-02-97f189bf/00031-build-review-0-2-swe2.log",
+    "provider": "devin",
+    "kind": "real",
+    "answerBoundary": "entire historical merged log",
+    "streamProvenance": "stream unknown",
+    "sanitization": "environment/token redaction; worktree root replaced; transcript omitted for Codex; recognized quota lines only",
+    "expected": null
+  },
+  {
+    "file": "audit-design-incomplete.json",
+    "source": "audit-000050-fix-05-77302371/00018-design-review-0-2-swe2.log",
+    "provider": "devin",
+    "kind": "real",
+    "answerBoundary": "entire historical merged log",
+    "streamProvenance": "stream unknown",
+    "sanitization": "environment/token redaction; worktree root replaced; transcript omitted for Codex; recognized quota lines only",
+    "expected": null
+  },
+  {
+    "file": "codex-empty-quota.json",
+    "source": "audit-000050-fix-02-97f189bf/00018-design-review-0-0-astra6.log",
+    "provider": "codex",
+    "kind": "real",
+    "answerBoundary": "last --- final answer --- marker",
+    "streamProvenance": "final-answer-file; diagnostic stream unknown",
+    "sanitization": "environment/token redaction; worktree root replaced; transcript omitted for Codex; recognized quota lines only",
+    "expected": null
+  },
+  {
+    "file": "codex-build-empty-quota.json",
+    "source": "audit-000050-fix-02-97f189bf/00031-build-review-0-0-sol61.log",
+    "provider": "codex",
+    "kind": "real",
+    "answerBoundary": "last --- final answer --- marker",
+    "streamProvenance": "final-answer-file; diagnostic stream unknown",
+    "sanitization": "environment/token redaction; worktree root replaced; transcript omitted for Codex; recognized quota lines only",
+    "expected": null
+  }
+]
