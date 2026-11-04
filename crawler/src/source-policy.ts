@@ -1,3 +1,4 @@
+import { isPangpang, pangpangQueryAllowed } from '../lib/external/pangpang';
 import defaults from '../config/collector.json';
 import { canonicalUrl } from '../../shared/privacy-rules';
 import { isHardBlockedPath, isDeniedHost } from '../lib/external/robots';
@@ -20,7 +21,8 @@ export function validateConfig(c: CollectorConfig): CollectorConfig {
 export function visitAllowed(raw: string, source: SourcePolicy): boolean {
   try {
     const u = new URL(raw); canonicalUrl(raw);
-    return u.origin === source.origin && !isHardBlockedPath(u.pathname) && source.paths.some(p=>u.pathname===p || (p.endsWith('/')&&u.pathname.startsWith(p))) && [...u.searchParams.keys()].every(k=>source.query_keys.includes(k)) && !/\/(calendar|search)\//i.test(u.pathname) && ![...u.searchParams].some(([k,v])=> /^(page|p)$/i.test(k)&&(!/^\d+$/.test(v)||+v>source.max_pages));
+    if(isPangpang(source)&&!pangpangQueryAllowed(u))return false;
+    return u.origin === source.origin && !isHardBlockedPath(u.pathname) && source.paths.some(p=>u.pathname===p || (p.endsWith('/')&&u.pathname.startsWith(p))) && (isPangpang(source)||[...u.searchParams.keys()].every(k=>source.query_keys.includes(k))) && !/\/(calendar|search)\//i.test(u.pathname) && ![...u.searchParams].some(([k,v])=> /^(page|p)$/i.test(k)&&(!/^\d+$/.test(v)||+v>source.max_pages));
   } catch { return false; }
 }
 export function sourceFor(url: string, c = config) { return c.sources.find(s=>visitAllowed(url,s)); }

@@ -1,13 +1,22 @@
+import { extractPangpang, isPangpang, type PangpangPage } from '../../lib/external/pangpang';
 import { discoverLinks, type Found } from './adapters';
 import { hasNumericPrice, type PageMeasure } from './health';
-import { sourceFor, type CollectorConfig, type SourcePolicy } from '../source-policy';
+import { visitAllowed, sourceFor, type CollectorConfig, type SourcePolicy } from '../source-policy';
 import { CollectorError } from '../store';
 import { parseItems, type ParsedItem } from '../../lib/external/parse';
-import { buildPayload, type ExternalPayload } from '../../lib/external/filter';
+import { buildPayload, eligibilityReason, type ExternalPayload } from '../../lib/external/filter';
 import type { ClipPayload } from '../../../shared/collection-schema';
 
-export type Measured = PageMeasure & {found:Found[];listing?:{item:ParsedItem;legacy:ExternalPayload}[]};
+export type Measured = PageMeasure & {found:Found[];pangpang?:PangpangPage;listing?:{item:ParsedItem;legacy:ExternalPayload}[]};
 export function measurePage(body:string,pageUrl:string,source:SourcePolicy,settings:CollectorConfig,now:Date,{listing}:{listing:boolean}):Measured {
+  if(isPangpang(source)){
+    const page=extractPangpang(body,pageUrl,now,url=>visitAllowed(url,source));
+    for(const outcome of page.outcomes)if(outcome.reason==='accepted_product')outcome.reason=eligibilityReason(page.products[outcome.product_index!])??'accepted_product';
+    const products=page.products;
+    const accepted=products.flatMap(item=>{const legacy=buildPayload(source.id,item,now);return legacy?[{item,legacy}]:[];});
+    return {kind:'listing',pangpang:page,found:page.detail?[]:products.map(p=>({url:p.source_url,title:p.title})),listing:accepted,
+      links_found:page.links_encountered,parsed:products.length,eligible:accepted.length,price_checked:0,price_hints:0};
+  }
   const adapter=(source.adapter==='rss'&&!/<(?:rss|feed)\b/i.test(body))||(source.adapter==='sitemap'&&!/<(?:urlset|sitemapindex)\b/i.test(body))?'links':source.adapter;
   const found=discoverLinks(body,pageUrl,adapter);
   const m:Measured={kind:'feed',found,links_found:found.length,parsed:found.length,eligible:0,price_checked:0,price_hints:0};

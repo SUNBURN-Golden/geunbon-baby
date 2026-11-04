@@ -196,7 +196,7 @@ serve·discover·sync와 짧은 CLI 작업은 같은 로컬 DB를 동시에 열 
 
 1. 설정을 비공개 `COLLECTOR_CONFIG` 파일로 복사하고 대상 출처만 `enabled: true`로 설정합니다.
 2. `npm run collector:worker -- discover --dry-run`을 실행합니다. RSS·사이트맵·링크 출처는 `max_pages` 예산 안에서 시작 페이지마다 최대 2개 항목 페이지도 검사합니다. `limits.max_depth`가 탐색을 허용해야 합니다. 레코드·근거·셀러·업무 큐·outbox는 저장하지 않으며 예산과 도메인 속도/중단 상태는 유지합니다.
-3. 다음 조건을 모두 통과해야 합니다: 실행과 대상 출처의 `status=ok`, `pages_ok == pages_attempted`, `pages_review == 0`, `blocked=0`, 빈 `subrequest_failures`, `parsed>0`, `eligible>0`. `price_checked>0`이면 `price_hints>0`이어야 합니다. 메모에 `price_not_assessed`가 있으면 `max_pages`/`max_depth`를 늘려 항목 검사가 가능하도록 한 뒤 다시 dry-run합니다. CPSC의 `price_not_applicable`은 허용합니다.
+3. 다음 조건을 모두 통과해야 합니다: 실행과 대상 출처의 `status=ok`, `pages_ok == pages_attempted`, `pages_review == 0`, `blocked=0`, 빈 `subrequest_failures`, `parsed>0`, `eligible>0`. `price_checked>0`이면 `price_hints>0`이어야 합니다. 메모에 `price_not_assessed`가 있으면 `max_pages`/`max_depth`를 늘려 항목 검사가 가능하도록 한 뒤 다시 dry-run합니다. CPSC와 가격을 게시하지 않는 Pangpang의 `price_not_applicable`은 허용합니다.
 4. 조건이 실패하면 아래 조치를 적용합니다.
 
    | 결과 | 조치 |
@@ -301,3 +301,28 @@ collect와 공유 일일 비용 원장 및 crawl 잠금을 사용하며, 발견�
 ## 빈 필드 탐색기
 
 Linux `explore-missing --dry-run`, `explore-missing`, `explore-missing --resume RUN_ID`는 기존 자료의 필수 슬롯을 오프라인 검사한다. `missing-fields`, `missing-field-actions`, `missing-field-metrics --run RUN_ID`로 정제된 로컬 진단·후속 작업·고정 기준 지표를 조회한다. 실제 출처·본문 위치·추출/서비스 연결이 없는 값은 정보 없음으로 유지한다. 사이트로 진단을 보내지 않는다. 외부 저장 경로·네 분류·발견기 연결·검수/철회·복구는 [운영 문서](../docs/collector/missing-field-explorer.md)를 따른다.
+
+### Pangpang HTML extraction (Linux only)
+
+Both `discover` (including its network dry-run) and `collect` use the pure, versioned `lib/external/pangpang.ts` extractor. The previous generic `main` selector combined the listing into one item, often identified as `/about`, and missed detail pages whose product scope is `article`. Product identities are numeric `/post/<id>` paths, rather than `/deal/<id>`. Visible `a[data-feed-index]` cards supply scoped titles, categories, public sellers and schedules; duplicate accessible links do not create additional products. Missing or ambiguous scopes never fall back to the whole page.
+
+Original resolved URLs are checked before normalization and deduplication. Only the observed single `source=home` tracking parameter is recognized on product links; other query combinations are rejected. The canonical URL must also pass source policy. Each product redirect must preserve its numeric ID; a listing redirect must preserve its listing identity. `redirect_identity` is terminal and the changed destination is rejected before its transport/robots request. Same-product redirects still pass normal robots, egress, rate, byte, depth, page, reservation and retry limits. HTTP 403/CAPTCHA stops remain in force.
+
+`pangpang` JSON diagnostic lines on local stderr identify the command, opaque run/page references, numeric DOM link index and fixed disposition code. Every encountered anchor has a disposition, including accepted products and accessibility duplicates. Summary events reconcile anchor counts and report unique/parsed products, classifier eligibility/exclusions, scheduled, deferred and submitted counts. The collect run summary reports completed service submissions and outstanding transport failures. Scheduling/submission progress and transport failures are separate events, so they do not add product-link occurrences. Products beyond processing limits use `deferred_limit`; enumeration scans the already bounded document without the generic 500-link truncation. Diagnostics carry no URLs, titles, handles, query values, HTML or raw exceptions, and are never included in status sync.
+
+The approved saved-page fixtures and provenance are in `tests/fixtures/external/pangpang/README.md`. They contain 191 anchors, 60 product-link occurrences and 30 distinct products, plus three real details, tested at 2026-11-02 22:15 KST. They do not establish the exact origin of the reported production 768 → approximately 2 result. A separate synthetic 768-link test verifies full accounting and enforced processing limits. The two-probe limit belongs to `discover --dry-run`, not product parsing.
+
+Extraction and eligibility are separate. The unchanged discovery classifier accepts five saved listing items, excludes one by the diaper/formula rule and rejects 24 for insufficient baby/model evidence. One of the five is the existing `트레이닝`/`트레이` false positive, not a verified premium product. The narrower collect profile accepts zero saved listing products; test-only authorization and a labeled synthetic stroller detail exercise successful service/provenance. All three real details parse regardless of downstream eligibility. Weekday annotations are normalized for date parsing while original schedule evidence is retained. Opening-only dates retain a known start and null end. Prices are null because these pages do not publish prices; missing price is not a rejection, and Pangpang's `price_not_applicable` note is allowed in the activation check above.
+
+Pangpang parse/render, dependent label/extract, and link caches include the extractor version. Identity-dependent keys also include the validated page URL. Conditional requests use the same context; obsolete derivatives alone require an authorized fresh download, while retained raw data can be reparsed. Unfinished old downstream checkpoints restart at parse when raw is available, otherwise fetch, through the existing input-unavailable recovery path. Immutable historical captures, facts and receipts remain intact; completed submissions are not replayed. Shared temporary bodies remain available until pending identity-specific parses finish.
+
+Pangpang remains disabled in shipped collector configuration and absent from the shipped collect profile authorization. Fixture approval does not enable runtime collection. `collect --dry-run` remains an offline preview. No site/Cloudflare code or site synchronization payload is involved.
+
+Offline verification:
+
+```sh
+export PATH="$PWD/node_modules/node/bin:$PATH"
+npm test -- tests/pangpang.test.ts tests/agamajung-pipeline.test.ts tests/collector-discovery-retry.test.ts tests/collector-health.test.ts tests/collector-scheduler.test.ts tests/collector-limits.test.ts tests/collector-privacy.test.ts tests/collector-egress.test.ts tests/engine-download.test.ts tests/engine-retry.test.ts tests/engine-storage.test.ts tests/external-parse.test.ts tests/external-filter.test.ts tests/external-robots.test.ts --maxWorkers=2 --testTimeout=30000
+npm run lint
+npm run typecheck
+```

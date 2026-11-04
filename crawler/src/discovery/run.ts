@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto';
+import { isPangpang, pangpangIdentityAllowed } from '../../lib/external/pangpang';
+import { eligibilityReason } from '../../lib/external/filter';
+import { SchedulerFetcher } from '../agamajung/fetcher';
+import { pangpangLog, pangpangContext, reportPangpang, type PangpangLog } from './pangpang-diagnostics';
 import { Scheduler, type DomainState } from '../scheduler';
 import { CollectorStore, requireThat } from '../store';
 import { RunHealth, failureCode } from './health';
@@ -13,8 +18,10 @@ export { failureCode } from './health';
 export const DRY_RUN_ITEM_PROBES=2;
 export type Job={id:string;url:string;source_id:string;depth:number;operation:'discovery'|'recheck';phase:'pending'|'leased'|'done'|'failed';lease_until:number;cursor:number;finished_at?:number;attempt?:number;failure_reason?:string};
 export class DiscoveryRunner {
-  constructor(readonly store:CollectorStore,readonly scheduler=new Scheduler(store)) {}
+  private runRef:string = randomUUID();
+  constructor(readonly store:CollectorStore,readonly scheduler=new Scheduler(store),readonly log:PangpangLog=pangpangLog) {}
   enqueue(raw:string,source:SourcePolicy,depth=0,operation:Job['operation']='discovery') {
+    if(isPangpang(source))requireThat(visitAllowed(raw,source),'visit_not_allowed');
     const url=canonicalUrl(raw),id=digest([url,operation]),old=this.store.get<Job>('collection_jobs',id);
     if(old?.phase==='failed'){this.retryFailed(old);return;}
     requireThat(depth<=this.store.settings.limits.max_depth,'depth_limit');
@@ -33,7 +40,8 @@ export class DiscoveryRunner {
     this.store.transaction(()=>this.store.put('collection_jobs',id,{id,url,source_id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:(job.attempt??1)+1} satisfies Job));
   }
   seed(){for(const source of this.store.settings.sources.filter(s=>s.enabled))for(const url of source.entries)this.enqueue(url,source);}
-  async run(dryRun=false) {
+  async run(dryRun=false,runRef:string=randomUUID()) {
+    this.runRef=runRef;
     const mode=dryRun?'dry_run':'run',health=new RunHealth();
     this.scheduler.takeBlocked();
     const enabled=this.store.settings.sources.filter(s=>s.enabled);
@@ -56,40 +64,52 @@ export class DiscoveryRunner {
       const source=this.store.settings.sources.find(s=>s.id===j.source_id&&s.enabled);if(!source){pages.set(j.source_id,Infinity);continue;}
       pages.set(source.id,(pages.get(source.id)??0)+1);
       this.store.transaction(()=>{j.phase='leased';j.lease_until=this.store.now()+180000;this.store.put('collection_jobs',j.id,j);});
+      let phase:'transport'|'extraction'|'submission'='transport';
       try {
         if(source.browser){health.pageOk(source.id,await this.collect(j,source,health));}
         else {
           // Reserve every HTML/body attempt before reading, not just successful records.
           const reservation=(source.adapter==='links'||j.depth>0||j.operation==='recheck')?this.reservation(j,source,j.url,'body'):null;
-          const response=await this.scheduler.get(j.url,source);
-          const m=measurePage(response.body,j.url,source,this.store.settings,new Date(this.store.now()),{listing:!!reservation});
+          const response=await new SchedulerFetcher(this.scheduler,source).get(j.url);
+          if(isPangpang(source))requireThat(pangpangIdentityAllowed(j.url,response.finalUrl??j.url),'redirect_identity');
+          phase='extraction';
+          const m=measurePage(response.body,response.finalUrl??j.url,source,this.store.settings,new Date(this.store.now()),{listing:!!reservation});
+          phase='submission';
           const found=m.found;
+          let scheduled=0,submitted=0;const deferred=new Set<string>();
+          try {
           for(let index=j.cursor;index<found.length;index++){
             const f=found[index];
+            if(m.pangpang&&(j.depth>=this.store.settings.limits.max_depth||scheduled>=Math.max(0,Math.min(source.max_pages,this.store.settings.limits.max_pages)-(pages.get(source.id)??0)))){deferred.add(f.url);continue;}
             try{
               this.store.discover(f.url,'auto_discovery',f.title??null);
               if(f.recall?.id.trim()&&(f.recall.name?.trim()||f.title?.trim())){const r=this.reservation(j,source,f.url,`recall:${index}`);this.store.submit('linux',r.id,{title:f.title,assertions:[{field:'recalls',value:f.recall,quote:f.title??f.recall.name,locator:`$.Recall[RecallID=${f.recall.id}]`}]},source.id);health.sent(source.id);}
               const next=sourceFor(f.url,this.store.settings);
-              if(j.depth<this.store.settings.limits.max_depth&&next?.id===source.id)this.enqueue(f.url,source,j.depth+1);
-            }catch(e){if(!(e instanceof Error)||!['unsafe_url','private_url'].includes(e.message))throw e;}
+              if(j.depth<this.store.settings.limits.max_depth&&next?.id===source.id){
+                if(m.pangpang&&scheduled>=Math.max(0,Math.min(source.max_pages,this.store.settings.limits.max_pages)-(pages.get(source.id)??0)))deferred.add(f.url);
+                else {this.enqueue(f.url,source,j.depth+1);scheduled++;if(m.pangpang)this.log({...pangpangContext('discover',this.runRef,j.id),event:'progress',stage:'scheduled',product_ref:digest(f.url)});}
+              }else if(m.pangpang)deferred.add(f.url);
+            }catch(e){if(m.pangpang&&failureCode(e)==='daily_limit'){deferred.add(f.url);continue;}if(!(e instanceof Error)||!['unsafe_url','private_url'].includes(e.message))throw e;}
             j.cursor=index+1;this.store.transaction(()=>this.store.put('collection_jobs',j.id,j));
           }
           if(reservation){
             // Existing baby-only classifier and model matches are retained; never follow sellers.
             for(const [index,{item,legacy}] of (m.listing??[]).entries()){
-              const r=this.reservation(j,source,item.source_url,`listing:${index}`);
+              if(m.pangpang&&!m.pangpang.detail&&deferred.has(item.source_url))continue;
+              let r;try{r=this.reservation(j,source,item.source_url,`listing:${index}`);}catch(e){if(m.pangpang&&failureCode(e)==='daily_limit'){deferred.add(item.source_url);continue;}throw e;}
               const payload:ClipPayload={title:item.title,seller_handle:item.seller_handle??undefined,target_model_id:legacy.suggestions.models.length===1?legacy.suggestions.models[0].model_id:null,assertions:[]};
-              if(item.price)payload.assertions.push({field:'clue_price',value:item.price.value,quote:item.price.raw,locator:source.selector||'listing'});
-              if(item.dates)payload.assertions.push({field:'group_buy_terms',value:item.dates.raw,quote:item.dates.raw,locator:source.selector||'listing'});
-              this.store.submit('linux',r.id,payload);health.sent(source.id);
+              if(item.price)payload.assertions.push({field:'clue_price',value:item.price.value,quote:item.price.raw,locator:'locator' in item?String(item.locator):source.selector||'listing'});
+              if(item.dates)payload.assertions.push({field:'group_buy_terms',value:item.dates.raw,quote:item.dates.raw,locator:'locator' in item?String(item.locator):source.selector||'listing'});
+              this.store.submit('linux',r.id,payload);health.sent(source.id);submitted++;if(m.pangpang)this.log({...pangpangContext('discover',this.runRef,j.id),event:'progress',stage:'submitted',product_ref:digest(item.source_url)});
             }
-            const root=parseHtml(response.body),region=source.selector?selectAll(root,source.selector)[0]:undefined;
-            this.store.submit('linux',reservation.id,{assertions:region?extractFacts(textOf(region),source.selector):[]});
+            if(!m.pangpang){const root=parseHtml(response.body),region=source.selector?selectAll(root,source.selector)[0]:undefined;
+              this.store.submit('linux',reservation.id,{assertions:region?extractFacts(textOf(region),source.selector):[]});}
           }
+          } finally {if(m.pangpang){const summary=reportPangpang(m.pangpang,pangpangContext('discover',this.runRef,j.id),this.log,eligibilityReason,deferred,scheduled,submitted);Object.assign(m,{link_dispositions:summary.dispositions,unique_products:summary.unique_products,product_refs:m.pangpang.products.map(p=>digest(p.source_url)),scheduled,deferred:deferred.size});}}
           health.pageOk(source.id,m);
         }
         j.phase='done';delete j.failure_reason;
-      }catch(e){j.phase='failed';j.failure_reason=failureCode(e);health.pageFailed(source.id,j.failure_reason);}
+      }catch(e){j.phase='failed';j.failure_reason=failureCode(e);health.pageFailed(source.id,j.failure_reason);if(isPangpang(source))this.log({...pangpangContext('discover',this.runRef,j.id),...(phase==='transport'?{event:'transport' as const}:{event:'failure' as const,stage:phase}),reason:j.failure_reason});}
       this.store.transaction(()=>{j.lease_until=0;j.finished_at=this.store.now();this.store.put('collection_jobs',j.id,j);});
     }
   }
@@ -100,14 +120,20 @@ export class DiscoveryRunner {
       let attempted=0;
       const visited=new Set<string>();
       const measure=async(url:string,listing:boolean)=>{
-        attempted++;
+        attempted++;let phase:'transport'|'extraction'='transport';
         try{
           visited.add(canonicalUrl(url));
           this.store.authorizeProbe(source.brand);
           if(source.browser){health.pageOk(source.id,measureBrowser(await browserExtract(url,source,this.scheduler,code=>health.subrequestFailed(source.id,code))));return;}
-          const m=measurePage((await this.scheduler.get(url,source)).body,url,source,this.store.settings,new Date(this.store.now()),{listing});
+          const response=await new SchedulerFetcher(this.scheduler,source).get(url);
+          phase='extraction';
+          const m=measurePage(response.body,response.finalUrl??url,source,this.store.settings,new Date(this.store.now()),{listing});
+          if(m.pangpang){
+            const probes=this.store.settings.limits.max_depth>0?m.found.filter(f=>sourceFor(f.url,this.store.settings)?.id===source.id&&!visited.has(f.url)).slice(0,Math.min(DRY_RUN_ITEM_PROBES,budget-attempted)):[];
+            const selected=new Set(probes.map(p=>p.url)),deferred=new Set(m.pangpang.detail?[]:m.pangpang.products.filter(p=>!selected.has(p.source_url)).map(p=>p.source_url));
+            const summary=reportPangpang(m.pangpang,pangpangContext('discover',this.runRef,url),this.log,eligibilityReason,deferred,probes.length);Object.assign(m,{link_dispositions:summary.dispositions,unique_products:summary.unique_products,product_refs:m.pangpang.products.map(p=>digest(p.source_url)),scheduled:probes.length,deferred:deferred.size});}
           health.pageOk(source.id,m);return m;
-        }catch(e){health.pageFailed(source.id,failureCode(e));}
+        }catch(e){health.pageFailed(source.id,failureCode(e));if(isPangpang(source))this.log({...pangpangContext('discover',this.runRef,url),...(phase==='transport'?{event:'transport' as const}:{event:'failure' as const,stage:phase}),reason:failureCode(e)});}
       };
       for(const url of source.entries.slice(0,budget)){
         if(attempted>=budget)break;

@@ -25,7 +25,7 @@ export function jobDefinition(store:CollectorStore,job:CollectionJob,trusted:Cid
   return {create:()=>{
     const runner=new DiscoveryRunner(store,scheduler());
     const run=async(dry:boolean,callId?:string)=>{
-      if(!dry)runner.seed();const health=await runner.run(dry);
+      if(!dry)runner.seed();const health=await runner.run(dry,callId);
       for(const h of health.sources.filter(h=>h.pages_attempted>0))console.error(formatLine(h,{at:store.now(),callId}));
       return dry?{dry_run:true,health}:{...store.report(),jobs:store.jobSummary(),health};
     };

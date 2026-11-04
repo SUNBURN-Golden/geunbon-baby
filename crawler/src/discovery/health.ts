@@ -3,14 +3,14 @@ import { kstTime } from '../collection-schedule';
 import type { SourcePolicy } from '../source-policy';
 
 // Exception messages are untrusted, even when they look like lowercase codes.
-const FAILURE_CODES=new Set(['error','network_error','request_timeout','source_response','source_blocked','source_cooldown','robots_denied','robots_unavailable','visit_not_allowed','domain_stopped','private_network','redirect_missing','response_size','login_required','access_restricted','empty_page','region_missing','region_required','selector_invalid','browser_not_approved','document_changed','daily_limit','execution_expired','submission_expired','payload_shape','payload_changed','cpsc_schema','depth_limit','source_mismatch','brand_mismatch','reservation_expired']);
+const FAILURE_CODES=new Set(['redirect_identity','error','network_error','request_timeout','source_response','source_blocked','source_cooldown','robots_denied','robots_unavailable','visit_not_allowed','domain_stopped','private_network','redirect_missing','response_size','login_required','access_restricted','empty_page','region_missing','region_required','selector_invalid','browser_not_approved','document_changed','daily_limit','execution_expired','submission_expired','payload_shape','payload_changed','cpsc_schema','depth_limit','source_mismatch','brand_mismatch','reservation_expired']);
 export function failureCode(error:unknown):string {
   const code=error instanceof CollectorError?error.code:error instanceof Error?error.message:'';
   return FAILURE_CODES.has(code)?code:'error';
 }
-export const BLOCKED_CODES = new Set(['robots_denied','robots_unavailable','visit_not_allowed','domain_stopped','source_blocked','source_cooldown','private_network']);
+export const BLOCKED_CODES = new Set(['robots_denied','robots_unavailable','visit_not_allowed','domain_stopped','source_blocked','source_cooldown','private_network','redirect_identity']);
 export type PageKind = 'listing'|'feed'|'recalls'|'browser';
-export type PageMeasure = {kind:PageKind;links_found:number;parsed:number;eligible:number;price_checked:number;price_hints:number};
+export type PageMeasure = {kind:PageKind;links_found:number;parsed:number;eligible:number;price_checked:number;price_hints:number;product_refs?:string[];link_dispositions?:Record<string,number>;unique_products?:number;scheduled?:number;deferred?:number};
 type PageFinding = 'zero_parsed'|'zero_eligible'|'zero_price_hints';
 export type HealthFlag = 'failed'|'blocked'|'not_attempted'|PageFinding|'subrequest_failed';
 export type HealthNote = 'price_not_assessed'|'price_not_applicable';
@@ -19,6 +19,7 @@ export type SourceHealth = {
   pages_attempted:number;pages_ok:number;pages_failed:number;pages_review:number;
   page_findings:Partial<Record<PageFinding,number>>;
   links_found:number;parsed:number;eligible:number;price_checked:number;price_hints:number;sent:number;
+  link_dispositions?:Record<string,number>;unique_products?:number;scheduled?:number;deferred?:number;
   blocked:number;blocked_reasons:Record<string,number>;failures:Record<string,number>;subrequest_failures:Record<string,number>;
 };
 
@@ -43,6 +44,7 @@ function findings(m:Pick<PageMeasure,'parsed'|'eligible'|'price_checked'|'price_
 }
 export class RunHealth {
   private sources=new Map<string,SourceHealth>();
+  private products=new Map<string,Set<string>>();
   source(id:string,mode:SourceHealth['mode']):SourceHealth {
     let h=this.sources.get(id);
     if(!h){
@@ -54,6 +56,9 @@ export class RunHealth {
   pageOk(id:string,m:PageMeasure) {
     const h=this.sources.get(id)!;h.pages_attempted++;h.pages_ok++;
     for(const key of ['links_found','parsed','eligible','price_checked','price_hints'] as const)h[key]+=m[key];
+    if(m.link_dispositions){h.link_dispositions??={};for(const [reason,n] of Object.entries(m.link_dispositions))increment(h.link_dispositions,reason,n);}
+    if(m.product_refs){const seen=this.products.get(id)??new Set<string>();for(const ref of m.product_refs)seen.add(ref);this.products.set(id,seen);h.unique_products=seen.size;}
+    for(const key of ['scheduled','deferred'] as const)if(m[key]!==undefined)h[key]=(h[key]??0)+m[key]!;
     const flags=findings(m);if(flags.length)h.pages_review++;
     for(const flag of flags)h.page_findings[flag]=(h.page_findings[flag]??0)+1;
   }
@@ -69,7 +74,7 @@ export class RunHealth {
       for(const flag of [...Object.keys(h.page_findings) as PageFinding[],...findings(h)])flags.add(flag);
       if(Object.keys(h.subrequest_failures).length)flags.add('subrequest_failed');
       h.flags=[...flags];h.status=h.flags.length?'review':'ok';
-      h.notes=adapters.get(h.source_id)==='cpsc'?['price_not_applicable']:h.price_checked===0&&h.eligible>0?['price_not_assessed']:[];
+      h.notes=(adapters.get(h.source_id)==='cpsc'||h.source_id==='pangpang')?['price_not_applicable']:h.price_checked===0&&h.eligible>0?['price_not_assessed']:[];
       return h;
     });
   }

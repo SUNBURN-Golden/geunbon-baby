@@ -31,10 +31,14 @@ export type ExternalPayload = {
   category: string | null; model_match: boolean; captured_at: string; suggestions: Suggestions;
 };
 
-export function isBabyItem(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): boolean {
-  if (EXCLUDED.test(`${item.title}\n${item.category_text}\n${item.text}`)) return false;
+export function eligibilityReason(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): 'excluded_category'|'not_baby_item'|null {
+  if (EXCLUDED.test(`${item.title}\n${item.category_text}\n${item.text}`)) return 'excluded_category';
   const label = `${item.title} ${item.category_text}`;
-  return BABY.test(label) || (extractModels(label)[0]?.confidence ?? 0) >= MODEL_CONFIDENCE;
+  return BABY.test(label) || (extractModels(label)[0]?.confidence ?? 0) >= MODEL_CONFIDENCE ? null : 'not_baby_item';
+}
+
+export function isBabyItem(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): boolean {
+  return eligibilityReason(item) === null;
 }
 
 const categoryOf = (modelId: string | undefined) => (modelId ? seedModels[Number(modelId.replace('model-', '')) - 1]?.category ?? null : null);
@@ -44,7 +48,7 @@ export function buildPayload(source: string, item: ParsedItem, capturedAt: Date)
   if (!isBabyItem(item)) return null;
   const title = maskPersonal(item.title).trim().slice(0, TITLE_MAX);
   if (!title) return null;
-  const dates = item.dates?.starts_at && item.dates.ends_at && Date.parse(item.dates.ends_at) > Date.parse(item.dates.starts_at) ? item.dates : null;
+  const dates = item.dates?.starts_at && (!item.dates.ends_at || Date.parse(item.dates.ends_at) > Date.parse(item.dates.starts_at)) ? item.dates : null;
   const datesRaw = item.dates?.raw ? maskPersonal(item.dates.raw).slice(0, 60) : null;
   const priceRaw = item.price ? maskPersonal(item.price.raw).slice(0, 60) : null;
   const text = maskPersonal([title, datesRaw && `기간 ${datesRaw}`, priceRaw && `가격 ${priceRaw}`, item.seller_handle && `셀러 @${item.seller_handle}`].filter(Boolean).join(' / ')).slice(0, TEXT_MAX);
@@ -53,7 +57,7 @@ export function buildPayload(source: string, item: ParsedItem, capturedAt: Date)
   const modelMatch = (top?.confidence ?? 0) >= MODEL_CONFIDENCE;
   return {
     kind: 'external_listing', source, source_url: item.source_url, account: source, title, text,
-    seller_handle: item.seller_handle, seller_name: null, seller_url: item.seller_url,
+    seller_handle: item.seller_handle, seller_name: 'seller_name' in item ? String(item.seller_name ?? '') || null : null, seller_url: item.seller_url,
     price_hint: item.price && Number.isSafeInteger(item.price.value) ? item.price.value : null, price_raw: priceRaw, price_basis: 'external_listing',
     starts_at: dates?.starts_at ?? null, ends_at: dates?.ends_at ?? null, dates_raw: datesRaw,
     category: modelMatch ? categoryOf(top?.model_id) : null, model_match: modelMatch,
