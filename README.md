@@ -137,7 +137,7 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | POST | `/api/v1/ingest` | INGEST_TOKEN. Instagram pending 접수 또는 쓰기 가능한 legacy 외부 후보 접수 |
 | POST | `/api/v1/collector/status` | COLLECTOR_STATUS_TOKEN. 건수 스냅샷만 접수 |
 | GET | `/api/v1/admin/collection-status` | ADMIN_TOKEN. 작업기별 다섯 상태·생성/수신 시각·지연 여부 |
-| GET | `/api/v1/admin/queue` | `Authorization: Bearer ADMIN_TOKEN`, 최대 100건 |
+| GET | `/api/v1/admin/queue` | ADMIN_TOKEN 전용, pending만 captured_at·id 오름차순 페이지. limit 기본/최대 100, 응답 `{ data, next_cursor }` |
 | POST | `/api/v1/admin/review/:id` | 관리자 승인/반려, 승인 시 모델·판매자·귀속 근거 필수 |
 | GET | `/api/v1/admin/sellers` | ADMIN_TOKEN 전용, 등록 판매자·검수된 연결 계정·미연결 수집 계정 |
 | POST | `/api/v1/admin/sellers` | 판매자 등록, 선택 계정 연결은 `account_reviewed: true` 필수 |
@@ -145,7 +145,7 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | GET | `/api/v1/admin/deals?status=published&limit=20&cursor=…` | ADMIN_TOKEN 전용, 상태 published(기본)/withdrawn/all, checked·id 내림차순 키셋 페이지. limit 1–50, 응답 `{ data, next_cursor }`, 전체 건수 제한 없음 |
 | GET | `/api/v1/admin/deals/:id` | ADMIN_TOKEN 전용, 현재 값·전체 버전 이력·보존된 수집 원문 및 귀속 검수 근거 |
 | POST | `/api/v1/admin/deals/:id` | ADMIN_TOKEN 전용, action correct/withdraw, expected_version·request_id·reason 필수 |
-| GET | `/api/v1/admin/candidates` | `Authorization: Bearer ADMIN_TOKEN`, 외부 공구 모음 후보(candidate) 최대 200건 |
+| GET | `/api/v1/admin/candidates` | ADMIN_TOKEN 전용, candidate만 captured_at·id 오름차순 페이지. limit 기본/최대 200, 응답 `{ data, next_cursor }` |
 | POST | `/api/v1/admin/candidates/:id` | `{ "action": "dismiss" }`만 허용(그 외 400, 이미 처리됨 409, 없는 id 404) |
 | GET | `/api/v1/images/:key` | R2 `IMAGES`의 `public/` 아래 jpg/jpeg/png/webp/avif. 허용 파일명·존재 여부 검사, 없으면 404 |
 | GET | `/api/auth/login/google` | Google OAuth 시작. 공급자 미설정 시 404 |
@@ -154,6 +154,28 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | GET | `/api/auth/callback/kakao` | Kakao OAuth 콜백 |
 
 v1 분기는 `lib/api.ts`, 이미지 라우트는 `app/api/v1/images/[key]/route.ts`, OAuth는 `app/api/auth/[[...path]]/route.ts`와 `lib/auth.ts`에 있습니다. OAuth는 v1 밖의 별도 경로입니다. 공개 공구 상세 GET API는 없으며 모델 비교나 공구 목록을 사용합니다. 관리자 행은 모두 ADMIN_TOKEN이 필요합니다.
+
+### 관리자 검수 목록 페이지 계약
+
+`GET /api/v1/admin/queue`와 `GET /api/v1/admin/candidates`는 선택 쿼리 `limit`, `cursor`를 받습니다. `limit`은 십진 정수 1 이상이며 queue는 기본·최대 100, candidates는 기본·최대 200입니다. 한 번에 반환하는 건수만 제한하며 전체 목록에는 상한이 없습니다. 각 항목의 기존 필드는 유지하고 다음 페이지가 있으면 `next_cursor` 문자열을 반환합니다. 다음 요청에 그 문자열을 변경 없이 URL 인코딩하여 `cursor`로 전달하세요. 마지막 페이지와 빈 목록은 `next_cursor: null`이며, 전체 건수·페이지 번호는 제공하지 않습니다.
+
+```json
+{ "data": [], "next_cursor": null }
+```
+
+두 목록 모두 저장된 문자열의 `captured_at ASC, id ASC` 순서입니다. 동일한 수집 시각에서도 ID로 순서가 결정됩니다. queue는 `pending`만, candidates는 `candidate`만 반환하며 상태 필터로 승인·반려·dismiss 항목을 조회할 수 없습니다. 내부적으로 `limit + 1`건을 읽어 다음 페이지 유무를 확인하고 **마지막으로 반환한 항목**의 배타적 경계 `(captured_at, id) > (?, ?)`부터 이어갑니다. 커서의 기준 행이 승인·반려·dismiss·삭제되어도 계속 사용할 수 있습니다.
+
+커서는 버전·목록 종류·원래 수집 시각·ID를 담은 정규 UTF-8 base64url JSON입니다. 자격 증명이나 접근 권한을 포함하지 않습니다. 서버는 디코딩 전 최대 2,048자 제한, 인코딩·버전·목록 종류·튜플·유효한 날짜/시각·비어 있지 않은 최대 256자 ID를 검증합니다. 저장된 ISO 오프셋, 날짜만 있는 값, 기존 SQLite UTC 시각 문자열도 원형을 유지해 SQL 경계를 비교합니다. 다른 목록의 커서는 재사용할 수 없습니다.
+
+- 빈 값·잘못된 형식·과도한 길이·지원하지 않는 버전·다른 목록의 커서 또는 중복 `cursor`: HTTP 400 `{ "error": "invalid_cursor" }`.
+- 범위 밖·소수·지수·공백 등을 포함한 `limit` 또는 중복 `limit`: HTTP 400 `{ "error": "invalid_limit" }`.
+- 인증은 페이지 검증과 DB 조회보다 먼저 수행합니다. `Authorization: Bearer ADMIN_TOKEN`이 없거나 잘못되면 401, 서비스 토큰 설정 오류는 기존과 같이 503입니다. 수집/현황 토큰과 관리자 세션 쿠키 값은 API 토큰으로 사용할 수 없습니다. 성공·오류 모두 `Cache-Control: no-store`입니다.
+
+이 목록은 스냅샷이 아닙니다. 검수·삭제된 항목은 사라지고 경계 뒤에 추가된 항목은 이어서 나타날 수 있습니다. 경계보다 앞선 시각/ID로 추가된 항목은 처음부터 다시 조회해야 합니다. 외부 후보의 재수집은 기존 `captured_at`을 변경하지 않습니다.
+
+`/admin`은 각 목록을 20건씩 표시하고 `queue_cursor`, `candidate_cursor`를 독립적으로 사용합니다. 각 구역의 “다음 20건”·“처음부터”는 다른 구역과 `deal`, `deal_status`, `deal_cursor`를 유지합니다. 공구 필터 변경·ID 검색은 공구 위치만 초기화합니다. 승인·반려·확인 완료 및 판매자/공구 폼의 성공·입력 오류·충돌 리디렉션도 검증된 상태를 유지하며 고정 `/admin` 경로만 사용합니다. 검수 후에는 들어올 때의 커서부터 다시 읽어 남은 항목으로 페이지를 채웁니다. 잘못된 커서는 해당 구역만 처음부터 표시하고 안내하며, 동시 검수로 현재 위치가 비면 “처음부터”로 복구할 수 있습니다. DB 오류는 빈 목록으로 숨기지 않습니다.
+
+사이트 D1의 `0012_admin_review_pagination.sql`은 두 테이블에 `(status, captured_at, id)` 인덱스를 추가하며 기존 데이터·인덱스를 유지합니다. Linux 수집기와 로컬 SQLite에는 적용하지 않습니다. 운영 적용과 검증·게시 절차는 운영자가 별도로 수행합니다.
 
 ### Instagram 수집과 검수
 

@@ -17,7 +17,7 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: (to: string) => { throw new Error(`NEXT_REDIRECT:${to}`); } }));
 let memory: ReturnType<typeof memoryD1>, call: ReturnType<typeof api>, id: string;
 type Action = (form: FormData) => Promise<void>;
-type Props = { children?: ReactNode; name?: string; type?: string; value?: string | number; defaultValue?: string | number; defaultChecked?: boolean; required?: boolean; minLength?: number; maxLength?: number; action?: string | Action; href?: string };
+type Props = { children?: ReactNode; name?: string; type?: string; value?: string | number; defaultValue?: string | number; defaultChecked?: boolean; required?: boolean; minLength?: number; maxLength?: number; action?: string | Action; href?: string; 'aria-label'?: string };
 function elements(node: ReactNode): ReactElement<Props>[] {
   return Children.toArray(node).flatMap(child => isValidElement<Props>(child) ? [child, ...elements(child.props.children)] : []);
 }
@@ -131,7 +131,8 @@ test('ID lookup and next links reach a deal ranked beyond 200, including status 
     const tree = await page(params); pages++;
     const nodes = elements(tree);
     for (const form of forms(tree).filter(f => f.action.name === 'correctDeal')) seen.push(String(data(form.node).get('deal_id')));
-    const next = nodes.find(n => n.type === 'a' && n.props.href?.includes('deal_cursor='));
+    const nav = nodes.find(n => n.type === 'nav' && n.props['aria-label'] === '공구 페이지')!;
+    const next = elements(nav.props.children).find(n => n.type === 'a' && n.props.children === '다음 20건');
     if (!next) lastPage = true;
     else { const url = new URL(next.props.href!, 'http://localhost'); params = { deal_status: url.searchParams.get('deal_status')!, deal_cursor: url.searchParams.get('deal_cursor')! }; }
     expect(pages).toBeLessThan(12);

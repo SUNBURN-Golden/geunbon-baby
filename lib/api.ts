@@ -3,7 +3,7 @@ import { receiveStatus, collectionStatus } from './collection-status';
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
 import { dealsCopy } from './deals-copy';
-import { comparison, displayableOfficialPrice, EXTERNAL_SOURCES, type ExternalSourceId, type Model, type Deal, type Seller, type AdminDeal, type DealRevision } from './data';
+import { comparison, displayableOfficialPrice, EXTERNAL_SOURCES, type ExternalSourceId, type ExternalCandidate, type Model, type Deal, type Seller, type AdminDeal, type DealRevision } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
 export const MIN_SERVICE_TOKEN_LENGTH = 24;
 // Header values are trimmed in transit; surrounding whitespace usually means a paste error.
@@ -137,6 +137,72 @@ async function manageSeller(request: Request, parts: string[], env: Env) {
   return json({ error: '지원하지 않는 판매자 작업' }, 400);
 }
 
+export class AdminPaginationError extends Error {
+  constructor(public readonly code: 'invalid_cursor' | 'invalid_limit') { super(code); }
+}
+type ReviewList = 'queue' | 'candidates';
+type ReviewPageOptions = { limit?: number; cursor?: string | null };
+export type AdminQueueItem = {
+  id: string; source_url: string; account: string; text: string; kind: 'post' | 'story';
+  captured_at: string; status: 'pending'; reviewed_at: string | null;
+  suggestions: string | null; image_url: string | null;
+  attribution: string | null; attribution_note: string | null;
+};
+const REVIEW_LISTS = {
+  queue: { table: 'ingested_items', status: 'pending', maximum: 100 },
+  candidates: { table: 'external_candidates', status: 'candidate', maximum: 200 },
+} as const;
+const REVIEW_CURSOR_MAX = 2048;
+function encodeReviewCursor(list: ReviewList, capturedAt: string, id: string) {
+  return sessionBase64(new TextEncoder().encode(JSON.stringify([1, list, capturedAt, id])));
+}
+function reviewTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 64) return false;
+  // Keep the original SQL text boundary, including legacy date-only/SQLite UTC
+  // timestamps and ISO offsets. Normalizing it would change TEXT ordering.
+  let timestamp = value.replace(' ', 'T');
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(timestamp)) timestamp += 'Z';
+  return Number.isFinite(parseDate(timestamp));
+}
+export function decodeAdminReviewCursor(list: ReviewList, cursor: string): [string, string] {
+  try {
+    if (typeof cursor !== 'string' || cursor.length > REVIEW_CURSOR_MAX || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error();
+    const bytes = Uint8Array.from(atob(cursor.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - cursor.length % 4) % 4)), c => c.charCodeAt(0));
+    const tuple: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (!Array.isArray(tuple) || tuple.length !== 4 || tuple[0] !== 1 || tuple[1] !== list ||
+        !reviewTimestamp(tuple[2]) || typeof tuple[3] !== 'string' || !tuple[3].trim() || tuple[3].length > 256 ||
+        [...tuple[3]].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) ||
+        encodeReviewCursor(list, tuple[2], tuple[3]) !== cursor) throw new Error();
+    return [tuple[2], tuple[3]];
+  } catch { throw new AdminPaginationError('invalid_cursor'); }
+}
+async function adminReviewPage<T extends { id: string; captured_at: string }>(db: D1Database, list: ReviewList, options: ReviewPageOptions) {
+  const { table, status, maximum } = REVIEW_LISTS[list];
+  const { limit = maximum, cursor = null } = options;
+  if (!Number.isInteger(limit) || limit < 1 || limit > maximum) throw new AdminPaginationError('invalid_limit');
+  const boundary = cursor === null ? null : decodeAdminReviewCursor(list, cursor);
+  // Only these internal table names are interpolated; all values remain bound.
+  const rows = await all<T>(db, `SELECT * FROM ${table} WHERE status = ?
+    ${boundary ? 'AND (captured_at, id) > (?, ?)' : ''}
+    ORDER BY captured_at ASC, id ASC LIMIT ?`, status, ...(boundary ?? []), limit + 1);
+  const data = rows.slice(0, limit), last = data.at(-1);
+  return { data, next_cursor: rows.length > limit && last ? encodeReviewCursor(list, last.captured_at, last.id) : null };
+}
+// These shared reads are private: callers must authenticate before invoking them.
+export function adminQueuePage(db: D1Database, options: ReviewPageOptions = {}) {
+  return adminReviewPage<AdminQueueItem>(db, 'queue', options);
+}
+export function adminCandidatesPage(db: D1Database, options: ReviewPageOptions = {}) {
+  return adminReviewPage<ExternalCandidate>(db, 'candidates', options);
+}
+function reviewRequestOptions(params: URLSearchParams, list: ReviewList): ReviewPageOptions {
+  if (params.getAll('cursor').length > 1) throw new AdminPaginationError('invalid_cursor');
+  if (params.getAll('limit').length > 1) throw new AdminPaginationError('invalid_limit');
+  const rawLimit = params.get('limit');
+  if (rawLimit !== null && (!/^[0-9]+$/.test(rawLimit) || Number(rawLimit) < 1 || Number(rawLimit) > REVIEW_LISTS[list].maximum)) throw new AdminPaginationError('invalid_limit');
+  return { limit: rawLimit === null ? undefined : Number(rawLimit), cursor: params.get('cursor') };
+}
+
 // Admin lifecycle reads intentionally include private evidence and audit history.
 const REVISION_COLUMNS = 'id,deal_id,version,action,request_id,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at';
 type DealState = { id: string; status: 'published' | 'withdrawn'; version: number };
@@ -144,7 +210,7 @@ type DealPageOptions = { status?: string; limit?: number; cursor?: string | null
 function encodeCursor(checked: string, id: string) {
   return btoa(String.fromCharCode(...new TextEncoder().encode(`${checked}|${id}`))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-function pageOptions({ status = 'published', limit = 20, cursor = null }: DealPageOptions) {
+export function validateAdminDealPage({ status = 'published', limit = 20, cursor = null }: DealPageOptions) {
   if (!['published', 'withdrawn', 'all'].includes(status) || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('deal_page');
   let checked: string | null = null, id: string | null = null;
   if (cursor !== null) {
@@ -169,7 +235,7 @@ async function hydrateAdminDeals(db: D1Database, rows: Omit<AdminDeal, 'evidence
   });
 }
 export async function adminDealsPage(db: D1Database, options: DealPageOptions = {}) {
-  const { status, limit, checked, id } = pageOptions(options);
+  const { status, limit, checked, id } = validateAdminDealPage(options);
   const result = await db.prepare(`SELECT * FROM deals
     WHERE (? = 'all' OR status = ?) AND (? IS NULL OR checked < ? OR (checked = ? AND id < ?))
     ORDER BY checked DESC, id DESC LIMIT ?`).bind(status, status, checked, checked, checked, id, limit + 1).all<Omit<AdminDeal, 'evidence' | 'revisions'>>();
@@ -414,7 +480,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     if (path === 'admin/deals') {
       const params = new URL(request.url).searchParams;
       const options = { status: params.get('status') ?? 'published', limit: params.has('limit') ? Number(params.get('limit')) : 20, cursor: params.get('cursor') };
-      try { pageOptions(options); } catch { return json({ error: 'invalid_deal_page' }, 400); }
+      try { validateAdminDealPage(options); } catch { return json({ error: 'invalid_deal_page' }, 400); }
       return json(await adminDealsPage(env.DB, options));
     }
     if (admin && parts[1] === 'deals' && parts.length === 3) {
@@ -422,8 +488,16 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       return deal ? json({ data: deal }) : json({ error: 'deal_not_found' }, 404);
     }
     if (path === 'admin/sellers') return json({ data: await adminSellersData(env.DB) });
-    if (path === 'admin/candidates') return json({ data: await all(env.DB, "SELECT * FROM external_candidates WHERE status = 'candidate' ORDER BY captured_at LIMIT 200") });
-    if (path === 'admin/queue') return json({ data: await all(env.DB, "SELECT * FROM ingested_items WHERE status = 'pending' ORDER BY captured_at LIMIT 100") });
+    if (path === 'admin/queue' || path === 'admin/candidates') {
+      const list = path === 'admin/queue' ? 'queue' : 'candidates';
+      try {
+        const options = reviewRequestOptions(new URL(request.url).searchParams, list);
+        return json(await (list === 'queue' ? adminQueuePage(env.DB, options) : adminCandidatesPage(env.DB, options)));
+      } catch (error) {
+        if (error instanceof AdminPaginationError) return json({ error: error.code }, 400);
+        throw error;
+      }
+    }
   }
   if (request.method === 'POST' && admin && parts[1] === 'deals' && parts.length === 3) return manageDeal(request, parts[2], env);
   if (request.method === 'POST' && admin && parts[1] === 'sellers' && (parts.length === 2 || parts.length === 3)) return manageSeller(request, parts, env);
