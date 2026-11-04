@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Checkpoint, Data, EngineDb, RunState, StageHandler, StageResult } from './types';
 import { acquire, release, renew } from './lease';
-import { classify, errorCode, HALT_CODES, nextAttemptAt } from './retry';
+import { classify, errorCode, unsupportedTool, HALT_CODES, nextAttemptAt } from './retry';
 import { digest, midnight } from './util';
 import { CostCapError } from './types';
 type Run={id:string;profile_id:string;state:RunState;data:string};
@@ -100,7 +100,7 @@ export class JobEngine {
           attempts++;
           if(attempts<(this.options.maxAttempts??3)){phase='retry_wait';next=nextAttemptAt(this.store.now(),attempts,code,{next_at:Number((e as {next_at?:number}).next_at??0)},this.options.rng);}
         }
-        const data={...ck.data,...(category==='unsupported'?{unsupported_tool:(e as {tool?:string}).tool??'unknown'}:{})};
+        const data={...ck.data,...(category==='unsupported'?{unsupported_tool:unsupportedTool(e)}:{})};
         this.store.db.prepare('UPDATE engine_checkpoints SET phase=?,attempts=?,next_at=?,error_code=?,data=? WHERE id=?').run(phase,attempts,next,code,JSON.stringify(data),ck.id);release(this.store,ck);
         if(!['day','run','unsupported'].includes(category))this.store.db.prepare('INSERT INTO engine_failures VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET reason=excluded.reason,attempts=excluded.attempts,retryable=excluded.retryable,next_retry_at=excluded.next_retry_at,last_at=excluded.last_at').run(ck.id,runId,ck.stage,ck.item_key,code,attempts,Number(category==='retryable'),next||null,this.store.now(),this.store.now(),'{}');
         if(HALT_CODES.has(code)){this.options.onHalt?.(ck,code);this.store.db.prepare("UPDATE engine_runs SET state='halted' WHERE id=?").run(runId);}

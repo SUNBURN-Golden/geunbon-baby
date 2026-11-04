@@ -1,29 +1,36 @@
-import { expect, test } from 'vitest';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync } from 'node:fs';
+import { expect, test, vi } from 'vitest';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { RawStore } from '../crawler/engine';
 import { hashBytes } from '../crawler/engine/util';
-test('raw store rejects repository paths, symlink parents, symlink files and unsafe permissions',()=>{
- const dir=mkdtempSync(join(tmpdir(),'engine-raw-'));try{
+import { validateArtifact } from '../crawler/src/agamajung/pre-storage';
+const artifact={text:'Example stroller',fullTextAllowed:true,permissionBasis:'Synthetic fixture permission'};
+test('artifact store rejects repository paths, symlink parents/files and unsafe permissions',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'engine-inspected-'));try{
   expect(()=>new RawStore(process.cwd(),'fake')).toThrow('unsafe_directory');
   const loose=join(dir,'loose');mkdirSync(loose,{mode:0o755});chmodSync(loose,0o755);expect(()=>new RawStore(loose,'fake')).toThrow('unsafe_directory');
   symlinkSync(dir,join(dir,'link'));expect(()=>new RawStore(join(dir,'link','child'),'fake')).toThrow('unsafe_directory');
-  const raw=new RawStore(join(dir,'secure'),'fake'),data=Buffer.from('example_only'),hash=hashBytes(data);
-  symlinkSync(join(dir,'outside'),raw.path(hash,true));expect(()=>raw.write(data)).toThrow('unsafe_file');
+  const raw=new RawStore(join(dir,'secure'),'fake',process.cwd(),Date.now,validateArtifact),saved=raw.writeInspected(artifact);
+  rmSync(saved.path);symlinkSync(join(dir,'outside'),saved.path);expect(()=>raw.writeInspected(artifact)).toThrow('unsafe_file');
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
-test('atomic content-addressed files are 0600; spool is removed/expired and hash_only never writes a permanent file',()=>{
- const dir=mkdtempSync(join(tmpdir(),'engine-raw-'));try{
-  const raw=new RawStore(join(dir,'raw'),'fake'),data=Buffer.from('example_only'),hash=hashBytes(data),path=raw.write(data);
-  expect(statSync(path).mode&0o777).toBe(0o600);expect(existsSync(raw.path(hash))).toBe(false);expect(raw.read(hash)).toEqual(data);
-  utimesSync(path,new Date(0),new Date(0));raw.cleanup(86400001);expect(raw.read(hash)).toBeUndefined();
-  const permanent=raw.write(data,true);expect(permanent).toContain(`/fake/sha256/${hash.slice(0,2)}/${hash.slice(2,4)}/${hash}`);raw.write(data,true);expect(readdirSync(join(raw.root,'fake','sha256',hash.slice(0,2),hash.slice(2,4)))).toEqual([hash]);
+test('runtime inspection and retention authorization precede every content file open',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'engine-inspected-'));try{
+  const root=join(dir,'raw'),validate=vi.fn(validateArtifact),raw=new RawStore(root,'fake',process.cwd(),Date.now,validate);
+  expect(()=>raw.writeInspected({...artifact,fullTextAllowed:false})).toThrow('retention_not_allowed');
+  expect(()=>raw.writeInspected({...artifact,permissionBasis:''})).toThrow('retention_not_allowed');
+  expect(()=>raw.writeInspected({...artifact,text:'token: synthetic_private_value'})).toThrow('artifact_invalid');
+  expect(validate).toHaveBeenCalledTimes(1);expect(existsSync(join(root,'fake','inspected-v1'))).toBe(false);expect(existsSync(join(root,'spool'))).toBe(false);
+  expect(()=>new RawStore(join(dir,'unbound'),'fake').writeInspected(artifact)).toThrow('retention_not_allowed');
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
-test('spool TTL uses the injected clock even while the same process stays open',()=>{
- const dir=mkdtempSync(join(tmpdir(),'engine-raw-'));let now=Date.parse('2026-01-01T00:00:00Z');try{
-  const raw=new RawStore(join(dir,'raw'),'fake',process.cwd(),()=>now),data=Buffer.from('example_only'),path=raw.write(data);expect(raw.read(hashBytes(data))).toEqual(data);
-  now+=86400001;expect(raw.read(hashBytes(data))).toBeUndefined();expect(existsSync(path)).toBe(false);
+test('sanitized files use distinct hashes, 0600 and scoped reference-aware orphan cleanup',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'engine-inspected-'));let now=Date.now();try{
+  const raw=new RawStore(join(dir,'raw'),'fake',process.cwd(),()=>now,validateArtifact),saved=raw.writeInspected(artifact);
+  expect(saved.hash).toBe(hashBytes(Buffer.from(artifact.text)));expect(saved.path).toContain('/fake/inspected-v1/sha256/');
+  expect(statSync(saved.path).mode&0o777).toBe(0o600);expect(raw.readArtifact(saved.hash)).toEqual(Buffer.from(artifact.text));expect(raw.writeInspected(artifact)).toEqual(saved);
+  now+=86400001;raw.cleanup(new Set([saved.path]),now);expect(readFileSync(saved.path,'utf8')).toBe(artifact.text);
+  raw.cleanup(new Set(),now);expect(raw.readArtifact(saved.hash)).toBeUndefined();
  }finally{rmSync(dir,{recursive:true,force:true});}
 });

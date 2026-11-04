@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { expect, test, vi } from 'vitest';
 import { extractPangpang, PANGPANG_VERSION, pangpangIdentityAllowed } from '../crawler/lib/external/pangpang';
 import { eligibilityReason, buildPayload } from '../crawler/lib/external/filter';
@@ -196,12 +196,12 @@ test('synthetic 768-link collection enforces the existing page budget with compl
 test.each([true,false])('obsolete parse/label/extract/link caches with retained raw=%s cannot supply new evidence',async retained=>{
   const f=pipelineFixture(syntheticDetail,{entries:[origin+'/post/1'],max_pages:1});try{
     await collect(f);const originalCaptures=rows(f,'engine_captures'),originalFacts=rows(f,'engine_extracted'),cache=rows(f,'engine_cache');
-    if(retained)f.raw.write(Buffer.from(syntheticDetail),true);
+    if(retained){mkdirSync(f.raw.root+'/legacy',{recursive:true});writeFileSync(f.raw.root+'/legacy/body',syntheticDetail,{mode:0o600});}
     // Model pre-upgrade derivative keys while preserving the immutable captured history.
     for(const c of cache)f.store.db.prepare('UPDATE engine_cache SET tool=? WHERE content_hash=? AND stage=? AND tool=?').run('obsolete@0:'+String(c.tool),c.content_hash as string,c.stage as string,c.tool as string);
     f.advance(86400000);f.reopen();
     f.response((_u,headers)=>({status:headers['if-none-match']?304:200,headers:{'content-type':'text/html'},body:headers['if-none-match']?'':syntheticDetail}));
-    await collect(f,'two');expect(f.calls.at(-1)?.headers).toEqual(retained?{'if-none-match':'"example-v1"'}:{});
+    await collect(f,'two');expect(f.calls.at(-1)?.headers).toEqual({});
     expect(rows(f,'engine_captures')[0]).toEqual(originalCaptures[0]);
     for(const fact of originalFacts)expect(rows(f,'engine_extracted').find(r=>r.id===fact.id)).toEqual(fact);
     expect(rows(f,'engine_cache').filter(c=>c.stage==='parse')).toHaveLength(2);
@@ -210,10 +210,10 @@ test.each([true,false])('obsolete parse/label/extract/link caches with retained 
   }finally{f.close();}
 });
 
-test('current 304 caches include identity and permit idempotent fresh captures without reparsing removed spool',async()=>{
+test('current 304 caches include identity and permit idempotent fresh captures from inspected derivatives',async()=>{
   const f=pipelineFixture(syntheticDetail,{entries:[origin+'/post/1'],max_pages:1});try{
     const run=await collect(f),before=f.store.list('intake_receipts');expect(before).toHaveLength(1);
-    expect(f.raw.read(String(rows(f,'engine_captures')[0].content_hash))).toBeUndefined();
+    expect(f.raw.readArtifact(String(rows(f,'engine_captures')[0].content_hash))).toBeUndefined();
     f.reopen();await f.pipeline.run(run);expect(f.store.list('intake_receipts')).toEqual(before);
     f.response((_u,headers)=>({status:headers['if-none-match']?304:200,headers:{'content-type':'text/html'},body:headers['if-none-match']?'':syntheticDetail}));
     f.advance(86400000);await collect(f,'two');expect(f.calls.at(-1)?.headers['if-none-match']).toBe('"example-v1"');
@@ -226,20 +226,18 @@ test('current 304 caches include identity and permit idempotent fresh captures w
   }finally{f.close();}
 });
 
-test.each(['label','extract','service'])('unfinished old %s checkpoint restarts at parse with raw, fetch without it',async stage=>{
+test.each(['label','extract','service'])('unfinished old %s checkpoint restarts at fetch regardless of legacy files',async stage=>{
   for(const retained of [true,false]){
     const f=pipelineFixture(syntheticDetail,{entries:[origin+'/post/1'],max_pages:1});try{
       const run=f.pipeline.start({kind:'test',at:'one'});f.pipeline.seed(run);
       while(!rows(f,'engine_checkpoints').some(c=>c.stage===stage))expect(await f.pipeline.engine.step(run)).toBe(true);
-      const oldCaptures=rows(f,'engine_captures'),hash=String(oldCaptures[0].content_hash);
-      if(retained)f.raw.write(Buffer.from(syntheticDetail),true);
+      if(retained){mkdirSync(f.raw.root+'/legacy',{recursive:true});writeFileSync(f.raw.root+'/legacy/body',syntheticDetail,{mode:0o600});}
       // Simulate pre-upgrade unfinished state. Receipt has not been committed.
       f.store.db.prepare("UPDATE engine_checkpoints SET data=json_remove(data,'$.pangpang_version') WHERE run_id=? AND stage=?").run(run,stage);
       const caches=rows(f,'engine_cache');for(const c of caches)f.store.db.prepare('UPDATE engine_cache SET tool=? WHERE content_hash=? AND stage=? AND tool=?').run('obsolete@0:'+String(c.tool),c.content_hash as string,c.stage as string,c.tool as string);
-      if(!retained)f.raw.removeSpool(hash);
       const calls=f.calls.length;await f.pipeline.run(run);
       expect(f.pipeline.engine.run(run)?.state).toBe('finished');expect(f.pipeline.engine.failures()).toEqual([]);
-      expect(f.calls.length-calls).toBe(retained?0:1);expect(rows(f,'engine_captures')).toHaveLength(retained?1:2);
+      expect(f.calls.length-calls).toBe(1);expect(rows(f,'engine_captures')).toHaveLength(2);
       expect(f.store.list('intake_receipts')).toHaveLength(1);
       expect(parsed(f).at(-1)?.title).toBe('Example stroller fixture only');
     }finally{f.close();}

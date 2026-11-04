@@ -15,7 +15,7 @@ function captureAccessFailure(store:CollectorStore,cap:Capture):string|undefined
     const reason=JSON.parse(cap.data).reason;
     return accessCodes.includes(reason)?reason:cap.status;
   }
-  // Rendering can fail after a successful HTTP capture. Bind that failure to its
+  // Legacy rendering could fail after a successful HTTP capture. Bind that failure to its
   // exact capture, and ignore checkpoints that have since completed on resume.
   const failure=store.db.prepare("SELECT error_code FROM engine_checkpoints WHERE json_extract(data,'$.capture_id')=? AND phase='failed' AND error_code IN ('source_blocked','login_required','access_restricted','empty_page','robots_denied','visit_not_allowed') ORDER BY rowid DESC LIMIT 1").get(cap.id);
   return failure?String(failure.error_code):undefined;
@@ -23,6 +23,13 @@ function captureAccessFailure(store:CollectorStore,cap:Capture):string|undefined
 export function parsedFor(store:CollectorStore,cap:Capture,fact?:ExtractedFact):Parsed|undefined {
   const tool=fact?JSON.parse(fact.data).parse_tool:undefined;
   if(tool){const row=store.db.prepare("SELECT data FROM engine_cache WHERE content_hash=? AND stage='parse' AND tool=?").get(cap.content_hash,tool) as {data:string}|undefined;return row?JSON.parse(row.data):undefined;}
+  const meta=JSON.parse(cap.data);
+  if(meta.preparation_identity){
+    const type=store.db.prepare('SELECT content_type FROM engine_captures WHERE id=?').get(cap.id)?.content_type;
+    const row=store.db.prepare("SELECT data FROM engine_cache WHERE content_hash=? AND stage='parse' AND tool=?").get(cap.content_hash,`${meta.preparation_identity}:${cap.source_id}:${type}:${digest(cap.url_norm)}`) as {data:string}|undefined;
+    const parsed=row?JSON.parse(row.data) as Parsed:undefined;
+    return parsed?.inspection?.version==='inspection@2'?parsed:undefined;
+  }
   // Absence assessments require one unambiguous, versioned cache; old caches cannot prove absence.
   const rows=store.db.prepare("SELECT data FROM engine_cache WHERE content_hash=? AND stage='parse' AND instr(tool,?)>0").all(cap.content_hash,`:${cap.source_id}:`) as {data:string}[];
   const parsed=rows.map(r=>JSON.parse(r.data) as Parsed).filter(p=>p.inspection?.version==='inspection@1');

@@ -1,3 +1,4 @@
+import { validateArtifact } from './agamajung/pre-storage';
 import { loadSchedule, JOBS, type CollectionJob } from './collection-schedule';
 import { runCollectorJob } from './collector-job';
 import { jobDefinition } from './collector-runners';
@@ -27,8 +28,9 @@ export async function main(){
   requireThat(['schedule','serve','discover','discover-sources','source-candidates','sync','collect','engine-status','failures','backfill-engine','dedup-audit','explore-missing','missing-fields','missing-field-actions','missing-field-metrics'].includes(command),'command');
   if(['schedule','discover','collect','backfill-engine','discover-sources','explore-missing'].includes(command))requireThat(process.platform==='linux','linux_required');
   if(command==='schedule'||command==='explore-missing'||command==='collect'||command==='discover-sources'||command==='backfill-engine'||command==='failures'&&args[1]==='retry'){
-    requireThat(process.env.COLLECTOR_DB&&process.env.COLLECTOR_RAW_DIR,'engine_paths_required');
-    externalDirectory(dirname(process.env.COLLECTOR_DB!));externalDirectory(process.env.COLLECTOR_RAW_DIR!);
+    requireThat(process.env.COLLECTOR_DB,'engine_paths_required');
+    externalDirectory(dirname(process.env.COLLECTOR_DB!));
+    if(['schedule','collect'].includes(command)){requireThat(process.env.COLLECTOR_RAW_DIR,'engine_paths_required');externalDirectory(process.env.COLLECTOR_RAW_DIR!);}
   }
   if(['engine-status','failures','dedup-audit','source-candidates','missing-fields','missing-field-actions','missing-field-metrics'].includes(command)){requireThat(process.env.COLLECTOR_DB,'engine_paths_required');externalDirectory(dirname(process.env.COLLECTOR_DB!));}
   const auth={intakeToken:process.env.COLLECTOR_INTAKE_TOKEN??'',reviewToken:process.env.COLLECTOR_REVIEW_TOKEN??'',extensionOrigin:process.env.COLLECTOR_EXTENSION_ORIGIN??'',host:'127.0.0.1:4318'};
@@ -82,16 +84,17 @@ export async function main(){
       if(command==='failures'&&(args[1]??'list')==='list'){
         console.log(JSON.stringify(store.db.prepare('SELECT id,run_id,stage,item_key,reason,attempts,retryable,next_retry_at,first_at,last_at FROM engine_failures ORDER BY last_at').all()));return;
       }
-      requireThat(process.env.COLLECTOR_DB&&process.env.COLLECTOR_RAW_DIR,'engine_paths_required');
+      requireThat(process.env.COLLECTOR_DB,'engine_paths_required');
       externalDirectory(dirname(process.env.COLLECTOR_DB!));
       const scheduler=new Scheduler(store,(u,m,_trusted,opts)=>pinnedRequest(u,m,trusted,opts));
       if(command==='failures'&&args[1]==='retry'){
         requireThat(args[2],'command');
         const row=store.db.prepare('SELECT r.profile_id FROM engine_checkpoints c JOIN engine_runs r ON r.id=c.run_id WHERE c.id=?').get(args[2]) as {profile_id:string}|undefined;
         if(row?.profile_id===EXPLORER_RUN_ID){const runner=new MissingFieldRunner(store);console.log(JSON.stringify({run_id:runner.retryFailure(args[2])}));return;}
-        if(row?.profile_id===DISCOVERY_RUN_ID){const runner=new SourceDiscoveryRunner(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),loadDiscoveryConfig(),{scheduler});console.log(JSON.stringify({run_id:runner.engine.retryFailure(args[2])}));return;}
+        if(row?.profile_id===DISCOVERY_RUN_ID){const runner=new SourceDiscoveryRunner(store,loadDiscoveryConfig(),{scheduler});console.log(JSON.stringify({run_id:runner.engine.retryFailure(args[2])}));return;}
       }
-      const pipeline=new AgamajungPipeline(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung'),undefined,{scheduler,health:code=>console.error(`collect reason=${code}`)});
+      requireThat(process.env.COLLECTOR_RAW_DIR,'engine_paths_required');
+      const pipeline=new AgamajungPipeline(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung',process.cwd(),Date.now,validateArtifact),undefined,{scheduler,health:code=>console.error(`collect reason=${code}`)});
       if(command==='failures'){
         requireThat(args[1]==='retry'&&args[2],'command');console.log(JSON.stringify({run_id:pipeline.engine.retryFailure(args[2])}));return;
       }

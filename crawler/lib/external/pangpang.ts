@@ -1,4 +1,5 @@
 // Linux collector pure extractor. No transport, persistence, or whole-page fallback.
+import type { ParseBudget } from './parse-budget';
 import { canonicalUrl, filterText } from '../../../shared/privacy-rules';
 import { extractDates } from '../extract';
 import { parseHtml, selectAll, textOf, type El, type ParsedItem } from './parse';
@@ -43,8 +44,9 @@ function fields(scope:El,title:string,url:string,locator:string,linkIndex:number
     price:null,dates,seller_handle:handle,seller_name:seller||null,seller_url:handle?`https://www.instagram.com/${handle}/`:null,locator,link_index:linkIndex};
 }
 // approve must validate the ORIGINAL resolved URL, then the canonical destination.
-export function extractPangpang(html:string,pageUrl:string,now:Date,allowed:(url:string)=>boolean):PangpangPage {
-  const root=parseHtml(html),anchors=selectAll(root,'a[href]');
+export function extractPangpang(html:string,pageUrl:string,now:Date,allowed:(url:string)=>boolean,budget?:ParseBudget):PangpangPage {
+  const root=parseHtml(html,budget),anchors=selectAll(root,'a[href]');
+  if (budget && anchors.length > 4096) throw new Error('preparation_limit');
   const result:PangpangPage={version:PANGPANG_VERSION,detail:!!pangpangPost(pageUrl),products:[],outcomes:[],links_encountered:anchors.length};
   const groups=new Map<string,{index:number;el:El}[]>();
   for(const [index,el] of anchors.entries()){
