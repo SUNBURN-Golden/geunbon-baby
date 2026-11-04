@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fallback } from './fallback';
 import { Queue, atomicWrite, exists } from './queue';
-import { chains, readOnly, verdict } from './stages';
+import { chains, isReview, readOnly } from './stages';
 import { promptFor } from './prompts';
 import { buildReviewContext } from './review-context';
 import { cleanupWorktree } from './worktrees';
@@ -70,20 +70,38 @@ export class Daemon {
       return this.state.active ? 0 : 5000;
     }
     const task = this.state.active;
-    if (task.wakeAt && Date.parse(task.wakeAt) > this.now()) return Math.min(30000, Date.parse(task.wakeAt) - this.now());
     if (task.stage === 'done' || task.stage === 'failed') {
-      // Keep cleanup outside the stage catch: a cleanup error must not rewrite a
-      // successful merge or audit result as a new failure. Restart retries it.
       try {
-        await cleanupWorktree({ task, queueRoot: this.options.queue.root, repo: this.options.repo,
-          commonDir: this.commonDir, execute: this.options.execute, log: label => this.log(label) });
+        if (!task.cleanup && !task.finalization) {
+          try {
+            await cleanupWorktree({ task, queueRoot: this.options.queue.root, repo: this.options.repo,
+              commonDir: this.commonDir, execute: this.options.execute, log: label => this.log(label) });
+            task.cleanup = { status: 'complete', worktree: task.worktree };
+          } catch (error) {
+            if ((error as Error).message === 'Daemon stopping') throw error;
+            const reason = this.options.queue.scrub((error as Error).message);
+            const log = this.log('worktree-cleanup-error');
+            // Storage failure must not make diagnostic reporting fatal.
+            await atomicWrite(log, reason + '\n').catch(() => {});
+            let directory: 'present' | 'absent' | 'unknown' = 'unknown';
+            try { await lstat(task.worktree); directory = 'present'; }
+            catch (inspectionError) { if ((inspectionError as NodeJS.ErrnoException).code === 'ENOENT') directory = 'absent'; }
+            task.cleanup = { status: 'incomplete', reason, log, worktree: task.worktree, directory };
+          }
+        }
+        // Persist outcome before archival; deferred cleanup is never repeated.
+        await this.save();
+        await this.options.queue.finish(this.state);
+        return 0;
       } catch (error) {
-        await atomicWrite(this.log('worktree-cleanup-error'), this.options.queue.scrub((error as Error).message) + '\n');
-        throw error;
+        if ((error as Error).message === 'Daemon stopping') throw error;
+        const diagnostic = this.options.queue.scrub(`Terminal archival pending for ${task.id}: ${(error as Error).message}`);
+        await atomicWrite(this.log('archive-error'), diagnostic + '\n').catch(() => {});
+        console.error(diagnostic);
+        return 30000;
       }
-      await this.options.queue.finish(this.state);
-      return 0;
     }
+    if (task.wakeAt && Date.parse(task.wakeAt) > this.now()) return Math.min(30000, Date.parse(task.wakeAt) - this.now());
     try {
       switch (task.stage) {
         case 'prepare': await this.prepare(task); break;
@@ -168,10 +186,21 @@ export class Daemon {
     // Checkpoint the attempt number before invoking a potentially interrupted process.
     const invocation = ++task.attempts;
     await this.save();
-    const result = await fallback({ config: this.options.config, choices: chains[stage]!, prompt: promptFor(task, blueprint) + reviewContext,
+    const prompt = promptFor(task, blueprint) + reviewContext;
+    if (isReview(stage)) {
+      const key = createHash('sha256').update(JSON.stringify([task.id, stage, task.round, before, prompt,
+        chains[stage], this.options.config])).digest('hex');
+      if (task.reviewProgress?.key !== key) {
+        if (task.reviewProgress) (task.reviewHistory ??= []).push(task.reviewProgress);
+        task.reviewProgress = { key, cycle: 0, attempts: [] };
+      }
+      await this.save();
+    }
+    const result = await fallback({ config: this.options.config, choices: chains[stage]!, prompt,
       cwd: task.worktree, readOnly: readOnly(stage), execute: this.options.execute, now: this.now,
       unknownResetMs: this.options.unknownResetMs, protectedRoots: [this.options.repo, this.commonDir, this.options.queue.root],
-      logPath: (choice, index) => join(this.options.queue.root, 'logs', task.id, `${String(invocation).padStart(5, '0')}-${stage}-${task.round}-${index}-${choice.model}.log`),
+      review: isReview(stage) ? { progress: task.reviewProgress!, save: () => this.save() } : undefined,
+      logPath: (choice, index, phase, cycle) => join(this.options.queue.root, 'logs', task.id, `${String(invocation).padStart(5, '0')}-${stage}-${task.round}-${index}-${choice.model}${phase === 'clarification' ? '-clarification' : ''}-cycle${cycle ?? 0}.log`),
     });
     if (before && before !== await this.fingerprint(task)) throw new Error('Read-only stage modified the worktree; inspect logs and changes');
     if (result.kind === 'pause') { task.wakeAt = result.wakeAt; task.summary = result.summary; await this.save(); return; }
@@ -181,14 +210,14 @@ export class Daemon {
     switch (stage) {
       case 'design': await this.advance('design-review'); break;
       case 'design-review': {
-        const decision = verdict(result.answer);
+        const decision = result.decision;
         if (!decision) throw new Error('Design review did not return an unambiguous VERDICT');
         await this.advance(decision === 'CHANGES' ? 'design-revise' : 'build'); break;
       }
       case 'design-revise': await this.advance('build'); break;
       case 'build': await this.advance('build-review'); break;
       case 'build-review': case 're-review': {
-        const decision = verdict(result.answer);
+        const decision = result.decision;
         if (!decision) throw new Error('Build review did not return an unambiguous VERDICT');
         task.verdict = decision;
         if (decision === 'APPROVE') { task.reviewedFingerprint = before; await this.advance('validate'); }

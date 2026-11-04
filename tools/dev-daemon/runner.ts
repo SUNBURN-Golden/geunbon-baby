@@ -33,15 +33,15 @@ export function modelCommand(config: ModelsConfig, choice: Choice, prompt: strin
     // Devin's auto mode only approves read tools. Mounts also prevent any review
     // tool from changing the worktree, shared Git metadata, or queue state.
     return readOnly ? {
-      bin: 'bwrap', args: ['--die-with-parent', '--bind', '/', '/',
+      bin: 'bwrap', captureStreams: true, args: ['--die-with-parent', '--bind', '/', '/',
         ...[...new Set([...protectedRoots, cwd])].flatMap(root => ['--ro-bind', root, root]),
         '--dev', '/dev', '--proc', '/proc', '--', '/home/box/.local/bin/devin', ...args], cwd, env, log, input: { text: prompt, transport: 'file' },
-    } : { bin: '/home/box/.local/bin/devin', args, cwd, env, log, input: { text: prompt, transport: 'file' } };
+    } : { bin: '/home/box/.local/bin/devin', captureStreams: true, args, cwd, env, log, input: { text: prompt, transport: 'file' } };
   }
   if (model.provider === 'glm') delete env.CLAUDE_CONFIG_DIR;
   else env.CLAUDE_CONFIG_DIR = '/home/box/.claude-fable';
   return {
-    bin: 'claude', cwd, env, log, input: { text: prompt, transport: 'stdin' },
+    bin: 'claude', captureStreams: true, cwd, env, log, input: { text: prompt, transport: 'stdin' },
     args: ['-p', ...(model.provider === 'glm' && model.id === 'default' ? [] : ['--model', model.id]),
       ...(choice.effort ? ['--effort', choice.effort] : []), '--no-session-persistence',
       ...(readOnly ? ['--permission-mode', 'dontAsk', '--permission-prompts', 'none',
@@ -166,6 +166,10 @@ export class ProcessRunner {
     }
     await new Promise<void>(resolve => { if (log.destroyed) resolve(); else log.end(resolve); });
     if (logError) throw new Error('Cannot write process log');
+    if (command.captureStreams) {
+      await writeFile(`${command.log}.stdout`, stdout, { mode: 0o600 });
+      await writeFile(`${command.log}.stderr`, stderr, { mode: 0o600 });
+    }
     if (this.stopped) throw new Error('Daemon stopping');
     return { code: timedOut ? 124 : exceeded || inputFailed ? 1 : code, output, answer, stdout, stderr, stdoutTruncated };
   }

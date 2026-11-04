@@ -1,6 +1,8 @@
-import { mkdir, readFile, readdir, rename, writeFile, open, stat } from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
+import { constants } from 'node:fs';
+import { mkdir, readFile, readdir, rename, open, stat, lstat, link, unlink } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { redactor } from './runner';
 import type { State, Task } from './types';
@@ -12,8 +14,42 @@ export async function atomicWrite(path: string, data: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.${randomUUID()}.tmp`;
   const handle = await open(temp, 'wx', 0o600);
-  try { await handle.writeFile(data); await handle.sync(); } finally { await handle.close(); }
-  await rename(temp, path);
+  try {
+    try { await handle.writeFile(data); await handle.sync(); } finally { await handle.close(); }
+    await rename(temp, path); await syncDirectory(dirname(path));
+  }
+  finally { await unlink(temp).catch(() => {}); }
+}
+async function syncDirectory(path: string): Promise<void> {
+  const handle = await open(path, 'r');
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+const sameBytes = (bytes: Uint8Array | undefined, text: string) => bytes !== undefined && Buffer.compare(bytes, Buffer.from(text)) === 0;
+const digest = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
+async function archiveFile(path: string): Promise<Uint8Array | undefined> {
+  try {
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error('Archive conflict: unexpected file type');
+    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const opened = await handle.stat();
+      if (info.ino !== opened.ino || info.dev !== opened.dev || !opened.isFile()) throw new Error('Archive conflict: file changed during inspection');
+      return await handle.readFile();
+    } finally { await handle.close(); }
+  } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
+}
+/** Publish completed bytes exclusively. POSIX rename would overwrite a racer. */
+async function publishSummary(path: string, content: string): Promise<void> {
+  const temp = `${path}.${randomUUID()}.tmp`;
+  const handle = await open(temp, 'wx', 0o600);
+  try {
+    try { await handle.writeFile(content); await handle.sync(); } finally { await handle.close(); }
+    try { await link(temp, path); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    const published = await archiveFile(path);
+    if (!sameBytes(published, content)) throw new Error('Archive conflict: summary differs');
+    await syncDirectory(dirname(path));
+  } finally { await unlink(temp); }
 }
 export function parseTask(markdown: string, filename: string): { title: string; branch?: string; body: string } {
   const normalized = markdown.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
@@ -81,13 +117,72 @@ export class Queue {
   async finish(state: State): Promise<void> {
     const task = state.active!;
     if (!['done', 'failed'].includes(task.stage)) throw new Error('Cannot archive an unfinished task');
-    const folder = task.stage;
-    await writeFile(join(this.root, folder, `${task.id}.summary.md`), this.scrub(
-      `# ${task.title}\n\n${task.summary ?? task.stage}\n\nBranch: ${task.branch}\nPR: ${task.pr ?? 'none'}\nWorktree: ${task.worktree}\n`), { mode: 0o600 });
-    const source = join(this.root, 'running', task.file);
-    if (await exists(source)) await rename(source, join(this.root, folder, task.file));
+    if (![task.id, task.file].every(name => typeof name === 'string' && name !== '.' && name !== '..' &&
+      /^[a-zA-Z0-9_.-]+$/.test(name)) || task.file !== `${task.id}.md`) throw new Error('Archive conflict: unsafe task identity');
+    const folder = task.stage as 'done' | 'failed';
+    if (task.finalization && task.finalization.destination !== folder) throw new Error('Archive conflict: terminal destination changed');
+    const source = join(this.root, 'running', task.file), destination = join(this.root, folder, task.file);
+    const summaryPath = join(this.root, folder, `${task.id}.summary.md`);
+    // Inspect ALL three names before intent persistence or filesystem mutation.
+    const [original, archived, summary] = await Promise.all([archiveFile(source), archiveFile(destination), archiveFile(summaryPath)]);
+    if (!original && !archived) throw new Error('Archive conflict: source and destination are both missing');
+    const legacySummary = this.scrub(`# ${task.title}\n\n${task.summary ?? task.stage}\n\nBranch: ${task.branch}\nPR: ${task.pr ?? 'none'}\nWorktree: ${task.worktree}\n`);
+    const reviews = [...(task.reviewHistory ?? []), ...(task.reviewProgress ? [task.reviewProgress] : [])];
+    let content = task.finalization?.summary ?? this.scrub(
+      `# ${task.title}\n\n${task.summary ?? task.stage}\n\nBranch: ${task.branch}\nPR: ${task.pr ?? 'none'}\nWorktree: ${task.worktree}\n` +
+      (task.cleanup ? `\nCleanup: ${task.cleanup.status === 'complete' ? 'complete' : 'cleanup incomplete'}\n` +
+        (task.cleanup.reason ? `Reason: ${task.cleanup.reason}\nInspect directory/registration (may already be partially removed): ${task.cleanup.worktree}\nKnown directory state: ${task.cleanup.directory ?? 'unknown'}; registration requires inspection.\nDiagnostic log: ${task.cleanup.log ?? 'unavailable; see daemon diagnostic'}\n` : '') : '') +
+      (reviews.length ? `\nReview attempt records:\n${reviews.flatMap(review => review.attempts).flatMap(attempt =>
+        [attempt.original, ...(attempt.clarification ? [attempt.clarification] : [])].map(record =>
+          `- Model position ${attempt.modelIndex}, cycle ${attempt.cycle}: ${record.outcome ?? record.status}; answer source ${record.answerSource ?? 'unselected'}; log ${record.log}`)).join('\n')}\n` : ''));
+    if (!task.finalization && sameBytes(summary, legacySummary) && task.cleanup?.status !== 'incomplete') content = legacySummary;
+    if (!original && !task.finalization) {
+      // Legacy partial move has no digest. Validate identity against the saved
+      // checkpoint, never just the destination filename. Uncertain cases stop.
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(archived!);
+      if (task.kind === 'audit') {
+        if (text !== `# ${task.title}\n\n${task.body}\n` || task.branch !== `dev-daemon/${task.id}`) {
+          throw new Error('Archive conflict: legacy audit identity differs');
+        }
+      } else {
+        let parsed: ReturnType<typeof parseTask>;
+        try { parsed = parseTask(text, `${task.title}.md`); }
+        catch { throw new Error('Archive conflict: cannot validate legacy task identity'); }
+        if (parsed.body !== task.body || parsed.title !== task.title || (parsed.branch ?? `dev-daemon/${task.id}`) !== task.branch) {
+          throw new Error('Archive conflict: legacy task identity differs');
+        }
+      }
+    }
+    const expected = task.finalization?.digest ?? digest(original ?? archived!);
+    if ((original && digest(original) !== expected) || (archived && digest(archived) !== expected)) throw new Error('Archive conflict: task contents differ');
+    if (summary && !sameBytes(summary, content)) throw new Error('Archive conflict: summary differs');
+    if (!task.finalization) {
+      const intent = { destination: folder, digest: expected, summary: content };
+      const checkpoint = structuredClone(state);
+      checkpoint.active!.finalization = intent;
+      await this.save(checkpoint);
+      task.finalization = intent;
+    }
+    await publishSummary(summaryPath, content);
+    if (original) {
+      // Link is exclusive even if a destination appears after preflight. A
+      // crash with both names present resumes through digest validation.
+      try { await link(source, destination); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      const moved = await archiveFile(destination);
+      if (!moved || digest(moved) !== expected) throw new Error('Archive conflict: task appeared during publication');
+      await syncDirectory(dirname(destination));
+      const remaining = await archiveFile(source);
+      if (remaining && digest(remaining) !== expected) throw new Error('Archive conflict: source changed before removal');
+      if (remaining) await unlink(source);
+      await syncDirectory(dirname(source));
+    }
+    const completed = structuredClone(state);
+    delete completed.active;
+    await this.save(completed);
+    // A failed checkpoint must leave in-memory active available for retry too.
     delete state.active;
-    await this.save(state);
+    state.updatedAt = completed.updatedAt;
   }
   async lock(onLost?: () => void): Promise<() => Promise<void>> {
     const path = join(this.root, 'daemon.lock');

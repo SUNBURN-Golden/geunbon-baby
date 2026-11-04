@@ -1,0 +1,4 @@
+{
+  "answer": "warning: rejected a tool call that requires confirmation. Running in non-interactive mode. Use --permission-mode dangerous to auto-approve all tools.\nI'll explore the repository structure and relevant files to review this design.The registry README confirms executor integration is the intended follow-up. Now let me examine the execution paths that need gating.\n",
+  "diagnostics": ""
+}

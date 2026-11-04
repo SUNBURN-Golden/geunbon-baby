@@ -322,27 +322,25 @@ describe('preparing real local Git worktrees', () => {
     expect(f.calls.some(command => command.bin === 'npm')).toBe(false); expect(f.prs()).toEqual([]);
   });
 
-  it('keeps failed preparation checkpoint and summary while cleanup is blocked, then archives on restart', async () => {
+  it('archives blocked preparation once, preserving nested worktree edits across restart', async () => {
     const f = await fixture(true);
     const other = join(f.task.worktree, 'nested');
     await mkdir(f.task.worktree);
     await f.git(['worktree', 'add', other, f.task.branch]);
     await writeFile(join(other, 'tracked.txt'), 'keep nested edits\n');
-    await f.daemon.tick(); // Existing parent fails branch ownership verification.
+    await f.daemon.tick();
     expect(f.task.stage).toBe('failed');
     const summary = f.task.summary;
-    const before = await f.queue.load();
-    await expect(f.daemon.tick()).rejects.toThrow('another registered worktree');
-    expect(await f.queue.load()).toEqual(before);
-    expect(await readdir(join(f.queue.root, 'failed'))).toEqual([]);
-    expect(await readFile(join(other, 'tracked.txt'), 'utf8')).toBe('keep nested edits\n');
-    // Resolve the fixture obstruction without removing the other worktree or its edits.
-    await f.git(['worktree', 'move', other, join(f.root, 'recovered')]);
-    await rm(f.task.worktree, { recursive: true });
+    await f.daemon.tick();
+    expect(f.daemon.state.active).toBeUndefined();
+    const note = await readFile(join(f.queue.root, 'failed', 'A.summary.md'), 'utf8');
+    expect(note).toContain(summary);
+    expect(note).toContain('cleanup incomplete');
+    expect(note).toContain('another registered worktree');
     const restarted = new Daemon(f.daemonOptions); await restarted.init(); await restarted.tick();
     expect(restarted.state.active).toBeUndefined();
-    expect(await readFile(join(f.queue.root, 'failed', 'A.summary.md'), 'utf8')).toContain(summary);
-    expect(await readFile(join(f.root, 'recovered', 'tracked.txt'), 'utf8')).toBe('keep nested edits\n');
+    expect(await readFile(join(other, 'tracked.txt'), 'utf8')).toBe('keep nested edits\n');
+    expect(await readFile(join(f.queue.root, 'failed', 'A.summary.md'), 'utf8')).toBe(note);
   });
 
   it('applies the queue scrubber to preservation logs and archived summaries', async () => {
