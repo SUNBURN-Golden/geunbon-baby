@@ -1,3 +1,6 @@
+import { failureCode } from '../discovery/health';
+import { extractPangpang, isPangpang, pangpangIdentityAllowed, PANGPANG_VERSION, type PangpangPage, type PangpangProduct } from '../../lib/external/pangpang';
+import { pangpangLog, pangpangContext, reportPangpang, type PangpangLog } from '../discovery/pangpang-diagnostics';
 import { JobEngine, Downloader, RawStore, SqliteStorage, ToolAdapter, extractPdf, extractImage, renderDocument, DisabledModel } from '../../engine';
 import type { CostLedger } from '../../engine';
 import { agamajungCosts } from './cost-policy';
@@ -23,9 +26,9 @@ import { labelRules, type LabelId } from './labeler';
 import { AGAMAJUNG_LABELS, REQUIRED_FIELDS } from './vocab';
 import { claimSlots, conditionsKey, subjectRef } from './subject';
 type Capture={id:string;run_id:string;source_id:string;url_norm:string;content_hash:string;content_type:string;etag:string|null;last_modified:string|null;raw_ref:string|null;fetched_at:string;fetch_seq:number;byte_length:number|null;data:string};
-export type Parsed={inspection?:{version:string;complete:boolean;truncated:boolean;region:string;tool_status:string;locator_base:string;locator_space?:string;filter_changed?:boolean};text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[]};
+export type Parsed={inspection?:{version:string;complete:boolean;truncated:boolean;region:string;tool_status:string;locator_base:string;locator_space?:string;filter_changed?:boolean};text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[];pangpang?:PangpangPage};
 type Labeled={labels:LabelId[];status:'labeled'|'ambiguous';method:'rule'|'model'};
-export type PipelineOptions={offline?:boolean;scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;discoveryConfig?:DiscoveryConfig;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void};
+export type PipelineOptions={offline?:boolean;scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;discoveryConfig?:DiscoveryConfig;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void;linkLog?:PangpangLog};
 const string=(data:Data,key:string)=>String(data[key]??'');
 export class AgamajungPipeline {
   readonly engine:JobEngine;
@@ -38,7 +41,7 @@ export class AgamajungPipeline {
   readonly parseVersion:string;
   constructor(readonly store:CollectorStore,readonly raw:RawStore,profile=loadProfile(store.settings),readonly options:PipelineOptions={}){
     this.profile=validateProfile(profile,store.settings);
-    this.parseVersion=`parse@3:${profile.extractor_version}:${profile.labeler_version}:${digest(store.settings.sources.map(s=>[s.id,s.origin,s.selector,s.official_fields,s.kind]))}`;
+    this.parseVersion=`parse@4:${PANGPANG_VERSION}:${profile.extractor_version}:${profile.labeler_version}:${digest(store.settings.sources.map(s=>[s.id,s.origin,s.selector,s.official_fields,s.kind]))}`;
     this.storage=new SqliteStorage(store,{receipt:id=>store.receipt(id),submit:(id,payload,sourceId)=>store.submit('linux',id,payload,sourceId)});this.tools=options.tools??new ToolAdapter(store);
     this.ledger=agamajungCosts(store,profile);if(!options.offline)this.ledger.recoverOrphans();
     this.scheduler=options.scheduler?new Scheduler(store,options.scheduler.transport,options.scheduler.sleep,this.ledger,profile.limits.min_interval_ms):new Scheduler(store,undefined,undefined,this.ledger,profile.limits.min_interval_ms);
@@ -54,18 +57,32 @@ export class AgamajungPipeline {
   private capture(c:Checkpoint){const row=this.store.db.prepare('SELECT * FROM engine_captures WHERE id=?').get(string(c.data,'capture_id')) as Capture|undefined;requireThat(row,'capture_missing');return row!;}
   private toolFor(type:string){return type==='application/pdf'?'pdftotext':type.startsWith('image/')?'tesseract':undefined;}
   private async probeType(type:string){const tool=this.toolFor(type);if(tool)await this.tools.probeTool(tool,tool==='pdftotext'?['-v']:['--version']);}
-  private cacheTool(sourceId:string,type:string,version:string){
+  private cacheTool(sourceId:string,type:string,version:string,url?:string){
     const tool=this.toolFor(type),support=tool?this.store.db.prepare('SELECT status,version FROM engine_tool_support WHERE tool=?').get(tool):undefined;
-    return `${version}:${sourceId}:${tool?digest([tool,support??null]):'text'}`;
+    return `${version}:${sourceId}:${tool?digest([tool,support??null]):'text'}${this.pangpang(sourceId)?`:${PANGPANG_VERSION}:${digest(url??'')}`:''}`;
   }
-  private cache<T>(cap:Capture,stage:string,version:string){return this.storage.cached<T>(cap.content_hash,stage,this.cacheTool(cap.source_id,cap.content_type,version));}
+  private cache<T>(cap:Capture,stage:string,version:string){return this.storage.cached<T>(cap.content_hash,stage,this.cacheTool(cap.source_id,cap.content_type,version,cap.url_norm));}
   private reusable(hash:string,source:SourcePolicy,type:string,url:string,depth:number){
     if(this.raw.read(hash))return true;
     const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
-    const links=source.adapter==='cpsc'||!/text|xml|html/.test(type)||this.storage.cached(hash,'source-links',linkCacheTool(cfg,url,source.id,depth));
-    return !!links&&['parse','label','extract'].every(stage=>this.storage.cached(hash,stage,this.cacheTool(source.id,type,this.version(stage))));
+    const links=source.adapter==='cpsc'||!/text|xml|html/.test(type)||this.storage.cached(hash,'source-links',this.linksTool(source,url,depth,cfg));
+    if(isPangpang(source)&&links){const parsed=this.storage.cached<Parsed>(hash,'parse',this.cacheTool(source.id,type,this.parseVersion,url));if(parsed?.eligible===false)return true;}
+    return !!links&&['parse','label','extract'].every(stage=>this.storage.cached(hash,stage,this.cacheTool(source.id,type,this.version(stage),url)));
   }
-  private version(stage:string){return stage==='parse'?this.parseVersion:stage==='label'?this.profile.labeler_version:`${this.profile.extractor_version}:${this.parseVersion}`;}
+  private version(stage:string){return stage==='parse'?this.parseVersion:stage==='label'?`${this.profile.labeler_version}:${this.parseVersion}`:`${this.profile.extractor_version}:${this.parseVersion}`;}
+  private pangpang(id:string){const s=this.store.settings.sources.find(s=>s.id===id);return !!s&&isPangpang(s);}
+  private labeler(id:string){return this.pangpang(id)?`${this.profile.labeler_version}:${PANGPANG_VERSION}`:this.profile.labeler_version;}
+  private extractor(id:string){return this.pangpang(id)?`${this.profile.extractor_version}:${PANGPANG_VERSION}`:this.profile.extractor_version;}
+  private linksTool(s:SourcePolicy,url:string,depth:number,cfg:DiscoveryConfig){return `${linkCacheTool(cfg,url,s.id,depth)}${isPangpang(s)?`:${PANGPANG_VERSION}`:''}`;}
+  private current(c:Checkpoint){
+    if(this.pangpang(String(c.data.source_id))&&(c.data.pangpang_version!==PANGPANG_VERSION||c.data.pangpang_parse_version!==this.parseVersion)){
+      const cap=this.capture(c);c.data.restart_stage=this.raw.read(cap.content_hash)?'parse':'fetch';throw new Error('input_unavailable');
+    }
+  }
+  private productEligibility(p:PangpangProduct):'excluded_category'|'profile_category_mismatch'|null {
+    const text=`${p.title} ${p.category_text}`.toLocaleLowerCase();
+    return this.profile.excluded_keywords.some(k=>text.includes(k.toLocaleLowerCase()))?'excluded_category':this.eligible(text)?null:'profile_category_mismatch';
+  }
   private persistReservation(c:Checkpoint,source:SourcePolicy){
     const url=string(c.data,'url'),existing=this.store.recordByUrl(url);
     const r=this.store.reserve('linux',{clip_id:digest([c.run_id,c.item_key]),attempt_id:digest([c.id,c.attempts]),url,brand:source.brand,collection_method:source.browser?'browser_extract':'auto_discovery',operation:existing?.last_checked_at?'recheck':'new_body',policy_version:this.store.settings.policy_version});
@@ -111,10 +128,20 @@ export class AgamajungPipeline {
     }
     this.store.transaction(()=>this.store.db.prepare("UPDATE engine_runs SET data=json_set(data,'$.collection_seeded',1) WHERE id=?").run(runId));
   }
-  async run(runId:string){this.ledger.open(runId);return this.engine.runUntilIdle(runId);}
+  async run(runId:string){
+    this.ledger.open(runId);const result=await this.engine.runUntilIdle(runId);
+    for(const s of this.store.settings.sources.filter(s=>s.enabled&&isPangpang(s)&&this.profile.domain_policy.sources[s.id])){
+      const count=(stage:string,done=false)=>(this.store.db.prepare("SELECT count(*) n FROM engine_checkpoints WHERE run_id=? AND stage=? AND json_extract(data,'$.source_id')=? AND (?=0 OR phase='done') AND (?<>'discover' OR json_extract(data,'$.depth')>0)").get(runId,stage,s.id,Number(done),stage) as {n:number}).n;
+      const failures=this.store.db.prepare("SELECT f.reason FROM engine_failures f JOIN engine_checkpoints c ON c.id=f.id WHERE f.run_id=? AND c.stage='fetch' AND json_extract(c.data,'$.source_id')=?").all(runId,s.id) as {reason:string}[];
+      const transport_failures:Record<string,number>={};
+      for(const f of failures){const code=failureCode(new Error(f.reason));transport_failures[code]=(transport_failures[code]??0)+1;}
+      (this.options.linkLog??pangpangLog)({...pangpangContext('collect',runId,'run'),event:'run_summary',scheduled:count('discover'),submitted:count('service',true),transport_failures});
+    }
+    return result;
+  }
   private parsed(cap:Capture){const p=this.cache<Parsed>(cap,'parse',this.parseVersion);if(!p)throw new Error('input_unavailable');return p;}
   private serviceInput(c:Checkpoint):{payload:ClipPayload;provenance:ProvenanceInput} {
-    const cap=this.capture(c),extractor=String(c.data.extractor_version??this.profile.extractor_version);
+    const cap=this.capture(c),extractor=String(c.data.extractor_version??this.extractor(cap.source_id));
     const rows=this.store.db.prepare('SELECT id,data FROM engine_extracted WHERE capture_id=? AND extractor=? ORDER BY id').all(cap.id,extractor) as {id:string;data:string}[];
     // Filter each claim separately so rejected claims cannot shift its identity.
     const parseTool=rows[0]?JSON.parse(rows[0].data).parse_tool:undefined;
@@ -140,12 +167,14 @@ export class AgamajungPipeline {
         try{result=await new Downloader(new SchedulerFetcher(this.scheduler,source)).download(url,{previous,reusable:h=>this.reusable(h,source,previous?.content_type??'text/html',url,Number(c.data.depth)),render:policy.render});}
         catch(e){
           const code=(e as {code?:string;message?:string}).code??(e as Error).message;
-          if(['source_blocked','login_required','access_restricted','empty_page','source_response','robots_denied','visit_not_allowed'].includes(code)){
+          if(isPangpang(source))(this.options.linkLog??pangpangLog)({...pangpangContext('collect',c.run_id,url),event:'transport',reason:failureCode(e)});
+          if(['source_blocked','login_required','access_restricted','empty_page','source_response','robots_denied','visit_not_allowed','redirect_identity'].includes(code)){
             const seq=(this.store.db.prepare('SELECT coalesce(max(fetch_seq),0)+1 n FROM engine_captures WHERE run_id=? AND source_id=? AND url_norm=?').get(c.run_id,source.id,url) as {n:number}).n;
             this.store.transaction(()=>this.storage.capture({id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:code==='source_response'&&Number((e as {http_status?:number}).http_status)!==401?'http_error':code==='source_blocked'?'blocked':'restricted',content_hash:null,content_type:null,byte_length:null,etag:null,last_modified:null,raw_ref:null,prev_capture_id:previous?.id??null,data:{reason:code}}));
           }
           throw e;
         }
+        if(isPangpang(source))requireThat(pangpangIdentityAllowed(url,result.response.finalUrl??url),'redirect_identity');
         const type=(result.response.headers['content-type']??previous?.content_type??'text/html').split(';')[0].trim().toLowerCase();
         requireThat(policy.content_types.some(t=>type===t||t.endsWith('/*')&&type.startsWith(t.slice(0,-1))),'content_type');
         await this.probeType(type);
@@ -165,7 +194,7 @@ export class AgamajungPipeline {
       }),
       render:handler('render@1',async c=>{
         const cap=this.capture(c),s=this.source(c),policy=this.profile.domain_policy.sources[s.id];
-        if(!policy.render||!/html/.test(cap.content_type)||this.cache(cap,'parse',this.parseVersion))return {};
+        if(isPangpang(s)||!policy.render||!/html/.test(cap.content_type)||this.cache(cap,'parse',this.parseVersion))return {};
         if(this.cache(cap,'render',this.parseVersion))return {};
         const bytes=this.raw.read(cap.content_hash);if(!bytes)throw new Error('input_unavailable');
         const finalUrl=String(JSON.parse(cap.data).final_url??cap.url_norm);
@@ -175,7 +204,7 @@ export class AgamajungPipeline {
         const renderedText=snap.regionText??snap.text;
         const parsed:Parsed={text:this.cleanLines(renderedText),inspection:this.inspection(renderedText,s,'supported'),eligible:this.eligible(`${snap.text} ${snap.title??''}`),title:filterText(snap.title??'',200),...(snap.documentOrigin?{document_origin:canonicalUrl(snap.documentOrigin)}:{})};
         return {data:{rendered:parsed}};
-      },(result,c)=>{if(result.data?.rendered){const cap=this.capture(c);this.storage.cache(cap.content_hash,'render',this.cacheTool(cap.source_id,cap.content_type,this.parseVersion),result.data.rendered);}return {data:{}};}),
+      },(result,c)=>{if(result.data?.rendered){const cap=this.capture(c);this.storage.cache(cap.content_hash,'render',this.cacheTool(cap.source_id,cap.content_type,this.parseVersion,cap.url_norm),result.data.rendered);}return {data:{}};}),
       parse:handler(this.parseVersion,async c=>{
         const cap=this.capture(c);await this.probeType(cap.content_type);if(this.cache(cap,'parse',this.parseVersion))return {};
         const s=this.source(c),rendered=this.cache<Parsed>(cap,'render',this.parseVersion);
@@ -192,6 +221,19 @@ export class AgamajungPipeline {
           } else if(s.adapter==='cpsc'){
             const found=discoverLinks(new TextDecoder().decode(bytes),cap.url_norm,'cpsc').filter(f=>this.eligible(`${f.title??''} ${f.recall?.name??''}`));
             parsed={text:found.map(f=>filterText(`Recall: ${f.title??f.recall?.name??''}`)).join('\n'),assertions:privacyFilter({assertions:found.filter(f=>f.recall).slice(0,30).map(f=>({field:'recalls',value:f.recall,quote:f.title??f.recall!.name,locator:`$.Recall[RecallID=${f.recall!.id}]`}))}).assertions};
+          } else if(isPangpang(s)){
+            const finalUrl=String(JSON.parse(cap.data).final_url??cap.url_norm);
+            requireThat(pangpangIdentityAllowed(cap.url_norm,finalUrl)&&visitAllowed(finalUrl,s),'redirect_identity');
+            const page=extractPangpang(new TextDecoder().decode(bytes),finalUrl,new Date(cap.fetched_at),url=>visitAllowed(url,s));
+            const product=page.detail?page.products[0]:undefined;
+            if(page.detail&&!product){
+              reportPangpang(page,pangpangContext('collect',c.run_id,cap.id),this.options.linkLog??pangpangLog,p=>this.productEligibility(p));
+              throw new Error('region_missing');
+            }
+            const text=product?.text??'';
+            parsed={text:this.cleanLines(text),eligible:!!product&&!this.productEligibility(product),...(product?{title:product.title}:{}),pangpang:page,
+              inspection:{...this.inspection(text,s,'supported'),region:product?.locator??'pangpang:listing',locator_base:product?.locator??'pangpang:listing'},
+              assertions:product?.dates?[{field:'group_buy_terms',value:{date:product.dates.starts_at,terms:product.dates.raw},quote:product.dates.raw,locator:`${product.locator}:schedule`}]:[]};
           } else {
             const body=new TextDecoder().decode(bytes),root=parseHtml(body),region=s.selector?selectAll(root,s.selector)[0]:root;
             requireThat(region,'region_missing');
@@ -205,9 +247,27 @@ export class AgamajungPipeline {
         return {data:{parsed}};
       },(result,c)=>{
         const cap=this.capture(c),parsed=result.data?.parsed as Parsed|undefined;
-        if(parsed)this.storage.cache(cap.content_hash,'parse',this.cacheTool(cap.source_id,cap.content_type,this.parseVersion),parsed);
+        if(parsed)this.storage.cache(cap.content_hash,'parse',this.cacheTool(cap.source_id,cap.content_type,this.parseVersion,cap.url_norm),parsed);
+        const s=this.source(c),bytes=this.raw.read(cap.content_hash),output=parsed??this.parsed(cap);
+        if(isPangpang(s)){
+          const page=output.pangpang;if(!page)throw new Error('input_unavailable');
+          const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
+          this.storage.cache(cap.content_hash,'source-links',this.linksTool(s,cap.url_norm,Number(c.data.depth),cfg),{version:PANGPANG_VERSION,depth:Number(c.data.depth),source_id:s.id,links:page.products.map(p=>({url:p.source_url,locator:p.locator})),outcomes:page.outcomes});
+          let scheduled=0;const deferred=new Set<string>();
+          if(!page.detail){
+            const max=Math.min(s.max_pages,this.store.settings.limits.max_pages);
+            let count=(this.store.db.prepare("SELECT count(*) n FROM engine_checkpoints WHERE run_id=? AND stage='discover' AND json_extract(data,'$.source_id')=?").get(c.run_id,s.id) as {n:number}).n;
+            for(const p of page.products){
+              const url=p.source_url,key=digest([s.id,url]);
+              if(this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND stage='discover' AND item_key=?").get(c.run_id,key))continue;
+              if(Number(c.data.depth)>=this.store.settings.limits.max_depth||s.browser||count>=max){deferred.add(url);continue;}
+              this.engine.enqueueInside(c.run_id,'discover',key,{source_id:s.id,url,depth:Number(c.data.depth)+1},digest(url));count++;scheduled++;
+              (this.options.linkLog??pangpangLog)({...pangpangContext('collect',c.run_id,cap.id),event:'progress',stage:'scheduled',product_ref:digest(url)});
+            }
+          }
+          reportPangpang(page,pangpangContext('collect',c.run_id,cap.id),this.options.linkLog??pangpangLog,p=>this.productEligibility(p),deferred,scheduled);
+        }else {
         // Discovery uses the existing adapter and the same allow policy; never follows external sellers.
-        const s=this.source(c),bytes=this.raw.read(cap.content_hash);
         if(bytes&&s.adapter!=='cpsc'&&/text|xml|html/.test(cap.content_type)){
           // Preserve candidate identifiers BEFORE discoverLinks/canonicalUrl strips them.
           const cfg=this.options.discoveryConfig??loadDiscoveryConfig();
@@ -224,12 +284,16 @@ export class AgamajungPipeline {
             this.engine.enqueueInside(c.run_id,'discover',key,{source_id:s.id,url,depth:Number(c.data.depth)+1},digest(url));count++;
           }
         }
-        this.raw.removeSpool(cap.content_hash);
-        const output=parsed??this.parsed(cap),eligible=output.eligible??this.eligible(output.text);
-        return {nextStage:eligible?undefined:null,data:{eligible}};
+        }
+        // Multiple pending captures may share a body while requiring different identity-bound parses.
+        const pendingBody=isPangpang(s)&&this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND id<>? AND stage IN ('render','parse') AND phase IN ('pending','leased','retry_wait','deferred') AND json_extract(data,'$.content_hash')=? LIMIT 1").get(c.run_id,c.id,cap.content_hash);
+        if(!pendingBody)this.raw.removeSpool(cap.content_hash);
+        const eligible=output.eligible??this.eligible(output.text);
+        return {nextStage:eligible?undefined:null,data:{eligible,...(isPangpang(s)?{pangpang_version:PANGPANG_VERSION,pangpang_parse_version:this.parseVersion,restart_stage:'fetch'}:{})}};
       }),
       label:handler(this.profile.labeler_version,async c=>{
-        const cap=this.capture(c),cached=this.cache<Labeled>(cap,'label',this.profile.labeler_version);if(cached)return {data:{label_result:cached}};
+        this.current(c);
+        const cap=this.capture(c),cached=this.cache<Labeled>(cap,'label',this.version('label'));if(cached)return {data:{label_result:cached}};
         const parsed=this.parsed(cap),result=labelRules(parsed.text);let labeled:Labeled={...result,method:'rule'};
         if(result.status==='ambiguous'&&this.profile.model.enabled){
           if(!this.options.model||this.options.model instanceof DisabledModel)throw Object.assign(new Error('unsupported'),{tool:'model'});
@@ -244,11 +308,12 @@ export class AgamajungPipeline {
         return {data:{label_result:labeled}};
       },(result,c)=>{
         const cap=this.capture(c),labeled=result.data!.label_result as Labeled;
-        this.storage.cache(cap.content_hash,'label',this.cacheTool(cap.source_id,cap.content_type,this.profile.labeler_version),labeled);
-        for(const label of labeled.labels)this.storage.label({id:digest([cap.id,this.profile.labeler_version,label]),capture_id:cap.id,label:AGAMAJUNG_LABELS[label],method:labeled.method,status:labeled.status,fact_status:labeled.method==='model'?'ai_inference':'unverified',extractor:this.profile.labeler_version,data:{}});
+        this.storage.cache(cap.content_hash,'label',this.cacheTool(cap.source_id,cap.content_type,this.version('label'),cap.url_norm),labeled);
+        for(const label of labeled.labels)this.storage.label({id:digest([cap.id,this.labeler(cap.source_id),label]),capture_id:cap.id,label:AGAMAJUNG_LABELS[label],method:labeled.method,status:labeled.status,fact_status:labeled.method==='model'?'ai_inference':'unverified',extractor:this.labeler(cap.source_id),data:{}});
         return {data:{label_status:labeled.status}};
       }),
       extract:handler(this.profile.extractor_version,async c=>{
+        this.current(c);
         const cap=this.capture(c),source=this.source(c),parsed=this.parsed(cap);
         let assertions=this.cache<AssertionInput[]>(cap,'extract',this.version('extract'));
         if(!assertions){
@@ -257,22 +322,24 @@ export class AgamajungPipeline {
         return {data:{assertions}};
       },(result,c)=>{
         const cap=this.capture(c),source=this.source(c),neutral=result.data!.assertions as AssertionInput[];
-        this.storage.cache(cap.content_hash,'extract',this.cacheTool(cap.source_id,cap.content_type,this.version('extract')),neutral);
+        this.storage.cache(cap.content_hash,'extract',this.cacheTool(cap.source_id,cap.content_type,this.version('extract'),cap.url_norm),neutral);
         const assertions=neutral.map(a=>a.field==='official_msrp'&&!(source.official_fields.includes('official_msrp')&&a.msrp_explicit&&['manufacturer','importer'].includes(source.kind))?{...a,field:'clue_price' as const}:a),subject=subjectRef({target_model_id:c.data.target_model_id as string|undefined,assertions},cap.url_norm),slots=claimSlots(assertions);
         assertions.forEach((a,index)=>{
           const key=conditionsKey(a,['clue_price','group_buy_terms','shipping_fee'].includes(a.field)?new URL(cap.url_norm).origin:'');
           const previous=this.store.db.prepare('SELECT e.* FROM engine_extracted e JOIN engine_captures c ON e.capture_id=c.id WHERE e.subject_ref=? AND e.field=? AND e.conditions_key=? AND c.source_id=? AND e.collected_at<? ORDER BY e.collected_at DESC,e.id DESC LIMIT 1').get(subject,a.field,key,cap.source_id,cap.fetched_at) as {data:string;collected_at:string;change_window_start:string|null}|undefined;
           const stated=a.conditions?.effective_at,validDate=stated&&Number.isFinite(Date.parse(stated));
           const window=previous?(stable(JSON.parse(previous.data).assertion.value)===stable(a.value)?previous.change_window_start:previous.collected_at):null;
-          this.storage.extracted({id:digest([cap.id,this.profile.extractor_version,subject,a.field,key,slots[index]]),capture_id:cap.id,subject_ref:subject,field:a.field,conditions_key:key,claim_slot:slots[index],source_url:cap.url_norm,locator:a.locator,quote:a.quote.slice(0,300),collected_at:cap.fetched_at,effective_from:validDate?new Date(stated!).toISOString():cap.fetched_at,effective_from_basis:validDate?'stated':'observed',change_window_start:window,fact_status:'source_claim',extractor:this.profile.extractor_version,data:{assertion:a,parse_tool:this.cacheTool(cap.source_id,cap.content_type,this.parseVersion),discovery_depth:Number(c.data.depth)}});
+          this.storage.extracted({id:digest([cap.id,this.extractor(cap.source_id),subject,a.field,key,slots[index]]),capture_id:cap.id,subject_ref:subject,field:a.field,conditions_key:key,claim_slot:slots[index],source_url:cap.url_norm,locator:a.locator,quote:a.quote.slice(0,300),collected_at:cap.fetched_at,effective_from:validDate?new Date(stated!).toISOString():cap.fetched_at,effective_from_basis:validDate?'stated':'observed',change_window_start:window,fact_status:'source_claim',extractor:this.extractor(cap.source_id),data:{assertion:a,parse_tool:this.cacheTool(cap.source_id,cap.content_type,this.parseVersion,cap.url_norm),discovery_depth:Number(c.data.depth)}});
         });
-        return {data:{extractor_version:this.profile.extractor_version,completeness_stage:'preliminary',completeness:Object.fromEntries(REQUIRED_FIELDS.map(field=>[field,assertions.some(a=>a.field===field&&requiredClaimValid(a))?'present':'missing']))}};
+        return {data:{extractor_version:this.extractor(cap.source_id),completeness_stage:'preliminary',completeness:Object.fromEntries(REQUIRED_FIELDS.map(field=>[field,assertions.some(a=>a.field===field&&requiredClaimValid(a))?'present':'missing']))}};
       }),
       service:{kind:'external',version:'service@1',recover:c=>this.serviceRecovery(c),run:async c=>{
         const old=this.serviceRecovery(c);if(old)return old;
+        this.current(c);
         const oldReservation=c.data.reservation_id?this.store.reservation('linux',String(c.data.reservation_id)):undefined;
         if(!oldReservation||((c.data.parent_run||c.data.carried_from)&&(oldReservation.submit_until??0)<this.store.now()))this.persistReservation(c,this.source(c));
         const source=this.source(c),input=this.serviceInput(c),receipt=this.store.submitExtracted(string(c.data,'reservation_id'),input.payload,input.provenance,source.adapter==='cpsc'?source.id:undefined);
+        if(isPangpang(source))(this.options.linkLog??pangpangLog)({...pangpangContext('collect',c.run_id,input.provenance.capture_id),event:'progress',stage:'submitted',product_ref:digest(string(c.data,'url'))});
         return {outputRef:receipt.id};
       }},
     };

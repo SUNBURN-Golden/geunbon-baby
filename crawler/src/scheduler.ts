@@ -118,7 +118,7 @@ export class Scheduler {
     }
   }
   private async fetchWithin(raw:string,source:SourcePolicy,hop:number,opts:DocumentRequestOptions):Promise<NetworkResponse> {
-    requireThat(hop<=3&&visitAllowed(raw,source)&&(!opts.validateUrl||opts.validateUrl(raw)),'visit_not_allowed',403);const u=new URL(raw),robots=await this.robotsFor(source);requireThat(robotsAllows(robots,u.pathname+u.search),'robots_denied',403);
+    requireThat(hop<=3&&(!opts.validateUrl||opts.validateUrl(raw))&&visitAllowed(raw,source),'visit_not_allowed',403);const u=new URL(raw),robots=await this.robotsFor(source);requireThat(robotsAllows(robots,u.pathname+u.search),'robots_denied',403);
     const res=await this.raw(u,opts);if(res.status===304&&Object.keys(opts.headers??{}).some(k=>/^if-(none-match|modified-since)$/i.test(k)))return res;if(res.status>=300&&res.status<400){requireThat(res.headers.location,'redirect_missing');const next=new URL(res.headers.location,u);if(/\/(?:accounts\/login|login|checkpoint)(?:\/|$)/i.test(next.pathname))throw new Error('login_required');return this.fetchWithin(next.href,source,hop+1,opts);}if(!(res.status>=200&&res.status<300))throw Object.assign(new Error('source_response'),{http_status:res.status});return res;
   }
 }
