@@ -3,11 +3,12 @@ import { discoverLinks, type Found } from './adapters';
 import { hasNumericPrice, type PageMeasure } from './health';
 import { visitAllowed, sourceFor, type CollectorConfig, type SourcePolicy } from '../source-policy';
 import { CollectorError } from '../store';
-import { parseItems, type ParsedItem } from '../../lib/external/parse';
-import { buildPayload, eligibilityReason, type ExternalPayload } from '../../lib/external/filter';
+import { parseItemsDetailed, type DetailedParse, type ParsedItem } from '../../lib/external/parse';
+import { buildPayload, evaluatePayload, eligibilityReason, type ExternalPayload } from '../../lib/external/filter';
+import { isSnapup, pageEligibilityDiagnostics, type PageEligibilityDiagnostics } from './eligibility-diagnostics';
 import type { ClipPayload } from '../../../shared/collection-schema';
 
-export type Measured = PageMeasure & {found:Found[];pangpang?:PangpangPage;listing?:{item:ParsedItem;legacy:ExternalPayload}[]};
+export type Measured = PageMeasure & {found:Found[];pangpang?:PangpangPage;eligibility_diagnostics?:PageEligibilityDiagnostics;listing?:{item:ParsedItem;legacy:ExternalPayload}[]};
 export function measurePage(body:string,pageUrl:string,source:SourcePolicy,settings:CollectorConfig,now:Date,{listing}:{listing:boolean}):Measured {
   if(isPangpang(source)){
     const page=extractPangpang(body,pageUrl,now,url=>visitAllowed(url,source));
@@ -23,13 +24,15 @@ export function measurePage(body:string,pageUrl:string,source:SourcePolicy,setti
   if(adapter==='cpsc'){
     m.kind='recalls';m.eligible=found.filter(f=>f.recall?.id.trim()&&(f.recall.name?.trim()||f.title?.trim())).length;
   }else if(listing){
-    let items:ParsedItem[];
-    try{items=parseItems(body,pageUrl,source.origin,source.selector,now);}catch(e){
+    let parsed:DetailedParse;
+    try{parsed=parseItemsDetailed(body,pageUrl,source.origin,source.selector,now);}catch(e){
       if(e instanceof Error&&e.message.startsWith('지원하지 않는 셀렉터:'))throw new CollectorError('selector_invalid');
       throw e;
     }
+    const items=parsed.items,evaluations=items.map(item=>evaluatePayload(source.id,item,now));
     m.kind='listing';m.parsed=items.length;
-    m.listing=items.flatMap(item=>{const legacy=buildPayload(source.id,item,now);return legacy?[{item,legacy}]:[];});
+    m.listing=items.flatMap((item,index)=>{const result=evaluations[index];return result.accepted?[{item,legacy:result.payload}]:[];});
+    if(isSnapup(source))m.eligibility_diagnostics=pageEligibilityDiagnostics(parsed,evaluations);
     m.eligible=m.listing.length;m.price_checked=m.eligible;
     m.price_hints=m.listing.filter(({item})=>hasNumericPrice(item.price?.value)).length;
   }else m.eligible=found.filter(f=>sourceFor(f.url,settings)?.id===source.id).length;
