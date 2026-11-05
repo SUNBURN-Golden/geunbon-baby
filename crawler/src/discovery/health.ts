@@ -1,6 +1,7 @@
 import { CollectorError } from '../store';
 import { kstTime } from '../collection-schedule';
 import type { SourcePolicy } from '../source-policy';
+import { diagnosticFailure, emptyRunDiagnostics, REJECTION_REASONS, TOTAL_KEYS, type DiagnosticStage, type PageEligibilityDiagnostics, type RunEligibilityDiagnostics } from './eligibility-diagnostics';
 
 // Exception messages are untrusted, even when they look like lowercase codes.
 const FAILURE_CODES=new Set(['redirect_identity','error','network_error','request_timeout','source_response','source_blocked','source_cooldown','robots_denied','robots_unavailable','visit_not_allowed','domain_stopped','private_network','redirect_missing','response_size','login_required','access_restricted','empty_page','region_missing','region_required','selector_invalid','browser_not_approved','document_changed','daily_limit','execution_expired','submission_expired','payload_shape','payload_changed','cpsc_schema','depth_limit','source_mismatch','brand_mismatch','reservation_expired']);
@@ -20,6 +21,7 @@ export type SourceHealth = {
   page_findings:Partial<Record<PageFinding,number>>;
   links_found:number;parsed:number;eligible:number;price_checked:number;price_hints:number;sent:number;
   link_dispositions?:Record<string,number>;unique_products?:number;scheduled?:number;deferred?:number;
+  eligibility_diagnostics?:RunEligibilityDiagnostics;
   blocked:number;blocked_reasons:Record<string,number>;failures:Record<string,number>;subrequest_failures:Record<string,number>;
 };
 
@@ -45,6 +47,7 @@ function findings(m:Pick<PageMeasure,'parsed'|'eligible'|'price_checked'|'price_
 export class RunHealth {
   private sources=new Map<string,SourceHealth>();
   private products=new Map<string,Set<string>>();
+  private diagnosticAttempts=new Map<string,{source:string;measured:boolean;terminal:boolean}>();
   source(id:string,mode:SourceHealth['mode']):SourceHealth {
     let h=this.sources.get(id);
     if(!h){
@@ -52,6 +55,39 @@ export class RunHealth {
       this.sources.set(id,h);
     }
     return h;
+  }
+  diagnosticAttempt(id:string,attempt:string) {
+    if(this.diagnosticAttempts.has(attempt))return false;
+    this.enableEligibilityDiagnostics(id).diagnostic_pages_attempted++;
+    this.diagnosticAttempts.set(attempt,{source:id,measured:false,terminal:false});return true;
+  }
+  enableEligibilityDiagnostics(id:string) {
+    const h=this.sources.get(id)!;
+    return h.eligibility_diagnostics??=emptyRunDiagnostics();
+  }
+  // Called as soon as extraction returns, before link scheduling or any submit.
+  diagnosticMeasured(id:string,attempt:string,page:PageEligibilityDiagnostics) {
+    const state=this.diagnosticAttempts.get(attempt);
+    if(!state||state.source!==id||state.measured||state.terminal)return false;
+    const d=this.sources.get(id)!.eligibility_diagnostics!;
+    state.measured=true;d.diagnostic_pages_measured++;
+    for(const key of TOTAL_KEYS)d[key]+=page[key];
+    for(const key of REJECTION_REASONS)d.rejection_reason_counts[key]+=page.rejection_reason_counts[key];
+    return true;
+  }
+  diagnosticTerminal(id:string,attempt:string,stage?:DiagnosticStage,reason?:string) {
+    const state=this.diagnosticAttempts.get(attempt);
+    if(!state||state.source!==id||state.terminal)return null;
+    state.terminal=true;
+    const d=this.sources.get(id)!.eligibility_diagnostics!;
+    if(state.measured){
+      if(reason){d.diagnostic_measured_pages_failed++;increment(d.measured_failure_counts,diagnosticFailure(reason));}
+      else d.diagnostic_measured_pages_ok++;
+    }else {
+      d.diagnostic_pages_unmeasured++;
+      increment(d.unmeasured_failures[stage==='extraction'?'extraction':'transport'],diagnosticFailure(reason??'error'));
+    }
+    return {measured:state.measured};
   }
   pageOk(id:string,m:PageMeasure) {
     const h=this.sources.get(id)!;h.pages_attempted++;h.pages_ok++;
@@ -81,5 +117,7 @@ export class RunHealth {
 }
 export function formatLine(h:SourceHealth,context:{at:number;callId?:string}={at:Date.now()}):string {
   const reason=Object.entries(h.failures).sort((a,b)=>b[1]-a[1])[0]?.[0]??'error';
-  return `discover at=${kstTime(context.at)}${context.callId?` call_id=${context.callId}`:''} source=${/^[a-zA-Z0-9_-]{1,80}$/.test(h.source_id)?h.source_id:'source'} status=${h.status} pages=${h.pages_ok}/${h.pages_attempted} review_pages=${h.pages_review} links=${h.links_found} parsed=${h.parsed} eligible=${h.eligible} price_checked=${h.price_checked} price_hints=${h.price_hints} sent=${h.sent} blocked=${h.blocked} failed=${h.pages_failed} subrequest_failed=${Object.values(h.subrequest_failures).reduce((a,b)=>a+b,0)}${h.pages_failed?` reason=${FAILURE_CODES.has(reason)?reason:'error'}`:''} flags=${h.flags.join(',')}`;
+  const d=h.eligibility_diagnostics;
+  const diagnostic=d?` diagnostic_pages_attempted=${d.diagnostic_pages_attempted} diagnostic_pages_measured=${d.diagnostic_pages_measured} diagnostic_pages_unmeasured=${d.diagnostic_pages_unmeasured} diagnostic_measured_pages_ok=${d.diagnostic_measured_pages_ok} diagnostic_measured_pages_failed=${d.diagnostic_measured_pages_failed}${TOTAL_KEYS.map(key=>` diagnostic_${key}=${d[key]}`).join('')}${REJECTION_REASONS.map(key=>` diagnostic_rejected_${key}=${d.rejection_reason_counts[key]}`).join('')}`:'';
+  return `discover at=${kstTime(context.at)}${context.callId?` call_id=${context.callId}`:''} source=${/^[a-zA-Z0-9_-]{1,80}$/.test(h.source_id)?h.source_id:'source'} status=${h.status} pages=${h.pages_ok}/${h.pages_attempted} review_pages=${h.pages_review} links=${h.links_found} parsed=${h.parsed} eligible=${h.eligible} price_checked=${h.price_checked} price_hints=${h.price_hints} sent=${h.sent} blocked=${h.blocked} failed=${h.pages_failed} subrequest_failed=${Object.values(h.subrequest_failures).reduce((a,b)=>a+b,0)}${h.pages_failed?` reason=${FAILURE_CODES.has(reason)?reason:'error'}`:''} flags=${h.flags.join(',')}${diagnostic}`;
 }

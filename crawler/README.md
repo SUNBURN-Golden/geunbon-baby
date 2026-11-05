@@ -326,3 +326,126 @@ npm test -- tests/pangpang.test.ts tests/agamajung-pipeline.test.ts tests/collec
 npm run lint
 npm run typecheck
 ```
+
+### Snapup eligibility diagnostics (Linux discover only)
+
+The active discovery policy is `crawler/config/collector.json` (`SourcePolicy`),
+or the process's `COLLECTOR_CONFIG` override. The shipped Snapup entry is
+`adapter: "links"`, `browser: false`, `selector: "main"`, `enabled: false`.
+`crawler/config/external-sources.json` is legacy configuration and does not
+control this runner. This change does not activate the source or authorize
+rendering. It changes no site, Cloudflare, D1 or status-sync payloads.
+
+For the validated Snapup origin with the HTML links adapter, normal discovery
+and network dry-run emit local `snapup_eligibility` JSON lines. Events are
+`attempt`, `candidate_skip`, `item`, `page_summary`, `page_terminal`, and one
+`run_summary` at finalization (also for an enabled idle source). References are
+opaque hashes, with distinct references for page attempts. Context records the
+Git HEAD revision (or fixed `unavailable` if Git is inaccessible), parser version
+`generic-2`, diagnostic version, policy version, acquisition mode `server_html`,
+capture timestamp and whether the configured selector equals `main`. A revision
+identifies the checkout base; it does not attest that a working tree is clean.
+No environment/config dump or response body is logged.
+
+Each selected generic parser candidate yields exactly one outcome: `no_text`
+first, otherwise `no_allowed_link` if the existing parser URL checks find no
+usable link, otherwise a parsed item index. Zero selected candidates yields a
+zero page summary, without a fabricated skip. Exceptions produce an unmeasured
+extraction failure, rather than empty-page or rejection counts.
+
+Item events report acceptance or a fixed rejection code from the same typed
+payload evaluation used for submission. The unchanged order is
+`excluded_category` (diaper/formula terms in title, category or item text),
+`not_baby_item` (no baby keyword in title/category and no model match at the
+existing 0.75 threshold), then `empty_title` (empty normalized payload title).
+Booleans report title/category/price/period/inferred-model-category presence,
+keyword/model-threshold matches, and exclusion matches separately for title,
+category and item text. Presence booleans are parser observations, not claims
+that an absent field is absent on the website. Missing price, period or inferred
+model category is **not an eligibility rejection**. For generic listings,
+`price_checked=0` follows from zero accepted items.
+
+`health.sources[].eligibility_diagnostics` and the final run event accumulate
+occurrences, including repeats across pages. Each measured page and the run
+satisfy:
+
+```text
+selected = parsed + skipped_no_text + skipped_no_allowed_link
+parsed = examined
+examined = accepted + rejected
+rejected = sum(rejection_reason_counts)
+diagnostic_pages_attempted = diagnostic_pages_measured + diagnostic_pages_unmeasured
+diagnostic_pages_measured = diagnostic_measured_pages_ok + diagnostic_measured_pages_failed
+```
+
+Measurements and page events are recorded immediately after `measurePage`,
+before discovery scheduling or submission. Page attempts and terminal outcomes
+are ingested once. Transport/extraction failures are unmeasured, with fixed
+stage/code counts; later scheduling/submission failures retain full measured
+counts and increment `diagnostic_measured_pages_failed`. `sent` still counts
+only completed item submissions. Existing `parsed`/`eligible` health totals
+continue to describe successfully processed pages. Therefore those totals can
+be smaller than diagnostic totals after submission failure. `pageOk` does not
+ingest diagnostics again. The source stderr health line appends explicit
+`diagnostic_*` selection/parsing/eligibility/page totals and
+`diagnostic_rejected_{excluded_category,not_baby_item,empty_title}` counts.
+
+Normal and dry-run use identical parsing and evaluation. Dry-run still probes
+at most two children and respects the shared page budget; its overall totals
+can differ. Dry-run creates no business records, jobs, reservations, evidence,
+sellers or sync outbox entries. Both paths retain transport/attempt budgets.
+New diagnostics use an explicit field/code allowlist: no titles, URLs,
+selectors, handles, prices, HTML, credentials, raw exceptions or source-derived
+dictionary keys. They stay in local health output/stderr under existing log
+retention; no additional content capture or retained page files were added.
+
+Evidence limits for the November 4 report:
+
+- Inspection used checkout base
+  `27748f0f58ea9cdcf7d611d7f16718692af2e9eb`. This task process had no
+  `COLLECTOR_CONFIG` override and no worktree collector cache. This does not
+  establish the production process's effective configuration or executing
+  revision on November 4.
+- Nine matching health lines were available in the local discover log. They
+  had no timestamps or per-item rejection reasons. The successful `20/20`,
+  `parsed=19`, `eligible=0` samples **also include `zero_parsed`**; `19/20`,
+  `parsed=18` samples additionally include `failed`. They cannot be dated to
+  November 4 from their contents. Under current health semantics, twenty
+  successful pages totaling only 18–19 parsed occurrences must include a
+  zero-parsed page. The regression suite covers both totals.
+- A fresh request at `2026-11-05T01:13:02.762Z`, using the existing
+  `SchedulerFetcher` / scheduler / robots / address-check path, stopped with
+  `private_network` before obtaining HTML. Its opaque page reference was
+  `68c3f592b1e641e0ba050e4ff447d1f385eceeb41448ab6dea2eebabe8bb83eb`.
+  The parser at inspection was the unversioned generic `parseItems` at the
+  revision above; no product capture was retained. No address exception,
+  browser enablement, legacy render fallback or additional endpoint request
+  was introduced to bypass that stop.
+
+Consequently, the November 4 rejection reason and whether the product fields
+exist in server HTML, embedded JSON, or only rendered DOM/additional requests
+remain **unresolved**. A `not_baby_item` observation alone would not prove that
+product fields were faithfully mapped or that products are out of scope.
+Neither missing acquisition nor absent diagnostics establishes genuine product
+exclusion. A source-specific extractor is deliberately deferred until permitted
+public evidence establishes product scopes and URL/field relationships.
+
+The leading mapping hypothesis is reproducible: a generic heading under `main`
+becomes the title and loses product labels (`not_baby_item`), or navigation and
+neighboring diaper/formula text contaminates the merged item
+(`excluded_category`). The explicitly [synthetic fixtures and provenance](../tests/fixtures/external/snapup/README.md)
+demonstrate both mechanisms using the checked-in `main` selection, with
+separate test-only card-scope comparisons. They are not Snapup captures or an
+approved product schema. In-scope stroller, Tripp Trapp, car seat, carrier and
+baby gym/mobile labels pass the existing classifier when correctly scoped;
+excluded and unrelated labels still fail. Eligibility, verification, privacy,
+robots, request budgets and runtime activation rules remain unchanged.
+
+Offline regressions:
+
+```sh
+export PATH="$PWD/node_modules/node/bin:$PATH"
+npm test -- tests/snapup-diagnostics.test.ts tests/external-parse.test.ts tests/external-filter.test.ts tests/collector-health.test.ts tests/collector-discovery-retry.test.ts tests/collector-privacy.test.ts tests/collector-limits.test.ts tests/pangpang.test.ts --maxWorkers=2 --testTimeout=30000
+npm run lint
+npm run typecheck
+```

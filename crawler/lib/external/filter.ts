@@ -31,10 +31,22 @@ export type ExternalPayload = {
   category: string | null; model_match: boolean; captured_at: string; suggestions: Suggestions;
 };
 
-export function eligibilityReason(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): 'excluded_category'|'not_baby_item'|null {
-  if (EXCLUDED.test(`${item.title}\n${item.category_text}\n${item.text}`)) return 'excluded_category';
+export type EligibilitySignals = {
+  keyword_match:boolean; model_threshold_match:boolean;
+  has_model_category:boolean;
+  excluded_title:boolean; excluded_category:boolean; excluded_text:boolean;
+};
+export function eligibilitySignals(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): EligibilitySignals {
   const label = `${item.title} ${item.category_text}`;
-  return BABY.test(label) || (extractModels(label)[0]?.confidence ?? 0) >= MODEL_CONFIDENCE ? null : 'not_baby_item';
+  const top=extractModels(label)[0],modelMatch=(top?.confidence??0)>=MODEL_CONFIDENCE;
+  return {keyword_match:BABY.test(label),model_threshold_match:modelMatch,has_model_category:modelMatch&&categoryOf(top?.model_id)!==null,
+    excluded_title:EXCLUDED.test(item.title),excluded_category:EXCLUDED.test(item.category_text),excluded_text:EXCLUDED.test(item.text)};
+}
+export type RejectionReason = 'excluded_category'|'not_baby_item'|'empty_title';
+export function eligibilityReason(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): Exclude<RejectionReason,'empty_title'>|null {
+  const signals=eligibilitySignals(item);
+  if(signals.excluded_title||signals.excluded_category||signals.excluded_text)return 'excluded_category';
+  return signals.keyword_match||signals.model_threshold_match?null:'not_baby_item';
 }
 
 export function isBabyItem(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): boolean {
@@ -44,10 +56,12 @@ export function isBabyItem(item: Pick<ParsedItem, 'title' | 'text' | 'category_t
 const categoryOf = (modelId: string | undefined) => (modelId ? seedModels[Number(modelId.replace('model-', '')) - 1]?.category ?? null : null);
 
 // 유아용품이 아니면 null.
-export function buildPayload(source: string, item: ParsedItem, capturedAt: Date): ExternalPayload | null {
-  if (!isBabyItem(item)) return null;
+export type PayloadEvaluation = {accepted:true;payload:ExternalPayload} | {accepted:false;reason:RejectionReason};
+export function evaluatePayload(source: string, item: ParsedItem, capturedAt: Date): PayloadEvaluation {
+  const reason=eligibilityReason(item);
+  if (reason) return {accepted:false,reason};
   const title = maskPersonal(item.title).trim().slice(0, TITLE_MAX);
-  if (!title) return null;
+  if (!title) return {accepted:false,reason:'empty_title'};
   const dates = item.dates?.starts_at && (!item.dates.ends_at || Date.parse(item.dates.ends_at) > Date.parse(item.dates.starts_at)) ? item.dates : null;
   const datesRaw = item.dates?.raw ? maskPersonal(item.dates.raw).slice(0, 60) : null;
   const priceRaw = item.price ? maskPersonal(item.price.raw).slice(0, 60) : null;
@@ -55,12 +69,16 @@ export function buildPayload(source: string, item: ParsedItem, capturedAt: Date)
   const extraction = extract(text, { now: capturedAt });
   const top = extractModels(`${item.title} ${item.category_text}`)[0];
   const modelMatch = (top?.confidence ?? 0) >= MODEL_CONFIDENCE;
-  return {
+  return {accepted:true,payload:{
     kind: 'external_listing', source, source_url: item.source_url, account: source, title, text,
     seller_handle: item.seller_handle, seller_name: 'seller_name' in item ? String(item.seller_name ?? '') || null : null, seller_url: item.seller_url,
     price_hint: item.price && Number.isSafeInteger(item.price.value) ? item.price.value : null, price_raw: priceRaw, price_basis: 'external_listing',
     starts_at: dates?.starts_at ?? null, ends_at: dates?.ends_at ?? null, dates_raw: datesRaw,
     category: modelMatch ? categoryOf(top?.model_id) : null, model_match: modelMatch,
     captured_at: capturedAt.toISOString(), suggestions: toSuggestions(extraction),
-  };
+  }};
+}
+export function buildPayload(source: string, item: ParsedItem, capturedAt: Date): ExternalPayload | null {
+  const result=evaluatePayload(source,item,capturedAt);
+  return result.accepted?result.payload:null;
 }

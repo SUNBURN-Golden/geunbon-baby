@@ -162,12 +162,20 @@ function contains(ancestor: El, el: El) {
   return false;
 }
 
-export function parseItems(html: string, pageUrl: string, origin: string, selector = '', now: Date = new Date()): ParsedItem[] {
+export const EXTERNAL_PARSER_VERSION = 'generic-2';
+export type CandidateOutcome = { candidate_index:number } & (
+  { reason:'parsed'; item_index:number } | { reason:'no_text'|'no_allowed_link' }
+);
+export type DetailedParse = { items:ParsedItem[]; selected:number; outcomes:CandidateOutcome[] };
+
+export function parseItemsDetailed(html: string, pageUrl: string, origin: string, selector = '', now: Date = new Date()): DetailedParse {
   const root = parseHtml(html);
   const items: ParsedItem[] = [];
-  for (const el of itemElements(root, selector)) {
+  const outcomes:CandidateOutcome[]=[];
+  const candidates=itemElements(root,selector);
+  for (const [candidate_index,el] of candidates.entries()) {
     const lines = linesOf(el);
-    if (!lines.length) continue;
+    if (!lines.length) {outcomes.push({candidate_index,reason:'no_text'});continue;}
     const text = lines.join('\n');
     let sourceUrl: string | null = null;
     let sellerHandle: string | null = null;
@@ -186,7 +194,7 @@ export function parseItems(html: string, pageUrl: string, origin: string, select
       if (!sourceUrl && decide(url, origin).allowed) sourceUrl = url.href;
     }
     // 같은 origin 링크가 없는 항목은 고유한 출처 URL이 없으므로 쓰지 않는다.
-    if (!sourceUrl) continue;
+    if (!sourceUrl) {outcomes.push({candidate_index,reason:'no_allowed_link'});continue;}
     if (!sellerHandle) {
       const mention = /(?<![\w.])@([A-Za-z0-9._]{2,30})/.exec(text)?.[1].replace(/\.+$/, '');
       if (mention) { sellerHandle = mention.toLowerCase(); sellerUrl = `https://www.instagram.com/${sellerHandle}/`; }
@@ -194,13 +202,19 @@ export function parseItems(html: string, pageUrl: string, origin: string, select
     const price = extractPrices(text).primary;
     const category = [el, ...walk(el)].filter(child => /(^|[-_\s])(cate|category)/i.test(child.attrs.class ?? '') || 'data-category' in child.attrs)
       .map(child => child.attrs['data-category'] ?? textOf(child)).join(' ').replace(/\s+/g, ' ').trim();
+    outcomes.push({candidate_index,reason:'parsed',item_index:items.length});
     items.push({
       source_url: sourceUrl, title: lines[0], text: text.slice(0, 1000), category_text: category.slice(0, 100),
       price: price ? { value: price.value, raw: price.raw } : null, dates: extractDates(text, now),
       seller_handle: sellerHandle, seller_url: sellerUrl,
     });
   }
-  return items;
+  return {items,selected:candidates.length,outcomes};
+}
+
+// Legacy callers retain the exact item array and selection/URL behavior.
+export function parseItems(html: string, pageUrl: string, origin: string, selector = '', now: Date = new Date()): ParsedItem[] {
+  return parseItemsDetailed(html,pageUrl,origin,selector,now).items;
 }
 
 // 상세 페이지에서 목록에 없던 가격·일정만 보충한다(follow_detail_links).
