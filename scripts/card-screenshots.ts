@@ -37,7 +37,9 @@ const cards: ModelCardData[] = [
   noDeal({ id: 'model-42', name: '손그림 없는 모델', brand: 'Stokke', official_price: null }),
 ];
 
-const css = await readFile(join(root, 'app/globals.css'), 'utf8');
+const css = await readFile(join(root, 'app/fonts.css'), 'utf8') + await readFile(join(root, 'app/globals.css'), 'utf8');
+const manifest = JSON.parse(await readFile(join(root, 'docs/fonts/manifest.json'), 'utf8')) as { faces: { url: string }[] };
+const fontPaths = new Set(manifest.faces.map(face => face.url));
 const markup = renderToStaticMarkup(createElement('div', { className: 'model-grid' }, cards.map(card => createElement(ModelCard, { key: card.id, card }))));
 const imageData = new Map<string, string>();
 async function dataUrl(path: string) {
@@ -47,7 +49,7 @@ async function dataUrl(path: string) {
 let html = markup;
 for (const path of new Set(markup.match(/\/img\/models\/[\w.-]+\.svg/g) ?? [])) html = html.split(path).join(await dataUrl(path));
 if (/\/img\//.test(html)) throw new Error('Unreplaced /img/ path remains in markup');
-const pageHtml = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body><main class="page">${html}</main></body></html>`;
+const pageHtml = `<!doctype html><html lang="ko"><head><base href="https://cards.local/"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body><main class="page">${html}</main></body></html>`;
 
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ headless: true });
@@ -57,7 +59,12 @@ try {
     for (const scheme of ['light', 'dark'] as const) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
       const page = await context.newPage();
-      await page.route('**/*', route => route.abort());
+      await page.route('**/*', async route => {
+        const url = new URL(route.request().url());
+        if (url.origin === 'https://cards.local' && fontPaths.has(url.pathname)) {
+          await route.fulfill({ body: await readFile(join(root, 'public', url.pathname)), contentType: 'font/woff2', headers: { 'Access-Control-Allow-Origin': '*' } });
+        } else await route.abort();
+      });
       await page.emulateMedia({ colorScheme: scheme });
       await page.setContent(pageHtml);
       const colors = await page.evaluate(() => ({
@@ -73,6 +80,9 @@ try {
           await img.decode();
         }));
         await document.fonts.ready;
+        for (const family of ['Agamajung Excalifont', 'Agamajung Gaegu']) {
+          if (![...document.fonts].some(face => face.family === family && face.status === 'loaded')) throw new Error(`${family} did not load`);
+        }
       });
       if (await page.locator('.model-art-line img').count() !== seedIds.length) throw new Error('Illustrated model coverage is incomplete');
       if (await page.locator('img[srcset], img[sizes]').count()) throw new Error('SVG cards must not have raster source selection');

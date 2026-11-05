@@ -294,7 +294,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
   .model-art-line img { filter: brightness(0) invert(1) brightness(.92); }
 }
 .model-art-mark { font-family: var(--font-serif); color: var(--accent); font-size: clamp(32px, 8vw, 48px); line-height: 1; }
-.model-card h2.model-name { font: 600 17px/1.45 var(--font-sans); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: calc(2 * 1.45em); word-break: keep-all; margin: 0; }
+.model-card h2.model-name { margin: 0; min-block-size: 2.4em; }
 .model-prices { display: flex; flex-direction: column; gap: 2px; min-height: 60px; }
 .model-deal { display: flex; flex-wrap: nowrap; align-items: center; gap: 2px var(--s-2); min-height: 36px; margin: 0; }
 .model-deal-price { font-size: clamp(20px, 5vw, 28px); font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: -.5px; line-height: 1.2; white-space: nowrap; }
@@ -541,3 +541,70 @@ form { max-width: 100%; }
   .model-art,
   :is(.deal-card, .deal-detail) { corner-shape: var(--corner-card); }
 }
+
+/* Display typography is opt-in. Counts, commerce, forms and evidence inherit sans.
+   Families are namespaced so a locally installed Excalifont/Gaegu cannot substitute for
+   the vendored files when a request fails; fallback must reach the sans stack. */
+:root { --font-display: "Agamajung Excalifont", "Agamajung Gaegu", "Display Latin Fallback", "Display Hangul Fallback", var(--font-sans); }
+:is(.logo, .logo > span, .hero h1, .manifesto > h2, .entry-grid h3,
+  .active-deals > h2, .letter h2, .brand-slogan, .hero > div > .eyebrow,
+  .manifesto > .eyebrow, .entry-grid > a > span, .hero-art > p, .art-label,
+  .public-page > h1, .public-page > .eyebrow, .public-page > .empty > h2,
+  .public-page > .seller > h2, .deal-card > h2, .deals-heading h1, .deal-header h1) {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-style: normal;
+  font-synthesis: none;
+  line-height: 1.2;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  letter-spacing: 0;
+}
+/* Repeat specificity of legacy commerce selectors without touching their markup. */
+.model-card h2.model-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 400;
+  font-synthesis: none;
+  line-height: 1.2;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  letter-spacing: 0;
+}
+.public-page > h1, .deals-heading h1, .deals-page .deal-header h1 {
+  font-size: clamp(1.5rem, 1.1rem + 2vw, 2.625rem);
+  line-height: 1.2;
+  letter-spacing: 0;
+  min-block-size: 3.6em;
+}
+.hero h1 { font-size: clamp(1.5rem, 1rem + 2vw, 2.25rem); min-block-size: 3.6em; }
+.manifesto > h2, .letter h2, .public-page > .empty > h2, .public-page > .seller > h2 { font-size: clamp(22px, 1rem + 1vw, 30px); }
+.entry-grid h3, .active-deals > h2 { font-size: 24px; }
+.deal-card > h2 { font-size: 22px; }
+:is(.hero > div > .eyebrow, .manifesto > .eyebrow, .entry-grid > a > span,
+  .public-page > .eyebrow, .hero-art > p, .art-label, .brand-slogan) { font-size: 18px; }
+.logo { font-size: 30px; min-inline-size: 128px; min-block-size: 36px; }
+.header .logo { min-block-size: 60px; }
+.logo > span { font-size: 18px; line-height: 1.2; margin-top: 2px; text-align: left; }
+.header { min-block-size: 92px; }
+footer .logo { font-size: 30px; }
+.hero-art { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto auto; gap: 8px; height: auto; min-height: 380px; padding: 24px 16px; }
+.hero-art > .arch { grid-row: 1; justify-self: center; margin: 24px 0 36px; }
+.hero-art > p, .hero-art > .art-label { position: static; display: block; z-index: 1; width: 100%; margin: 0; padding: 0; text-align: left; color: var(--text); }
+.model-prices,
+.comparison > section > h2,
+.comparison > section > h3,
+.comparison > section > .eyebrow { font-family: var(--font-sans); }
+@media (min-width: 768px) {
+  .hero { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 4%; padding-inline: 6%; }
+  .hero h1 { font-size: clamp(1.5rem, 1rem + 2vw, 2.25rem); min-block-size: 2.4em; }
+  .public-page > h1, .deals-heading h1, .deals-page .deal-header h1 { min-block-size: 2.4em; }
+  .model-card h2.model-name { min-block-size: 3.6em; }
+  .hero-art { min-height: 480px; }
+  .hero-art > .arch { margin-block: 16px 36px; }
+}
+
+/* Keep the sans count in a stable column while the adjacent title swaps. */
+.active-deals > h2 { display: grid; grid-template-columns: minmax(0, 1fr) auto; }

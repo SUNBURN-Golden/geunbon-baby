@@ -14,8 +14,8 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
   if (!m) notFound();
   const deals = await all<DealWithContext>(db, `${DEAL_SELECT} AND d.model_id = ? ORDER BY d.starts_at, d.id`, id);
   return (
-    <main className="page">
-      <p className="eyebrow">{m.brand} / {categories[m.category]}</p>
+    <main className="page public-page">
+      <p className="eyebrow">{`${m.brand} / ${categories[m.category]}`}</p>
       <h1>{m.name}</h1>
       <p className="lead">{siteCopy.modelLead}</p>
       <div className="notice">{siteCopy.comparisonNotice}</div>
