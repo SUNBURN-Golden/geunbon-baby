@@ -27,7 +27,7 @@ const when = (iso: string | null) => iso ? new Date(iso).toLocaleString('ko-KR',
 export default async function Me() {
   const session = await current();
   if (!session) redirect('/login');
-  return <main className="page narrow">
+  return <main className="page public-page narrow">
     <p className="eyebrow">MY ACCOUNT</p>
     <h1>{authCopy.meTitle}</h1>
     <dl>

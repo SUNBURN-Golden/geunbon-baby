@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 import { siteCopy } from '../lib/site-copy';
 import Nav, { NavLinks } from './nav';
+import './fonts.css';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -15,6 +16,10 @@ export const metadata: Metadata = {
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
+      <head>
+        <link rel="preload" href="/fonts/excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/gaegu/gaegu-regular-logo.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+      </head>
       <body>
         <header className="header">
           <Link className="logo" href="/" aria-label={siteCopy.homeLabel}>
@@ -38,7 +43,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <Link href="/sellers">{siteCopy.sellersFooter}</Link>
           </nav>
           <div className="logo">{siteCopy.brand}</div>
-          <p>{siteCopy.tagline}</p>
+          <p className="brand-slogan">{siteCopy.tagline}</p>
           <p>{siteCopy.transactionNotice}<br />{siteCopy.transactionTerms}</p>
           <small>{siteCopy.priceNotice}</small>
         </footer>

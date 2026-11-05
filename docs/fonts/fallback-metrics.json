@@ -1,0 +1,297 @@
+{
+  "browser": "156.0.8078.4",
+  "platform": "linux",
+  "fontSize": 100,
+  "latinSource": "Noto Sans Regular",
+  "hangulSource": "Noto Sans CJK KR",
+  "measurements": [
+    {
+      "text": "AGAMAJUNG",
+      "target": 630,
+      "fallback": 608
+    },
+    {
+      "text": "A THOUGHTFUL BEGINNING",
+      "target": 1456,
+      "fallback": 1340
+    },
+    {
+      "text": "THE FIRST COLLECTION / 01",
+      "target": 1539,
+      "fallback": 1306
+    },
+    {
+      "text": "A carefully checked deal",
+      "target": 1166,
+      "fallback": 1125
+    },
+    {
+      "text": "BabyBjörn",
+      "target": 503,
+      "fallback": 487
+    },
+    {
+      "text": "Stokke",
+      "target": 340,
+      "fallback": 314
+    },
+    {
+      "text": "(",
+      "target": 44,
+      "fallback": 30
+    },
+    {
+      "text": ")",
+      "target": 40,
+      "fallback": 30
+    },
+    {
+      "text": "+",
+      "target": 55,
+      "fallback": 57
+    },
+    {
+      "text": "&",
+      "target": 72,
+      "fallback": 73
+    },
+    {
+      "text": " X",
+      "target": 103,
+      "fallback": 85
+    },
+    {
+      "text": "3 ",
+      "target": 101,
+      "fallback": 83
+    },
+    {
+      "text": "3 6+ (",
+      "target": 305,
+      "fallback": 253
+    },
+    {
+      "text": "Bugaboo",
+      "target": 420,
+      "fallback": 429
+    },
+    {
+      "text": "5 ",
+      "target": 102,
+      "fallback": 83
+    },
+    {
+      "text": "2(",
+      "target": 114,
+      "fallback": 87
+    },
+    {
+      "text": "Cybex",
+      "target": 285,
+      "fallback": 283
+    },
+    {
+      "text": " 4.0",
+      "target": 193,
+      "fallback": 167
+    },
+    {
+      "text": " 3.0",
+      "target": 195,
+      "fallback": 167
+    },
+    {
+      "text": " Gi (",
+      "target": 227,
+      "fallback": 181
+    },
+    {
+      "text": " T",
+      "target": 125,
+      "fallback": 82
+    },
+    {
+      "text": "Nuna",
+      "target": 230,
+      "fallback": 256
+    },
+    {
+      "text": "(+",
+      "target": 99,
+      "fallback": 87
+    },
+    {
+      "text": "Joie",
+      "target": 196,
+      "fallback": 170
+    },
+    {
+      "text": " 360",
+      "target": 233,
+      "fallback": 197
+    },
+    {
+      "text": " 360 ",
+      "target": 273,
+      "fallback": 223
+    },
+    {
+      "text": "BabyBjorn",
+      "target": 507,
+      "fallback": 487
+    },
+    {
+      "text": "Egg",
+      "target": 180,
+      "fallback": 180
+    },
+    {
+      "text": "3",
+      "target": 61,
+      "fallback": 57
+    },
+    {
+      "text": "D.THRONE",
+      "target": 525,
+      "fallback": 491
+    },
+    {
+      "text": "Britax",
+      "target": 318,
+      "fallback": 277
+    },
+    {
+      "text": " LUX",
+      "target": 231,
+      "fallback": 209
+    },
+    {
+      "text": " STYLE",
+      "target": 368,
+      "fallback": 302
+    },
+    {
+      "text": " CLASSIC",
+      "target": 467,
+      "fallback": 412
+    },
+    {
+      "text": "Maxi-Cosi",
+      "target": 463,
+      "fallback": 456
+    },
+    {
+      "text": "Silver Cross",
+      "target": 573,
+      "fallback": 540
+    },
+    {
+      "text": "2",
+      "target": 70,
+      "fallback": 57
+    },
+    {
+      "text": "Ergobaby",
+      "target": 446,
+      "fallback": 448
+    },
+    {
+      "text": "Doona",
+      "target": 309,
+      "fallback": 313
+    }
+  ],
+  "korean": {
+    "text": "아가마중",
+    "target": 328,
+    "fallback": 368
+  },
+  "symbols": [
+    {
+      "text": " ",
+      "codepoint": 32,
+      "target": 400,
+      "fallback": 260,
+      "sizeAdjust": 153.84615384615387
+    },
+    {
+      "text": ".",
+      "codepoint": 46,
+      "target": 274,
+      "fallback": 268,
+      "sizeAdjust": 102.23880597014924
+    },
+    {
+      "text": ",",
+      "codepoint": 44,
+      "target": 257,
+      "fallback": 268,
+      "sizeAdjust": 95.8955223880597
+    },
+    {
+      "text": "(",
+      "codepoint": 40,
+      "target": 441,
+      "fallback": 300,
+      "sizeAdjust": 147
+    },
+    {
+      "text": ")",
+      "codepoint": 41,
+      "target": 402,
+      "fallback": 300,
+      "sizeAdjust": 134
+    },
+    {
+      "text": "/",
+      "codepoint": 47,
+      "target": 561,
+      "fallback": 372,
+      "sizeAdjust": 150.80645161290323
+    },
+    {
+      "text": "+",
+      "codepoint": 43,
+      "target": 550,
+      "fallback": 572,
+      "sizeAdjust": 96.15384615384616
+    },
+    {
+      "text": "-",
+      "codepoint": 45,
+      "target": 411,
+      "fallback": 322,
+      "sizeAdjust": 127.63975155279503
+    },
+    {
+      "text": ":",
+      "codepoint": 58,
+      "target": 264,
+      "fallback": 268,
+      "sizeAdjust": 98.50746268656717
+    },
+    {
+      "text": "&",
+      "codepoint": 38,
+      "target": 718,
+      "fallback": 732,
+      "sizeAdjust": 98.08743169398907
+    },
+    {
+      "text": "!",
+      "codepoint": 33,
+      "target": 314,
+      "fallback": 269,
+      "sizeAdjust": 116.72862453531599
+    },
+    {
+      "text": "?",
+      "codepoint": 63,
+      "target": 466,
+      "fallback": 434,
+      "sizeAdjust": 107.37327188940091
+    }
+  ],
+  "latinSizeAdjust": 108.88879939656606,
+  "hangulSizeAdjust": 89.13043478260869
+}

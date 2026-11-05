@@ -295,6 +295,18 @@ Worker 빌드 후 `wrangler dev --local --test-scheduled`와 로컬 `/__schedule
 
 리콜 도구는 `--fixture <json> --sources <json> --out <json>`으로 네트워크 없이 실행할 수 있습니다. fixture는 브랜드별 `queries: { "검색어": { "title": [...], "product": [...] } }`로 대체 질의 결과를 구분할 수 있습니다. 기본 fixture 형식은 브랜드별 `{ "title": [CPSC 원시 행], "product": [CPSC 원시 행] }`이며 `{ "error": "blocked" }`로 실패를 재현합니다. 고정 User-Agent·요청 간 5초·응답 2MB 상한·리디렉트 금지·요청 제한 시간을 적용합니다. 일부 브랜드 실패는 해당 브랜드에만 기록하고, 전체 실패 시 출력 파일을 덮어쓰지 않습니다. 재조회 파일과 모델별 검토 결과는 별도이므로, 갱신 후 `bundle.safety.recalls.cpsc`도 다시 검토해야 합니다. 교차 검증 테스트가 오래된 모델별 검토 기록을 감지합니다. 실시간 네트워크 조회는 단위 테스트에 포함하지 않습니다.
 
+## 사이트 손글씨 서체
+
+제목·로고·강조 문구는 자체 호스팅 Excalifont(영문·숫자)와 Gaegu(한글)를 사용합니다. 본문·가격·표·광고·검증·법적 안내는 기존 sans를 유지합니다. 두 서체의 전체 OFL 라이선스는 `public/fonts/`에 포함되어 있습니다. 고정 원본·체크섬·한글 서브셋 재생성·CLS 및 모바일/데스크톱 검증 결과는 [서체 문서](docs/fonts/README.md)를 참고하세요.
+
+`npm test`에 오프라인 서체 검증이 포함됩니다. `npm run build:worker`는 데몬의 기본 검증 외 추가 통합 검사입니다. 로컬 Wrangler 실행 후 브라우저 검증은 아래처럼 별도로 수행합니다.
+
+```sh
+npx tsx scripts/typography-check.ts --verify
+```
+
+CLS 비교에는 변경 전 `--baseline` 결과가 필요하며, 생성된 결과·스크린샷은 `.local/typography/`에 저장합니다. 수집기·사이트 데이터는 변경하지 않습니다.
+
 ## 상품 손그림 에셋
 
 `lib/model-illustrations.ts`는 시드 41개 모델 모두에 `/img/models/model-N.svg`와 `1080×1080` 크기를 반환합니다. `public/img/models/`에는 1:1 정사각 SVG 41개만 있으며 카드는 `<img>`로 직접 표시합니다. `srcSet`·`sizes`·PNG 파생 파일·이미지 최적화 서버를 사용하지 않습니다. 런타임은 정적 ID 허용 목록만 사용하며 시드를 import하지 않습니다. 알 수 없는 ID는 `null`을 반환하고 브랜드 첫 글자 자리표시를 유지합니다.

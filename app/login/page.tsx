@@ -12,7 +12,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   if (await readSession(env.DB, (await cookies()).get(SESSION_COOKIE)?.value)) redirect('/me');
   const providers = configuredProviders(env);
   const message = error ? errors[error] : undefined;
-  return <main className="page narrow">
+  return <main className="page public-page narrow">
     <p className="eyebrow">MEMBERS</p>
     <h1>{authCopy.loginTitle}</h1>
     <p className="lead">{authCopy.loginLead}</p>
