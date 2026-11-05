@@ -322,7 +322,34 @@ Offline verification:
 
 ```sh
 export PATH="$PWD/node_modules/node/bin:$PATH"
-npm test -- tests/pangpang.test.ts tests/agamajung-pipeline.test.ts tests/collector-discovery-retry.test.ts tests/collector-health.test.ts tests/collector-scheduler.test.ts tests/collector-limits.test.ts tests/collector-privacy.test.ts tests/collector-egress.test.ts tests/engine-download.test.ts tests/engine-retry.test.ts tests/engine-storage.test.ts tests/external-parse.test.ts tests/external-filter.test.ts tests/external-robots.test.ts --maxWorkers=2 --testTimeout=30000
+npm test -- tests/pangpang.test.ts tests/agamajung-pipeline.test.ts tests/collector-discovery-retry.test.ts tests/collector-health.test.ts tests/collector-scheduler.test.ts tests/collector-limits.test.ts tests/collector-privacy.test.ts tests/collector-egress.test.ts tests/collector-pre-storage.test.ts tests/collector-pre-storage-process.test.ts tests/engine-download.test.ts tests/engine-retry.test.ts tests/engine-storage.test.ts tests/external-parse.test.ts tests/external-filter.test.ts tests/external-robots.test.ts --maxWorkers=2 --testTimeout=30000
 npm run lint
 npm run typecheck
 ```
+
+#### Runtime provenance investigation (2026-11-05 KST)
+
+The strongest evidence for the reported post-#82 zero parsing is a stale runtime checkout. Read-only inspection of saved PM2 metadata for `agamajung-discover` points to cwd `/workspace/agamajung/repo`, entrypoint `crawler/local-worker.mjs` and interpreter `node_modules/node/bin/node` in that checkout. The wrapper imports its adjacent `src/local-worker.ts`; it does not import this daemon worktree. That checkout is at `3bac379db7250cea7212adbe22ab4daee79465f6` (#67), without #82 (`1af4143`). Its discovery implementation still uses generic parsing.
+
+The saved discover stderr contains the reported `links=325 parsed=0` and `links=768 parsed=2` summaries and no `pangpang` JSON diagnostic events. Saved PM2 status is stopped and no matching live Node worker PID was visible. These are saved configuration/log findings, **not proof of the code loaded during the reported November 4 executions**: the saved log lines lack execution timestamps. A process already running TypeScript may also have loaded code before a checkout changed.
+
+In-memory offline replay, without altering either checkout's runtime data:
+
+| Capture | Runtime generic parser | Current `pangpang@1` |
+| --- | ---: | ---: |
+| November 2 original listing | 1 | 30 |
+| November 2 sanitized listing | 1 | 30 |
+| Each of three November 2 original details | 0 | 1 |
+| Fresh November 5 sanitized HTTP listing | 1 | 30 |
+
+The fresh HTTP response itself also yielded 30 products. Its independently reviewed inventory is 30 distinct cards, 30 duplicate anchors and 131 non-product anchors; all 30 expected IDs parse, with six matches under the unchanged discovery classifier. Capture method, sanitization, hashes and reviewed identities are in the [fixture provenance](../tests/fixtures/external/pangpang/README.md#fresh-http-capture-2026-11-05-kst). Fresh markup does not demonstrate a parser defect, so extraction behavior and `PANGPANG_VERSION` remain unchanged. No derivative invalidation is required for this diagnostics-only code change; the existing obsolete-derivative regressions remain in force.
+
+For the next operator-controlled execution, establish provenance **before considering parsing changes**:
+
+1. Read only allowlisted fields for the exact `agamajung-discover` app from an already running PM2 daemon: name, PID, `pm_cwd`, `pm_exec_path`, `exec_interpreter`, `pm_uptime` and status. Filter the JSON in memory before displaying it. Do not print full `pm2 jlist`, `pm2 env`, environment files, `/proc/<pid>/environ` or full command arguments; these can contain credentials. If only the saved PM2 dump is available, label it as saved configuration rather than a live process observation.
+2. For that live PID, resolve `/proc/<pid>/cwd` and `/proc/<pid>/exe`; inspect command arguments in memory only to confirm the expected entrypoint and TypeScript loader. Record process start time from `/proc/<pid>/stat` field 22 (clock ticks since boot, using `/proc/stat` `btime` and `getconf CLK_TCK`) and compare with PM2's start time in milliseconds since epoch. Recheck PID/start ticks after inspection to avoid PID reuse. Do not start or restart a process just to obtain metadata.
+3. Inspect the actual wrapper's import target, then check **its checkout**, rather than the shell's current worktree. From that checkout, `git rev-parse HEAD` records revision; `git merge-base --is-ancestor 1af4143 HEAD` exits zero when #82 is present. `git diff --quiet HEAD -- crawler shared` detects tracked local modifications without printing content. Read the extractor constant and wrapper/loader paths as well. A current checkout revision alone does not identify already loaded code; compare process start and deployment records.
+4. Correcting the runtime checkout/interpreter and restarting it is a separate operator rollout. This daemon task does not update the runtime checkout, PM2, source configuration or data. Preserve existing domain stops, cooldowns, budgets and locks; never clear state or switch accounts/egress to obtain a capture. `discover --dry-run` performs network requests and consumes budgets; it is not an offline parser replay.
+5. After an authorized rollout, record the actual revision, clean/dirty result, entrypoint/interpreter and process start time. Confirm local Pangpang page `summary` and collect `run_summary` events report `extractor_version` (currently `pangpang@1`). Page summaries use the version attached to the parsed page; collect run summaries identify the loaded extractor version. Correlate the opaque run references with that operator execution record. Version is not a Git revision, and absence of a summary alone does not prove old code when transport was blocked before extraction.
+
+Diagnostics continue to contain only versions, opaque references, fixed codes and counts, and stay on the Linux collector. Compare parsed products, classifier eligibility, deferred products and submissions separately. Zero eligibility alone is not a parsing failure; eligibility, verification, human review and publication rules have not changed.

@@ -132,7 +132,7 @@ export class AgamajungPipeline {
       const failures=this.store.db.prepare("SELECT f.reason FROM engine_failures f JOIN engine_checkpoints c ON c.id=f.id WHERE f.run_id=? AND c.stage='fetch' AND json_extract(c.data,'$.source_id')=?").all(runId,s.id) as {reason:string}[];
       const transport_failures:Record<string,number>={};
       for(const f of failures){const code=failureCode(new Error(f.reason));transport_failures[code]=(transport_failures[code]??0)+1;}
-      (this.options.linkLog??pangpangLog)({...pangpangContext('collect',runId,'run'),event:'run_summary',scheduled:count('discover'),submitted:count('service',true),transport_failures});
+      (this.options.linkLog??pangpangLog)({...pangpangContext('collect',runId,'run'),event:'run_summary',extractor_version:PANGPANG_VERSION,scheduled:count('discover'),submitted:count('service',true),transport_failures});
     }
     return result;
   }

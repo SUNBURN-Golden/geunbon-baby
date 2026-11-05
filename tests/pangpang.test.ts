@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { expect, test, vi } from 'vitest';
 import { extractPangpang, PANGPANG_VERSION, pangpangIdentityAllowed } from '../crawler/lib/external/pangpang';
+import { parseHtml, selectAll } from '../crawler/lib/external/parse';
 import { eligibilityReason, buildPayload } from '../crawler/lib/external/filter';
 import { config, visitAllowed, type SourcePolicy } from '../crawler/src/source-policy';
 import { measurePage } from '../crawler/src/discovery/measure';
@@ -15,6 +16,9 @@ import type { Parsed } from '../crawler/src/agamajung/pipeline';
 
 const origin='https://09pangpang.com',now=new Date('2026-11-02T13:15:00Z');
 const saved=(name:string)=>readFileSync(new URL(`./fixtures/external/pangpang/${name}.html`,import.meta.url),'utf8');
+// Independently reviewed card inventory, in response order; see fixture README.
+const freshIds=['854600','854596','854593','854592','854595','854584','854590','854482','854588','854483','854583','854568','854466','854212','854240','854442','854553','854443','854576','854499','854283','854558','854535','854308','854302','854242','854300','854162','854396','854522'];
+const freshNow=new Date('2026-11-04T23:12:04.291Z');
 const source=():SourcePolicy=>({...structuredClone(config.sources.find(s=>s.id==='pangpang')!),enabled:true});
 const extract=(html:string,url=origin+'/')=>extractPangpang(html,url,now,u=>visitAllowed(u,source()));
 const counts=(rows:{reason:string}[])=>rows.reduce<Record<string,number>>((m,o)=>(m[o.reason]=(m[o.reason]??0)+1,m),{});
@@ -42,6 +46,31 @@ test('approved saved listing: 191 anchors, 60 product occurrences, 30 products, 
   const m=measurePage(saved('list'),origin+'/',source(),{...config,sources:[source()]},now,{listing:true});
   expect(m).toMatchObject({parsed:30,eligible:5,links_found:191,price_checked:0});
   expect(m.found).toHaveLength(30);expect(m.listing).toHaveLength(5);
+});
+
+test('fresh HTTP listing extracts every independently reviewed product identity and rejects navigation',()=>{
+  const html=saved('list-2026-11-05');
+  const p=extractPangpang(html,origin+'/',freshNow,u=>visitAllowed(u,source()));
+  expect(p.version).toBe(PANGPANG_VERSION);
+  expect(p.products.map(p=>p.source_url)).toEqual(freshIds.map(id=>`${origin}/post/${id}`));
+  expect(p.products[0]).toMatchObject({title:'미니두두 스카프',category_text:'',price:null,dates:{starts_at:'2026-11-05T00:00:00+09:00',ends_at:'2026-11-07T23:59:59+09:00'}});
+  expect(p.products.at(-1)?.title).toBe('닥터체크 분홍이 소프트');
+  expect(p.products.every(p=>p.price===null)).toBe(true);
+  expect(p.outcomes.map(o=>o.index)).toEqual(Array.from({length:191},(_,i)=>i));
+  expect(counts(p.outcomes)).toEqual({accepted_product:30,duplicate_product:30,non_product_link:131});
+  expect(counts(p.products.map(p=>({reason:eligibilityReason(p)??'eligible'})))).toEqual({eligible:6,not_baby_item:24});
+  // Replay captured non-product subtrees separately, with product anchors removed.
+  const navigation=parseHtml(html);
+  for(const anchor of selectAll(navigation,'a[href]').filter(a=>/^\/post\/\d+(?:\?source=home)?$/.test(a.attrs.href))) {
+    anchor.parent!.children=anchor.parent!.children.filter(c=>c!==anchor);
+  }
+  const serialize=(node:ReturnType<typeof parseHtml>|string):string=>typeof node==='string'?node:node.tag==='#root'?node.children.map(serialize).join(''):`<${node.tag}${Object.entries(node.attrs).map(([k,v])=>` ${k}="${v.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"`).join('')}>${node.children.map(serialize).join('')}</${node.tag}>`;
+  const rejected=extract(serialize(navigation));
+  expect(rejected.products).toEqual([]);
+  expect(counts(rejected.outcomes)).toEqual({non_product_link:131});
+  const m=measurePage(html,origin+'/',source(),{...config,sources:[source()]},freshNow,{listing:true});
+  expect(m).toMatchObject({parsed:30,eligible:6,links_found:191,price_checked:0});
+  expect(m.found.map(p=>p.url)).toEqual(freshIds.map(id=>`${origin}/post/${id}`));
 });
 
 test.each([
@@ -104,24 +133,45 @@ test('synthetic 768 anchors are fully enumerated; processing deferrals are disti
   expect(p.products).toHaveLength(768);expect(p.outcomes).toHaveLength(768);
   const events:PangpangEvent[]=[],deferred=new Set(p.products.slice(19).map(p=>p.source_url));
   const summary=reportPangpang(p,pangpangContext('collect','example_only','example_only'),e=>events.push(e),()=>null,deferred,19);
-  expect(summary).toMatchObject({links_encountered:768,parsed:768,eligible:768,scheduled:19,deferred:749,dispositions:{accepted_product:19,deferred_limit:749}});
+  expect(summary).toMatchObject({extractor_version:PANGPANG_VERSION,links_encountered:768,parsed:768,eligible:768,scheduled:19,deferred:749,dispositions:{accepted_product:19,deferred_limit:749}});
   expect(events.filter(e=>e.event==='link')).toHaveLength(768);
   expect(JSON.stringify(events)).not.toMatch(/https|stroller|source=|849822/);
 });
 
-test.each([true,false])('discover saved pages share extraction in dry-run=%s, respecting processing budgets',async dry=>{
-  const s=source();s.max_pages=2;const f=fixture({...structuredClone(config),sources:[s]});f.advance(now.getTime()-f.now());
+test.each([
+  {dry:true,file:'list',first:'849842',eligible:5,at:now},
+  {dry:false,file:'list',first:'849842',eligible:5,at:now},
+  {dry:true,file:'list-2026-11-05',first:'854600',eligible:6,at:freshNow},
+  {dry:false,file:'list-2026-11-05',first:'854600',eligible:6,at:freshNow},
+])('discover $file shares extraction in dry-run=$dry, respecting processing budgets',async ({dry,file,first,eligible,at})=>{
+  const s=source();s.max_pages=2;const f=fixture({...structuredClone(config),sources:[s]});f.advance(at.getTime()-f.now());
   const events:PangpangEvent[]=[],calls:string[]=[];
-  const scheduler=new Scheduler(f.store,async u=>{calls.push(u.pathname);return {status:200,headers:{'content-type':'text/html'},body:u.pathname==='/robots.txt'?'User-agent: *\nAllow: /':u.pathname==='/'?saved('list'):syntheticDetail};},async ms=>f.advance(ms));
+  const scheduler=new Scheduler(f.store,async u=>{calls.push(u.pathname);return {status:200,headers:{'content-type':'text/html'},body:u.pathname==='/robots.txt'?'User-agent: *\nAllow: /':u.pathname==='/'?saved(file):syntheticDetail};},async ms=>f.advance(ms));
   const runner=new DiscoveryRunner(f.store,scheduler,e=>events.push(e));
   try{
     if(!dry)runner.seed();const result=await runner.run(dry);
     expect(result.sources[0]).toMatchObject({parsed:31,unique_products:30,links_found:191,pages_ok:2,price_hints:0});
-    const summary=events.find(e=>e.event==='summary'&&e.parsed===30);expect(summary).toMatchObject({parsed:30,eligible:5,links_encountered:191});
+    const summary=events.find(e=>e.event==='summary'&&e.parsed===30);expect(summary).toMatchObject({extractor_version:PANGPANG_VERSION,parsed:30,eligible,links_encountered:191,scheduled:1,deferred:29});
     expect(events.filter(e=>e.event==='link')).toHaveLength(191);
-    expect(calls).toEqual(['/robots.txt','/','/post/849842']);
+    expect(calls).toEqual(['/robots.txt','/',`/post/${first}`]);
     if(dry){expect(f.store.report().total).toBe(0);for(const t of ['collection_jobs','intake_receipts','intake_reservations','evidence_assertions','seller_candidates'] as const)expect(f.store.list(t)).toEqual([]);}
     else {expect(summary).toMatchObject({scheduled:1,deferred:29});expect(f.store.list('intake_receipts')).toHaveLength(1);}
+  }finally{f.close();}
+});
+
+test.each(['page','depth'])('fresh listing at the %s limit defers every product without item transport or submission',async limit=>{
+  const dry=limit==='page',s=source(),settings={...structuredClone(config),sources:[s]};
+  if(dry)s.max_pages=1;else settings.limits.max_depth=1;
+  const f=fixture(settings);f.advance(freshNow.getTime()-f.now());
+  const events:PangpangEvent[]=[],calls:string[]=[];
+  const scheduler=new Scheduler(f.store,async u=>{calls.push(u.pathname);return {status:200,headers:{'content-type':'text/html'},body:u.pathname==='/robots.txt'?'User-agent: *\nAllow: /':saved('list-2026-11-05')};},async ms=>f.advance(ms));
+  const runner=new DiscoveryRunner(f.store,scheduler,e=>events.push(e));
+  try{
+    if(!dry)runner.enqueue(origin+'/',s,1);const result=await runner.run(dry);
+    expect(calls).toEqual(['/robots.txt','/']);
+    expect(result.sources[0]).toMatchObject({parsed:30,eligible:6,pages_ok:1,sent:0});
+    expect(events.find(e=>e.event==='summary')).toMatchObject({extractor_version:PANGPANG_VERSION,parsed:30,eligible:6,scheduled:0,deferred:30,submitted:0,dispositions:{deferred_limit:30,duplicate_product:30,non_product_link:131}});
+    expect(f.store.list('intake_receipts')).toEqual([]);
   }finally{f.close();}
 });
 
@@ -140,7 +190,7 @@ test('authorized collect schedules details even when listing itself is ineligibl
     expect(f.store.list('evidence_assertions')).toHaveLength(16);
     expect(f.store.recordByUrl(origin+'/')?.last_checked_at).toBeNull();
     expect(f.events.filter(e=>e.event==='progress'&&e.stage==='submitted')).toHaveLength(16);
-    expect(f.events.find(e=>e.event==='run_summary')).toMatchObject({scheduled:19,submitted:16,transport_failures:{}});
+    expect(f.events.find(e=>e.event==='run_summary')).toMatchObject({extractor_version:PANGPANG_VERSION,scheduled:19,submitted:16,transport_failures:{}});
   }finally{f.close();}
 });
 
