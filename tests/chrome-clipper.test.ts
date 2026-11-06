@@ -1,3 +1,4 @@
+import { digest } from '../crawler/src/dedup';
 import { expect, test } from 'vitest';
 import { createClip, resumeClip, type ClipJob, type DeliveryDeps, DeliveryError } from '../tools/chrome-clipper/src/delivery';
 import { fixture, binding } from './helpers/collector';
@@ -7,7 +8,7 @@ import type { Binding } from '../shared/collection-schema';
 // Only JSON survives between engines. Neither closures nor in-flight Promises are reused.
 function harness(url='https://gear.example.org/model'){
  const f=fixture(),dom=clipperDom(url);const disk:Record<string,ClipJob>={};let fail='',extractions=0,submissions=0;
- function engine():DeliveryDeps{return {now:f.store.now,save:async job=>{if(fail===`save:${job.phase}`){fail='';throw new Error('disk_failed');}disk[job.clip_id]=JSON.parse(JSON.stringify(job));},hash:async p=>JSON.stringify(p),extract:async job=>{extractions++;if(fail==='extract'){fail='';throw new Error('tab_closed_or_permission_revoked');}const region=dom.run(['main',false,job.url]);return {title:region.title,document_origin:region.documentOrigin,assertions:extractFacts(region.text,region.locator)};},call:async(path,body)=>{
+ function engine():DeliveryDeps{return {client:'extension',checkIdentity:async job=>{dom.run([{expectedUrl:job.url,urlIdentityVersion:job.url_identity_version,mode:'identity'}]);},now:f.store.now,save:async job=>{if(fail===`save:${job.phase}`){fail='';throw new Error('disk_failed');}disk[job.clip_id]=JSON.parse(JSON.stringify(job));},hash:async p=>digest(p),extract:async job=>{extractions++;if(fail==='extract'){fail='';throw new Error('tab_closed_or_permission_revoked');}const region=dom.run([{selector:'main',mode:'region',expectedUrl:job.url,urlIdentityVersion:job.url_identity_version}]);return {title:region.title,document_origin:region.documentOrigin,assertions:extractFacts(region.text,region.locator)};},call:async(path,body)=>{
   if(fail===`before:${path}`){fail='';throw new Error('offline_before_send');}
   let result:unknown;
   if(path.includes('/clips/'))result=f.store.clip('extension',path.split('/').at(-1)!);
@@ -74,7 +75,7 @@ test.each([
    // A discovery row may exist, but no extracted title or content can be attached.
    const record=h.f.store.recordByUrl(job.url);expect(record?.title).toBeNull();expect(record?.extracted_facts).toEqual({});expect(record?.evidence_locator).toEqual([]);expect(record?.last_checked_at).toBeNull();
    h.f.reopen();await resumeClip(h.reload(job.clip_id),h.engine());
-   expect(h.reload(job.clip_id).phase).toBe('needs_reclick');expect(h.extractions).toBe(1);expect(h.submissions).toBe(0);expect(h.f.store.list('intake_reservations')).toHaveLength(1);
+   expect(h.reload(job.clip_id).phase).toBe('needs_reclick');expect(h.extractions).toBe(0);expect(h.submissions).toBe(0);expect(h.f.store.list('intake_reservations')).toHaveLength(1);
   }
  }finally{h.f.close();}
 });
@@ -89,7 +90,7 @@ test('restart after reservation rejects B without reading it; a fresh click rese
   const fresh=await createClip(binding(b),1,h.engine());await resumeClip(fresh,h.engine());
   expect(fresh.attempt_id).not.toBe(job.attempt_id);expect(h.reload(fresh.clip_id)).toMatchObject({url:b,phase:'complete'});
   expect(h.f.store.list('intake_reservations')).toHaveLength(2);expect(h.f.store.list('intake_receipts')).toHaveLength(1);
-  expect(h.f.store.list<{id:string;spent:number;held:number}>('daily_budgets').find(b=>b.id.endsWith(':new_body'))).toMatchObject({spent:2,held:0});
+  expect(h.f.store.list<{id:string;spent:number;held:number}>('daily_budgets').find(b=>b.id.endsWith(':new_body'))).toMatchObject({spent:1,held:1});
   const records=h.f.store.list<{url:string;title?:string}>('collection_records');
   expect(records.find(r=>r.url===a)?.title).toBeNull();
   expect(h.f.store.recordByUrl(b)?.title).toBe('Product');
@@ -117,5 +118,70 @@ test.each(['before:/v1/intake','/v1/intake','save:complete'])('persisted A paylo
   await resumeClip(h.reload(job.clip_id),h.engine());await resumeClip(h.reload(job.clip_id),h.engine());
   expect(h.reload(job.clip_id)).toMatchObject({phase:'complete',url:a});expect(h.extractions).toBe(1);expect(h.dom.reads).not.toHaveBeenCalled();
   expect(h.f.store.list('intake_receipts')).toHaveLength(1);expect(h.f.store.list('evidence_assertions')).toHaveLength(1);expect(h.f.store.recordByUrl(product+'?id=B')).toBeUndefined();
+ }finally{h.f.close();}
+});
+
+test.each(['product_no=101','product_no=202','sku=A','unknown=synthetic_private_value'])('rejected clicks never save, reserve or read DOM: %s',async query=>{
+ const h=harness();try{
+  await expect(createClip(binding(product+'?'+query),1,h.engine())).rejects.toThrow('unsafe_url');
+  expect(h.disk()).toEqual({});expect(h.f.store.list('daily_budgets')).toEqual([]);expect(h.dom.reads).not.toHaveBeenCalled();
+ }finally{h.f.close();}
+});
+test('navigation after start consumes one attempt but produces no DOM reads or evidence',async()=>{
+ const h=harness(product+'?id=A');try{
+  const d=h.engine(),job=await createClip(binding(product+'?id=A'),1,d);
+  await resumeClip(job,{...d,call:async(path,body)=>{const result=await d.call(path,body);if(path.endsWith('/start'))h.dom.navigate(product+'?id=B');return result;}});
+  expect(h.reload(job.clip_id).phase).toBe('needs_reclick');expect(h.dom.reads).not.toHaveBeenCalled();expect(h.submissions).toBe(0);
+  expect(h.f.store.list<{id:string;spent:number}>('daily_budgets').find(b=>b.id.endsWith(':new_body'))?.spent).toBe(1);
+ }finally{h.f.close();}
+});
+test.each(['reserve','start','lookup'] as const)('a mismatched %s reservation is never adopted',async stage=>{
+ const h=harness();try{
+  const job=await createClip(binding(),1,h.engine()),d=h.engine();
+  if(stage==='lookup'){const old=h.f.store.reserve('extension',job);job.reservation=old;await d.save(job);}
+  await resumeClip(job,{...d,call:async(path,body)=>{
+   const result=await d.call(path,body);
+   if(stage==='lookup'&&path.includes('/clips/')){const status=result as {attempts:{url:string}[]};status.attempts[0].url=product+'?id=B';}
+   if(stage==='reserve'&&path==='/v1/intake/reservations'||stage==='start'&&path.endsWith('/start'))return {...result as object,brand:'unknown'};
+   return result;
+  }});
+  expect(h.reload(job.clip_id)).toMatchObject({phase:'needs_reclick',last_error:'binding_changed'});expect(h.dom.reads).not.toHaveBeenCalled();expect(h.submissions).toBe(0);
+ }finally{h.f.close();}
+});
+test.each(['reserved','extracting','payload_ready'] as const)('unfinished legacy %s jobs never upgrade or deliver',async phase=>{
+ const h=harness();try{
+  const job=await createClip(binding(),1,h.engine()),r=h.f.store.reserve('extension',job);
+  job.reservation=phase==='reserved'?r:h.f.store.start('extension',r.id);job.phase=phase;
+  if(phase==='payload_ready'){job.payload={assertions:[]};job.digest=await h.engine().hash(job.payload);}
+  delete (job as Partial<ClipJob>).url_identity_version;
+  delete (job.reservation as Partial<typeof r>).url_identity_version;
+  h.f.store.put('intake_reservations',r.id,job.reservation);await h.engine().save(job);h.f.reopen();
+  await resumeClip(h.reload(job.clip_id),h.engine());
+  expect(h.reload(job.clip_id)).toMatchObject({phase:'needs_reclick',last_error:'url_identity_changed'});
+  expect(h.reload(job.clip_id).payload).toBeUndefined();expect(h.reload(job.clip_id).digest).toBeUndefined();expect(h.dom.reads).not.toHaveBeenCalled();expect(h.submissions).toBe(0);
+ }finally{h.f.close();}
+});
+test('exact legacy committed ACK closes only its original job without extraction or submission',async()=>{
+ const h=harness();try{
+  const job=await createClip(binding(),1,h.engine());h.setFail('/v1/intake');await expect(resumeClip(job,h.engine())).rejects.toThrow();
+  const saved=h.reload(job.clip_id),r=h.f.store.reservation('extension',saved.reservation!.id);
+  delete (saved as Partial<ClipJob>).url_identity_version;delete (saved.reservation as Partial<typeof r>).url_identity_version;delete (r as Partial<typeof r>).url_identity_version;
+  h.f.store.put('intake_reservations',r.id,r);await h.engine().save(saved);h.f.reopen();h.dom.reads.mockClear();const submissions=h.submissions;
+  await resumeClip(h.reload(job.clip_id),h.engine());expect(h.reload(job.clip_id).phase).toBe('complete');expect(h.submissions).toBe(submissions);expect(h.dom.reads).not.toHaveBeenCalled();
+  const wrong={...saved,attempt_id:binding().attempt_id};await resumeClip(wrong,h.engine());expect(wrong.phase).toBe('needs_reclick');
+ }finally{h.f.close();}
+});
+test.each(['unsafe_url','private_url','url_identity_changed','document_changed','binding_changed','policy_changed','submission_expired'])('local terminal code %s stops delivery without retaining API text',async code=>{
+ const h=harness();try{
+  const job=await createClip(binding(),1,h.engine());await resumeClip(job,{...h.engine(),call:async()=>{throw new DeliveryError(409,0,code);}});
+  expect(h.reload(job.clip_id)).toMatchObject({phase:code==='submission_expired'?'expired':'needs_reclick',last_error:code});
+ }finally{h.f.close();}
+});
+
+test('a storage failure whose text resembles an identity error never advances durable progress',async()=>{
+ const h=harness();try{
+  const d=h.engine(),job=await createClip(binding(),1,d);
+  await expect(resumeClip(job,{...d,save:async()=>{throw new Error('document_changed');}})).rejects.toThrow('document_changed');
+  expect(h.reload(job.clip_id).phase).toBe('created');expect(h.dom.reads).not.toHaveBeenCalled();
  }finally{h.f.close();}
 });

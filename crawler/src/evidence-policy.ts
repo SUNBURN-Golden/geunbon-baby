@@ -1,5 +1,5 @@
 import type { CollectionRecord } from '../../shared/collection-schema';
-import { PRIVACY_VERSION } from '../../shared/privacy-rules';
+import { PRIVACY_VERSION, URL_IDENTITY_VERSION } from '../../shared/privacy-rules';
 import { LINUX_PRIVACY_VERSION } from './privacy-filter';
 import { digest, stable } from './dedup';
 import { axesOf, contradictoryAxes } from './merge-rules';
@@ -12,7 +12,7 @@ export type ReviewScopeSnapshot={root:string;groups:Group[];documents:Collection
 // Pure: all members and recursively linked owner groups share one asOf and input
 // snapshot. Cache versions, materialized statuses and report counters are excluded.
 export function reviewScopeValidity(scope:ReviewScopeSnapshot,asOf:number){
-  const documents=scope.documents.map(r=>({id:r.id,url:r.url,group:r.dedup_group_id,target:r.target_model_id,privacy:r.privacy_filter_version,collected_at:r.collected_at,last_checked_at:r.last_checked_at,next_recheck_at:r.next_recheck_at,
+  const documents=scope.documents.map(r=>({id:r.id,url:r.url,group:r.dedup_group_id,target:r.target_model_id,privacy:r.privacy_filter_version,identity:r.url_identity_version,quarantined:!!r.identity_quarantined,collected_at:r.collected_at,last_checked_at:r.last_checked_at,next_recheck_at:r.next_recheck_at,
     fresh:!!r.last_checked_at&&Number.isFinite(Date.parse(r.next_recheck_at??''))&&Date.parse(r.next_recheck_at!)>asOf})).sort((a,b)=>a.id.localeCompare(b.id));
   const evaluations=scope.evidence.map(g=>({group_id:g.group_id,...evaluateConflictSet(g.claims.map(e=>({...e,...(!documents.find(r=>r.id===e.record_id)?.fresh?{unavailable_reason:'source_expired'}:{})})),g.resolutions,asOf)}));
   const claims=[...new Map(scope.evidence.flatMap(g=>g.claims).map(e=>[e.id,e])).values()];
@@ -22,7 +22,7 @@ export function reviewScopeValidity(scope:ReviewScopeSnapshot,asOf:number){
   const selected=evaluations.flatMap(g=>g.pairs.flatMap(p=>p.resolution?.selected?[p.resolution.selected]:[]));
   const excluded=new Set(evaluations.flatMap(g=>g.pairs.flatMap(p=>p.resolution?p.assertions.filter(id=>id!==p.resolution!.selected):[])));
   const evidence_valid=active.length>0&&active.every(e=>e.locator&&e.quote&&validClaim(e));
-  const requirements=scope.complete&&documents.length>0&&documents.every(r=>r.fresh&&r.privacy===PRIVACY_VERSION)&&merge_safe&&evidence_valid&&!unresolved&&!selected.some(id=>excluded.has(id));
+  const requirements=scope.complete&&documents.length>0&&documents.every(r=>r.fresh&&r.privacy===PRIVACY_VERSION&&r.identity===URL_IDENTITY_VERSION&&!r.quarantined)&&merge_safe&&evidence_valid&&!unresolved&&!selected.some(id=>excluded.has(id));
   const semantic={version:REVIEW_POLICY_VERSION,conflict_policy:EVIDENCE_POLICY_VERSION,privacy:LINUX_PRIVACY_VERSION,policy:scope.policy,epoch:scope.epoch,complete:scope.complete,root:scope.root,
     groups:scope.groups.map(g=>({id:g.id,retired:!!g.retired,representative:g.representative})).sort((a,b)=>a.id.localeCompare(b.id)),documents,
     claims:claims.sort((a,b)=>a.id.localeCompare(b.id)),links:scope.links,provenance:scope.provenance,

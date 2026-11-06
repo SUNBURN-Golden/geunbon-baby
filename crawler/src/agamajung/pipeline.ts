@@ -9,7 +9,7 @@ import type { Checkpoint, Data, ModelPort, RenderPort, StageHandler, StageResult
 import { digest, stable } from '../dedup';
 import { CollectorStore, requireThat } from '../store';
 import { Scheduler, type DomainState } from '../scheduler';
-import { canonicalUrl } from '../../../shared/privacy-rules';
+import { canonicalUrl, URL_IDENTITY_VERSION, isUrlRejection } from '../../../shared/privacy-rules';
 import type { AssertionInput, ClipPayload } from '../../../shared/collection-schema';
 import { aiData, privacyFilter } from '../privacy-filter';
 import { sourceFor, visitAllowed, type SourcePolicy } from '../source-policy';
@@ -58,7 +58,7 @@ export class AgamajungPipeline {
   private prepared(cap:Capture):Prepared|undefined {
     try {
       const meta=JSON.parse(cap.data),source=this.store.settings.sources.find(s=>s.id===cap.source_id);
-      if(!source||meta.preparation_identity!==this.parseVersion)return;
+      if(!source||meta.url_identity_version!==URL_IDENTITY_VERSION||meta.preparation_identity!==this.parseVersion)return;
       const cfg=this.options.discoveryConfig??loadDiscoveryConfig(),parsed=this.cache<Parsed>(cap,'parse',this.parseVersion),links=this.storage.cached<Prepared['links']>(cap.content_hash,'source-links',this.linksTool(source,cap.url_norm,Number(meta.discovery_depth),cfg));
       if(!parsed||!links)return;
       const prepared:Prepared={version:meta.preparation_version,mode:meta.preparation_mode,parsed,links,hash:meta.derivative_hash};
@@ -73,7 +73,12 @@ export class AgamajungPipeline {
   private labeler(id:string){return this.pangpang(id)?`${this.profile.labeler_version}:${PANGPANG_VERSION}`:this.profile.labeler_version;}
   private extractor(id:string){return this.pangpang(id)?`${this.profile.extractor_version}:${PANGPANG_VERSION}`:this.profile.extractor_version;}
   private linksTool(s:SourcePolicy,url:string,depth:number,cfg:DiscoveryConfig){return `${linkCacheTool(cfg,url,s.id,depth)}:${this.parseVersion}`;}
+  private checkIdentity(c:Checkpoint){
+    requireThat(c.data.url_identity_version===URL_IDENTITY_VERSION,'url_identity_changed');
+    requireThat(canonicalUrl(string(c.data,'url'))===c.data.url,'url_identity_changed');
+  }
   private current(c:Checkpoint){
+    this.checkIdentity(c);
     if(!this.prepared(this.capture(c))){c.data.restart_stage='fetch';throw new Error('input_unavailable');}
   }
   private productEligibility(p:PangpangProduct):'excluded_category'|'profile_category_mismatch'|null {
@@ -81,10 +86,12 @@ export class AgamajungPipeline {
     return this.profile.excluded_keywords.some(k=>text.includes(k.toLocaleLowerCase()))?'excluded_category':this.eligible(text)?null:'profile_category_mismatch';
   }
   private persistReservation(c:Checkpoint,source:SourcePolicy){
+    this.checkIdentity(c);
     const url=string(c.data,'url'),existing=this.store.recordByUrl(url);
-    const r=this.store.reserve('linux',{clip_id:digest([c.run_id,c.item_key]),attempt_id:digest([c.id,c.attempts]),url,brand:source.brand,collection_method:source.browser?'browser_extract':'auto_discovery',operation:existing?.last_checked_at?'recheck':'new_body',policy_version:this.store.settings.policy_version});
+    const r=this.store.reserve('linux',{clip_id:digest([c.run_id,c.item_key]),attempt_id:digest([c.id,c.attempts,c.data.reservation_id??'initial']),url,brand:source.brand,collection_method:source.browser?'browser_extract':'auto_discovery',operation:existing?.last_checked_at?'recheck':'new_body',policy_version:this.store.settings.policy_version,url_identity_version:URL_IDENTITY_VERSION});
     this.store.start('linux',r.id);
     c.data.reservation_id=r.id;
+    c.data.reservation_binding={...r};
     this.store.transaction(()=>this.store.db.prepare('UPDATE engine_checkpoints SET data=? WHERE id=?').run(stable(c.data),c.id));
     return r.id;
   }
@@ -106,7 +113,7 @@ export class AgamajungPipeline {
   seed(runId:string){
     const run=this.engine.run(runId);
     if(run?.state!=='running'||JSON.parse(run.data).collection_seeded)return;
-    const now=this.store.now(),records=this.store.list<{url:string;source:string;next_recheck_at:string|null}>('collection_records');
+    const now=this.store.now(),records=this.store.list<import('../../../shared/collection-schema').CollectionRecord>('collection_records').filter(r=>this.store.recordIdentityCurrent(r));
     const policy=this.profile.domain_policy;
     const sources=this.store.settings.sources.filter(s=>s.enabled&&policy.sources[s.id]).sort((a,b)=>policy.start_order.indexOf(policy.sources[a.id].tier)-policy.start_order.indexOf(policy.sources[b.id].tier));
     for(const source of sources){
@@ -116,10 +123,10 @@ export class AgamajungPipeline {
       }).sort((a,b)=>a.at-b.at||(a.url<b.url?-1:a.url>b.url?1:0));
       const seen=new Set<string>(),limit=Math.min(source.max_pages,this.store.settings.limits.max_pages);
       for(const candidate of [...due.map(r=>r.url),...source.entries]){
-        const url=canonicalUrl(candidate);
+        let url:string;try{url=canonicalUrl(candidate);}catch(e){if(isUrlRejection(e))continue;throw e;}
         if(seen.has(url))continue;
         seen.add(url);
-        this.engine.enqueue(runId,'discover',digest([source.id,url]),{source_id:source.id,url,depth:0});
+        this.engine.enqueue(runId,'discover',digest([URL_IDENTITY_VERSION,source.id,url]),{url_identity_version:URL_IDENTITY_VERSION,source_id:source.id,url,depth:0});
         if(seen.size>=limit)break;
       }
     }
@@ -146,12 +153,32 @@ export class AgamajungPipeline {
     const claims=rows.flatMap(r=>privacyFilter({assertions:[JSON.parse(r.data).assertion]}).assertions.map(a=>({id:r.id,assertion:a})));
     return {payload:privacyFilter({title:parsed.title,document_origin:parsed.document_origin,target_model_id:c.data.target_model_id,assertions:claims.map(c=>c.assertion)}),provenance:{capture_id:cap.id,extractor,ids:claims.map(c=>c.id)}};
   }
+  private reservationBinding(c:Checkpoint,r:ReturnType<CollectorStore['reservation']>){
+    const recorded=c.data.reservation_binding as typeof r|undefined;
+    if(recorded)requireThat(['id','client','record_id','clip_id','attempt_id','url','brand','collection_method','operation','policy_version','url_identity_version'].every(k=>recorded[k as keyof typeof r]===r[k as keyof typeof r]),'binding_changed');
+    else requireThat(!!this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND item_key=? AND stage='fetch' AND json_extract(data,'$.reservation_id')=?").get(c.run_id,c.item_key,r.id),'binding_changed');
+    requireThat(r.client==='linux'&&r.url===c.data.url,'binding_changed');
+  }
   private serviceRecovery(c:Checkpoint):StageResult|undefined {
     const receipt=this.storage.service!.receipt(string(c.data,'reservation_id'));if(!receipt)return;
+    const reservation=this.store.reservation('linux',string(c.data,'reservation_id'));
+    this.reservationBinding(c,reservation);
+    requireThat(reservation.phase==='complete'&&reservation.clip_id===digest([c.run_id,c.item_key])&&reservation.url===c.data.url&&reservation.record_id===this.store.receipt(receipt.id)?.record_id,'binding_changed');
+    if(reservation.url_identity_version!==URL_IDENTITY_VERSION){
+      // Read the recorded derivative verbatim. Never re-canonicalize a historic commit.
+      const cap=this.capture(c);requireThat(cap.url_norm===reservation.url,'binding_changed');const extractor=String(c.data.extractor_version??this.extractor(cap.source_id));
+      const rows=this.store.db.prepare('SELECT id,data FROM engine_extracted WHERE capture_id=? AND extractor=? ORDER BY id').all(cap.id,extractor) as {id:string;data:string}[];
+      const parsed=rows[0]?this.storage.cached<Parsed>(cap.content_hash,'parse',JSON.parse(rows[0].data).parse_tool):undefined;
+      requireThat(parsed,'payload_changed');
+      const payload={title:parsed!.title??null,published_at:null,target_model_id:c.data.target_model_id??null,assertions:rows.map(r=>JSON.parse(r.data).assertion),...(parsed!.document_origin?{document_origin:parsed!.document_origin}:{})};
+      requireThat(receipt.digest===digest(payload)&&this.store.receipt(receipt.id)?.provenance_digest===digest({capture_id:cap.id,extractor,ids:rows.map(r=>r.id)}),'payload_changed');
+      return {outputRef:receipt.id,nextStage:null};
+    }
+    this.checkIdentity(c);
     const input=this.serviceInput(c);requireThat(receipt.digest===digest(input.payload)&&this.store.receipt(receipt.id)?.provenance_digest===digest(input.provenance),'payload_changed');return {outputRef:receipt.id};
   }
   private createHandlers():Record<string,StageHandler>{
-    const handler=(version:string,run:StageHandler['run'],commit?:StageHandler['commit']):StageHandler=>({kind:'transactional',version,run,commit});
+    const handler=(version:string,run:StageHandler['run'],commit?:StageHandler['commit']):StageHandler=>({kind:'transactional',version,run:c=>{this.checkIdentity(c);return run(c);},commit});
     return {
       discover:handler('discover@1',async c=>{const s=this.source(c);requireThat(visitAllowed(string(c.data,'url'),s),'visit_not_allowed');this.store.discover(string(c.data,'url'));return {}; }),
       fetch:handler('fetch@1',async c=>{
@@ -185,7 +212,7 @@ export class AgamajungPipeline {
         validatePrepared(prepared,cfg);
         const artifact=policy.raw==='store'&&prepared.parsed.text?this.raw.writeInspected({text:prepared.parsed.text,fullTextAllowed:source.full_text_allowed,permissionBasis:source.permission_basis??''}):undefined;
         const seq=(this.store.db.prepare('SELECT coalesce(max(fetch_seq),0)+1 n FROM engine_captures WHERE run_id=? AND source_id=? AND url_norm=?').get(c.run_id,source.id,url) as {n:number}).n;
-        const cap:Data={id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:result.status,content_hash:result.hash,content_type:type,byte_length:result.bytes?.length??(previous?.byte_length??null),etag:safeEtag(result.response.headers.etag??(result.status==='not_modified'?previous?.etag:null)),last_modified:safeModified(result.response.headers['last-modified']??(result.status==='not_modified'?previous?.last_modified:null)),raw_ref:artifact?.path??null,prev_capture_id:previous?.id??null,data:{final_url:canonicalUrl(result.response.finalUrl??url),discovery_depth:Number(c.data.depth),preparation_identity:this.parseVersion,preparation_version:prepared.version,preparation_mode:prepared.mode,derivative_hash:prepared.hash,...(artifact?{artifact_hash:artifact.hash,artifact_format:'sanitized_text'}:{})}};
+        const cap:Data={id:digest([c.run_id,source.id,url,seq]),run_id:c.run_id,source_id:source.id,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:result.status,content_hash:result.hash,content_type:type,byte_length:result.bytes?.length??(previous?.byte_length??null),etag:safeEtag(result.response.headers.etag??(result.status==='not_modified'?previous?.etag:null)),last_modified:safeModified(result.response.headers['last-modified']??(result.status==='not_modified'?previous?.last_modified:null)),raw_ref:artifact?.path??null,prev_capture_id:previous?.id??null,data:{url_identity_version:URL_IDENTITY_VERSION,final_url:canonicalUrl(result.response.finalUrl??url),discovery_depth:Number(c.data.depth),preparation_identity:this.parseVersion,preparation_version:prepared.version,preparation_mode:prepared.mode,derivative_hash:prepared.hash,...(artifact?{artifact_hash:artifact.hash,artifact_format:'sanitized_text'}:{})}};
         return {outputRef:String(cap.id),data:{capture:cap,prepared,capture_id:cap.id,content_hash:result.hash}};
       },(result,c)=>{
         const cap=result.data!.capture as Data,p=result.data!.prepared as Prepared,s=this.source(c),cfg=this.options.discoveryConfig??loadDiscoveryConfig();
@@ -207,10 +234,10 @@ export class AgamajungPipeline {
             const max=Math.min(s.max_pages,this.store.settings.limits.max_pages);
             let count=(this.store.db.prepare("SELECT count(*) n FROM engine_checkpoints WHERE run_id=? AND stage='discover' AND json_extract(data,'$.source_id')=?").get(c.run_id,s.id) as {n:number}).n;
             for(const p of page.products){
-              const url=p.source_url,key=digest([s.id,url]);
+              const url=p.source_url,key=digest([URL_IDENTITY_VERSION,s.id,url]);
               if(this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND stage='discover' AND item_key=?").get(c.run_id,key))continue;
               if(Number(c.data.depth)>=this.store.settings.limits.max_depth||s.browser||count>=max){deferred.add(url);continue;}
-              this.engine.enqueueInside(c.run_id,'discover',key,{source_id:s.id,url,depth:Number(c.data.depth)+1},digest(url));count++;scheduled++;
+              this.engine.enqueueInside(c.run_id,'discover',key,{url_identity_version:URL_IDENTITY_VERSION,source_id:s.id,url,depth:Number(c.data.depth)+1},digest(url));count++;scheduled++;
               (this.options.linkLog??pangpangLog)({...pangpangContext('collect',c.run_id,cap.id),event:'progress',stage:'scheduled',product_ref:digest(url)});
             }
           }
@@ -221,10 +248,10 @@ export class AgamajungPipeline {
           for(const link of prepared.links.links){
             if(count>=max)break;
             if(!link.destination.canonical_url)continue;
-            const url=canonicalUrl(link.destination.canonical_url),key=digest([s.id,url]);
+            let url:string;try{url=canonicalUrl(link.destination.canonical_url);}catch(e){if(isUrlRejection(e))continue;throw e;}const key=digest([URL_IDENTITY_VERSION,s.id,url]);
             if(!visitAllowed(url,s)||sourceFor(url,this.store.settings)?.id!==s.id)continue;
             if(this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND stage='discover' AND item_key=?").get(c.run_id,key))continue;
-            this.engine.enqueueInside(c.run_id,'discover',key,{source_id:s.id,url,depth:Number(c.data.depth)+1},digest(url));count++;
+            this.engine.enqueueInside(c.run_id,'discover',key,{url_identity_version:URL_IDENTITY_VERSION,source_id:s.id,url,depth:Number(c.data.depth)+1},digest(url));count++;
           }
         }
         const eligible=output.eligible??this.eligible(output.text);
@@ -276,7 +303,9 @@ export class AgamajungPipeline {
         const old=this.serviceRecovery(c);if(old)return old;
         this.current(c);
         const oldReservation=c.data.reservation_id?this.store.reservation('linux',String(c.data.reservation_id)):undefined;
-        if(!oldReservation||((c.data.parent_run||c.data.carried_from)&&(oldReservation.submit_until??0)<this.store.now()))this.persistReservation(c,this.source(c));
+        if(oldReservation)this.reservationBinding(c,oldReservation);
+        if(oldReservation)requireThat(oldReservation.url_identity_version===URL_IDENTITY_VERSION&&oldReservation.url===c.data.url,'url_identity_changed');
+        if(!oldReservation||(c.data.parent_run||c.data.carried_from)&&(['expired','cancelled'].includes(oldReservation.phase)||(oldReservation.submit_until??0)<this.store.now()))this.persistReservation(c,this.source(c));
         const source=this.source(c),input=this.serviceInput(c),receipt=this.store.submitExtracted(string(c.data,'reservation_id'),input.payload,input.provenance,source.adapter==='cpsc'?source.id:undefined);
         if(isPangpang(source))(this.options.linkLog??pangpangLog)({...pangpangContext('collect',c.run_id,input.provenance.capture_id),event:'progress',stage:'submitted',product_ref:digest(string(c.data,'url'))});
         return {outputRef:receipt.id};

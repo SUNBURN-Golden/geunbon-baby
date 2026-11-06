@@ -9,7 +9,7 @@ import { privacyFilter } from '../privacy-filter';
 import { Scheduler } from '../scheduler';
 import { CollectorError, requireThat } from '../store';
 import type { SourcePolicy } from '../source-policy';
-export async function renderDocument(url:string,source:SourcePolicy,scheduler:Scheduler,options:{document?:FetchResponse;onRequestFailure?:(code:string)=>void;legacy?:boolean}={}):Promise<RenderSnapshot> {
+export async function renderDocument(url:string,source:SourcePolicy,scheduler:Scheduler,options:{expectedUrl:string;urlIdentityVersion:number;document?:FetchResponse;onRequestFailure?:(code:string)=>void;legacy?:boolean}):Promise<RenderSnapshot> {
   requireThat(source.browser&&source.selector,'browser_not_approved',403);
   const browser=await chromium.launch({headless:true});
   try {
@@ -35,25 +35,27 @@ export async function renderDocument(url:string,source:SourcePolicy,scheduler:Sc
     try{await page.goto(url,{waitUntil:'domcontentloaded',timeout:120000});}catch(e){if(fatalFailure)throw fatalFailure;if(navFailure)throw new CollectorError(navFailure);throw e;}
     if(fatalFailure)throw fatalFailure;
     requireThat(new URL(page.url()).origin===source.origin,'document_changed');
-    if(options.legacy){const region=await page.evaluate(extractRegion,source.selector);return {finalUrl:page.url(),html:'',text:region.text,regionText:region.text,title:region.title,documentOrigin:region.documentOrigin};}
-    const snapshot=await page.evaluate(()=>{
-      const password=!!document.querySelector('input[type=password]');
-      const clone=document.body?.cloneNode(true) as HTMLElement|undefined;
-      clone?.querySelectorAll('input,textarea,select,[contenteditable],[hidden],[aria-hidden="true"],nav,header,footer,[data-private],.profile,.comments,.messages,script,style,iframe').forEach(el=>el.remove());
-      const text=clone?.textContent?.slice(0,20000)??'';
-      return {text,html:password?'<input type="password">':text};
-    });
+    const binding={expectedUrl:options.expectedUrl,urlIdentityVersion:options.urlIdentityVersion,reportErrors:true};
+    if(options.legacy){const region=await page.evaluate(extractRegion,{...binding,mode:'region' as const,selector:source.selector});if(region.error)throw new CollectorError(region.error);return {finalUrl:region.checkedUrl,html:'',text:region.text,regionText:region.text,title:region.title,documentOrigin:region.documentOrigin};}
+    const snapshot=await page.evaluate(extractRegion,{...binding,mode:'snapshot' as const});
+    if(snapshot.error)throw new CollectorError(snapshot.error);
     try {
-      const region=await page.evaluate(extractRegion,source.selector);
+      const region=await page.evaluate(extractRegion,{...binding,mode:'region' as const,selector:source.selector});
       if(fatalFailure)throw fatalFailure;
-      return {...snapshot,finalUrl:page.url(),regionText:region.text,title:region.title,documentOrigin:region.documentOrigin};
-    } catch(e){if(fatalFailure)throw fatalFailure;return {...snapshot,finalUrl:page.url(),regionError:failureCode(e)};}
+      if(region.error)throw new CollectorError(region.error);
+      return {...snapshot,html:snapshot.html??'',finalUrl:region.checkedUrl,regionText:region.text,title:region.title,documentOrigin:region.documentOrigin};
+    } catch(e){
+      if(fatalFailure)throw fatalFailure;
+      const code=failureCode(e);
+      if(['unsafe_url','private_url','document_changed','url_identity_changed'].includes(code))throw new CollectorError(code);
+      return {...snapshot,html:snapshot.html??'',finalUrl:snapshot.checkedUrl,regionError:code};
+    }
 
   } finally {await browser.close();}
 }
 
-export async function browserExtract(url:string,source:SourcePolicy,scheduler:Scheduler,onRequestFailure?:(code:string)=>void) {
-  const snapshot=await renderDocument(url,source,scheduler,{onRequestFailure,legacy:true});
+export async function browserExtract(url:string,source:SourcePolicy,scheduler:Scheduler,binding:{url:string;url_identity_version:number},onRequestFailure?:(code:string)=>void) {
+  const snapshot=await renderDocument(url,source,scheduler,{onRequestFailure,legacy:true,expectedUrl:binding.url,urlIdentityVersion:binding.url_identity_version});
   if(snapshot.regionError)throw new CollectorError(snapshot.regionError);
   return privacyFilter({title:snapshot.title,document_origin:snapshot.documentOrigin,assertions:extractFacts(snapshot.regionText??'',source.selector)});
 }

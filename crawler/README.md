@@ -449,3 +449,26 @@ npm test -- tests/snapup-diagnostics.test.ts tests/external-parse.test.ts tests/
 npm run lint
 npm run typecheck
 ```
+
+### URL identity v2 (Linux and Chrome)
+
+Document identity is independent of privacy-filter and configurable source policy
+versions. Supported query identifiers are `id`, `p`, `page`, `lang`, `recallid`,
+`format`, `productname`, and `title` (case preserved). Every value must be 1–60
+approved characters and unchanged by privacy filtering. Unknown keys, including
+`product_no` and `sku`, reject the document with a fixed local error; they never
+become a queryless product. Only established tracking keys are stripped. Pangpang
+permits only its exact numeric post URL with the sole `source=home` exception.
+Source `query_keys` and discovery `url_policies` may restrict these identifiers,
+but cannot add identifiers. Unsupported configuration fails validation.
+
+Update the Linux collector and rebuild/reload the Chrome extension together.
+Stale bindings, policy changes and changed documents require fresh discovery or a
+new click. Unfinished legacy reservations are cancelled; held budgets are released
+once, while started attempts remain spent. Legacy record URLs are ambiguous and
+quarantined, preserving evidence and review history while excluding automatic
+rechecks, dedup reuse and new evidence ownership. A fresh URL colliding with a
+quarantined row requires explicit identity review outside this update. It is never
+silently upgraded. Exact historical committed receipts remain available for lost
+ACK recovery only. These local metadata changes require no site migration and add
+no status-sync fields.

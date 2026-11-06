@@ -7,11 +7,11 @@ import { SqliteStorage } from '../crawler/engine/storage';
 import { noop } from './helpers/engine';
 function setup(){
  const f=discoveryFixture(),engine=new JobEngine(f.store,'fixture',['a'],{a:noop()}),run=engine.startRun({kind:'test',at:'one'});
- f.store.transaction(()=>new SqliteStorage(f.store).capture({id:'fixture-capture',run_id:run,source_id:'fixture',url_norm:'https://gear.example.org/catalog',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',data:{}}));
+ f.store.transaction(()=>new SqliteStorage(f.store).capture({id:'fixture-capture',run_id:run,source_id:'fixture',url_norm:'https://gear.example.org/catalog',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',data:{url_identity_version:2}}));
  return f;
 }
 function observation(f:ReturnType<typeof discoveryFixture>,conditions:Record<string,string>,subject='model-X',quote='명시적 행사'):CandidateObservation {
- return {destination:candidateUrl('https://new-gear.example.org/item?product_no=A',f.cfg.url_policies),score:60,evidence:{capture_id:'fixture-capture',source_url:'https://gear.example.org/catalog',collected_at:'2026-10-23T01:00:00.000Z',locator:'main a[0]',relation:'link',subject_ref:subject,conditions,quote,depth:1,fact_status:'source_claim',extractor_version:'fixture@1'}};
+ return {destination:candidateUrl('https://new-gear.example.org/item?id=A',f.cfg.url_policies),score:60,evidence:{capture_id:'fixture-capture',source_url:'https://gear.example.org/catalog',collected_at:'2026-10-23T01:00:00.000Z',locator:'main a[0]',relation:'link',subject_ref:subject,conditions,quote,depth:1,fact_status:'source_claim',extractor_version:'fixture@1'}};
 }
 test('one URL retains different subjects, years, body/set, markets and conflicting claims; replay and ordering are idempotent',()=>{
  const f=setup();try{
@@ -40,17 +40,17 @@ test('stored URL policy remains valid on lookup after configuration changes; dup
  const f=setup();try{
   const s=new SourceCandidateStore(f.store,f.cfg),a=observation(f,{});
   f.store.transaction(()=>s.recordInside([a,{...a,evidence:{...a.evidence,depth:2}}]));expect(rows(f,'source_candidate_evidence')).toHaveLength(1);expect(rows(f,'source_discovery_paths')).toHaveLength(2);
-  f.cfg.url_policies=[];expect(new SourceCandidateStore(f.store,f.cfg).list()[0].canonical_url).toBe('https://new-gear.example.org/item?product_no=A');
+  f.cfg.url_policies=[];expect(new SourceCandidateStore(f.store,f.cfg).list()[0].canonical_url).toBe('https://new-gear.example.org/item?id=A');
  }finally{f.close();}
 });
 
 test('capture provenance and candidate ancestry persist independently when a claim is replayed on multiple paths',()=>{
  const f=setup();try{
   const s=new SourceCandidateStore(f.store,f.cfg),a=observation(f,{});
-  const parent={...a,destination:candidateUrl('https://new-gear.example.org/item?product_no=P',f.cfg.url_policies)};
+  const parent={...a,destination:candidateUrl('https://new-gear.example.org/item?id=P',f.cfg.url_policies)};
   const [parentId]=f.store.transaction(()=>s.recordInside([parent]));
   const run=rows(f,'engine_runs')[0];
-  f.store.transaction(()=>new SqliteStorage(f.store).capture({id:'origin-b',run_id:run.id,source_id:'fixture',url_norm:'https://gear.example.org/b',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',data:{}}));
+  f.store.transaction(()=>new SqliteStorage(f.store).capture({id:'origin-b',run_id:run.id,source_id:'fixture',url_norm:'https://gear.example.org/b',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',data:{url_identity_version:2}}));
   const paths=['fixture-capture','origin-b'].map(origin_capture=>({...a,evidence:{...a.evidence,parent_id:parentId,origin_capture}}));
   f.store.transaction(()=>s.recordInside(paths));
   const before=rows(f,'source_discovery_paths');
@@ -65,5 +65,23 @@ test('capture provenance and candidate ancestry persist independently when a cla
   expect(child.evidence![0].paths).toHaveLength(2);
   expect(()=>f.store.transaction(()=>s.recordInside([{...a,evidence:{...a.evidence,origin_capture:'absent-capture'}}]))).toThrow('candidate_provenance_invalid');
   expect(f.store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+ }finally{f.close();}
+});
+
+test('historical candidates stay readable but cannot gain current eligibility',()=>{
+ const f=setup();try{
+  const s=new SourceCandidateStore(f.store,f.cfg),a=observation(f,{});
+  const [id]=f.store.transaction(()=>s.recordInside([a]));
+  f.store.db.prepare("UPDATE source_candidates SET canonical_url=?,display_url=?,policy_version='candidate-url@1:fixture' WHERE id=?").run('https://new-gear.example.org/item?product_no=101','https://new-gear.example.org/item?product_no=101',id);
+  expect(s.list(id)[0]).toMatchObject({eligible:false,policy_version:'candidate-url@1:fixture',observation_count:1});
+  expect(s.list(id)[0].evidence).toHaveLength(1);
+ }finally{f.close();}
+});
+test('unsupported evidence source rejects with a fixed code rather than a path fallback',()=>{
+ const f=setup();try{
+  const s=new SourceCandidateStore(f.store,f.cfg),a=observation(f,{}),url='https://gear.example.org/catalog?product_no=synthetic_private_value';
+  f.store.transaction(()=>new SqliteStorage(f.store).capture({id:'unsafe-source',run_id:rows(f,'engine_runs')[0].id,source_id:'fixture',url_norm:url,fetched_at:a.evidence.collected_at,status:'ok',data:{url_identity_version:2,final_url:url}}));
+  expect(()=>f.store.transaction(()=>s.recordInside([{...a,evidence:{...a.evidence,capture_id:'unsafe-source',source_url:url}}]))).toThrow(/^candidate_source_invalid$/);
+  expect(rows(f,'source_candidates')).toEqual([]);expect(rows(f,'source_candidate_evidence')).toEqual([]);
  }finally{f.close();}
 });

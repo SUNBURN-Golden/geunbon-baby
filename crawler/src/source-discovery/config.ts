@@ -2,7 +2,7 @@ import defaults from '../../config/source-discovery.json';
 import { readFileSync } from 'node:fs';
 import { digest } from '../../engine/util';
 import { parseHtml, selectAll } from '../../lib/external/parse';
-import { filterText, canonicalUrl } from '../../../shared/privacy-rules';
+import { filterText, canonicalUrl, SUPPORTED_QUERY_KEY, URL_IDENTITY_VERSION } from '../../../shared/privacy-rules';
 import type { Costs } from '../../engine/types';
 import type { ProductUrlPolicy } from './url-policy';
 import type { JsonProviderConfig } from './providers/types';
@@ -34,10 +34,10 @@ export function validateDiscoveryConfig(c:DiscoveryConfig):DiscoveryConfig {
   check(new Set(c.url_policies.map(p=>`${p.host}${p.path}`)).size===c.url_policies.length);
   for(const p of c.url_policies){
     check(new URL(canonicalUrl(`https://${p.host}${p.path}`)).hostname===p.host&&p.path.startsWith('/')&&clean(p.version)&&p.duplicates==='reject');
-    check(Object.keys(p.keys).length>0&&Object.keys(p.keys).every(k=>/^[a-zA-Z_][a-zA-Z0-9_]{0,30}$/.test(k))&&p.required_keys.length>0&&p.required_keys.every(k=>Object.hasOwn(p.keys,k)));
-    for(const rule of Object.values(p.keys))check(['code','digits'].includes(rule.format)&&Number.isSafeInteger(rule.max_length)&&rule.max_length>0&&rule.max_length<=100);
+    check(Object.keys(p.keys).length>0&&Object.keys(p.keys).every(k=>SUPPORTED_QUERY_KEY.test(k))&&p.required_keys.length>0&&p.required_keys.every(k=>Object.hasOwn(p.keys,k)));
+    for(const rule of Object.values(p.keys))check(['code','digits'].includes(rule.format)&&Number.isSafeInteger(rule.max_length)&&rule.max_length>0&&rule.max_length<=60);
   }
   return c;
 }
 export const loadDiscoveryConfig=()=>validateDiscoveryConfig(process.env.COLLECTOR_DISCOVERY_CONFIG?JSON.parse(readFileSync(process.env.COLLECTOR_DISCOVERY_CONFIG,'utf8')) as DiscoveryConfig:structuredClone(defaults) as DiscoveryConfig);
-export const linkCacheTool=(c:DiscoveryConfig,url:string,source:string,depth=0)=>`candidate-links@1:${digest([c.url_policies,c.pagination_selectors??{},url,source,depth])}`;
+export const linkCacheTool=(c:DiscoveryConfig,url:string,source:string,depth=0)=>`candidate-links@2:${URL_IDENTITY_VERSION}:${digest([c.url_policies,c.pagination_selectors??{},url,source,depth])}`;

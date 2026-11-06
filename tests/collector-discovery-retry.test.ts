@@ -226,13 +226,13 @@ test('repeated failures start a new backoff and never rescan in the same run',as
   }finally{f.close();}
 });
 
-test('enqueue preserves legacy job bindings, resets cursor/lease, and allocates attempt 2',async()=>{
+test('enqueue preserves current job bindings with a missing retry counter and allocates attempt 2',async()=>{
   const f=retryFixture();try{
     const failed=await failChild(f);delete failed.attempt;failed.cursor=7;failed.lease_until=f.now()+1000;
     f.store.transaction(()=>f.store.put('collection_jobs',failed.id,failed));
     const history=f.accounting();f.reopen();f.at(failed.finished_at!+f.settings.limits.failure_backoff_ms);
     f.runner.enqueue(f.childUrl,f.primary,0);
-    expect(f.child()).toEqual({id:failed.id,url:failed.url,source_id:failed.source_id,depth:1,operation:'discovery',phase:'pending',attempt:2,cursor:0,lease_until:0});
+    expect(f.child()).toEqual({url_identity_version:2,id:failed.id,url:failed.url,source_id:failed.source_id,depth:1,operation:'discovery',phase:'pending',attempt:2,cursor:0,lease_until:0});
     f.respond(200);await f.runner.run();expect(f.child()).toMatchObject({phase:'done',attempt:2});
     const attempts=f.accounting().attempts.filter(a=>a.clip_id===failed.id);
     expect(attempts).toHaveLength(2);expect(new Set(attempts.map(a=>a.attempt_id)).size).toBe(2);

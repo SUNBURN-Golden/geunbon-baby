@@ -11,6 +11,7 @@ export const SLOT_SCHEMA_VERSION='required-slot@1';
 export function enumerateSlots(store:CollectorStore):Slot[]{
   const slots=new Map<string,Slot>(),profile=loadProfile();
   for(const r of store.list<CollectionRecord>('collection_records')){
+    if(!store.recordIdentityCurrent(r))continue;
     const evidence=store.evidence(r.dedup_group_id).filter(e=>e.record_id===r.id&&!e.withdrawn&&!e.superseded_by),axes=axesOf(evidence);
     const base=Object.fromEntries(Object.entries(axes).filter(([,v])=>v.length===1).map(([k,v])=>[k,v[0]]));
     const target=r.target_model_id?`model:${r.target_model_id}:${digest(base)}`:`document:${r.id}`;

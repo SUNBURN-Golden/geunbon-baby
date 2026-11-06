@@ -1,3 +1,4 @@
+import { URL_IDENTITY_VERSION } from '../../../shared/privacy-rules';
 import { ParseBudget } from '../../lib/external/parse-budget';
 import { collectionParseVersion } from '../agamajung/pipeline';
 import { PREPARATION_VERSION, inspectDocument, validatePrepared, type Prepared } from '../agamajung/pre-storage';
@@ -25,7 +26,7 @@ import { enumerateSlots } from '../missing-field/targets';
 import { inputDigest } from '../missing-field/evaluate';
 export const DISCOVERY_RUN_ID='agamajung-source-discovery';
 const VERSION=`source-discovery@2:${PREPARATION_VERSION}`;
-type Work={kind:'document'|'search'|'capture';depth:number;page:number;ancestry:string[];source_id?:string;url?:string;query?:SearchQuery;provider_id?:string;cursor?:string;cursor_history?:string[];parent_id?:string;origin_capture?:string;subject?:Subject;capture_id?:string};
+type Work={url_identity_version?:number;kind:'document'|'search'|'capture';depth:number;page:number;ancestry:string[];source_id?:string;url?:string;query?:SearchQuery;provider_id?:string;cursor?:string;cursor_history?:string[];parent_id?:string;origin_capture?:string;subject?:Subject;capture_id?:string};
 type Capture={id:string;run_id:string;url_norm:string;source_id:string;content_hash:string;fetched_at:string;data:string};
 type ResponseCache={document:DocumentLinks;nextCursor?:string;inspection?:string;hash?:string};
 export type DiscoveryOptions={scheduler?:Scheduler;profile?:Profile;offline?:boolean;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void;provider?:(config:JsonProviderConfig,scheduler:Scheduler)=>SearchProvider};
@@ -93,7 +94,7 @@ export class SourceDiscoveryRunner {
           for(const c of checkpoints){const lid=digest([request.action_id,'checkpoint',c.id]),body=stable({run_id:runId,stage:'request'});if(!this.store.db.prepare('SELECT 1 FROM missing_field_action_links WHERE id=?').get(lid))this.store.db.prepare("INSERT INTO missing_field_action_links VALUES(?,?,'checkpoint',?,?)").run(lid,request.action_id,c.id,body);}
         }
       }
-      this.engine.enqueueInside(runId,'plan','planner',{index:0},digest(0));
+      this.engine.enqueueInside(runId,'plan','planner',{index:0,url_identity_version:URL_IDENTITY_VERSION},digest([URL_IDENTITY_VERSION,0]));
       for(const s of this.approvedSources())for(const url of s.entries.slice(0,Math.min(s.max_pages,this.config.max_pages)))this.documentInside(runId,{kind:'document',url,source_id:s.id,depth:0,page:0,ancestry:[]});
       // Reuse only existing collector captures, not this discoverer's own results. Depth
       // is inherited from the original capture cache; a daily rerun cannot reset it.
@@ -113,7 +114,7 @@ export class SourceDiscoveryRunner {
   }
   async run(id:string){this.ledger.open(id);return this.engine.runUntilIdle(id);}
   report(id:string){return sourceDiscoveryReport(this.store,id); }
-  private enqueueInside(run:string,work:Work){const key=digest(work);this.engine.enqueueInside(run,'request',key,work as unknown as Data,digest(work));}
+  private enqueueInside(run:string,work:Work){work={...work,url_identity_version:URL_IDENTITY_VERSION};const key=digest(work);this.engine.enqueueInside(run,'request',key,work as unknown as Data,digest(work));}
   private withinPages(run:string,source:SourcePolicy,url:string){
     if(this.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND stage='request' AND json_extract(data,'$.kind')='document' AND json_extract(data,'$.source_id')=? AND json_extract(data,'$.url')=? LIMIT 1").get(run,source.id,url))return true;
     const count=this.store.db.prepare("SELECT count(DISTINCT json_extract(data,'$.url')) n FROM engine_checkpoints WHERE run_id=? AND stage='request' AND json_extract(data,'$.kind')='document' AND json_extract(data,'$.source_id')=?").get(run,source.id) as {n:number};
@@ -136,11 +137,12 @@ export class SourceDiscoveryRunner {
     this.enqueueInside(run,{kind:'search',page:0,ancestry:[],...context,depth,query:q,provider_id:p});return true;
   }
   private planInside(c:Checkpoint){
+    requireThat(c.data.url_identity_version===URL_IDENTITY_VERSION,'url_identity_changed');
     const index=Number(c.data.index),run=JSON.parse(this.engine.run(c.run_id)!.data),years=run.years as string[]??resolvedYears(this.config,this.store.now());
     const plan=run.plan as {regions:string[];languages:string[];events:DiscoveryConfig['events'];categories:Profile['categories'];providers:string[];max_queries:number}|undefined;
     const cfg={...this.config,regions:plan?.regions??this.config.regions,languages:plan?.languages??this.config.languages,events:plan?.events??this.config.events,max_queries:plan?.max_queries??this.config.max_queries,years},profile={...this.profile,categories:plan?.categories??this.profile.categories},ps=plan?.providers??this.providers().map(p=>p.id);
     const provider=ps[index%ps.length],q=provider&&combinationAt(Math.floor(index/ps.length),cfg,profile,years,provider);
-    if(q){this.searchInside(c.run_id,q,provider);if(index+1<Math.min(this.config.max_queries,cfg.max_queries,combinationCount(cfg,profile)*ps.length))this.engine.enqueueInside(c.run_id,'plan',`planner:${index+1}`,{index:index+1},digest(index+1));}
+    if(q){this.searchInside(c.run_id,q,provider);if(index+1<Math.min(this.config.max_queries,cfg.max_queries,combinationCount(cfg,profile)*ps.length))this.engine.enqueueInside(c.run_id,'plan',`planner:${index+1}`,{index:index+1,url_identity_version:URL_IDENTITY_VERSION},digest([URL_IDENTITY_VERSION,index+1]));}
     return {nextStage:null,data:{planner_cursor:index,planned_truncated:combinationCount(cfg,profile)*ps.length>this.config.max_queries}};
   }
   private scheduler(work:Work,origin:string,provider?:JsonProviderConfig){
@@ -156,6 +158,7 @@ export class SourceDiscoveryRunner {
   private responseTool(id:string){return `${VERSION}:${id}:${digest([this.config.url_policies,this.config.pagination_selectors,this.store.settings.sources,this.config.providers])}`;}
   private findCached(cap:Capture):ResponseCache|undefined {
     try {
+      if(JSON.parse(cap.data).url_identity_version!==URL_IDENTITY_VERSION)return;
       const own=this.storage.cached<ResponseCache>(cap.content_hash,'source-discovery',this.responseTool(cap.id));if(own){this.validateCache(own);return own;}
       if(this.engine.run(cap.run_id)?.profile_id!=='agamajung')return;
       const meta=JSON.parse(cap.data),version=collectionParseVersion(this.store,this.profile,{discoveryConfig:this.config});
@@ -178,6 +181,7 @@ export class SourceDiscoveryRunner {
   }
   private async request(c:Checkpoint){
     const w=c.data as unknown as Work;
+    requireThat(w.url_identity_version===URL_IDENTITY_VERSION,'url_identity_changed');
     if(!this.config.enabled)throw new Error('discovery_disabled');
     if(w.kind==='capture'){this.cached(this.capture(w.capture_id!));return {data:{capture_id:w.capture_id}};}
     if(w.depth>this.config.max_depth)throw new Error('depth_limit');
@@ -233,11 +237,12 @@ export class SourceDiscoveryRunner {
     cache.document=inspectDocument(cache.document,this.config);
     cache.inspection=VERSION;cache.hash=digest([cache.document,cache.nextCursor??null]);this.validateCache(cache);
     const sourceId=source?.id??`search:${provider!.id}`,seq=this.sequence(c.run_id,sourceId,url);
-    const cap={id:digest([c.run_id,sourceId,url,seq]),run_id:c.run_id,source_id:sourceId,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:'ok',content_hash:hash,content_type:type,byte_length:bytes,raw_ref:null,data:{query_id:w.query?.id??null,cursor:w.cursor??null,final_url:finalUrl,discovery_depth:w.depth}};
+    const cap={id:digest([c.run_id,sourceId,url,seq]),run_id:c.run_id,source_id:sourceId,url_norm:url,fetch_seq:seq,fetched_at:new Date(this.store.now()).toISOString(),status:'ok',content_hash:hash,content_type:type,byte_length:bytes,raw_ref:null,data:{url_identity_version:URL_IDENTITY_VERSION,query_id:w.query?.id??null,cursor:w.cursor??null,final_url:finalUrl,discovery_depth:w.depth}};
     return {data:{capture:cap,cache,capture_id:cap.id}};
   }
   private sequence(run:string,source:string,url:string){return (this.store.db.prepare('SELECT coalesce(max(fetch_seq),0)+1 n FROM engine_captures WHERE run_id=? AND source_id=? AND url_norm=?').get(run,source,url) as {n:number}).n;}
   private applyInside(c:Checkpoint){
+    requireThat(c.data.url_identity_version===URL_IDENTITY_VERSION,'url_identity_changed');
     const w=c.data as unknown as Work,cap=this.capture(w.capture_id!),cache=this.cached(cap),doc=cache.document;
     const facts=this.store.db.prepare("SELECT subject_ref,field,conditions_key,data,locator FROM engine_extracted WHERE capture_id=? AND fact_status IN ('source_claim','verified') ORDER BY id").all(cap.id) as ExistingFact[];
     const offset=Number(c.data.observation_offset??0),all:CandidateObservation[]=[];

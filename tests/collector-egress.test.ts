@@ -145,7 +145,7 @@ test('browser routes use the same trusted transport and abort private redirect h
    if(url.pathname==='/redirect'){ip='10.0.0.1';return {status:302,headers:{location:'/internal'},body:''};}
    return {status:url.pathname==='/robots.txt'?404:200,headers:{},body:'<main></main>'};
   },async ms=>{f.advance(ms);});
-  await browserExtract(source.entries[0],{...source,browser:true},scheduler);
+  await browserExtract(source.entries[0],{...source,browser:true},scheduler,{url:source.entries[0],url_identity_version:2});
   expect(fulfilled).toHaveBeenCalledTimes(1);expect(aborted).toHaveBeenCalledTimes(1);expect(closed).toHaveBeenCalledTimes(1);
  }finally{f.close();}
 });

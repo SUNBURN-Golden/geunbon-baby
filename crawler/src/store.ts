@@ -11,7 +11,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { STATUSES } from '../../shared/collection-schema';
 import { type AssertionInput, type Binding, type ClipPayload, type CollectionRecord, type Snapshot } from '../../shared/collection-schema';
-import { PRIVACY_VERSION, canonicalUrl, filterText } from '../../shared/privacy-rules';
+import { PRIVACY_VERSION, URL_IDENTITY_VERSION, canonicalUrl, filterText } from '../../shared/privacy-rules';
 import { config, sourceFor, validateConfig, type CollectorConfig } from './source-policy';
 import { privacyFilter, LINUX_PRIVACY_VERSION } from './privacy-filter';
 import { dedupKey, digest, stable } from './dedup';
@@ -72,6 +72,7 @@ export class CollectorStore {
       requireThat(!this.db.prepare('PRAGMA foreign_key_check').all().length,'database_foreign_key');
       requireThat((this.db.prepare('PRAGMA quick_check').get() as {quick_check:string}).quick_check==='ok','database_corrupt');
       this.secureFiles();
+      this.reconcileIdentity();
       this.transaction(()=>{if(this.get('collector_meta','version')===undefined)this.put('collector_meta','version',0);const prior=this.get<number>('collector_meta','policy');if(prior!==undefined&&(prior!==settings.policy_version||this.get<number>('collector_meta','privacy_version')!==PRIVACY_VERSION||this.get('collector_meta','linux_privacy_version')!==LINUX_PRIVACY_VERSION)){for(const g of this.list<Group>('dedup_groups').filter(g=>!g.retired))this.invalidate(g.id,'policy_changed');this.snapshotInside();}this.put('collector_meta','policy',settings.policy_version);this.put('collector_meta','privacy_version',PRIVACY_VERSION);this.put('collector_meta','linux_privacy_version',LINUX_PRIVACY_VERSION);});
       this.transaction(()=>{
         if(this.get('collector_meta','evidence_policy')!==EVIDENCE_POLICY_VERSION)this.put('collector_meta','review_epoch',(this.get<number>('collector_meta','review_epoch')??0)+1);
@@ -157,11 +158,43 @@ export class CollectorStore {
   private group(key: string, representative: string): Group {
     const g:Group={id:randomUUID(),key,representative,group_version:0,evidence_version:0,review_scope_digest:'',verified_evidence_version:null,ready_evidence_version:null,lineage:[]}; this.put('dedup_groups',g.id,g); return g;
   }
+  recordIdentityCurrent(r: CollectionRecord | undefined): boolean {
+    if (!r || r.url_identity_version !== URL_IDENTITY_VERSION || r.identity_quarantined) return false;
+    try { return canonicalUrl(r.url) === r.url; } catch { return false; }
+  }
+  // Run separately from rejected operations so invalidation cannot be rolled back.
+  reconcileIdentity() {
+    this.transaction(()=>{
+      const groups=new Set<string>();
+      for(const r of this.rows<CollectionRecord>("SELECT data FROM collection_records WHERE json_extract(data,'$.url_identity_version') IS NOT 2 AND NOT coalesce(json_extract(data,'$.identity_quarantined'),0)")) if(!this.recordIdentityCurrent(r)&&!r.identity_quarantined){r.identity_quarantined=true;this.saveRecord(r);groups.add(r.dedup_group_id);}
+      for(const r of this.rows<Reservation>("SELECT r.data FROM intake_reservations r LEFT JOIN collection_records c ON c.id=json_extract(r.data,'$.record_id') WHERE json_extract(r.data,'$.phase') IN ('held','started') AND (json_extract(r.data,'$.url_identity_version') IS NOT 2 OR json_extract(c.data,'$.url_identity_version') IS NOT 2 OR coalesce(json_extract(c.data,'$.identity_quarantined'),0))")) {
+        if(r.url_identity_version===URL_IDENTITY_VERSION&&this.recordIdentityCurrent(this.get<CollectionRecord>('collection_records',r.record_id)))continue;
+        if(r.phase==='held'||r.phase==='started'){
+          if(r.phase==='held')this.release(r);
+          r.phase='cancelled';Object.assign(r,{invalidation_reason:'url_identity_changed'});
+          this.put('intake_reservations',r.id,r);
+          const attempt=this.get<Reservation>('intake_attempts',r.id);if(attempt)this.put('intake_attempts',r.id,{...attempt,...r});
+        }
+      }
+      for(const job of this.rows<{id:string;phase:string}>("SELECT data FROM collection_jobs WHERE json_extract(data,'$.url_identity_version') IS NOT 2 AND json_extract(data,'$.phase') IN ('pending','leased')"))this.put('collection_jobs',job.id,{...job,phase:'failed',failure_reason:'url_identity_changed',lease_until:0,finished_at:this.now()});
+      for(const id of groups)this.invalidate(id,'url_identity_changed');
+      if(groups.size)this.snapshotInside();
+    });
+  }
+  private validateReservation(r:Reservation) {
+    requireThat(r.url_identity_version===URL_IDENTITY_VERSION,'url_identity_changed');
+    requireThat(canonicalUrl(r.url)===r.url,'url_identity_changed');
+    requireThat(this.recordIdentityCurrent(this.get<CollectionRecord>('collection_records',r.record_id)),'url_identity_changed');
+    requireThat(r.policy_version===this.settings.policy_version,'policy_changed');
+    const source=sourceFor(r.url,this.settings);
+    requireThat(r.brand===(source?.brand??'unknown'),'policy_changed');
+    if(r.collection_method==='browser_extract')requireThat(source?.enabled&&source.browser,'policy_changed');
+  }
   private discoverInside(raw: string, method: Binding['collection_method'], title: string|null = null) {
-    const url=canonicalUrl(raw); const existing=this.recordByUrl(url); if(existing) return existing;
-    const s=sourceFor(url,this.settings); this.spend(s?.brand??'unknown','discovered');
+    const url=canonicalUrl(raw); const existing=this.recordByUrl(url); if(existing) {requireThat(this.recordIdentityCurrent(existing),'url_identity_changed');return existing;}
+    const s=sourceFor(raw,this.settings); this.spend(s?.brand??'unknown','discovered');
     const id=randomUUID(),g=this.group(`url:${url}`,id);
-    const r:CollectionRecord={id,url,title:title?filterText(title,200):null,source:s?.id??'unknown',published_at:null,collected_at:new Date(this.now()).toISOString(),target_model_id:null,extracted_facts:{},evidence_locator:[],dedup_group_id:g.id,verification_status:'discovered',collection_method:method,schema_version:1,record_version:1,privacy_filter_version:PRIVACY_VERSION,conflict_detected:false,last_checked_at:null,next_recheck_at:null};
+    const r:CollectionRecord={url_identity_version:URL_IDENTITY_VERSION,id,url,title:title?filterText(title,200):null,source:s?.id??'unknown',published_at:null,collected_at:new Date(this.now()).toISOString(),target_model_id:null,extracted_facts:{},evidence_locator:[],dedup_group_id:g.id,verification_status:'discovered',collection_method:method,schema_version:1,record_version:1,privacy_filter_version:PRIVACY_VERSION,conflict_detected:false,last_checked_at:null,next_recheck_at:null};
     this.saveRecord(r); this.member(r,'url'); this.invalidate(g.id,'discovery'); return r;
   }
   discover(url: string, method: Binding['collection_method']='auto_discovery', title: string|null=null) { return this.transaction(()=>{const before=this.recordByUrl(canonicalUrl(url));const r=this.discoverInside(url,method,title);if(!before)this.snapshotInside();return r;}); }
@@ -171,16 +204,23 @@ export class CollectorStore {
   }
   private release(r:Reservation) { const b=this.budget(r.day,r.brand,r.operation); requireThat(b.held>0,'budget_invariant');b.held--;this.put('daily_budgets',b.id,b); }
   reserve(client:string, binding:Binding):Reservation {
+    this.reconcileIdentity();
+    canonicalUrl(binding.url);
     return this.transaction(()=>{
       this.reap(); const safeId=(id:string)=>typeof id==='string'&&/^(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i.test(id);
       requireThat(safeId(binding.clip_id)&&safeId(binding.attempt_id),'invalid_id',400);
       requireThat(['auto_discovery','browser_extract','manual_clip'].includes(binding.collection_method)&&['new_body','recheck'].includes(binding.operation),'invalid_method',400);
-      const b:Binding={clip_id:binding.clip_id,attempt_id:binding.attempt_id,url:canonicalUrl(binding.url),brand:binding.brand,collection_method:binding.collection_method,operation:binding.operation,policy_version:binding.policy_version};
-      if(b.collection_method==='browser_extract')requireThat(sourceFor(b.url,this.settings)?.browser,'browser_not_approved',403);
+      const b:Binding={clip_id:binding.clip_id,attempt_id:binding.attempt_id,url:canonicalUrl(binding.url),brand:binding.brand,collection_method:binding.collection_method,operation:binding.operation,policy_version:binding.policy_version,url_identity_version:binding.url_identity_version};
+      const id=digest([client,b.clip_id,b.attempt_id]);
+      const old=this.rows<Reservation>("SELECT data FROM intake_reservations WHERE json_extract(data,'$.clip_id')=? AND json_extract(data,'$.attempt_id')=?",b.clip_id,b.attempt_id)[0];
+      if(old) {
+        requireThat(old.client===client&&stable(Object.fromEntries(Object.keys(b).map(k=>[k,old[k as keyof Reservation]])))===stable(b),'binding_changed');
+        this.validateReservation(old);return old;
+      }
+      requireThat(b.url_identity_version===URL_IDENTITY_VERSION,'url_identity_changed');
+      if(b.collection_method==='browser_extract')requireThat(sourceFor(binding.url,this.settings)?.enabled&&sourceFor(binding.url,this.settings)?.browser,'browser_not_approved',403);
       requireThat(b.policy_version===this.settings.policy_version,'policy_changed');
-      requireThat(b.brand===(sourceFor(b.url,this.settings)?.brand??'unknown'),'brand_mismatch');
-      const id=digest([client,b.clip_id,b.attempt_id]); const old=this.get<Reservation>('intake_reservations',id);
-      if(old) { requireThat(stable(Object.fromEntries(Object.keys(b).map(k=>[k,old[k as keyof Reservation]])))===stable(b),'binding_changed');return old; }
+      requireThat(b.brand===(sourceFor(binding.url,this.settings)?.brand??'unknown'),'brand_mismatch');
       const existing=this.recordByUrl(b.url);requireThat(b.operation!=='recheck'||existing?.last_checked_at,'invalid_recheck');
       const record=this.discoverInside(b.url,b.collection_method); this.spend(b.brand,b.operation,true);
       const r:Reservation={...b,id,client,record_id:record.id,day:dayKey(this.now()),expires_at:Math.min(this.now()+this.settings.reservation_ms,midnight(this.now())),phase:'held'};
@@ -191,9 +231,10 @@ export class CollectorStore {
   clip(client:string,id:string) { this.transaction(()=>this.reap());const attempts=this.rows<Reservation>("SELECT data FROM intake_reservations WHERE json_extract(data,'$.client')=? AND json_extract(data,'$.clip_id')=?",client,id);return {attempts,receipts:attempts.flatMap(r=>{const receipt=this.get<Receipt>('intake_receipts',r.id);return receipt?[receipt]:[];})}; }
 
   start(client:string,id:string) {
-    return this.transaction(()=>{this.reap();const r=this.reservation(client,id);if(['started','complete'].includes(r.phase))return r;requireThat(r.phase==='held','reservation_expired');this.release(r);const b=this.budget(r.day,r.brand,r.operation);b.spent++;this.put('daily_budgets',b.id,b);r.phase='started';r.execution_until=this.now()+this.settings.execution_ms;r.submit_until=this.now()+this.settings.submission_grace_ms;this.put('intake_reservations',id,r);this.put('intake_attempts',id,{...r,started_at:this.now()});this.fault('start');return r;});
+    this.reconcileIdentity();
+    return this.transaction(()=>{this.reap();const r=this.reservation(client,id);this.validateReservation(r);if(['started','complete'].includes(r.phase))return r;requireThat(r.phase==='held','reservation_expired');this.release(r);const b=this.budget(r.day,r.brand,r.operation);b.spent++;this.put('daily_budgets',b.id,b);r.phase='started';r.execution_until=this.now()+this.settings.execution_ms;r.submit_until=this.now()+this.settings.submission_grace_ms;this.put('intake_reservations',id,r);this.put('intake_attempts',id,{...r,started_at:this.now()});this.fault('start');return r;});
   }
-  cancel(client:string,id:string) {return this.transaction(()=>{this.reap();const r=this.reservation(client,id);requireThat(r.phase!=='started'&&r.phase!=='complete','already_started');if(r.phase==='held'){this.release(r);r.phase='cancelled';this.put('intake_reservations',id,r);}return r;});}
+  cancel(client:string,id:string) {this.reconcileIdentity();this.validateReservation(this.reservation(client,id));return this.transaction(()=>{this.reap();const r=this.reservation(client,id);requireThat(r.phase!=='started'&&r.phase!=='complete','already_started');if(r.phase==='held'){this.release(r);r.phase='cancelled';this.put('intake_reservations',id,r);}return r;});}
   receipt(id:string) {return this.get<Receipt>('intake_receipts',id);}
   submit(client:string,id:string,raw:unknown,trustedSourceId?:string):Receipt {
     return this.submitInternal(client,id,raw,trustedSourceId);
@@ -202,10 +243,12 @@ export class CollectorStore {
     return this.submitInternal('linux',id,raw,trustedSourceId,provenance);
   }
   private submitInternal(client:string,id:string,raw:unknown,trustedSourceId?:string,provenance?:ProvenanceInput):Receipt {
+    this.reconcileIdentity();
+    this.validateReservation(this.reservation(client,id));
     const p=privacyFilter(raw),hash=digest(p);
     return this.transaction(()=>{
       if(trustedSourceId)requireThat(client==='linux'&&this.settings.sources.some(s=>s.id===trustedSourceId&&s.adapter==='cpsc'),'adapter_authority');
-      const r=this.reservation(client,id),receipt=this.get<Receipt>('intake_receipts',id);
+      const r=this.reservation(client,id);this.validateReservation(r);const receipt=this.get<Receipt>('intake_receipts',id);
       if(receipt){requireThat(receipt.digest===hash&&receipt.provenance_digest===(provenance?digest(provenance):undefined),'payload_changed');return receipt;}
       requireThat(r.phase==='started'&&r.submit_until!>=this.now(),'submission_expired');
       const facts=provenance?validateProvenance(this,p,provenance,r.url):[];
@@ -225,7 +268,7 @@ export class CollectorStore {
     const visit=(id:string)=>{
       if(seen.has(id))return;seen.add(id);
       const g=this.get<Group>('dedup_groups',id);if(!g||g.retired){complete=false;return;}groups.push(g);
-      const members=this.members(id);if(!members.length)complete=false;documents.push(...members);
+      const members=this.members(id);if(!members.length||members.some(r=>!this.recordIdentityCurrent(r)))complete=false;documents.push(...members);
       reviews.push(...this.rows<ReviewScopeSnapshot['reviews'][number]>("SELECT json_set(data,'$.id',id) AS data FROM review_events WHERE json_extract(data,'$.group_id')=? AND json_extract(data,'$.decision') IN ('verify','ready') ORDER BY id",id));
       const claims=this.evidence(id).map(e=>{const r=this.get<CollectionRecord>('collection_records',e.record_id);return {...e,target_ref:r?.target_model_id?`model:${r.target_model_id}`:`document:${e.record_id}`};});evidence.push({group_id:id,claims,resolutions:this.conflictHistory(id)});
       links.push(...this.db.prepare('SELECT group_id,assertion_id FROM group_evidence_links WHERE group_id=? ORDER BY assertion_id').all(id));
@@ -274,8 +317,9 @@ export class CollectorStore {
     return violations;
   }
   private applyPayload(id:string,p:ClipPayload,eventId:string,trustedSourceId?:string,collectedAt?:string) {
-    const r=this.get<CollectionRecord>('collection_records',id)!;const s=trustedSourceId?this.settings.sources.find(s=>s.id===trustedSourceId):sourceFor(r.url,this.settings);
+    const r=this.get<CollectionRecord>('collection_records',id)!;requireThat(this.recordIdentityCurrent(r),'url_identity_changed');const s=trustedSourceId?this.settings.sources.find(s=>s.id===trustedSourceId):sourceFor(r.url,this.settings);
     if(trustedSourceId&&s)r.source=s.id;
+    if(p.document_origin){const origin=this.recordByUrl(p.document_origin);if(origin&&!this.recordIdentityCurrent(origin)){p={...p};delete p.document_origin;}}
     const observedAt=collectedAt??new Date(this.asOf).toISOString();
     if(p.target_model_id&&p.target_model_id!==r.target_model_id){
       const from=r.target_model_id?`model:${r.target_model_id}`:`document:${r.id}`,to=`model:${p.target_model_id}`,link=digest([id,eventId,from,to]);
@@ -287,9 +331,10 @@ export class CollectorStore {
     const incoming=this.recordAxes(id,p.assertions);
     const key=dedupKey(r.url,{...p,target_model_id:r.target_model_id,assertions:[...this.activeEvidence(id).filter(a=>!p.assertions.some(n=>supersedes({...n,url:r.url,seller:p.seller_handle},a))),...p.assertions]});
     const oldGroup=r.dedup_group_id,override=this.get<string>('collector_meta',`dedup_override:${r.id}`);
-    const groups=this.rows<Group>("SELECT data FROM dedup_groups WHERE id=? OR id IN (SELECT group_id FROM dedup_keys WHERE key IN (?,?))",override??'',key,`document:${r.url}`).filter(g=>!g.retired);
+    const groups=this.rows<Group>("SELECT data FROM dedup_groups WHERE id=? OR id IN (SELECT group_id FROM dedup_keys WHERE key IN (?,?))",override??'',key,`document:${r.url}`).filter(g=>!g.retired&&this.members(g.id).every(r=>this.recordIdentityCurrent(r)));
     const linked=p.document_origin&&new URL(p.document_origin).pathname!=='/'?this.recordByUrl(p.document_origin):undefined;
-    const candidates=[groups.find(g=>g.id===override),...groups.filter(g=>g.key===key||g.aliases?.includes(key)),linked?this.get<Group>('dedup_groups',linked.dedup_group_id):undefined,...groups.filter(g=>g.key===`document:${r.url}`)];
+    const currentLinked=this.recordIdentityCurrent(linked)?linked:undefined;
+    const candidates=[groups.find(g=>g.id===override),...groups.filter(g=>g.key===key||g.aliases?.includes(key)),currentLinked?this.get<Group>('dedup_groups',currentLinked.dedup_group_id):undefined,...groups.filter(g=>g.key===`document:${r.url}`)];
     const compatible=(g:Group)=>!contradictoryAxes(incoming).length&&!g.retired&&!mergeConflict(incoming,this.scopeAxes(g.id,id));
     const invalidOverride=override&&candidates.find(g=>g?.id===override&&!compatible(g));
     if(invalidOverride){this.db.prepare('DELETE FROM collector_meta WHERE id=?').run(`dedup_override:${id}`);this.put('review_events',randomUUID(),{decision:'merge_forbidden_split',record_id:id,group_id:override,axes:incoming,at:this.now()});}
@@ -328,7 +373,7 @@ export class CollectorStore {
   conflictEvaluation(groupId:string,asOf=this.asOf){
     const evidence=this.evidence(groupId).map(e=>{
       const r=this.get<CollectionRecord>('collection_records',e.record_id);
-      const fresh=r?.last_checked_at&&r.next_recheck_at&&Date.parse(r.next_recheck_at)>asOf;
+      const fresh=this.recordIdentityCurrent(r)&&r?.last_checked_at&&r.next_recheck_at&&Date.parse(r.next_recheck_at)>asOf;
       return {...e,target_ref:r?.target_model_id?`model:${r.target_model_id}`:`document:${e.record_id}`,...(!fresh?{unavailable_reason:'source_expired'}:{})};
     });
     return evaluateConflictSet(evidence,this.conflictHistory(groupId),asOf);
@@ -403,7 +448,7 @@ export class CollectorStore {
       this.detectConflicts(id);this.invalidate(id,action);if(action==='withdraw'){const assertion=this.get<Evidence>('evidence_assertions',input.assertion_id!)!;const owner=this.get<CollectionRecord>('collection_records',assertion.record_id)!;if(owner.dedup_group_id!==id)this.invalidate(owner.dedup_group_id,'withdraw');}this.snapshotInside();return this.scope(id);
     });
   }
-  private dueCount() {return (this.db.prepare("SELECT count(*) AS n FROM collection_records WHERE json_extract(data,'$.next_recheck_at')<=?").get(new Date(this.now()).toISOString()) as {n:number}).n;}
+  private dueCount() {return (this.db.prepare("SELECT count(*) AS n FROM collection_records WHERE json_extract(data,'$.url_identity_version')=2 AND NOT coalesce(json_extract(data,'$.identity_quarantined'),0) AND json_extract(data,'$.next_recheck_at')<=?").get(new Date(this.now()).toISOString()) as {n:number}).n;}
   private validateRecords() {
     const bad=this.db.prepare(`SELECT g.id FROM dedup_groups g LEFT JOIN collection_records r ON r.group_id=g.id
       WHERE NOT coalesce(json_extract(g.data,'$.retired'),0) GROUP BY g.id
