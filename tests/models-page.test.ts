@@ -63,6 +63,26 @@ const cardOf = (html: string, id: string) => {
   return match![0];
 };
 
+// Shared contract for priced, unknown-price and absent-deal cards.
+function expectIllustratedCard(html: string, id: string, displayName: string) {
+  expect(html).toContain(`<h2 class="model-name">${displayName}</h2>`);
+  expect(html.match(/<h2 /g)).toHaveLength(1);
+  expect(html.match(/<p /g)).toHaveLength(2);
+  expect(html.match(/class="model-art model-art-line"/g)).toHaveLength(1);
+  expect(html.match(/<div /g)).toHaveLength(2); // Illustration and price wrappers only.
+  expect(html.match(/<a /g)).toHaveLength(1);
+  expect(html.match(/<img /g)).toHaveLength(1);
+  expect(html).toContain(`src="/img/models/${id}.svg"`);
+  expect(html).toContain('width="1080" height="1080"');
+  expect(html).toContain(`alt="${displayName}"`);
+  expect(html).toContain('loading="lazy" decoding="async"');
+  expect(html).not.toMatch(/srcSet|srcset|sizes=|\.png|\/_next\/image/);
+  expect(html).not.toContain('model-art-mark');
+  for (const forbidden of ['<time', '<button', 'badge', 'eyebrow', '광고', 'checked', 'page_body', 'https://']) {
+    expect(html).not.toContain(forbidden);
+  }
+}
+
 test.each(['page_text', 'search_summary'])('%s prices do not appear on cards or produce strikethroughs', async level => {
   await memory.db.prepare('UPDATE models SET verify_level = ? WHERE id IN (?, ?)').bind(level, 'model-1', 'model-20').run();
   try {
@@ -97,6 +117,7 @@ test('cards show name, art or placeholder, official price and the lowest active 
     expect(card).toContain(`<h2 class="model-name">Stokke ${names[id as keyof typeof names]}</h2>`);
     expect(card.match(/<p /g)).toHaveLength(2);
     expect(card.match(/class="model-art(?: model-art-line)?"/g)).toHaveLength(1);
+    if (id !== 'model-42') expectIllustratedCard(card, id, `Stokke ${names[id as keyof typeof names]}`);
   }
 
   const one = cardOf(html, 'model-1');
@@ -139,6 +160,22 @@ test('cards show name, art or placeholder, official price and the lowest active 
   expect(hrefs).toEqual(['/models/model-1', '/models/model-3', '/models/model-42', '/models/model-20']);
 });
 
+test('an active deal with no price retains the official row and says information is unavailable', async () => {
+  await insertDeal('d-null-price', 'model-20', null, '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z');
+  try {
+    const card = cardOf(await render('2026-10-21T03:00:00Z'), 'model-20');
+    expectIllustratedCard(card, 'model-20', `Stokke ${names['model-20']}`);
+    expect(card).toContain('<p class="model-deal"><span class="model-deal-unknown">정보 없음</span></p>');
+    expect(card).toContain('<p class="model-official"><span>공식가</span> <span>670,000원</span></p>');
+    expect(card).not.toContain('진행 중인 공구 없음');
+    expect(card).not.toContain('model-official-solo');
+    expect(card).not.toContain('<s>');
+  } finally {
+    await memory.db.prepare("DELETE FROM deals WHERE id = 'd-null-price'").run();
+    await memory.db.prepare("DELETE FROM ingested_items WHERE id = 'd-null-price'").run();
+  }
+});
+
 test.each(seed.models.map((model, index) => ({ ...model, id: `model-${index + 1}` })))('$id renders its seeded brand and model within the four card elements', model => {
   const [card] = buildModelCards([{
     id: model.id, brand: model.brand, name: model.model,
@@ -146,24 +183,9 @@ test.each(seed.models.map((model, index) => ({ ...model, id: `model-${index + 1}
   }], [], Date.parse('2026-10-21T03:00:00Z'));
   const html = renderToStaticMarkup(createElement(ModelCard, { card }));
   const displayName = renderToStaticMarkup(`${model.brand} ${model.model}`);
-  expect(html).toContain(`<h2 class="model-name">${displayName}</h2>`);
-  expect(html.match(/<h2 /g)).toHaveLength(1);
-  expect(html.match(/<p /g)).toHaveLength(2);
-  expect(html.match(/class="model-art(?: model-art-line)?"/g)).toHaveLength(1);
-  expect(html.match(/<div /g)).toHaveLength(2); // Illustration and price wrappers only.
-  expect(html.match(/<a /g)).toHaveLength(1);
+  expectIllustratedCard(html, model.id, displayName);
   expect(html).toContain('진행 중인 공구 없음');
   expect(html).toContain('class="model-official model-official-solo"');
-  for (const forbidden of ['<time', '<button', 'badge', 'eyebrow', '광고', 'checked', 'page_body', 'https://']) {
-    expect(html).not.toContain(forbidden);
-  }
-  expect(html.match(/<img /g)).toHaveLength(1);
-  expect(html).toContain(`src="/img/models/${model.id}.svg"`);
-  expect(html).toContain('width="1080" height="1080"');
-  expect(html).toContain(`alt="${displayName}"`);
-  expect(html).toContain('loading="lazy" decoding="async"');
-  expect(html).not.toMatch(/srcSet|srcset|sizes=|\.png|\/_next\/image/);
-  expect(html).not.toContain('model-art-mark');
 });
 
 test('the page carries no check dates, sources, ads, other prices or verification levels', async () => {
