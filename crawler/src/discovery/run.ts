@@ -13,23 +13,27 @@ import { browserExtract } from './browser';
 import { extractFacts } from '../../../shared/fact-extract';
 import { parseHtml, selectAll, textOf } from '../../lib/external/parse';
 import type { ClipPayload, CollectionRecord } from '../../../shared/collection-schema';
-import { canonicalUrl } from '../../../shared/privacy-rules';
+import { canonicalUrl, URL_IDENTITY_VERSION, isUrlRejection } from '../../../shared/privacy-rules';
 import { digest } from '../dedup';
 export { failureCode } from './health';
 export const DRY_RUN_ITEM_PROBES=2;
-export type Job={id:string;url:string;source_id:string;depth:number;operation:'discovery'|'recheck';phase:'pending'|'leased'|'done'|'failed';lease_until:number;cursor:number;finished_at?:number;attempt?:number;failure_reason?:string};
+const itemRejection=(e:unknown)=>isUrlRejection(e)||e instanceof Error&&e.message==='url_identity_changed';
+export type Job={url_identity_version:number;id:string;url:string;source_id:string;depth:number;operation:'discovery'|'recheck';phase:'pending'|'leased'|'done'|'failed';lease_until:number;cursor:number;finished_at?:number;attempt?:number;failure_reason?:string};
 export class DiscoveryRunner {
   private runRef:string = randomUUID();
   constructor(readonly store:CollectorStore,readonly scheduler=new Scheduler(store),readonly log:PangpangLog=pangpangLog,readonly eligibilityLog:EligibilityLog=defaultEligibilityLog) {}
   enqueue(raw:string,source:SourcePolicy,depth=0,operation:Job['operation']='discovery') {
     if(isPangpang(source))requireThat(visitAllowed(raw,source),'visit_not_allowed');
-    const url=canonicalUrl(raw),id=digest([url,operation]),old=this.store.get<Job>('collection_jobs',id);
+    const url=canonicalUrl(raw),id=digest([URL_IDENTITY_VERSION,url,operation]),old=this.store.get<Job>('collection_jobs',id);
     if(old?.phase==='failed'){this.retryFailed(old);return;}
+    requireThat(visitAllowed(raw,source),'visit_not_allowed');
     requireThat(depth<=this.store.settings.limits.max_depth,'depth_limit');
     if(old&&(old.phase==='pending'||old.phase==='leased'||(old.finished_at??0)+source.recheck_ms>this.store.now()))return;
-    this.store.transaction(()=>this.store.put('collection_jobs',id,{id,url,source_id:source.id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:old?(old.attempt??1)+1:1} satisfies Job));
+    this.store.transaction(()=>this.store.put('collection_jobs',id,{url_identity_version:URL_IDENTITY_VERSION,id,url,source_id:source.id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:old?(old.attempt??1)+1:1} satisfies Job));
   }
   private retryFailed(job:Job) {
+    if(job.url_identity_version!==URL_IDENTITY_VERSION)return;
+    const record=this.store.recordByUrl(job.url);if(record&&!this.store.recordIdentityCurrent(record))return;
     if(job.finished_at===undefined||job.finished_at+this.store.settings.limits.failure_backoff_ms>this.store.now())return;
     const source=this.store.settings.sources.find(s=>s.id===job.source_id&&s.enabled);
     if(!source||!visitAllowed(job.url,source))return;
@@ -38,9 +42,9 @@ export class DiscoveryRunner {
     if(domain?.stopped||(domain?.next_at??0)>this.store.now())return;
     // Keep the original binding and spent attempts; the next reservation must be fresh.
     const {id,url,source_id,depth,operation}=job;
-    this.store.transaction(()=>this.store.put('collection_jobs',id,{id,url,source_id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:(job.attempt??1)+1} satisfies Job));
+    this.store.transaction(()=>this.store.put('collection_jobs',id,{url_identity_version:URL_IDENTITY_VERSION,id,url,source_id,depth,operation,phase:'pending',lease_until:0,cursor:0,attempt:(job.attempt??1)+1} satisfies Job));
   }
-  seed(){for(const source of this.store.settings.sources.filter(s=>s.enabled))for(const url of source.entries)this.enqueue(url,source);}
+  seed(){for(const source of this.store.settings.sources.filter(s=>s.enabled))for(const url of source.entries){try{this.enqueue(url,source);}catch(e){if(!itemRejection(e))throw e;}}}
   async run(dryRun=false,runRef:string=randomUUID()) {
     this.runRef=runRef;
     const mode=dryRun?'dry_run':'run',health=new RunHealth();
@@ -66,12 +70,13 @@ export class DiscoveryRunner {
     return {mode,status,sources,review:sources.filter(s=>s.status==='review').map(s=>s.source_id)};
   }
   private async runJobs(health:RunHealth) {
+    this.store.reconcileIdentity();
     // One scan per normal run, including children whose successful parent is still fresh.
     for(const job of this.store.list<Job>('collection_jobs'))if(job.phase==='failed')this.retryFailed(job);
-    for(const r of this.store.list<CollectionRecord>('collection_records').filter(r=>r.next_recheck_at&&Date.parse(r.next_recheck_at)<=this.store.now())){const s=sourceFor(r.url,this.store.settings);if(s?.enabled)this.enqueue(r.url,s,0,'recheck');}
+    for(const r of this.store.list<CollectionRecord>('collection_records').filter(r=>this.store.recordIdentityCurrent(r)&&r.next_recheck_at&&Date.parse(r.next_recheck_at)<=this.store.now())){const s=sourceFor(r.url,this.store.settings);if(s?.enabled)this.enqueue(r.url,s,0,'recheck');}
     const pages=new Map<string,number>();
     for(;;){
-      const jobs=this.store.list<Job>('collection_jobs').filter(j=>(j.phase==='pending'||j.phase==='leased'&&j.lease_until<=this.store.now())&&(pages.get(j.source_id)??0)<Math.min(this.store.settings.sources.find(s=>s.id===j.source_id)?.max_pages??0,this.store.settings.limits.max_pages)).sort((a,b)=>Number(b.operation==='recheck')-Number(a.operation==='recheck')||a.depth-b.depth);
+      const jobs=this.store.list<Job>('collection_jobs').filter(j=>j.url_identity_version===URL_IDENTITY_VERSION&&(j.phase==='pending'||j.phase==='leased'&&j.lease_until<=this.store.now())&&(pages.get(j.source_id)??0)<Math.min(this.store.settings.sources.find(s=>s.id===j.source_id)?.max_pages??0,this.store.settings.limits.max_pages)).sort((a,b)=>Number(b.operation==='recheck')-Number(a.operation==='recheck')||a.depth-b.depth);
       const j=jobs[0];if(!j)break;
       const source=this.store.settings.sources.find(s=>s.id===j.source_id&&s.enabled);if(!source){pages.set(j.source_id,Infinity);continue;}
       pages.set(source.id,(pages.get(source.id)??0)+1);
@@ -85,6 +90,7 @@ export class DiscoveryRunner {
           const reservation=(source.adapter==='links'||j.depth>0||j.operation==='recheck')?this.reservation(j,source,j.url,'body'):null;
           const response=await new SchedulerFetcher(this.scheduler,source).get(j.url);
           if(isPangpang(source))requireThat(pangpangIdentityAllowed(j.url,response.finalUrl??j.url),'redirect_identity');
+          requireThat(canonicalUrl(response.finalUrl??j.url)===j.url,'document_changed');
           phase='extraction';
           const m=measurePage(response.body,response.finalUrl??j.url,source,this.store.settings,new Date(this.store.now()),{listing:!!reservation});
           if(diagnostic&&m.eligibility_diagnostics){
@@ -106,14 +112,14 @@ export class DiscoveryRunner {
                 if(m.pangpang&&scheduled>=Math.max(0,Math.min(source.max_pages,this.store.settings.limits.max_pages)-(pages.get(source.id)??0)))deferred.add(f.url);
                 else {this.enqueue(f.url,source,j.depth+1);scheduled++;if(m.pangpang)this.log({...pangpangContext('discover',this.runRef,j.id),event:'progress',stage:'scheduled',product_ref:digest(f.url)});}
               }else if(m.pangpang)deferred.add(f.url);
-            }catch(e){if(m.pangpang&&failureCode(e)==='daily_limit'){deferred.add(f.url);continue;}if(!(e instanceof Error)||!['unsafe_url','private_url'].includes(e.message))throw e;}
+            }catch(e){if(m.pangpang&&failureCode(e)==='daily_limit'){deferred.add(f.url);continue;}if(!itemRejection(e))throw e;health.subrequestFailed(source.id,failureCode(e));}
             j.cursor=index+1;this.store.transaction(()=>this.store.put('collection_jobs',j.id,j));
           }
           if(reservation){
             // Existing baby-only classifier and model matches are retained; never follow sellers.
             for(const [index,{item,legacy}] of (m.listing??[]).entries()){
               if(m.pangpang&&!m.pangpang.detail&&deferred.has(item.source_url))continue;
-              let r;try{r=this.reservation(j,source,item.source_url,`listing:${index}`);}catch(e){if(m.pangpang&&failureCode(e)==='daily_limit'){deferred.add(item.source_url);continue;}throw e;}
+              let r;try{r=this.reservation(j,source,item.source_url,`listing:${index}`);}catch(e){if(m.pangpang&&failureCode(e)==='daily_limit'){deferred.add(item.source_url);continue;}if(itemRejection(e)){health.subrequestFailed(source.id,failureCode(e));continue;}throw e;}
               const payload:ClipPayload={title:item.title,seller_handle:item.seller_handle??undefined,target_model_id:legacy.suggestions.models.length===1?legacy.suggestions.models[0].model_id:null,assertions:[]};
               if(item.price)payload.assertions.push({field:'clue_price',value:item.price.value,quote:item.price.raw,locator:'locator' in item?String(item.locator):source.selector||'listing'});
               if(item.dates)payload.assertions.push({field:'group_buy_terms',value:item.dates.raw,quote:item.dates.raw,locator:'locator' in item?String(item.locator):source.selector||'listing'});
@@ -144,9 +150,10 @@ export class DiscoveryRunner {
         try{
           visited.add(canonicalUrl(url));
           this.store.authorizeProbe(source.brand);
-          if(source.browser){health.pageOk(source.id,measureBrowser(await browserExtract(url,source,this.scheduler,code=>health.subrequestFailed(source.id,code))));return;}
+          if(source.browser){health.pageOk(source.id,measureBrowser(await browserExtract(url,source,this.scheduler,{url:canonicalUrl(url),url_identity_version:URL_IDENTITY_VERSION},code=>health.subrequestFailed(source.id,code))));return;}
           const response=await new SchedulerFetcher(this.scheduler,source).get(url);
           phase='extraction';
+          requireThat(canonicalUrl(response.finalUrl??url)===canonicalUrl(url),'document_changed');
           const m=measurePage(response.body,response.finalUrl??url,source,this.store.settings,new Date(this.store.now()),{listing});
           if(diagnostic&&m.eligibility_diagnostics){
             diagnostic.captured_at=new Date(this.store.now()).toISOString();
@@ -181,14 +188,14 @@ export class DiscoveryRunner {
   }
   private reservation(job:Job,source:SourcePolicy,url:string,suffix:string){
     url=canonicalUrl(url);const existing=this.store.recordByUrl(url);const operation=job.operation==='recheck'&&existing?.last_checked_at?'recheck':'new_body';
-    const r=this.store.reserve('linux',{clip_id:job.id,attempt_id:digest([job.attempt??1,suffix]),url,brand:sourceFor(url,this.store.settings)?.brand??'unknown',collection_method:source.browser?'browser_extract':'auto_discovery',operation,policy_version:this.store.settings.policy_version});
+    const r=this.store.reserve('linux',{clip_id:job.id,attempt_id:digest([job.attempt??1,suffix]),url,brand:sourceFor(url,this.store.settings)?.brand??'unknown',collection_method:source.browser?'browser_extract':'auto_discovery',operation,policy_version:this.store.settings.policy_version,url_identity_version:URL_IDENTITY_VERSION});
     return this.store.start('linux',r.id);
   }
   private async collect(job:Job,source:SourcePolicy,health:RunHealth) {
     const r=this.reservation(job,source,job.url,'browser');
     // A lease recovered after an interrupted extraction cannot reuse its spent attempt.
     if((r.execution_until??0)<=this.store.now())throw new Error('execution_expired');
-    const payload=await browserExtract(job.url,source,this.scheduler,code=>health.subrequestFailed(source.id,code));
+    const payload=await browserExtract(job.url,source,this.scheduler,r,code=>health.subrequestFailed(source.id,code));
     this.store.submit('linux',r.id,payload);health.sent(source.id);
     return measureBrowser(payload);
   }

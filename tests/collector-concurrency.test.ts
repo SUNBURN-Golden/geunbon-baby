@@ -337,7 +337,7 @@ test('two processes migrate v2 together, preserving data and all schema objects'
   const objects=[...migration.matchAll(/CREATE (TABLE|INDEX|TRIGGER) IF NOT EXISTS (engine_\w+)/g)].map(m=>({type:m[1].toLowerCase(),name:m[2]}));
   const workers=await pair(file,'store=new CollectorStore(file,settings);send({ok:true});');expect(await Promise.all(workers.map(w=>w.next()))).toEqual([{ok:true},{ok:true}]);await Promise.all(workers.map(w=>w.exited));
   const store=new CollectorStore(file);try {
-    integrity(store);expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(baseline);expect(store.get('collector_meta','legacy_marker')).toEqual({records:518});
+    integrity(store);expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(baseline.map(row=>({...row,data:JSON.stringify({...JSON.parse(String(row.data)),record_version:2,identity_quarantined:true})})));expect(store.get('collector_meta','legacy_marker')).toEqual({records:518});
     for(const object of objects)expect(store.db.prepare('SELECT count(*) n FROM sqlite_master WHERE type=? AND name=?').get(object.type,object.name)).toMatchObject({n:1});
     expect(readdirSync(dir).filter(n=>n.includes('.pre-0003-')).length).toBeGreaterThanOrEqual(1);expect(readdirSync(dir).filter(n=>n.includes('.pre-0003-')).length).toBeLessThanOrEqual(2);
   }finally{store.close();}

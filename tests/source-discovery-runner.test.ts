@@ -7,7 +7,7 @@ test('search discovers unseeded product URLs without visiting them; rerun reuses
  const f=discoveryFixture();try{
   const baseline=['collection_records','dedup_groups','sync_outbox','engine_extracted','engine_labels','intake_receipts'].map(t=>rows(f,t));
   const r=await discover(f);expect(f.runner.engine.run(r)?.state).toBe('finished');
-  expect(f.calls).toHaveLength(1);expect(f.calls[0].url).toContain('search.example.org');expect(rows(f,'source_candidates').map(c=>c.canonical_url)).toEqual(['https://new-gear.example.org/item?product_no=A','https://new-gear.example.org/item?product_no=B']);
+  expect(f.calls).toHaveLength(1);expect(f.calls[0].url).toContain('search.example.org');expect(rows(f,'source_candidates').map(c=>c.canonical_url)).toEqual(['https://new-gear.example.org/item?id=A','https://new-gear.example.org/item?id=B']);
   expect(rows(f,'source_candidates').every(c=>c.status==='discovered')).toBe(true);expect(rows(f,'source_candidate_evidence').every(e=>e.fact_status==='unverified')).toBe(true);
   expect(['collection_records','dedup_groups','sync_outbox','engine_extracted','engine_labels','intake_receipts'].map(t=>rows(f,t))).toEqual(baseline);
   const before=rows(f,'source_candidate_evidence');await discover(f,'two');expect(f.calls).toHaveLength(1);expect(rows(f,'source_candidate_evidence')).toEqual(before);expect(rows(f,'source_candidates').every(c=>c.observation_count===1)).toBe(true);
@@ -54,7 +54,7 @@ test('search redirect never forwards auth, secrets and unknown cursor/URL data d
   vi.stubEnv('COLLECTOR_SEARCH_FIXTURE','synthetic_private_value');f.cfg.providers[0].auth_env='COLLECTOR_SEARCH_FIXTURE';
   f.response(()=>({status:302,headers:{'content-type':'application/json',location:'https://elsewhere.example.org/'},body:'{}'}));await discover(f);
   expect(f.calls).toHaveLength(1);expect(f.calls[0].headers.authorization).toBe('Bearer synthetic_private_value');expect(rows(f,'engine_failures')[0].reason).toBe('search_redirect');
-  f.response(()=>({status:200,headers:{'content-type':'application/json'},body:JSON.stringify({results:[{url:'https://new-gear.example.org/item?product_no=A&token=synthetic_private_value',title:'token: synthetic_private_value',summary:'email fixture@example.org'}],next:'page2'})}));
+  f.response(()=>({status:200,headers:{'content-type':'application/json'},body:JSON.stringify({results:[{url:'https://new-gear.example.org/item?id=A&token=synthetic_private_value',title:'token: synthetic_private_value',summary:'email fixture@example.org'}],next:'page2'})}));
   f.cfg.max_queries=4;f.profile.categories=f.profile.categories.slice(0,1);f.cfg.languages=['ko'];f.cfg.events=f.cfg.events.slice(0,1);f.advance(86400000);await discover(f,'two');expect(f.calls).toHaveLength(3);
   const data=['engine_runs','engine_captures','engine_checkpoints','engine_cache','engine_failures','source_candidates','source_candidate_evidence','source_discovery_queries'].map(t=>rows(f,t));
   expect(JSON.stringify(data)).not.toContain('synthetic_private_value');expect(JSON.stringify(data)).not.toContain('fixture@example.org');expect(JSON.stringify(data)).not.toContain('?q=');
@@ -78,8 +78,8 @@ test('external existing capture cache preserves product identifiers into candida
   const storage=new SqliteStorage(f.store),prepared=await collectedDerivative(f,discoveryAsset('list.html')),hash=prepared.hash;
   f.store.transaction(()=>{storage.capture({id:'collected-capture',run_id:run,source_id:'fixture',url_norm:'https://gear.example.org/list',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',content_type:'text/html',content_hash:hash,data:prepared.data});storage.cache(hash,'parse',prepared.parseTool,prepared.parsed);storage.cache(hash,'source-links',prepared.linkTool,prepared.links);});
   await discover(f);expect(f.calls).toHaveLength(0);
-  const c=rows(f,'source_candidates').find(c=>String(c.canonical_url).includes('product_no=A'))!;expect(c).toBeTruthy();
-  expect(JSON.stringify(new SourceCandidateStore(f.store,f.cfg).list(String(c.id)))).toContain('product_no=A');
+  const c=rows(f,'source_candidates').find(c=>String(c.canonical_url).includes('id=A'))!;expect(c).toBeTruthy();
+  expect(JSON.stringify(new SourceCandidateStore(f.store,f.cfg).list(String(c.id)))).toContain('id=A');
  }finally{f.close();}
 });
 
@@ -103,7 +103,7 @@ test('same collected link and locator fan out to known model conditions without 
  const f=discoveryFixture();try{
   f.cfg.providers=[];
   f.store.transaction(()=>f.store.db.prepare("INSERT INTO engine_runs VALUES('collected','agamajung','test','one','finished','2026-10-23',NULL,'{}')").run());
-  const storage=new SqliteStorage(f.store),prepared=await collectedDerivative(f,'<main><a href="https://new-gear.example.org/item?product_no=A">유모차 2026 신제품</a></main>'),hash=prepared.hash;
+  const storage=new SqliteStorage(f.store),prepared=await collectedDerivative(f,'<main><a href="https://new-gear.example.org/item?id=A">유모차 2026 신제품</a></main>'),hash=prepared.hash;
   f.store.transaction(()=>{
     storage.capture({id:'collected-capture',run_id:'collected',source_id:'fixture',url_norm:'https://gear.example.org/list',fetched_at:'2026-10-23T01:00:00.000Z',status:'ok',content_type:'text/html',content_hash:hash,data:prepared.data});
     storage.cache(hash,'parse',prepared.parseTool,prepared.parsed);storage.cache(hash,'source-links',prepared.linkTool,prepared.links);

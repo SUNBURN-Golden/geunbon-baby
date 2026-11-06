@@ -22,3 +22,21 @@
 권한과 생명주기 근거: [activeTab](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab), [서비스 워커 복구](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle).
 
 전달 실패는 작업별 `last_error`(HTTP 상태 코드만)와 `retry_count`로 남깁니다. 연결 오류·408·429·서버 오류는 1분부터 최대 6시간까지 지수 간격으로 재시도하고 Retry-After가 더 길면 그 시간을 따릅니다. 8회 실패 또는 403·409 등의 재시도로 해결되지 않는 응답은 자동 재시도를 멈추고 배지에 **실패**를 표시합니다. 한도·권한·정책 설정을 확인한 뒤 새로 클릭하세요. 오류 응답 원문은 저장하지 않습니다. 라벨 없는 선택 문장도 명시적인 원화 금액이 하나면 `clue_price`로만 추출하며 공식가로 승격하지 않습니다.
+
+URL identity v2 supports only `id`, `p`, `page`, `lang`, `recallid`, `format`,
+`productname`, and `title`; each occurrence must have a valid, privacy-safe value.
+`product_no`, `sku` and other unknown keys reject the click before job storage.
+Known tracking keys are stripped without retaining their values. The only `source`
+exception is a sole `source=home` on an exact HTTPS numeric 09pangpang post URL.
+Collector source/discovery configuration can restrict supported identifiers only.
+
+Update Linux and run `npm run build:clipper`, then reload the extension together.
+The extension checks identity without DOM access before starting an attempt and
+checks again before extraction. Identity, binding and policy failures stop as
+**재클릭**; expired delivery becomes **실패**. Only bounded fixed error codes are
+stored. Saved current payloads still recover after tab navigation without another
+DOM read. Unfinished legacy jobs discard payloads and require a fresh click;
+exact original committed receipts can acknowledge historical jobs. Linux preserves
+legacy records in quarantine, excluding automatic rechecks and dedup/evidence
+reuse. A collision with such a URL requires explicit identity review; a new click
+cannot upgrade it. No site execution or status-sync payload changes are involved.

@@ -12,6 +12,7 @@ export function clipperDom(href='https://gear.example.org/product?id=A') {
   const region=observed('region',{nodeType:1,closest:()=>null,querySelector:()=>null,cloneNode:()=>clone});
   const selection=observed('selection',{rangeCount:1,getRangeAt:()=>observed('range',{commonAncestorContainer:region,intersectsNode:()=>false}),toString:()=>body});
   const document=observed('document',{
+    get body(){return observed('body',{cloneNode:()=>observed('snapshot',{querySelectorAll:()=>[],get textContent(){return body;}})});},
     querySelector:(selector:string)=>selector==='main'?region:null,
     querySelectorAll:()=>[],
     createTreeWalker:()=>{let done=false;return observed('walker',{nextNode:()=>{if(done)return false;done=true;return true;},get currentNode(){return observed('text',{get textContent(){return body;}});}});},

@@ -1,5 +1,8 @@
 // Pure core: no Node, browser, AI, or network dependency. Never retain rejected text.
 export const PRIVACY_VERSION = 1;
+export const URL_IDENTITY_VERSION = 2;
+export const SUPPORTED_QUERY_KEY = /^(?:id|p|page|lang|recallid|format|productname|title)$/i;
+export const isUrlRejection = (e: unknown): boolean => e instanceof Error && ['unsafe_url','private_url'].includes(e.message);
 const injection = /ignore\s+(all\s+)?(previous|prior)\s+instructions|system\s*prompt|execute\s+(this|the)\s+command|이전\s*(지시|명령).*무시|이\s*명령.*실행|지시를\s*무시/i;
 const privateContext = /(?:(?:우리|저희)\s*(?:아이|아기|딸|아들)|(?:아기|아이|자녀|딸|아들)\s*(?:이름|생일|나이|사진|얼굴)|\d+\s*(?:개월|살)\s*(?:아기|아이)|(?:이름|성명)\s*[:：]|\b(?:secret|token|api[_-]?key|credential)\s*[:=]|아이\s*이름|생년월일|주민등록|계좌\s*번호|진료|진단받|병력|대출|카드\s*번호|비밀번호|password|authorization|bearer\s|access[_-]?token|session[_-]?id|cookie\s*[:=])/i;
 export function filterText(value: string, max = 300): string {
@@ -18,16 +21,26 @@ export function filterChanged(value: string): boolean {
   const normalized = value.normalize('NFKC').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
   return filterText(value, Number.MAX_SAFE_INTEGER) !== normalized;
 }
-export function canonicalUrl(raw: string): string {  if (typeof raw !== 'string' || raw.length > 2048) throw new Error('unsafe_url');
-  const u = new URL(raw);
+export function canonicalUrl(raw: string): string {
+  if (typeof raw !== 'string' || raw.length > 2048) throw new Error('unsafe_url');
+  let u: URL;
+  try { u = new URL(raw); } catch { throw new Error('unsafe_url'); }
   if (u.protocol !== 'https:' || u.username || u.password || u.port || !u.hostname.includes('.') || /(?:^|\.)(?:localhost|local|internal)$/.test(u.hostname) || /^[\d.]+$/.test(u.hostname) || u.hostname.includes(':') || /(?:^|\.)gonggumoa\.com$/.test(u.hostname)) throw new Error('unsafe_url');
-  let path: string; try { path = decodeURIComponent(u.pathname); } catch { throw new Error('unsafe_url'); }
+  let path: string, host: string;
+  try { path = decodeURIComponent(u.pathname); host = decodeURIComponent(u.hostname); } catch { throw new Error('unsafe_url'); }
   if (/\/(?:api|my|auth|login|logout|signin|signup|admin|account|member|mypage|oauth|session|messages|direct|mail|profile)(?:\/|$)/i.test(path) || filterText(path,4096) !== path) throw new Error('private_url');
-  // Queries are identifiers only. Unknown values can contain secrets/PII: drop, never persist.
-  const allowed = /^(?:id|p|page|lang|recallid|format|productname|title)$/i;
-  const params = [...u.searchParams].filter(([k,v]) => allowed.test(k) && /^[\p{L}\p{N}_.-]{1,60}$/u.test(v) && filterText(v,200) === v).sort(([a],[b])=>a.localeCompare(b));
+  const entries = [...u.searchParams];
+  const pangpang = u.origin === 'https://09pangpang.com' && /^\/post\/\d+\/?$/.test(u.pathname) && entries.length === 1 && entries[0][0] === 'source' && entries[0][1] === 'home';
+  const params: [string,string][] = [];
+  for (const [k,v] of entries) {
+    if (pangpang || /^(?:utm_.+|fbclid|gclid|igshid|ref|from|share)$/i.test(k)) continue;
+    if (!/^(?:id|p|page|lang|recallid|format|productname|title)$/i.test(k) || !/^[\p{L}\p{N}_.-]{1,60}$/u.test(v)) throw new Error('unsafe_url');
+    if (filterText(v,200) !== v) throw new Error('private_url');
+    params.push([k,v]);
+  }
+  params.sort(([a],[b])=>a.localeCompare(b));
   u.search = new URLSearchParams(params).toString(); u.hash=''; u.hostname=u.hostname.toLowerCase();
-  if(filterText(decodeURIComponent(u.hostname),4096)!==decodeURIComponent(u.hostname))throw new Error('unsafe_url');
+  if(filterText(host,4096)!==host)throw new Error('unsafe_url');
   u.pathname=u.pathname.replace(/\/{2,}/g,'/').replace(/\/$/,'') || '/';
   return u.href;
 }
@@ -38,7 +51,7 @@ export function sanitizeValue(value: unknown, depth = 0): unknown {
   if (Array.isArray(value) && value.length <= 30) return value.map(v=>sanitizeValue(v,depth+1));
   if (value && typeof value === 'object') {
     const allowed = new Set(['amount','currency','market','option','bundle','effective_at','id','name','url','date','terms','value']);
-    return Object.fromEntries(Object.entries(value).filter(([k])=>allowed.has(k)).map(([k,v])=>[k,sanitizeValue(v,depth+1)]));
+    return Object.fromEntries(Object.entries(value).filter(([k])=>allowed.has(k)).map(([k,v])=>[k,k==='url'?canonicalUrl(v as string):sanitizeValue(v,depth+1)]));
   }
   throw new Error('payload_value');
 }

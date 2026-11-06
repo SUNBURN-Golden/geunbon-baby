@@ -27,12 +27,12 @@ test('real collect extraction → sanitized link cache → discovery → DB → 
   f.cfg.providers=[];f.response(()=>({status:200,headers:{'content-type':'text/html'},body:asset('spec.html').replace('</main>',discoveryAsset('list.html')+'</main>')}));
   const pipeline=new AgamajungPipeline(f.store,f.raw,f.profile,{scheduler:f.scheduler(),discoveryConfig:f.cfg});
   const collect=pipeline.start({kind:'test',at:'collect'});pipeline.seed(collect);await pipeline.run(collect);const calls=f.calls.length;
-  expect(rows(f,'engine_cache').some(r=>r.stage==='source-links'&&String(r.data).includes('product_no=A'))).toBe(true);
+  expect(rows(f,'engine_cache').some(r=>r.stage==='source-links'&&String(r.data).includes('id=A'))).toBe(true);
   const before=['collection_records','dedup_groups','sync_outbox','engine_extracted','engine_labels'].map(t=>rows(f,t));await discover(f);
   expect(f.calls).toHaveLength(calls);expect(['collection_records','dedup_groups','sync_outbox','engine_extracted','engine_labels'].map(t=>rows(f,t))).toEqual(before);
-  const candidate=rows(f,'source_candidates').find(c=>String(c.canonical_url).includes('product_no=A'))!;expect(candidate).toBeTruthy();environment(f);
+  const candidate=rows(f,'source_candidates').find(c=>String(c.canonical_url).includes('id=A'))!;expect(candidate).toBeTruthy();environment(f);
   const log=vi.spyOn(console,'log').mockImplementation(()=>{});process.argv=['node','local-worker.ts','source-candidates','--id',String(candidate.id)];await main();
-  expect(JSON.parse(log.mock.calls.at(-1)![0])[0]).toMatchObject({canonical_url:'https://new-gear.example.org/item?product_no=A',status:'discovered'});
+  expect(JSON.parse(log.mock.calls.at(-1)![0])[0]).toMatchObject({canonical_url:'https://new-gear.example.org/item?id=A',status:'discovered'});
  }finally{process.argv=argv;f.close();}
 });
 test('failure retry CLI routes discovery failures to its runner and preserves lineage',async()=>{
@@ -53,7 +53,7 @@ test('collect requests a fresh body when product URL policy changes regardless o
   expect(f.calls.filter(c=>new URL(c.url).pathname==='/list').at(-1)?.headers).toEqual({});
   const {linkCacheTool}=await import('../crawler/src/source-discovery/config');
   const cache=rows(f,'engine_cache').find(c=>c.stage==='source-links'&&String(c.tool).startsWith(linkCacheTool(f.cfg,'https://gear.example.org/list','fixture')+':'+second.parseVersion));
-  expect(String(cache?.data)).toContain('product_no=A');
-  await discover(f);expect(rows(f,'source_candidates').some(c=>String(c.canonical_url).includes('product_no=A'))).toBe(true);
+  expect(String(cache?.data)).toContain('id=A');
+  await discover(f);expect(rows(f,'source_candidates').some(c=>String(c.canonical_url).includes('id=A'))).toBe(true);
  }finally{f.close();}
 });

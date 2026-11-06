@@ -1,10 +1,10 @@
-import { canonicalUrl } from '../../../shared/privacy-rules';
+import { canonicalUrl, URL_IDENTITY_VERSION } from '../../../shared/privacy-rules';
 import type { CollectorStore } from '../store';
 import { normalizedConditions } from '../agamajung/subject';
 import { dayKey, digest, stable } from '../../engine/util';
 import { CostCapError } from '../../engine/types';
 import { cleanText } from '../discovery/document';
-import { candidateUrl, validateCandidateUrl } from './url-policy';
+import { candidateUrl, validateCandidateUrl, CANDIDATE_URL_VERSION } from './url-policy';
 import type { DiscoveryConfig } from './config';
 import type { Destination, EvidenceInput, SearchQuery } from './types';
 export const discoveryConditions=(c:Record<string,string>)=>normalizedConditions('source_candidate',Object.fromEntries(Object.entries(c).map(([k,v])=>[cleanText(k,60),cleanText(v,100)]).filter(([k])=>!!k)));
@@ -12,18 +12,23 @@ export type CandidateObservation={destination:Destination;evidence:EvidenceInput
 type CandidateRow={id:string;profile_id:string;canonical_url:string|null;display_url:string|null;identity:Destination['identity'];status:'discovered';policy_version:string;reasons:string;relevance:number;relevance_version:string;first_seen:string;last_seen:string;observation_count:number;added_day:string;url_policy:string};
 export class SourceCandidateStore {
   constructor(readonly store:CollectorStore,readonly config:DiscoveryConfig,readonly profileId='agamajung'){}
-  candidateId(d:Destination,e:EvidenceInput){return digest(d.canonical_url?[this.profileId,d.canonical_url]:[this.profileId,'lost',e.capture_id,e.locator]);}
+  candidateId(d:Destination,e:EvidenceInput){return digest(d.canonical_url?[CANDIDATE_URL_VERSION,this.profileId,d.canonical_url]:[CANDIDATE_URL_VERSION,this.profileId,'lost',e.capture_id,e.locator]);}
   // Caller owns BEGIN IMMEDIATE, allowing candidate/query/checkpoint completion to be atomic.
   recordInside(observations:CandidateObservation[]) {
     const groups=new Map<string,{id:string;destination:Destination;score:number;claims:EvidenceInput[]}>();
     for(const {destination:d,evidence:e,score} of observations){
-      if(d.canonical_url)validateCandidateUrl(d.canonical_url,this.config.url_policies);
+      if(!d.policy_version.startsWith(CANDIDATE_URL_VERSION)||(d.identity==='preserved'?(!d.canonical_url||d.display_url!==d.canonical_url||d.reasons.length>0):(d.canonical_url!==null||d.display_url!==null||!d.reasons.length)))throw new Error('candidate_url_invalid');
+      if(d.canonical_url){validateCandidateUrl(d.canonical_url,this.config.url_policies);if(candidateUrl(d.canonical_url,this.config.url_policies).policy_version!==d.policy_version)throw new Error('candidate_url_invalid');}
       if(d.display_url&&candidateUrl(d.display_url,this.config.url_policies).display_url!==d.display_url)throw new Error('candidate_url_invalid');
       if(!Number.isSafeInteger(e.depth)||e.depth<0||!e.subject_ref||!(/^(?:entity:[a-f0-9]{64}|profile:agamajung)$/.test(e.subject_ref)||/^[A-Za-z0-9_.:-]{1,200}$/.test(e.subject_ref)&&cleanText(e.subject_ref,200)===e.subject_ref)||!e.locator||cleanText(e.locator,200)!==e.locator||cleanText(e.extractor_version,100)!==e.extractor_version)throw new Error('candidate_evidence_invalid');
       const cap=this.store.db.prepare('SELECT url_norm,fetched_at,data FROM engine_captures WHERE id=?').get(e.capture_id) as {url_norm:string;fetched_at:string;data:string}|undefined;
-      if(!cap||e.collected_at!==cap.fetched_at||e.source_url!==(JSON.parse(cap.data).final_url??cap.url_norm))throw new Error('candidate_provenance_invalid');
+      if(!cap||JSON.parse(cap.data).url_identity_version!==URL_IDENTITY_VERSION||e.collected_at!==cap.fetched_at||e.source_url!==(JSON.parse(cap.data).final_url??cap.url_norm))throw new Error('candidate_provenance_invalid');
       if(e.origin_capture&&!this.store.db.prepare('SELECT 1 FROM engine_captures WHERE id=?').get(e.origin_capture))throw new Error('candidate_provenance_invalid');
-      if(!this.config.providers.some(p=>p.endpoint===e.source_url)&&canonicalUrl(e.source_url)!==e.source_url&&candidateUrl(e.source_url,this.config.url_policies).canonical_url!==e.source_url)throw new Error('candidate_source_invalid');
+      if(!this.config.providers.some(p=>p.endpoint===e.source_url)){
+        let accepted=false;
+        try {accepted=canonicalUrl(e.source_url)===e.source_url;}catch{/* fixed error below */}
+        if(!accepted)throw new Error('candidate_source_invalid');
+      }
       const allowedReasons=['unsafe_url','fragment_identity','sensitive_parameter','duplicate_identifier','unknown_parameter','invalid_identifier','missing_identifier'];
       if(d.reasons.some(r=>!allowedReasons.includes(r))||cleanText(d.policy_version,100)!==d.policy_version)throw new Error('candidate_url_invalid');
       const id=this.candidateId(d,e),key=stable([id,e.capture_id,e.locator,e.relation,e.subject_ref,discoveryConditions(e.conditions),e.extractor_version]);
@@ -67,14 +72,17 @@ export class SourceCandidateStore {
     const rows=(id?this.store.db.prepare('SELECT * FROM source_candidates WHERE id=?').all(id):this.store.db.prepare('SELECT * FROM source_candidates ORDER BY first_seen,id LIMIT 500').all()) as CandidateRow[];
     return rows.map(r=>{
       const {url_policy,...row}=r,policies=JSON.parse(String(url_policy));
-      if(row.canonical_url)validateCandidateUrl(String(row.canonical_url),policies);
-      if(row.display_url&&candidateUrl(String(row.display_url),policies).display_url!==row.display_url)throw new Error('candidate_url_invalid');
+      let eligible=false;
+      if(row.policy_version.startsWith(`${CANDIDATE_URL_VERSION}:`)&&row.canonical_url){
+        try {validateCandidateUrl(String(row.canonical_url),this.config.url_policies);eligible=candidateUrl(String(row.canonical_url),this.config.url_policies).policy_version===row.policy_version;}catch{/* historical rows remain readable */}
+      }
+      void policies;
       const evidence=id?this.store.db.prepare('SELECT * FROM source_candidate_evidence WHERE candidate_id=? ORDER BY id').all(String(row.id)).map(e=>({
         ...e,data:JSON.parse(String(e.data)),
         capture:this.store.db.prepare('SELECT content_hash,raw_ref,status,fetched_at FROM engine_captures WHERE id=?').get(String(e.capture_id)),
         paths:this.store.db.prepare("SELECT query_id,parent_id,depth,deferred_reason,json_extract(data,'$.origin_capture') AS origin_capture FROM source_discovery_paths WHERE evidence_id=? ORDER BY id").all(String(e.id))
       })):undefined;
-      return {...row,reasons:JSON.parse(String(row.reasons)),...(evidence?{evidence}:{})};
+      return {...row,eligible,reasons:JSON.parse(String(row.reasons)),...(evidence?{evidence}:{})};
     });
   }
 }

@@ -28,7 +28,7 @@ test('one-page runs prioritize the oldest overdue record and advance the persist
   for(const [index,record] of expected.entries()){
    const before=f.store.list('collection_records'),budgets=f.store.list('daily_budgets');
    const run=f.pipeline.start({kind:'test',at:`overdue-${index}`});f.pipeline.seed(run);
-   expect(seeds(f,run)).toEqual([{item_key:digest([f.source.id,record.url]),data:{source_id:f.source.id,url:record.url,depth:0}}]);
+   expect(seeds(f,run)).toEqual([{item_key:digest([2,f.source.id,record.url]),data:{source_id:f.source.id,url:record.url,depth:0,url_identity_version:2}}]);
    expect(f.store.list('collection_records')).toEqual(before);expect(f.store.list('daily_budgets')).toEqual(budgets);
    await f.pipeline.run(run);expect(f.pipeline.engine.run(run)?.state).toBe('finished');
    expect(f.store.list('intake_receipts')).toHaveLength(index+1);
@@ -45,8 +45,8 @@ test('one-page runs prioritize the oldest overdue record and advance the persist
 test.each([['z','a'],['a','z']])('equal parsed due dates use canonical URL ordering regardless of insertion order: %s, %s',(first,second)=>{
  const f=engineFixture(seedPage,{max_pages:1});try{
   const records=[first,second].map((path,index)=>recheckRecord(f,`${f.source.origin}/${path}`,index?'2026-10-22T09:00:00+09:00':'2026-10-22T00:00:00Z'));
-  // Exercise both record-ID iteration orders and legacy URL normalization variants.
-  const list=vi.spyOn(f.store,'list').mockReturnValue(records.map(r=>({...r,url:r.url.endsWith('/z')?`${f.source.origin}//z/`:`${r.url}/`})));
+  // Exercise both record-ID iteration orders for current canonical identities.
+  const list=vi.spyOn(f.store,'list').mockReturnValue(records);
   const run=f.pipeline.start({kind:'test',at:'ties'});f.pipeline.seed(run);
   expect(seeds(f,run).map(r=>r.data.url)).toEqual([`${f.source.origin}/a`]);
   expect(list).toHaveBeenCalledExactlyOnceWith('collection_records');
@@ -60,7 +60,7 @@ test('overdue URLs lead unique entries in configured order; normalization overla
   recheckRecord(f,`${origin}/oldest`,new Date(f.now()-2*day).toISOString());
   const run=f.pipeline.start({kind:'test',at:'overlap'});f.pipeline.seed(run);
   const expected=['oldest','shared','entry-b','entry-a'].map(path=>`${origin}/${path}`);
-  expect(seeds(f,run)).toEqual(expected.map(url=>({item_key:digest([f.source.id,url]),data:{source_id:f.source.id,url,depth:0}})));
+  expect(seeds(f,run)).toEqual(expected.map(url=>({item_key:digest([2,f.source.id,url]),data:{source_id:f.source.id,url,depth:0,url_identity_version:2}})));
   await f.pipeline.run(run);expect(f.pipeline.engine.run(run)?.state).toBe('finished');
   expect(f.calls.map(c=>c.url)).toEqual([`${origin}/robots.txt`,...expected]);
   expect(f.store.list('intake_receipts')).toHaveLength(4);
@@ -96,7 +96,7 @@ test('source enablement, profile allowlisting and tier order still govern overdu
   for(const s of f.settings.sources)recheckRecord(f,`${s.origin}/due`,new Date(f.now()-day).toISOString(),s.id);
   f.reopen();const list=vi.spyOn(f.store,'list');
   const run=f.pipeline.start({kind:'test',at:'policy'});f.pipeline.seed(run);
-  expect(seeds(f,run).map(r=>r.data)).toEqual([f.source,catalog].map(s=>({source_id:s.id,url:`${s.origin}/due`,depth:0})));
+  expect(seeds(f,run).map(r=>r.data)).toEqual([f.source,catalog].map(s=>({source_id:s.id,url:`${s.origin}/due`,depth:0,url_identity_version:2})));
   expect(list).toHaveBeenCalledExactlyOnceWith('collection_records');
  }finally{f.close();}
 });
@@ -231,5 +231,33 @@ test('memory adapter version change invalidates conditional reuse',async()=>{
   await collect(f);expect(all(f,'engine_cache').filter(x=>x.stage==='parse')).toHaveLength(1);
   f.reopen();f.memoryTool('fixture-pdf@2',asset('manual.txt'));f.advance(86400000);await collect(f,'two');
   expect(f.calls.at(-1)?.headers).toEqual({});expect(all(f,'engine_cache').filter(x=>x.stage==='parse')).toHaveLength(2);
+ }finally{f.close();}
+});
+
+test('unsupported prepared links do not suppress valid sibling discovery',async()=>{
+ const f=engineFixture('<main><h1>Example stroller example_only</h1><a href="/product?product_no=101">bad</a><a href="/product?product_no=202">bad</a><a href="/product?id=A">good</a></main>',{max_pages:3});
+ try{
+  const run=await collect(f);
+  expect(all(f,'engine_failures')).toEqual([]);
+  expect(seeds(f,run).map(s=>s.data.url)).toContain(f.source.origin+'/product?id=A');
+  expect(seeds(f,run).some(s=>s.data.url===f.source.origin+'/product')).toBe(false);
+  const durable=JSON.stringify(['collection_records','intake_reservations','engine_cache'].map(t=>all(f,t)));
+  expect(durable).not.toContain('product_no');
+ }finally{f.close();}
+});
+test('unversioned discovery checkpoints cannot promote shortened URLs',async()=>{
+ const f=engineFixture();try{
+  const run=f.pipeline.start({kind:'test',at:'legacy-checkpoint'});
+  f.pipeline.engine.enqueue(run,'discover','legacy',{source_id:f.source.id,url:f.source.entries[0],depth:0});
+  await f.pipeline.run(run);
+  expect(all(f,'engine_failures')).toMatchObject([{reason:'url_identity_changed'}]);expect(f.calls).toEqual([]);expect(f.store.list('intake_reservations')).toEqual([]);expect(f.store.list('collection_records')).toEqual([]);
+ }finally{f.close();}
+});
+test('quarantined records cannot seed automatic due work',()=>{
+ const f=engineFixture();try{
+  const r=recheckRecord(f,f.source.origin+'/legacy',new Date(f.now()-day).toISOString());
+  delete r.url_identity_version;f.store.db.prepare('UPDATE collection_records SET data=? WHERE id=?').run(JSON.stringify(r),r.id);f.reopen();
+  const run=f.pipeline.start({kind:'test',at:'quarantine-seed'});f.pipeline.seed(run);
+  expect(seeds(f,run).map(s=>s.data.url)).toEqual(f.source.entries);
  }finally{f.close();}
 });

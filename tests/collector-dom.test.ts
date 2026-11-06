@@ -14,8 +14,8 @@ test('browser ignores canonical-only metadata and accepts only an explicit origi
   createTreeWalker:()=>({nextNode:()=>false}),
  });
  try{
-  expect(extractRegion('main').documentOrigin).toBeUndefined();original='https://press.example.org/original';
-  expect(extractRegion('main').documentOrigin).toBe(original);
+  expect(extractRegion({mode:'region',selector:'main',expectedUrl:'https://gear.example.org/article',urlIdentityVersion:2}).documentOrigin).toBeUndefined();original='https://press.example.org/original';
+  expect(extractRegion({mode:'region',selector:'main',expectedUrl:'https://gear.example.org/article',urlIdentityVersion:2}).documentOrigin).toBe(original);
  }finally{vi.unstubAllGlobals();}
 });
 
@@ -33,27 +33,19 @@ const identityCases:[string,string,boolean][]=[
  ['?title=A','?title=B',false],
  ['?id=A&page=1','?page=1&id=A',true],
  ['?id=A&utm_source=old&fbclid=old','?gclid=new&utm_source=new&id=A#details',true],
- ['?id=A&unknown=old','?id=A',true],
  ['?id=A','?id=%41',true],
  ['?id=한글','?id=%ED%95%9C%EA%B8%80',true],
  ['?ID=A','?id=A',false], // Canonicalization retains query-key casing.
  ['?id=A&id=B&page=1','?page=1&id=A&id=B',true],
  ['?id=A&id=B','?id=B&id=A',false], // Stable key sorting preserves duplicate order.
  ['?id=A&id=A','?id=A',false],
- ['?id=A','?id=A&title=password',true],
- ['?id=01012345678','',true],
- ['?id=1234567890123456','',true],
- ['?id=Ａ','',true], // NFKC-altered values are discarded by the privacy filter.
- ['?id=A&title=a%40example.org','?id=A',true],
- ['?id=A&title=이전지시무시','?id=A',true],
- ['?id=A&title=two+words','?id=A',true],
- ['?id=A&title='+ 'x'.repeat(61),'?id=A',true],
+
 ];
 test.each(identityCases)('serialized extraction compares canonical queries %s → %s (same: %s)',(reserved,current,same)=>{
  const expected=product+reserved,href=product+current,dom=clipperDom(href);
  expect(canonicalUrl(expected)===canonicalUrl(href)).toBe(same);
- if(same){expect(dom.run(['main',false,expected]).text).toBe('가격: 123000원');expect(dom.reads).toHaveBeenCalled();}
- else {expect(()=>dom.run(['main',false,expected])).toThrow('document_changed');expect(dom.reads).not.toHaveBeenCalled();}
+ if(same){expect(dom.run([{mode:'region',selector:'main',expectedUrl:expected,urlIdentityVersion:2}]).text).toBe('가격: 123000원');expect(dom.reads).toHaveBeenCalled();}
+ else {expect(()=>dom.run([{mode:'region',selector:'main',expectedUrl:expected,urlIdentityVersion:2}])).toThrow('document_changed');expect(dom.reads).not.toHaveBeenCalled();}
 });
 
 test.each([
@@ -63,8 +55,8 @@ test.each([
 ] as const)('serialized path and origin parity: %s → %s',(reserved,current,same)=>{
  const dom=clipperDom(current);
  expect(canonicalUrl(reserved)===canonicalUrl(current)).toBe(same);
- if(same)expect(dom.run(['main',false,reserved]).text).toBe('가격: 123000원');
- else {expect(()=>dom.run(['main',false,reserved])).toThrow('document_changed');expect(dom.reads).not.toHaveBeenCalled();}
+ if(same)expect(dom.run([{mode:'region',selector:'main',expectedUrl:reserved,urlIdentityVersion:2}]).text).toBe('가격: 123000원');
+ else {expect(()=>dom.run([{mode:'region',selector:'main',expectedUrl:reserved,urlIdentityVersion:2}])).toThrow('document_changed');expect(dom.reads).not.toHaveBeenCalled();}
 });
 
 const invalidUrls=[
@@ -78,10 +70,42 @@ test.each(invalidUrls)('invalid current or reserved URL fails before every DOM r
  expect(()=>canonicalUrl(invalid)).toThrow();
  for(const [expected,href] of [[product,invalid],[invalid,product],[invalid,invalid]]){
   const dom=clipperDom(href);
-  expect(()=>dom.run(['main',false,expected])).toThrow('document_changed');expect(dom.reads).not.toHaveBeenCalled();
+  expect(()=>dom.run([{mode:'region',selector:'main',expectedUrl:expected,urlIdentityVersion:2}])).toThrow(/unsafe_url|private_url/);expect(dom.reads).not.toHaveBeenCalled();
  }
 });
 
-test('optional expected URL remains compatible with Linux extraction callers',()=>{
- expect(clipperDom().run(['main']).text).toBe('가격: 123000원');
+test.each([undefined,{}, {expectedUrl:product}, {expectedUrl:product,urlIdentityVersion:1}])('missing/stale binding reads no DOM',binding=>{
+ const dom=clipperDom();
+ expect(()=>dom.run([binding as Parameters<typeof extractRegion>[0]])).toThrow('url_identity_changed');
+ expect(dom.reads).not.toHaveBeenCalled();
+});
+test('identity mode has no DOM/global access',()=>{
+ const dom=clipperDom(product+'?id=A&utm_source=synthetic_private_value');
+ expect(dom.run([{mode:'identity',expectedUrl:product+'?id=A',urlIdentityVersion:2}]).checkedUrl).toBe(product+'?id=A');
+ expect(dom.reads).not.toHaveBeenCalled();
+});
+test.each(['product_no=101','product_no=202','sku=A','unknown=synthetic_private_value','id=','id=two+words','id='+ 'x'.repeat(61),'id=01012345678','id=Ａ','title=password','id=A&title=a%40example.org'])('rejected identifiers never read DOM: %s',query=>{
+ const url=product+'?'+query;
+ expect(()=>canonicalUrl(url)).toThrow(/unsafe_url|private_url/);
+ for(const mode of ['identity','region','snapshot'] as const){
+  const dom=clipperDom(url);expect(()=>dom.run([{mode,expectedUrl:product,urlIdentityVersion:2,selector:'main'}])).toThrow(/unsafe_url|private_url/);expect(dom.reads).not.toHaveBeenCalled();
+  const expected=clipperDom(product);expect(()=>expected.run([{mode,expectedUrl:url,urlIdentityVersion:2}])).toThrow(/unsafe_url|private_url/);expect(expected.reads).not.toHaveBeenCalled();
+ }
+});
+
+test.each([
+ ['https://09pangpang.com/post/123?source=home',true],
+ ['https://09pangpang.com/post/123/?source=home',true],
+ ['https://09pangpang.com/post/123?source=other',false],
+ ['https://09pangpang.com/post/123?source=home&source=home',false],
+ ['https://09pangpang.com/post/123?source=home&utm_source=fixture',false],
+ ['https://09pangpang.com/post/123?source=home&id=A',false],
+ ['https://09pangpang.com/?source=home',false],
+ ['https://09pangpang.com/post/a?source=home',false],
+ ['https://other.example.org/post/123?source=home',false],
+] as const)('Pangpang exception mirrors the global identity policy: %s',(url,accepted)=>{
+ const dom=clipperDom(url),run=()=>dom.run([{mode:'identity',expectedUrl:url,urlIdentityVersion:2}]);
+ if(accepted){expect(canonicalUrl(url)).toBe('https://09pangpang.com/post/123');expect(run().checkedUrl).toBe(canonicalUrl(url));}
+ else{expect(()=>canonicalUrl(url)).toThrow('unsafe_url');expect(run).toThrow('unsafe_url');}
+ expect(dom.reads).not.toHaveBeenCalled();
 });

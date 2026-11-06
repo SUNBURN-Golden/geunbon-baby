@@ -278,3 +278,63 @@ test('index migration backfills document keys without changing records or review
   expect(f.store.report().groups).toBe(1);expect(f.store.scope(group).group.ready_evidence_version).toBeNull();
  }finally{f.close();}
 });
+
+test.each(['product_no=101','product_no=202','sku=A','unknown=synthetic_private_value','id=','id=two+words','id='+ 'x'.repeat(61)])('unsupported reservation has no durable identity or budget: %s',query=>{
+ const f=fixture();try{
+  const before=f.store.report();
+  expect(()=>f.store.reserve('fixture-client',binding(`${source.origin}/product?${query}`))).toThrow(/unsafe_url|private_url/);
+  expect(()=>f.store.discover(`${source.origin}/product?${query}`)).toThrow(/unsafe_url|private_url/);
+  for(const table of ['collection_records','daily_budgets','intake_reservations','intake_attempts','evidence_assertions','intake_receipts'] as const)expect(f.store.list(table)).toEqual([]);
+  expect(f.store.report()).toEqual(before);
+ }finally{f.close();}
+});
+test('supported query documents retain separate records, evidence ownership and dedup groups without model family assignments',()=>{
+ const f=fixture();try{
+  const receipts=['A','B'].map(id=>intake(f.store,`${source.origin}/product?id=${id}`,{assertions:[{field:'model',value:id,quote:`모델 ${id}`,locator:'main'}]}));
+  const records=receipts.map(r=>f.store.get<CollectionRecord>('collection_records',r.record_id)!);
+  expect(records[0].id).not.toBe(records[1].id);expect(records[0].dedup_group_id).not.toBe(records[1].dedup_group_id);
+  for(const [index,r] of records.entries())expect(f.store.scope(r.dedup_group_id).evidence).toMatchObject([{record_id:r.id,url:r.url,value:index?'B':'A'}]);
+ }finally{f.close();}
+});
+test('attempt reuse validates every binding field and owner',()=>{
+ const f=fixture();try{
+  const b=binding(),r=f.store.reserve('owner',b);
+  for(const patch of [{url:source.origin+'/other'},{brand:'unknown'},{operation:'recheck' as const},{collection_method:'auto_discovery' as const},{policy_version:2},{url_identity_version:1}])expect(()=>f.store.reserve('owner',{...b,...patch})).toThrow('binding_changed');
+  expect(()=>f.store.reserve('other-owner',b)).toThrow('binding_changed');
+  expect(f.store.list('intake_reservations')).toEqual([r]);
+ }finally{f.close();}
+});
+test.each(['held','started','complete'] as const)('legacy %s reconciliation quarantines records, preserves history and reconciles budgets once',phase=>{
+ const f=fixture();try{
+  const b=binding(),r=f.store.reserve('owner',b);
+  if(phase!=='held')f.store.start('owner',r.id);
+  if(phase==='complete'){f.store.submit('owner',r.id,price());ready(f.store,f.store.recordByUrl(b.url)!.dedup_group_id);}
+  const current=f.store.reservation('owner',r.id),record=f.store.recordByUrl(b.url)!;
+  delete (current as Partial<typeof current>).url_identity_version;delete record.url_identity_version;
+  f.store.put('intake_reservations',r.id,current);
+  if(phase!=='held'){const attempt=f.store.get<Record<string,unknown>>('intake_attempts',r.id)!;delete attempt.url_identity_version;f.store.put('intake_attempts',r.id,attempt);}
+  f.store.db.prepare('UPDATE collection_records SET data=? WHERE id=?').run(JSON.stringify(record),record.id);
+  const receipts=f.store.list('intake_receipts'),evidence=f.store.list('evidence_assertions');
+  f.reopen();const snapshot=f.store.report(),budgets=f.store.list('daily_budgets');
+  expect(f.store.recordByUrl(b.url)).toMatchObject({identity_quarantined:true});
+  expect(f.store.reservation('owner',r.id)).toMatchObject({phase:phase==='complete'?'complete':'cancelled'});
+  expect(f.store.list<{id:string;spent:number;held:number}>('daily_budgets').find(x=>x.id.endsWith(':new_body'))).toMatchObject({held:0,spent:phase==='held'?0:1});
+  if(phase==='started')expect(f.store.get('intake_attempts',r.id)).toMatchObject({phase:'cancelled',invalidation_reason:'url_identity_changed'});
+  expect(()=>f.store.start('owner',r.id)).toThrow('url_identity_changed');
+  expect(()=>f.store.submit('owner',r.id,price())).toThrow('url_identity_changed');
+  expect(()=>f.store.discover(b.url)).toThrow('url_identity_changed');
+  expect(()=>f.store.reserve('owner',binding(b.url))).toThrow('url_identity_changed');
+  expect(f.store.reviewValidity(record.dedup_group_id).requirements).toBe(false);
+  expect(f.store.list('intake_receipts')).toEqual(receipts);expect(f.store.list('evidence_assertions')).toEqual(evidence);
+  f.reopen();expect(f.store.report()).toEqual(snapshot);expect(f.store.list('daily_budgets')).toEqual(budgets);
+  expect(f.store.clip('owner',b.clip_id).receipts).toEqual(receipts);
+ }finally{f.close();}
+});
+test('quarantined origins and family groups cannot supply automatic dedup relationships',()=>{
+ const f=fixture();try{
+  const receipt=intake(f.store,source.origin+'/old',price()),old=f.store.get<CollectionRecord>('collection_records',receipt.record_id)!;
+  delete old.url_identity_version;f.store.db.prepare('UPDATE collection_records SET data=? WHERE id=?').run(JSON.stringify(old),old.id);f.reopen();
+  const fresh=intake(f.store,source.origin+'/fresh',{...price(),document_origin:old.url}),r=f.store.get<CollectionRecord>('collection_records',fresh.record_id)!;
+  expect(r.dedup_group_id).not.toBe(old.dedup_group_id);expect(f.store.scope(r.dedup_group_id).evidence).toHaveLength(1);
+ }finally{f.close();}
+});

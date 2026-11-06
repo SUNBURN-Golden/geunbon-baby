@@ -39,3 +39,11 @@ test('site stores authenticated counts only; idempotent and reverse versions can
   expect(await memory.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toMatchObject({results:[{name:'collector_status_snapshots'}]});
  }finally{f.close();memory.close();}
 });
+
+test.each(['product_no=101','product_no=202','sku=synthetic_private_value'])('local API rejects identity loss without returning input: %s',async query=>{
+ const f=fixture();try{
+  const response=await handleLocal(new Request(`http://${auth.host}/v1/intake/reservations`,{method:'POST',headers:{host:auth.host,origin:auth.extensionOrigin,authorization:`Bearer ${auth.intakeToken}`,'content-type':'application/json'},body:JSON.stringify(binding(`${source.origin}/product?${query}`))}),f.store,auth);
+  expect(response.status).toBe(400);expect(await response.json()).toEqual({error:'unsafe_url'});
+  expect(f.store.list('daily_budgets')).toEqual([]);expect(f.store.list('collection_records')).toEqual([]);expect(f.store.list('intake_reservations')).toEqual([]);
+ }finally{f.close();}
+});

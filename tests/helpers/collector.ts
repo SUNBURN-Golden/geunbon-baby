@@ -11,7 +11,7 @@ export function fixture(settings:CollectorConfig={...config,sources:[source]}){
   let store=new CollectorStore(file,settings,()=>time);
   return {file,dir,get store(){return store;},settings,now:()=>time,advance:(ms:number)=>{time+=ms;},reopen:()=>{store.close();store=new CollectorStore(file,settings,()=>time);return store;},close:()=>{store.close();rmSync(dir,{recursive:true,force:true});}};
 }
-export function binding(url='https://gear.example.org/model',method:Binding['collection_method']='manual_clip'):Binding{return {clip_id:randomUUID(),attempt_id:randomUUID(),url,brand:url.startsWith(source.origin)?source.brand:'unknown',collection_method:method,operation:'new_body',policy_version:1};}
+export function binding(url='https://gear.example.org/model',method:Binding['collection_method']='manual_clip'):Binding{return {clip_id:randomUUID(),attempt_id:randomUUID(),url,brand:url.startsWith(source.origin)?source.brand:'unknown',collection_method:method,operation:'new_body',policy_version:1,url_identity_version:2};}
 export const price=(amount=123000):ClipPayload=>({target_model_id:'model-1',assertions:[{field:'official_msrp',value:{amount,currency:'KRW',market:'KR'},quote:`권장소비자가 ${amount}원`,locator:'main .msrp',msrp_explicit:true,conditions:{currency:'KRW',market:'KR'}}]});
 export function intake(store:CollectorStore,url:string,payload:ClipPayload,method:Binding['collection_method']='manual_clip'){
  const reservation=store.reserve('fixture-client',binding(url,method));store.start('fixture-client',reservation.id);return store.submit('fixture-client',reservation.id,payload);

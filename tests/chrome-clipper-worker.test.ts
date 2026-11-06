@@ -28,17 +28,17 @@ function workerHarness(){
   storage:{local},action:{onClicked:{addListener:(fn:typeof click)=>{click=fn;}},setBadgeText:badge},
   scripting:{executeScript:execute},tabs:{query:vi.fn(async()=>[])},
   alarms:{create:vi.fn(async()=>{}),onAlarm:{addListener:(fn:typeof alarm)=>{alarm=fn;}}},
-  runtime:{onStartup:onEvent,onInstalled:onEvent},permissions:{contains:vi.fn(async()=>true),onRemoved:onEvent},
+  runtime:{id:'fixture',onStartup:onEvent,onInstalled:onEvent},permissions:{contains:vi.fn(async()=>true),onRemoved:onEvent},
  });
  const calls=vi.fn();
  vi.stubGlobal('fetch',vi.fn(async(raw:string,init:RequestInit)=>{
   const path=new URL(raw).pathname,body=init.body?JSON.parse(String(init.body)):undefined;
   calls(path,body);
   let data:unknown;
-  if(path.includes('/clips/'))data=f.store.clip('extension',path.split('/').at(-1)!);
-  else if(path==='/v1/intake/reservations')data=f.store.reserve('extension',body as Binding);
-  else if(path.endsWith('/start'))data=f.store.start('extension',path.split('/').at(-2)!);
-  else if(path==='/v1/intake')data=f.store.submit('extension',body.reservation_id,body.payload);
+  if(path.includes('/clips/'))data=f.store.clip('chrome-extension://fixture',path.split('/').at(-1)!);
+  else if(path==='/v1/intake/reservations')data=f.store.reserve('chrome-extension://fixture',body as Binding);
+  else if(path.endsWith('/start'))data=f.store.start('chrome-extension://fixture',path.split('/').at(-2)!);
+  else if(path==='/v1/intake')data=f.store.submit('chrome-extension://fixture',body.reservation_id,body.payload);
   else throw new Error('unexpected_request');
   return new Response(JSON.stringify({data}),{status:200,headers:{'content-type':'application/json'}});
  }));
@@ -66,7 +66,8 @@ test.each([
   await h.boot();
   // The click's tab URL is A; execution happens after the tab has navigated.
   h.dom.navigate(current);h.click(reserved);await h.settled(same?'complete':'needs_reclick');
-  expect(h.execute).toHaveBeenCalledTimes(1);expect(h.execute.mock.calls[0][0].args).toEqual(['',true,canonicalUrl(reserved)]);
+  expect(h.execute).toHaveBeenCalledTimes(same?2:1);expect(h.execute.mock.calls[0][0].args).toEqual([{mode:'identity',expectedUrl:canonicalUrl(reserved),urlIdentityVersion:2,reportErrors:true}]);
+  if(!same)expect(h.calls.mock.calls.some(([path])=>path.endsWith('/start'))).toBe(false);
   expect(h.jobs()[0].url).toBe(canonicalUrl(reserved));
   if(same){expect(h.f.store.list('intake_receipts')).toHaveLength(1);expect(h.badge).toHaveBeenLastCalledWith({text:'접수'});}
   else {
@@ -79,14 +80,14 @@ test.each([
 
 test.each(['reserved','extracting'] as const)('actual worker recovers %s on B without delivering B under A',async phase=>{
  const h=workerHarness(),a=product+'?id=A',b=product+'?id=B';try{
-  const input=binding(a),held=h.f.store.reserve('extension',input);
-  const reservation=phase==='extracting'?h.f.store.start('extension',held.id):held;
-  const job:ClipJob={...input,schema_version:1,tab_id:7,phase,reservation,next_retry_at:0};
+  const input=binding(a),held=h.f.store.reserve('chrome-extension://fixture',input);
+  const reservation=phase==='extracting'?h.f.store.start('chrome-extension://fixture',held.id):held;
+  const job:ClipJob={...input,client:'chrome-extension://fixture',schema_version:1,tab_id:7,phase,reservation,next_retry_at:0};
   h.disk[`clip:${job.clip_id}`]=JSON.parse(JSON.stringify(job));h.f.reopen();h.dom.navigate(b);
   await h.boot();await h.settled('needs_reclick');
   expect(h.jobs()[0].url).toBe(a);expect(h.dom.reads).not.toHaveBeenCalled();expect(h.badge).toHaveBeenLastCalledWith({text:'재클릭'});
   expect(h.execute).toHaveBeenCalledTimes(phase==='reserved'?1:0);
-  if(phase==='reserved')expect(h.execute.mock.calls[0][0].args[2]).toBe(a);
+  if(phase==='reserved')expect(h.execute.mock.calls[0][0].args[0].expectedUrl).toBe(a);
   expect(h.f.store.list('evidence_assertions')).toHaveLength(0);expect(h.f.store.list('intake_receipts')).toHaveLength(0);
   const priorCalls=h.calls.mock.calls.length;
   h.f.reopen();await h.boot();h.alarm();await new Promise<void>(resolve=>setImmediate(resolve));

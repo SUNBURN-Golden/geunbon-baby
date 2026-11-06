@@ -40,5 +40,5 @@ export async function handleLocal(request:Request,store:CollectorStore,auth:Loca
     if(match){const seller=store.get<import('./store').Seller>('seller_candidates',match[1]);requireThat(seller,'seller_not_found',404);if(method==='GET')return reply(match[2]==='export-account'?{handle:seller!.handle,verified:false,follow:false,collect_images:false}:seller);if(method==='POST'&&match[2]==='review')return reply(store.reviewSeller(match[1],String(body.status),String(body.reason)));}
     if(method==='POST'&&path==='/v1/import-legacy-candidates')return reply(store.importLegacy(body));
     return reply(null,404);
-  }catch(e){return Response.json({error:e instanceof CollectorError?e.code:'request_failed'},{status:e instanceof CollectorError?e.status:400,headers});}
+  }catch(e){return Response.json({error:e instanceof CollectorError?e.code:e instanceof Error&&['unsafe_url','private_url','url_identity_changed','binding_changed','policy_changed'].includes(e.message)?e.message:'request_failed'},{status:e instanceof CollectorError?e.status:400,headers});}
 }

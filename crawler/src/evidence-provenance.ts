@@ -1,3 +1,4 @@
+import { URL_IDENTITY_VERSION, canonicalUrl } from '../../shared/privacy-rules';
 import type { AssertionInput, ClipPayload } from '../../shared/collection-schema';
 import type { CollectorStore, Evidence } from './store';
 import { digest, stable } from './dedup';
@@ -7,7 +8,8 @@ export type ExtractedFact={id:string;capture_id:string;subject_ref:string;field:
 export type ProvenanceInput={capture_id:string;extractor:string;ids:string[]};
 export function assertionDigest(a:AssertionInput){return digest(privacyFilter({assertions:[a]}).assertions);}
 export function validateProvenance(store:CollectorStore,p:ClipPayload,input:ProvenanceInput,url:string){
-  const cap=store.db.prepare('SELECT * FROM engine_captures WHERE id=?').get(input.capture_id) as {url_norm:string;fetched_at:string;status:string}|undefined;
+  const cap=store.db.prepare('SELECT * FROM engine_captures WHERE id=?').get(input.capture_id) as {url_norm:string;fetched_at:string;status:string;data:string}|undefined;
+  if(cap&&(JSON.parse(cap.data).url_identity_version!==URL_IDENTITY_VERSION||canonicalUrl(cap.url_norm)!==cap.url_norm))throw new Error('url_identity_changed');
   if(!cap||cap.url_norm!==url||!['ok','not_modified'].includes(cap.status)||input.ids.length!==p.assertions.length||new Set(input.ids).size!==input.ids.length)throw new Error('provenance_invalid');
   return input.ids.map((id,index)=>{
     const fact=store.db.prepare('SELECT * FROM engine_extracted WHERE id=?').get(id) as ExtractedFact|undefined;

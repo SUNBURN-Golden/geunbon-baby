@@ -22,11 +22,15 @@ test('v2 synthetic 518 records and all legacy data survive 0003, with private ba
   }
   db.exec('COMMIT');
   const before=db.prepare('SELECT * FROM collection_records ORDER BY id').all(),groups=db.prepare('SELECT * FROM dedup_groups ORDER BY id').all();db.close();
+  const quarantined=before.map(row=>({...row,data:JSON.stringify({...JSON.parse(String(row.data)),record_version:2,identity_quarantined:true})}));
   const store=new CollectorStore(file);try{
-   expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:7});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(before);expect(store.db.prepare('SELECT * FROM dedup_groups ORDER BY id').all()).toEqual(groups);
+   expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:7});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(quarantined);
+   const migratedGroups=store.db.prepare('SELECT * FROM dedup_groups ORDER BY id').all();
+   expect(migratedGroups).toEqual(groups.map(row=>({...row,data:expect.any(String)})));
+   for(const [index,row] of migratedGroups.entries())expect(JSON.parse(String(row.data))).toMatchObject({...JSON.parse(String(groups[index].data)),group_version:1,evidence_version:1,review_scope_digest:expect.any(String)});
    const backups=readdirSync(dir).filter(x=>x.includes('.pre-0003-'));expect(backups).toHaveLength(1);expect(statSync(join(dir,backups[0])).mode&0o777).toBe(0o600);
    expect(store.db.prepare('PRAGMA quick_check').get()).toMatchObject({quick_check:'ok'});expect(store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-   expect(backfillEngine(store)).toEqual({captures:518,extracted:0,total:518});expect(backfillEngine(store)).toEqual({captures:0,extracted:0,total:518});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(before);
+   expect(backfillEngine(store)).toEqual({captures:518,extracted:0,total:518});expect(backfillEngine(store)).toEqual({captures:0,extracted:0,total:518});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(quarantined);
    const backup=new DatabaseSync(join(dir,backups[0]),{readOnly:true});try{expect(backup.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(before);}finally{backup.close();}
   }finally{store.close();}
  }finally{rmSync(dir,{recursive:true,force:true});}

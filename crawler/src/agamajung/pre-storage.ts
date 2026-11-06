@@ -1,5 +1,5 @@
 // Linux acquisition boundary: original documents never escape this call.
-import { canonicalUrl, filterChanged, filterText, PRIVACY_VERSION } from '../../../shared/privacy-rules';
+import { URL_IDENTITY_VERSION, canonicalUrl, filterChanged, filterText, PRIVACY_VERSION } from '../../../shared/privacy-rules';
 import type { InspectedArtifact, FetchResponse, RenderPort, ToolAdapter } from '../../engine';
 import { extractPdf, extractImage, renderDocument } from '../../engine';
 import { ParseBudget } from '../../lib/external/parse-budget';
@@ -15,7 +15,7 @@ import { visitAllowed, type SourcePolicy } from '../source-policy';
 import { digest, stable } from '../dedup';
 import type { Parsed } from './pipeline';
 
-export const PREPARATION_VERSION=`prepared@1:${PRIVACY_VERSION}:${LINUX_PRIVACY_VERSION}:budget@1`;
+export const PREPARATION_VERSION=`prepared@2:${URL_IDENTITY_VERSION}:${PRIVACY_VERSION}:${LINUX_PRIVACY_VERSION}:budget@1`;
 export const MAX_DERIVATIVE_BYTES=2097152;
 export type Prepared={version:string;mode:'static'|'rendered'|'pdf'|'ocr';parsed:Parsed;links:DocumentLinks;hash:string};
 const keys=new Set(('version mode parsed links hash inspection text eligible title document_origin assertions pangpang complete truncated region tool_status locator_base locator_space filter_changed field value quote locator conditions msrp_explicit amount currency market option bundle effective_at id name url date terms seller price_kind channel scheme offer effective_until release_year generation shipping_region purchase_condition unit list_complete detail products outcomes links_encountered index reason product_index source_url category_text price dates starts_at ends_at raw confidence seller_handle seller_name seller_url link_index destination canonical_url display_url identity reasons policy_version relation kind depth source_id').split(' '));
@@ -52,7 +52,9 @@ export function inspectDocument(doc:DocumentLinks,cfg:DiscoveryConfig,maxLinks=5
     const d=link.destination;
     shape(d,['canonical_url','display_url','identity','reasons','policy_version']);
     if(!d||!['preserved','identity_loss','rejected'].includes(d.identity))throw new Error('preparation_schema');
-    if(!Array.isArray(d.reasons)||typeof d.policy_version!=='string'||!/^candidate-url@1(?::[-a-zA-Z0-9_.@]+)?$/.test(d.policy_version)||(d.identity==='preserved')!==!!d.canonical_url)throw new Error('preparation_schema');
+    if(!Array.isArray(d.reasons)||typeof d.policy_version!=='string'||!/^candidate-url@2:identity@2(?::[-a-zA-Z0-9_.@]+)?$/.test(d.policy_version)||(d.identity==='preserved')!==!!d.canonical_url)throw new Error('preparation_schema');
+    if(d.identity!=='preserved'&&(d.display_url!==null||d.canonical_url!==null))throw new Error('preparation_schema');
+    if(d.identity==='preserved'&&(d.display_url!==d.canonical_url||d.reasons.length))throw new Error('preparation_schema');
     // Never promote identity-loss destinations back to preserved identifiers.
     if(d.canonical_url){const safe=candidateUrl(d.canonical_url,cfg.url_policies);if(safe.identity!=='preserved'||safe.canonical_url!==d.canonical_url)throw new Error('preparation_schema');}
     if(d.display_url&&candidateUrl(d.display_url,cfg.url_policies).display_url!==d.display_url)throw new Error('preparation_schema');
@@ -98,8 +100,9 @@ export async function prepare(input:{bytes:Buffer;document:FetchResponse;url:str
   const {source:s,config:cfg}=input,budget=new ParseBudget(input.maxBytes);
   if(input.bytes.length>input.maxBytes)throw new Error('preparation_limit');
   requireMemoryRenderer(input.render,input.renderer);
-  const finalUrl=canonicalUrl(input.document.finalUrl??input.url);
+  const expectedUrl=canonicalUrl(input.url),finalUrl=canonicalUrl(input.document.finalUrl??input.url);
   if(!visitAllowed(finalUrl,s)||isPangpang(s)&&!pangpangIdentityAllowed(input.url,input.document.finalUrl??input.url))throw new Error('redirect_identity');
+  if(finalUrl!==expectedUrl)throw new Error('document_changed');
   if(!/^(?:text\/(?:html|plain|xml)|application\/(?:pdf|xml|rss\+xml|atom\+xml)|image\/[a-z0-9.+-]+)$/.test(input.type)&&!(s.adapter==='cpsc'&&input.type==='application/json'))throw Object.assign(new Error('unsupported'),{tool:'unknown'});
   let body=input.bytes.toString(),mode:Prepared['mode']='static',parsed:Parsed;
   let originalText='',toolStatus='supported';

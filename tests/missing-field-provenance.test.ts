@@ -21,7 +21,7 @@ test('service commit recovery binds receipt and source links without duplicating
   expect({assertions:count(f,'evidence_assertions'),links:count(f,'extracted_assertion_links'),receipts:count(f,'intake_receipts'),outbox:count(f,'sync_outbox')}).toEqual(before);
   expect(f.store.get('evidence_assertions',original.id)).toMatchObject({withdrawn:true});
   const fact=f.store.db.prepare('SELECT id,capture_id,extractor,data FROM engine_extracted').get()!;
-  const reserved=f.store.reserve('linux',{clip_id:digest('example_only new'),attempt_id:digest('example_only new attempt'),url:r.url,brand:f.source.brand,collection_method:'auto_discovery',operation:'recheck',policy_version:1});f.store.start('linux',reserved.id);
+  const reserved=f.store.reserve('linux',{clip_id:digest('example_only new'),attempt_id:digest('example_only new attempt'),url:r.url,brand:f.source.brand,collection_method:'auto_discovery',operation:'recheck',policy_version:1,url_identity_version:2});f.store.start('linux',reserved.id);
   expect(()=>f.store.submitExtracted(reserved.id,{title:r.title,assertions:[JSON.parse(String(fact.data)).assertion]},{capture_id:String(fact.capture_id),extractor:String(fact.extractor),ids:[String(fact.id)]})).toThrow('provenance_reused');
   expect(count(f,'evidence_assertions')).toBe(1);
  }finally{f.close();}
@@ -31,7 +31,7 @@ test('a fault before service commit rolls back assertion, link and receipt toget
   const id=f.pipeline.start({kind:'test',at:'one'});f.pipeline.seed(id);
   while(!f.store.db.prepare("SELECT 1 FROM engine_checkpoints WHERE run_id=? AND stage='service'").get(id))await f.pipeline.engine.step(id);
   const cap=f.store.db.prepare('SELECT id FROM engine_captures').get()!,fact=f.store.db.prepare('SELECT id,extractor,data FROM engine_extracted').get()!;
-  const reservation=f.store.reserve('linux',{clip_id:digest('example_only rollback'),attempt_id:digest('example_only attempt'),url:f.source.entries[0],brand:f.source.brand,collection_method:'auto_discovery',operation:'new_body',policy_version:1});f.store.start('linux',reservation.id);
+  const reservation=f.store.reserve('linux',{clip_id:digest('example_only rollback'),attempt_id:digest('example_only attempt'),url:f.source.entries[0],brand:f.source.brand,collection_method:'auto_discovery',operation:'new_body',policy_version:1,url_identity_version:2});f.store.start('linux',reservation.id);
   let fail=true;const other=new CollectorStore(f.file,f.settings,f.now,point=>{if(point==='intake'&&fail){fail=false;throw new Error('example_only fault');}});
   try{
    const input={capture_id:String(cap.id),extractor:String(fact.extractor),ids:[String(fact.id)]},payload={assertions:[JSON.parse(String(fact.data)).assertion]};
