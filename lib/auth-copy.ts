@@ -1,12 +1,11 @@
 export const authCopy = {
   loginTitle: '로그인 · 가입',
-  loginLead: '소셜 계정으로 바로 시작해요. 별도의 가입 양식은 없어요.',
+  loginLead: 'Google 계정으로 바로 시작해요. 별도의 가입 양식은 없어요.',
   newsletterConsent: '아가마중 가격 소식지를 이메일로 받아볼게요.',
-  collectNotice: '가입 시 이메일 주소와 소셜 계정 고유 번호만 받아요. 이름·전화번호·프로필 사진은 받지 않아요.',
+  collectNotice: '가입 시 이메일 주소와 Google 계정 고유 번호만 받아요. 이름·전화번호·프로필 사진은 받지 않아요.',
   withdrawNotice: '소식지는 가입 후 내 계정에서 언제든 해지할 수 있어요.',
   google: 'Google로 계속하기',
-  kakao: '카카오로 계속하기',
-  unavailable: '소셜 로그인이 아직 준비되지 않았어요.',
+  unavailable: 'Google 로그인이 아직 준비되지 않았어요.',
   errors: {
     state: '로그인 요청이 만료되었거나 올바르지 않아요. 다시 시도해 주세요.',
     denied: '로그인이 취소되었어요.',

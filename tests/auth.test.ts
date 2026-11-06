@@ -1,14 +1,21 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { configuredProviders, handleAuth, readSession, createSession, STATE_COOKIE, SESSION_COOKIE, setNewsletter } from '../lib/auth';
+import { configuredProviders, handleAuth, readSession, createSession, STATE_COOKIE, SESSION_COOKIE, setNewsletter, deleteSession } from '../lib/auth';
 import type { Env } from '../lib/db';
+import { GET } from '../app/api/auth/[[...path]]/route';
 import { memoryD1 } from './helpers/sqlite';
 
 const ORIGIN = 'https://agamajoong.soulbound.co.kr';
 const SECRETS = ['gsecret-fixture', 'ksecret-fixture'];
 const NOW = new Date('2026-10-22T00:00:00.000Z');
 let memory: ReturnType<typeof memoryD1>;
-let env: Env;
+// Deliberately model obsolete bindings that may still exist at runtime.
+type LegacyEnv = Env & { KAKAO_REST_KEY?: string; KAKAO_CLIENT_SECRET?: string };
+let env: LegacyEnv;
+vi.mock('../lib/db', async importOriginal => ({
+  ...await importOriginal<typeof import('../lib/db')>(),
+  environment: () => env,
+}));
 type Mock = ReturnType<typeof vi.fn>;
 let fetchMock: Mock;
 let userinfo: Record<string, unknown>;
@@ -18,7 +25,7 @@ beforeEach(async () => {
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
     for (const sql of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(s => s.trim())) await memory.db.prepare(sql).run();
   }
-  env = { DB: memory.db, GOOGLE_CLIENT_ID: 'gid-fixture', GOOGLE_CLIENT_SECRET: SECRETS[0], KAKAO_REST_KEY: 'krest-fixture', KAKAO_CLIENT_SECRET: SECRETS[1] } as Env;
+  env = { DB: memory.db, GOOGLE_CLIENT_ID: 'gid-fixture', GOOGLE_CLIENT_SECRET: SECRETS[0], KAKAO_REST_KEY: 'krest-fixture', KAKAO_CLIENT_SECRET: SECRETS[1] } as LegacyEnv;
   userinfo = { sub: 'g-1', email: 'a@example.com', email_verified: true };
   fetchMock = vi.fn(async (url: string) => {
     if (url.includes('/token')) return Response.json({ access_token: 'access-fixture', refresh_token: 'refresh-fixture' });
@@ -39,13 +46,85 @@ async function login(provider: string, query = '') {
 async function callback(provider: string, params: Record<string, string>, cookie?: string) {
   return handleAuth(get(`/api/auth/callback/${provider}?${new URLSearchParams(params)}`, cookie), ['callback', provider], env, NOW);
 }
-async function signIn(provider: 'google' | 'kakao', query = '?newsletter=on') {
+async function signIn(provider: 'google', query = '?newsletter=on') {
   const start = await login(provider, query);
   return callback(provider, { code: 'code-fixture', state: start.state }, start.cookie);
 }
 const count = async (table: string) => (await memory.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{ n: number }>())!.n;
-const kakaoInfo = (account: Record<string, unknown> | undefined) => ({ id: 777, kakao_account: account });
-const goodKakao = { email: 'k@example.com', is_email_valid: true, is_email_verified: true };
+async function seedKakao() {
+  await memory.db.prepare('INSERT INTO users (id, email, created_at, newsletter_opt_in, newsletter_consented_at) VALUES (?, ?, ?, 1, ?)')
+    .bind('historical', 'same@example.com', NOW.toISOString(), NOW.toISOString()).run();
+  await memory.db.prepare('INSERT INTO user_identities VALUES (?, ?, ?, ?, ?)')
+    .bind('kakao', '777', 'historical', 'same@example.com', NOW.toISOString()).run();
+}
+
+const configurations: { settings: Partial<LegacyEnv>; expected: string[] }[] = [
+  { settings: {}, expected: [] },
+  { settings: { GOOGLE_CLIENT_ID: 'gid' }, expected: [] },
+  { settings: { GOOGLE_CLIENT_SECRET: 'gsecret' }, expected: [] },
+  { settings: { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: 'gsecret' }, expected: [] },
+  { settings: { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: '' }, expected: [] },
+  { settings: { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret' }, expected: ['google'] },
+  { settings: { KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: SECRETS[1] }, expected: [] },
+  { settings: { GOOGLE_CLIENT_ID: 'gid', KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: SECRETS[1] }, expected: [] },
+  { settings: { GOOGLE_CLIENT_SECRET: 'gsecret', KAKAO_REST_KEY: 'krest' }, expected: [] },
+  { settings: { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret', KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: SECRETS[1] }, expected: ['google'] },
+];
+test.each(configurations)('configuration enables only complete Google credentials (%#)', async ({ settings, expected }) => {
+  env = { DB: memory.db, ...settings } as LegacyEnv;
+  expect(configuredProviders(env)).toEqual(expected);
+  const response = await handleAuth(get('/api/auth/login/google'), ['login', 'google'], env, NOW);
+  expect(response.status).toBe(expected.length ? 302 : 404);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  if (!expected.length) {
+    expect((await callback('google', { code: 'code-fixture', state: 'old-state' })).status).toBe(404);
+  }
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(await count('sessions')).toBe(0);
+});
+
+test.each(['handleAuth', 'GET'] as const)('%s rejects Kakao before any DB access or provider request, including legacy state', async entrypoint => {
+  const oldState = Buffer.from(JSON.stringify({ state: 'old-state', verifier: null, newsletter: true })).toString('base64url');
+  const dbAccess = vi.fn(() => { throw new Error('Disabled provider must not access DB'); });
+  for (const googleConfigured of [false, true]) {
+    env = { KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: SECRETS[1],
+      ...(googleConfigured ? { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: SECRETS[0] } : {}),
+    } as LegacyEnv;
+    Object.defineProperty(env, 'DB', { get: dbAccess });
+    for (const action of ['login', 'callback']) {
+      for (const stateCookie of [undefined, `${STATE_COOKIE}=malformed`, `${STATE_COOKIE}=${oldState}`]) {
+        const parts = [action, 'kakao'];
+        const request = get(`/api/auth/${action}/kakao?code=legacy-code&state=old-state&newsletter=on`, stateCookie);
+        const response = entrypoint === 'GET'
+          ? await GET(request, { params: Promise.resolve({ path: parts }) })
+          : await handleAuth(request, parts, env, NOW);
+        expect(response.status).toBe(404);
+        expect(response.headers.get('cache-control')).toBe('no-store');
+        expect(response.headers.has('location')).toBe(false);
+        expect(setCookies(response)).toEqual([]);
+        expect(await response.text()).toBe('Not found');
+      }
+    }
+  }
+  expect(dbAccess).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(await count('users') + await count('user_identities') + await count('sessions')).toBe(0);
+});
+
+test('exported GET handler completes Google authentication using the configured origin', async () => {
+  const start = await GET(new Request('https://untrusted.example/api/auth/login/google?newsletter=on'), { params: Promise.resolve({ path: ['login', 'google'] }) });
+  const location = new URL(start.headers.get('location')!);
+  expect(location.searchParams.get('redirect_uri')).toBe(`${ORIGIN}/api/auth/callback/google`);
+  const params = new URLSearchParams({ code: 'code-fixture', state: location.searchParams.get('state')! });
+  const completed = await GET(new Request(`https://untrusted.example/api/auth/callback/google?${params}`, {
+    headers: { cookie: `${STATE_COOKIE}=${cookieValue(start, STATE_COOKIE)}` },
+  }), { params: Promise.resolve({ path: ['callback', 'google'] }) });
+  expect(completed.status).toBe(302);
+  expect(completed.headers.get('location')).toBe(`${ORIGIN}/me`);
+  expect(completed.headers.get('cache-control')).toBe('no-store');
+  expect(await readSession(memory.db, cookieValue(completed, SESSION_COOKIE))).toMatchObject({ providers: ['google'], newsletterOptIn: true });
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
 
 test('login redirects to Google with fixed redirect_uri, scope, PKCE S256 and a Lax state cookie', async () => {
   const { response, location } = await login('google', '?newsletter=on');
@@ -62,20 +141,15 @@ test('login redirects to Google with fixed redirect_uri, scope, PKCE S256 and a 
   expect(response.headers.get('cache-control')).toBe('no-store');
 });
 
-test('login redirects to Kakao with account_email scope and no PKCE', async () => {
-  const { location } = await login('kakao');
-  expect(`${location.origin}${location.pathname}`).toBe('https://kauth.kakao.com/oauth/authorize');
-  expect(location.searchParams.get('redirect_uri')).toBe(`${ORIGIN}/api/auth/callback/kakao`);
-  expect(location.searchParams.get('scope')).toBe('account_email');
-  expect(location.searchParams.get('client_id')).toBe('krest-fixture');
-  expect(location.searchParams.has('code_challenge_method')).toBe(false);
-});
-
 test('AUTH_ORIGIN overrides the redirect origin and drops Secure for http', async () => {
   env.AUTH_ORIGIN = 'http://localhost:8787/';
-  const { response, location } = await login('kakao');
-  expect(location.searchParams.get('redirect_uri')).toBe('http://localhost:8787/api/auth/callback/kakao');
+  const { response, location, state, cookie } = await login('google');
+  expect(location.searchParams.get('redirect_uri')).toBe('http://localhost:8787/api/auth/callback/google');
   expect(setCookies(response)[0]).not.toContain('Secure');
+  const completed = await callback('google', { code: 'code-fixture', state }, cookie);
+  expect(completed.headers.get('location')).toBe('http://localhost:8787/me');
+  expect(setCookies(completed).every(c => !c.includes('Secure'))).toBe(true);
+  expect(((fetchMock.mock.calls[0][1] as RequestInit).body as URLSearchParams).get('redirect_uri')).toBe('http://localhost:8787/api/auth/callback/google');
 });
 
 test('Google happy path creates one user, identity and session, then redirects to /me', async () => {
@@ -105,6 +179,8 @@ test('token request carries the same redirect_uri; secrets only appear in token 
   expect(body.get('client_secret')).toBe(SECRETS[0]);
   expect(body.get('code')).toBe('code-fixture');
   expect(body.get('code_verifier')).toBeTruthy();
+  const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.get('code_verifier')!))).toString('base64url');
+  expect(challenge).toBe(start.location.searchParams.get('code_challenge'));
   expect(infoUrl).toBe('https://openidconnect.googleapis.com/v1/userinfo');
   expect(String(infoUrl)).not.toContain(SECRETS[0]);
   expect(JSON.stringify(infoInit)).not.toContain(SECRETS[0]);
@@ -114,38 +190,22 @@ test('token request carries the same redirect_uri; secrets only appear in token 
   for (const leak of [...SECRETS, 'code-fixture', 'access-fixture', 'refresh-fixture']) expect(stored).not.toContain(leak);
 });
 
-test('Kakao happy path sends the optional client secret and stores a numeric id as text', async () => {
-  userinfo = kakaoInfo(goodKakao);
-  const response = await signIn('kakao');
-  expect(response.headers.get('location')).toBe(`${ORIGIN}/me`);
-  const body = (fetchMock.mock.calls[0][1] as RequestInit).body as URLSearchParams;
-  expect(body.get('client_id')).toBe('krest-fixture'); expect(body.get('client_secret')).toBe(SECRETS[1]);
-  expect(body.get('redirect_uri')).toBe(`${ORIGIN}/api/auth/callback/kakao`);
-  expect(fetchMock.mock.calls[1][0]).toBe('https://kapi.kakao.com/v2/user/me');
-  expect(await memory.db.prepare('SELECT provider, provider_user_id FROM user_identities').first()).toEqual({ provider: 'kakao', provider_user_id: '777' });
-});
-
-test('Kakao client secret is omitted when not configured', async () => {
-  delete env.KAKAO_CLIENT_SECRET; userinfo = kakaoInfo(goodKakao);
-  await signIn('kakao');
-  expect(((fetchMock.mock.calls[0][1] as RequestInit).body as URLSearchParams).has('client_secret')).toBe(false);
-});
-
-test.each(['missing cookie', 'mismatched state', 'missing state param'])('state failure (%s) never calls fetch and redirects to error=state', async name => {
+test.each(['missing cookie', 'malformed cookie', 'mismatched state', 'missing state param'])('state failure (%s) never calls fetch and redirects to error=state', async name => {
   const start = await login('google');
   const params: Record<string, string> = { code: 'code-fixture' };
   if (name === 'mismatched state') params.state = 'other';
-  if (name === 'missing cookie') params.state = start.state;
-  const response = await callback('google', params, name === 'missing cookie' ? undefined : start.cookie);
+  if (name === 'missing cookie' || name === 'malformed cookie') params.state = start.state;
+  const response = await callback('google', params, name === 'missing cookie' ? undefined : name === 'malformed cookie' ? `${STATE_COOKIE}=invalid` : start.cookie);
   expect(response.headers.get('location')).toBe(`${ORIGIN}/login?error=state`);
   expect(fetchMock).not.toHaveBeenCalled();
+  expect(response.headers.get('cache-control')).toBe('no-store');
   expect(setCookies(response)[0]).toContain('Max-Age=0');
   expect(await count('users') + await count('sessions')).toBe(0);
 });
 
 test('provider denial redirects to error=denied without creating anything', async () => {
-  const start = await login('kakao');
-  const response = await callback('kakao', { error: 'access_denied', state: start.state }, start.cookie);
+  const start = await login('google');
+  const response = await callback('google', { error: 'access_denied', state: start.state }, start.cookie);
   expect(response.headers.get('location')).toBe(`${ORIGIN}/login?error=denied`);
   expect(fetchMock).not.toHaveBeenCalled();
   expect(setCookies(response)[0]).toContain('Max-Age=0');
@@ -153,16 +213,14 @@ test('provider denial redirects to error=denied without creating anything', asyn
 });
 
 test.each([
-  ['google', { sub: 'g', email: 'a@example.com', email_verified: false }],
-  ['google', { sub: 'g', email: 'a@example.com' }],
-  ['google', { sub: 'g', email_verified: true }],
-  ['kakao', kakaoInfo(undefined)],
-  ['kakao', kakaoInfo({ is_email_valid: true, is_email_verified: true })],
-  ['kakao', kakaoInfo({ email: 'k@example.com', is_email_valid: true, is_email_verified: false })],
-  ['kakao', kakaoInfo({ email: 'k@example.com', is_email_valid: false, is_email_verified: true })],
-] as const)('%s email requirements failing -> error=email, no user or session (%#)', async (provider, info) => {
-  userinfo = info as Record<string, unknown>;
-  const response = await signIn(provider);
+  { sub: 'g', email: 'a@example.com', email_verified: false },
+  { sub: 'g', email: 'a@example.com' },
+  { sub: 'g', email_verified: true },
+  { sub: 'g', email: 'not-an-email', email_verified: true },
+  { sub: 'g', email: 'a@example.com', email_verified: 'true' },
+])('Google email requirements failing -> error=email, no user or session (%#)', async info => {
+  userinfo = info;
+  const response = await signIn('google');
   expect(response.headers.get('location')).toBe(`${ORIGIN}/login?error=email`);
   expect(setCookies(response).find(c => c.startsWith(`${SESSION_COOKIE}=`))).toBeUndefined();
   expect(await count('users') + await count('user_identities') + await count('sessions')).toBe(0);
@@ -176,25 +234,42 @@ test('token endpoint failure and fetch exceptions map to error=provider', async 
   expect(await count('users')).toBe(0);
 });
 
+test.each(['missing code', 'missing token', 'userinfo failure', 'invalid userinfo', 'missing id'] as const)('Google callback handles %s without issuing a session or disclosing credentials', async failure => {
+  if (failure === 'missing token') fetchMock.mockImplementationOnce(async () => Response.json({}));
+  if (failure === 'userinfo failure') fetchMock.mockImplementation(async (url: string) => url.includes('/token')
+    ? Response.json({ access_token: 'access-fixture' }) : new Response('access-fixture', { status: 503 }));
+  if (failure === 'invalid userinfo') fetchMock.mockImplementation(async (url: string) => url.includes('/token')
+    ? Response.json({ access_token: 'access-fixture' }) : Response.json(null));
+  if (failure === 'missing id') userinfo = { email: 'a@example.com', email_verified: true };
+  const start = await login('google');
+  const params: Record<string, string> = { state: start.state };
+  if (failure !== 'missing code') params.code = 'code-fixture';
+  const response = await callback('google', params, start.cookie);
+  expect(response.headers.get('location')).toBe(`${ORIGIN}/login?error=provider`);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  expect(setCookies(response)).toHaveLength(1);
+  expect(setCookies(response)[0]).toContain(`${STATE_COOKIE}=;`);
+  const output = JSON.stringify([...response.headers]) + await response.text();
+  for (const leak of [...SECRETS, 'code-fixture', 'access-fixture']) expect(output).not.toContain(leak);
+  expect(await count('users') + await count('user_identities') + await count('sessions')).toBe(0);
+  if (failure === 'missing code') expect(fetchMock).not.toHaveBeenCalled();
+});
+
 test('unconfigured, unsupported and other paths are 404', async () => {
-  env = { DB: memory.db, GOOGLE_CLIENT_ID: 'only-id' } as Env; // Google needs both id and secret
+  env = { DB: memory.db, GOOGLE_CLIENT_ID: 'only-id' } as LegacyEnv; // Google needs both id and secret
   expect(configuredProviders(env)).toEqual([]);
   for (const parts of [['login', 'google'], ['callback', 'google'], ['login', 'kakao'], ['login', 'naver'], ['callback', 'naver'], ['logout'], ['login'], [], ['login', 'google', 'x']]) {
     const response = await handleAuth(get('/api/auth/' + parts.join('/')), parts, env, NOW);
     expect(response.status, parts.join('/')).toBe(404);
     expect(response.headers.get('cache-control')).toBe('no-store');
   }
-  env = { DB: memory.db, KAKAO_REST_KEY: 'k' } as Env;
-  expect(configuredProviders(env)).toEqual(['kakao']);
-  expect((await handleAuth(get('/api/auth/login/google'), ['login', 'google'], env, NOW)).status).toBe(404);
-  expect((await handleAuth(get('/api/auth/login/kakao'), ['login', 'kakao'], env, NOW)).status).toBe(302);
-  expect((await handleAuth(new Request(`${ORIGIN}/api/auth/login/kakao`, { method: 'POST' }), ['login', 'kakao'], env, NOW)).status).toBe(404);
+  expect((await handleAuth(new Request(`${ORIGIN}/api/auth/login/google`, { method: 'POST' }), ['login', 'google'], env, NOW)).status).toBe(404);
 });
 
-test('repeating the same provider id callback keeps one user; relogin keeps newsletter choice', async () => {
-  await signIn('google', '?newsletter=on');
+test.each([['?newsletter=on', ''], ['', '?newsletter=on']])('relogin preserves newsletter choice and timestamps (%s -> %s)', async (firstChoice, nextChoice) => {
+  await signIn('google', firstChoice);
   const first = await memory.db.prepare('SELECT * FROM users').first();
-  const again = await signIn('google', ''); // unchecked this time
+  const again = await signIn('google', nextChoice);
   expect(again.status).toBe(302);
   expect(await count('users')).toBe(1); expect(await count('user_identities')).toBe(1); expect(await count('sessions')).toBe(2);
   expect(await memory.db.prepare('SELECT * FROM users').first()).toEqual(first);
@@ -227,12 +302,25 @@ test('a concurrent duplicate identity insert falls back to the existing user', a
   expect(await count('users')).toBe(1);
 });
 
-test('same email through another provider is a separate user', async () => {
+test('same-email Google login creates a separate account and preserves historical Kakao records and session', async () => {
+  await seedKakao();
+  const token = await createSession(memory.db, 'historical', NOW);
+  const historical = async () => [
+    await memory.db.prepare("SELECT * FROM users WHERE id = 'historical'").first(),
+    await memory.db.prepare("SELECT * FROM user_identities WHERE provider = 'kakao'").all(),
+    await memory.db.prepare("SELECT * FROM sessions WHERE user_id = 'historical'").all(),
+  ];
+  const before = await historical();
+  const session = await readSession(memory.db, token, NOW);
+  expect(session).toMatchObject({ userId: 'historical', providers: ['kakao'], newsletterOptIn: true });
   userinfo = { sub: 'g-1', email: 'same@example.com', email_verified: true };
-  await signIn('google');
-  userinfo = kakaoInfo({ ...goodKakao, email: 'same@example.com' });
-  await signIn('kakao');
+  const response = await signIn('google', '');
   expect(await count('users')).toBe(2); expect(await count('user_identities')).toBe(2);
+  expect(await historical()).toEqual(before);
+  expect(await readSession(memory.db, token, NOW)).toEqual(session);
+  const google = await readSession(memory.db, cookieValue(response, SESSION_COOKIE), NOW);
+  expect(google).toMatchObject({ email: 'same@example.com', providers: ['google'], newsletterOptIn: false });
+  expect(google!.userId).not.toBe('historical');
 });
 
 test('sessions: expired rows are deleted, forged tokens are anonymous', async () => {
@@ -245,15 +333,45 @@ test('sessions: expired rows are deleted, forged tokens are anonymous', async ()
   expect(await readSession(memory.db, undefined, NOW)).toBeNull();
 });
 
+test('historical Kakao sessions retain newsletter controls until normal logout or expiry', async () => {
+  await seedKakao();
+  const token = await createSession(memory.db, 'historical', NOW);
+  const later = new Date('2026-10-23T00:00:00.000Z');
+  await setNewsletter(memory.db, 'historical', false, later);
+  expect(await readSession(memory.db, token, later)).toMatchObject({ providers: ['kakao'], newsletterOptIn: false, consentedAt: NOW.toISOString(), withdrawnAt: later.toISOString() });
+  await setNewsletter(memory.db, 'historical', true, later);
+  expect(await readSession(memory.db, token, later)).toMatchObject({ providers: ['kakao'], newsletterOptIn: true, consentedAt: later.toISOString(), withdrawnAt: null });
+  // Additional sessions model records issued before Kakao was disabled.
+  const expires = await createSession(memory.db, 'historical', NOW);
+  await deleteSession(memory.db, token);
+  expect(await readSession(memory.db, token, later)).toBeNull();
+  expect(await readSession(memory.db, expires, new Date(NOW.getTime() + 31 * 86400_000))).toBeNull();
+  expect(await count('sessions')).toBe(0);
+  expect(await count('users')).toBe(1); expect(await count('user_identities')).toBe(1);
+  expect((await handleAuth(get('/api/auth/login/kakao'), ['login', 'kakao'], env, later)).status).toBe(404);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 test('setNewsletter withdraws and resubscribes with timestamps', async () => {
   await signIn('google', '?newsletter=on');
   const { id } = (await memory.db.prepare('SELECT id FROM users').first<{ id: string }>())!;
   const later = new Date('2026-10-23T00:00:00.000Z');
   await setNewsletter(memory.db, id, false, later);
-  expect(await memory.db.prepare('SELECT newsletter_opt_in o, newsletter_withdrawn_at w, newsletter_consented_at c FROM users').first()).toEqual({ o: 0, w: later.toISOString(), c: NOW.toISOString() });
+  const row = () => memory.db.prepare('SELECT newsletter_opt_in o, newsletter_withdrawn_at w, newsletter_consented_at c FROM users').first();
+  const withdrawn = { o: 0, w: later.toISOString(), c: NOW.toISOString() };
+  expect(await row()).toEqual(withdrawn);
   const latest = new Date('2026-10-24T00:00:00.000Z');
+  await setNewsletter(memory.db, id, false, latest);
+  expect(await row()).toEqual(withdrawn); // repeated withdrawal does not change timestamps
+  await signIn('google', '?newsletter=on');
+  expect(await row()).toEqual(withdrawn); // login never resubscribes a returning account
   await setNewsletter(memory.db, id, true, latest);
-  expect(await memory.db.prepare('SELECT newsletter_opt_in o, newsletter_withdrawn_at w, newsletter_consented_at c FROM users').first()).toEqual({ o: 1, w: null, c: latest.toISOString() });
+  const subscribed = { o: 1, w: null, c: latest.toISOString() };
+  expect(await row()).toEqual(subscribed);
+  await setNewsletter(memory.db, id, true, new Date('2026-10-25T00:00:00.000Z'));
+  expect(await row()).toEqual(subscribed); // repeated consent does not change timestamps
+  await signIn('google', '');
+  expect(await row()).toEqual(subscribed);
 });
 
 test('migration 0005 only contains CREATE statements and no semicolons in comments', async () => {

@@ -49,7 +49,7 @@ function find(node: ReactNode, match: (el: ReactElement<Props>) => boolean, ance
 const checkboxes = (page: ReactNode) => find(page, el => el.type === 'input' && el.props.type === 'checkbox');
 const buttons = (page: ReactNode) => find(page, el => el.type === 'button' && typeof el.props.formAction === 'string');
 
-test('login page: one form holds the default-checked checkbox and every provider button', async () => {
+test('login page: one form holds the default-checked checkbox and sole Google button despite legacy Kakao settings', async () => {
   const page = await Login({ searchParams: Promise.resolve({}) });
   const boxes = checkboxes(page);
   expect(boxes).toHaveLength(1);
@@ -58,7 +58,10 @@ test('login page: one form holds the default-checked checkbox and every provider
   expect(forms).toHaveLength(1);
   expect(forms[0].el.props.method).toBe('get');
   const found = buttons(page);
-  expect(found.map(b => b.el.props.formAction)).toEqual(['/api/auth/login/google', '/api/auth/login/kakao']);
+  expect(found.map(b => b.el.props.formAction)).toEqual(['/api/auth/login/google']);
+  expect(find(page, el => el.type === 'button')).toHaveLength(1);
+  expect(found[0].el.props.type).toBe('submit');
+  expect(found[0].el.props.children).toBe(authCopy.google);
   for (const item of [...boxes, ...found]) expect(item.ancestors.filter(a => a.type === 'form')).toHaveLength(1);
   // No self-signup inputs besides the newsletter checkbox.
   expect(find(page, el => el.type === 'input')).toHaveLength(1);
@@ -66,17 +69,31 @@ test('login page: one form holds the default-checked checkbox and every provider
   expect(html).toMatch(/type="checkbox"[^>]*name="newsletter"[^>]*checked=""/);
   expect(html).toContain('이메일 주소');
   expect(html).toContain(authCopy.newsletterConsent);
-  expect(html).not.toMatch(/naver|네이버/i);
+  expect(html).toContain('Google 계정으로 바로 시작해요. 별도의 가입 양식은 없어요.');
+  expect(html).toContain('Google 계정 고유 번호');
+  expect(html).not.toMatch(/kakao|카카오|naver|네이버/i);
 });
 
-test('login page hides buttons for unconfigured providers', async () => {
-  context.env = { KAKAO_REST_KEY: 'krest' };
-  expect(buttons(await Login({ searchParams: Promise.resolve({}) })).map(b => b.el.props.formAction)).toEqual(['/api/auth/login/kakao']);
-  context.env = { GOOGLE_CLIENT_ID: 'gid' }; // secret missing
+test.each<Record<string, string>>([
+  {},
+  { KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: 'legacy-secret' },
+  { GOOGLE_CLIENT_ID: 'gid' },
+  { GOOGLE_CLIENT_SECRET: 'gsecret' },
+  { GOOGLE_CLIENT_ID: 'gid', KAKAO_REST_KEY: 'krest' },
+])('login page shows no form when Google is unconfigured (%#)', async settings => {
+  context.env = settings;
   const none = await Login({ searchParams: Promise.resolve({}) });
   expect(buttons(none)).toHaveLength(0);
   expect(find(none, el => el.type === 'form')).toHaveLength(0);
-  expect(renderToStaticMarkup(none)).toContain('소셜 로그인이 아직 준비되지 않았어요');
+  expect(checkboxes(none)).toHaveLength(0);
+  expect(renderToStaticMarkup(none)).toContain('Google 로그인이 아직 준비되지 않았어요');
+});
+
+test('login page offers Google when only Google credentials are configured', async () => {
+  context.env = { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret' };
+  const page = await Login({ searchParams: Promise.resolve({}) });
+  expect(buttons(page).map(b => b.el.props.formAction)).toEqual(['/api/auth/login/google']);
+  expect(checkboxes(page)[0].el.props.defaultChecked).toBe(true);
 });
 
 test.each(['state', 'denied', 'email', 'provider'] as const)('login page shows an alert for error=%s', async error => {
@@ -99,9 +116,10 @@ test('login redirects signed-in users to /me; /me redirects anonymous users to /
   expect(html).toContain('a@example.com'); expect(html).toContain('카카오');
 });
 
-test('/me server actions withdraw, resubscribe and log out', async () => {
+test.each(['google', 'kakao'])('/me server actions withdraw, resubscribe and log out for %s identities', async provider => {
   await memory.db.prepare("INSERT INTO users (id, email, created_at, newsletter_opt_in, newsletter_consented_at) VALUES ('u-1','a@example.com','2026-10-22T00:00:00.000Z',1,'2026-10-22T00:00:00.000Z')").run();
-  await memory.db.prepare("INSERT INTO user_identities VALUES ('google','1','u-1','a@example.com','x')").run();
+  await memory.db.prepare("INSERT INTO user_identities VALUES (?,'1','u-1','a@example.com','x')").bind(provider).run();
+  context.env = {}; // existing sessions do not depend on configured OAuth credentials
   const token = context.session = await createSession(memory.db, 'u-1', new Date());
   const row = () => memory.db.prepare('SELECT newsletter_opt_in AS o, newsletter_consented_at AS c, newsletter_withdrawn_at AS w FROM users').first<{ o: number; c: string | null; w: string | null }>();
   const actions = async () => {
@@ -113,11 +131,13 @@ test('/me server actions withdraw, resubscribe and log out', async () => {
   expect(a.optIn).toBe('0');
   await expect(a.toggle(new FormData())).rejects.toThrow('NEXT_REDIRECT:/me'); // no opt_in => withdraw
   expect(await row()).toMatchObject({ o: 0, w: expect.any(String) });
+  expect(renderToStaticMarkup(await Me())).toContain(authCopy.unsubscribed);
   a = await actions();
   expect(a.optIn).toBe('1');
   const form = new FormData(); form.set('opt_in', '1');
   await expect(a.toggle(form)).rejects.toThrow('NEXT_REDIRECT:/me');
   expect(await row()).toMatchObject({ o: 1, w: null, c: expect.any(String) });
+  expect(renderToStaticMarkup(await Me())).toContain(authCopy.subscribed);
   await expect(a.logout()).rejects.toThrow('NEXT_REDIRECT:/login');
   expect(context.deleted).toEqual([SESSION_COOKIE]);
   expect(await memory.db.prepare('SELECT COUNT(*) AS n FROM sessions').first()).toEqual({ n: 0 });
@@ -138,6 +158,7 @@ test('footer letter section links to /login with sign-in subscription copy', () 
   expect(letter).toMatch(/<a[^>]*href="\/login"[^>]*>/);
   expect(letter).toContain(siteCopy.newsletterCta);
   expect(letter).toContain(siteCopy.newsletterHow);
+  expect(letter).toContain('Google 계정으로 로그인하면');
   expect(letter).toContain('내 계정');
   expect(letter).not.toContain('곧 만나요');
   expect(letter).not.toMatch(/<(form|input)\b/);
