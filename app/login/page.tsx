@@ -22,7 +22,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
       <p className="muted">{authCopy.collectNotice}</p>
       <p className="muted">{authCopy.withdrawNotice}</p>
       <div className="auth-buttons">
-        {providers.map(p => <button key={p} type="submit" formAction={`/api/auth/login/${p}`}>{authCopy[p]}</button>)}
+        <button type="submit" formAction="/api/auth/login/google">{authCopy.google}</button>
       </div>
     </form>}
   </main>;

@@ -8,7 +8,7 @@ export const siteCopy = {
   heroLead: "검증된 육아용품의 공동구매 가격을 알려 드려요.",
   pricePromise: "공식가격과 공동구매 가격을 함께 보여 드려요.",
   newsletterLead: "주 1회, 확인한 공동구매 가격을 전해요.",
-  newsletterHow: "소셜 계정으로 로그인하면 소식지를 받을 수 있어요. 구독은 내 계정에서 언제든 바꿀 수 있어요.",
+  newsletterHow: "Google 계정으로 로그인하면 소식지를 받을 수 있어요. 구독은 내 계정에서 언제든 바꿀 수 있어요.",
   newsletterCta: "로그인하고 소식지 받기",
   transactionNotice: "아가마중은 통신판매중개 정보를 제공해요. 거래 당사자는 아니에요.",
   transactionTerms: "모든 공동구매는 광고로 표시해요. 결제·배송·교환·환불은 연결된 판매처에서 확인해 주세요.",

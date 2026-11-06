@@ -1,30 +1,27 @@
 import type { Env } from './db';
 
-export const PROVIDERS = ['google', 'kakao'] as const;
+export const PROVIDERS = ['google'] as const;
 export type Provider = (typeof PROVIDERS)[number];
+// Historical identities remain readable even when their provider cannot authenticate.
+export type StoredProvider = Provider | 'kakao';
 export const SESSION_COOKIE = 'agamajung_session';
 export const STATE_COOKIE = 'agamajung_oauth';
 export const SESSION_SECONDS = 30 * 24 * 60 * 60;
 const STATE_SECONDS = 600;
 const DEFAULT_ORIGIN = 'https://agamajoong.soulbound.co.kr';
-type AuthEnv = Pick<Env, 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'KAKAO_REST_KEY' | 'KAKAO_CLIENT_SECRET' | 'AUTH_ORIGIN'>;
+type AuthEnv = Pick<Env, 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'AUTH_ORIGIN'>;
 export type Identity = { provider: Provider; providerUserId: string; email: string };
-export type Session = { userId: string; email: string; createdAt: string; newsletterOptIn: boolean; consentedAt: string | null; withdrawnAt: string | null; providers: Provider[] };
+export type Session = { userId: string; email: string; createdAt: string; newsletterOptIn: boolean; consentedAt: string | null; withdrawnAt: string | null; providers: StoredProvider[] };
 
 const ENDPOINTS = {
   google: {
     authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token',
     userinfo: 'https://openidconnect.googleapis.com/v1/userinfo', scope: 'openid email',
   },
-  kakao: {
-    authorize: 'https://kauth.kakao.com/oauth/authorize', token: 'https://kauth.kakao.com/oauth/token',
-    userinfo: 'https://kapi.kakao.com/v2/user/me', scope: 'account_email',
-  },
 } as const;
 
 export function configuredProviders(env: AuthEnv): Provider[] {
-  const ready: Record<Provider, boolean> = { google: !!env.GOOGLE_CLIENT_ID && !!env.GOOGLE_CLIENT_SECRET, kakao: !!env.KAKAO_REST_KEY };
-  return PROVIDERS.filter(p => ready[p]);
+  return env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? ['google'] : [];
 }
 const isProvider = (value: string | undefined): value is Provider => !!value && (PROVIDERS as readonly string[]).includes(value);
 const origin = (env: AuthEnv) => (env.AUTH_ORIGIN || DEFAULT_ORIGIN).replace(/\/+$/, '');
@@ -75,8 +72,9 @@ function redirect(location: string, cookies: string[]) {
 async function exchange(env: AuthEnv, provider: Provider, code: string, verifier: string | null): Promise<Identity | 'provider' | 'email'> {
   const endpoint = ENDPOINTS[provider];
   const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri(env, provider) });
-  if (provider === 'google') { body.set('client_id', env.GOOGLE_CLIENT_ID!); body.set('client_secret', env.GOOGLE_CLIENT_SECRET!); if (verifier) body.set('code_verifier', verifier); }
-  else { body.set('client_id', env.KAKAO_REST_KEY!); if (env.KAKAO_CLIENT_SECRET) body.set('client_secret', env.KAKAO_CLIENT_SECRET); }
+  body.set('client_id', env.GOOGLE_CLIENT_ID!);
+  body.set('client_secret', env.GOOGLE_CLIENT_SECRET!);
+  if (verifier) body.set('code_verifier', verifier);
   try {
     const tokenResponse = await fetch(endpoint.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body });
     if (!tokenResponse.ok) return 'provider';
@@ -93,17 +91,9 @@ const cleanId = (value: unknown) => typeof value === 'string' && value && value.
 export function parseUserinfo(provider: Provider, value: unknown): Identity | 'provider' | 'email' {
   if (!value || typeof value !== 'object') return 'provider';
   const info = value as Record<string, unknown>;
-  if (provider === 'google') {
-    const id = cleanId(info.sub); if (!id) return 'provider';
-    const email = cleanEmail(info.email);
-    return email && info.email_verified === true ? { provider, providerUserId: id, email } : 'email';
-  }
-  const id = cleanId(info.id); if (!id) return 'provider';
-  const account = info.kakao_account;
-  if (!account || typeof account !== 'object') return 'email';
-  const a = account as Record<string, unknown>;
-  const email = cleanEmail(a.email);
-  return email && a.is_email_valid === true && a.is_email_verified === true ? { provider, providerUserId: id, email } : 'email';
+  const id = cleanId(info.sub); if (!id) return 'provider';
+  const email = cleanEmail(info.email);
+  return email && info.email_verified === true ? { provider, providerUserId: id, email } : 'email';
 }
 
 // ── 사용자·세션 (D1) ────────────────────────────────────────────────────────
@@ -138,7 +128,7 @@ export async function readSession(db: D1Database, token: string | undefined, now
     .bind(id).first<{ expires_at: string; id: string; email: string; created_at: string; newsletter_opt_in: number; newsletter_consented_at: string | null; newsletter_withdrawn_at: string | null }>();
   if (!row) return null;
   if (row.expires_at <= now.toISOString()) { await db.prepare('DELETE FROM sessions WHERE id = ?').bind(id).run(); return null; }
-  const identities = (await db.prepare('SELECT provider FROM user_identities WHERE user_id = ? ORDER BY created_at').bind(row.id).all<{ provider: Provider }>()).results;
+  const identities = (await db.prepare('SELECT provider FROM user_identities WHERE user_id = ? ORDER BY created_at').bind(row.id).all<{ provider: StoredProvider }>()).results;
   return { userId: row.id, email: row.email, createdAt: row.created_at, newsletterOptIn: row.newsletter_opt_in === 1, consentedAt: row.newsletter_consented_at, withdrawnAt: row.newsletter_withdrawn_at, providers: identities.map(i => i.provider) };
 }
 export async function deleteSession(db: D1Database, token: string | undefined) {
@@ -160,15 +150,16 @@ export async function handleAuth(request: Request, parts: string[], env: Env, no
 
   if (action === 'login') {
     const state = randomToken();
-    const verifier = name === 'google' ? randomToken() : null;
+    const verifier = randomToken();
     const endpoint = ENDPOINTS[name];
     const target = new URL(endpoint.authorize);
-    target.searchParams.set('client_id', name === 'google' ? env.GOOGLE_CLIENT_ID! : env.KAKAO_REST_KEY!);
+    target.searchParams.set('client_id', env.GOOGLE_CLIENT_ID!);
     target.searchParams.set('redirect_uri', redirectUri(env, name));
     target.searchParams.set('response_type', 'code');
     target.searchParams.set('scope', endpoint.scope);
     target.searchParams.set('state', state);
-    if (verifier) { target.searchParams.set('code_challenge', b64url(await sha256(verifier))); target.searchParams.set('code_challenge_method', 'S256'); }
+    target.searchParams.set('code_challenge', b64url(await sha256(verifier)));
+    target.searchParams.set('code_challenge_method', 'S256');
     const saved = cookie(env, STATE_COOKIE, encodeState({ state, verifier, newsletter: url.searchParams.has('newsletter') }), '/api/auth/callback', STATE_SECONDS);
     return redirect(target.toString(), [saved]);
   }
