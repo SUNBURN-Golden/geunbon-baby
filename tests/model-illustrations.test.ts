@@ -16,10 +16,8 @@ test('every seeded model resolves to a non-empty square SVG', async () => {
   }
 });
 
-test('every SVG in the directory is listed', async () => {
-  const listed: readonly string[] = ILLUSTRATED_MODEL_IDS;
-  const ids = (await readdir(dir)).filter(f => /^model-\d+\.svg$/.test(f)).map(f => f.replace('.svg', ''));
-  expect(ids.sort()).toEqual([...listed].sort());
+test('the asset directory contains only the vetted SVG originals, with no raster derivatives', async () => {
+  expect((await readdir(dir)).sort()).toEqual(ILLUSTRATED_MODEL_IDS.map(id => `${id}.svg`).sort());
 });
 
 test('SVG titles match the seed model names and contain no external or active content', async () => {

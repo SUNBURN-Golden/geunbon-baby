@@ -311,7 +311,7 @@ CLS 비교에는 변경 전 `--baseline` 결과가 필요하며, 생성된 결�
 
 `lib/model-illustrations.ts`는 시드 41개 모델 모두에 `/img/models/model-N.svg`와 `1080×1080` 크기를 반환합니다. `public/img/models/`에는 1:1 정사각 SVG 41개만 있으며 카드는 `<img>`로 직접 표시합니다. `srcSet`·`sizes`·PNG 파생 파일·이미지 최적화 서버를 사용하지 않습니다. 런타임은 정적 ID 허용 목록만 사용하며 시드를 import하지 않습니다. 알 수 없는 ID는 `null`을 반환하고 브랜드 첫 글자 자리표시를 유지합니다.
 
-그림은 투명 배경의 순수 선화이며 제품과 확인된 구성품만 그립니다. 글자·글자 모양 경로·로고·배경·액자·그림자·내장 래스터·외부 참조·스크립트는 허용하지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다. 카드의 네 항목(상품명·손그림·공식가·현재 공구가)은 그대로입니다.
+그림은 투명 배경의 순수 선화이며 제품과 확인된 구성품만 그립니다. 글자·글자 모양 경로·로고·배경·액자·그림자·내장 래스터·외부 참조·스크립트는 허용하지 않습니다. 상품명은 HTML `alt`와 비표시 SVG `<title>`로 제공합니다. 카드의 네 항목(상품명·손그림·공식가·현재 공구가)은 그대로입니다. 진행 중 공구의 가격만 미확인이면 공구 행에 **정보 없음**을 표시하고 공식가 행도 유지합니다. **진행 중인 공구 없음**은 활성 공구 자체가 없을 때 표시합니다.
 
 ```sh
 npx tsx scripts/render-model-illustrations.ts            # 시드 41개 SVG 검증, 파일 생성 없음
@@ -320,7 +320,26 @@ npx tsx scripts/render-model-illustrations.ts --out .local/illustration-previews
 npx tsx scripts/card-screenshots.ts --out .local/card-qa
 ```
 
-검증·스크린샷은 Playwright로 서버·네트워크 없이 실행합니다. SVG를 252px·540px로 메모리 렌더링하여 정사각 크기·투명 여백(2.5%)·잉크 밀도(20% 미만)·잘림을 검사하며, PNG 미리보기는 명시한 `.local/` 하위 디렉터리에만 저장합니다. 스크린샷은 레지스트리가 아닌 **시드 전체**를 기준으로 하여 누락 등록도 실패시킵니다. 390px 모바일·1280px 데스크톱 × 라이트·다크 전체 화면 4장과 기본 41개 카드 164장을 저장합니다(`--cards model-32,model-39`로 개별 카드 저장 범위 선택). 이미지 디코딩·정사각 크기·공구가 행 높이(40px 이하)·같은 행 카드 높이·가로 넘침과 시드 밖 `model-42` 자리표시를 검사합니다. 경로 수나 자동 검사만으로 제품 충실도를 판정하지 않으며 출처와 렌더링을 눈으로 대조합니다.
+위 명령은 Playwright로 서버·네트워크 없이 실행합니다. SVG를 252px·540px로 메모리 렌더링하여 정사각 크기·투명 여백(2.5%)·잉크 밀도(20% 미만)·잘림을 검사하며, PNG 미리보기는 명시한 `.local/` 하위 디렉터리에만 저장합니다. 오프라인 카드 화면은 가격 있음·가격 미확인·공구 없음과 시드 밖 `model-42` 자리표시를 위한 합성 fixture입니다. 합성 가격은 시드나 D1에 저장하지 않습니다.
+
+실제 Workers의 `/models`와 정적 SVG 응답은 별도로 검증합니다. 아래 절차는 새 전용 로컬 D1 디렉터리를 사용하며, 모든 D1·Wrangler 명령에 같은 `--persist-to`를 유지합니다. 기존 검수·수집 데이터가 있는 디렉터리를 사용하지 마세요.
+
+```sh
+npm test -- tests/model-illustrations.test.ts tests/model-cards.test.ts tests/models-page.test.ts
+npm run build:worker
+npx wrangler d1 migrations apply DB --local --persist-to .local/svg-smoke-state
+npx tsx scripts/seed.ts
+npx wrangler d1 execute DB --local --persist-to .local/svg-smoke-state --file=.local/seed.sql
+npx wrangler dev --local --persist-to .local/svg-smoke-state --port 8797
+```
+
+Worker가 실행 중인 상태에서 다른 터미널로 확인합니다. `--origin`은 로컬 HTTP 주소만 허용하고 해당 origin 밖의 브라우저 요청은 차단합니다.
+
+```sh
+npx tsx scripts/card-screenshots.ts --origin http://localhost:8797 --out .local/worker-card-qa --cards model-4,model-5,model-21,model-22
+```
+
+두 카드 모드는 레지스트리가 아닌 **시드 전체**를 기준으로 하여 누락 등록도 실패시킵니다. 390px 모바일·1280px 데스크톱 × 라이트·다크 전체 화면 4장과 기본 41개 카드 164장을 `.local/` 아래 저장합니다(`--cards`는 개별 카드 저장 범위만 선택). 41개 그림을 모두 디코딩한 뒤 네 항목의 내용·정사각 원본/표시 크기·잘림·공구가 행 높이(40px 이하)·같은 행 카드 높이·가로 넘침·서체와 테마를 검사합니다. Workers 모드는 시드의 검증된 공식가와 공구 없음 상태를 대조하고, 정확한 SVG 경로 41개가 모두 HTTP 200·`image/svg+xml`로 응답하며 PNG·이미지 최적화 요청이 없는지 확인합니다. 성공한 검사 기록은 각 출력 디렉터리의 `checks.json`에 저장합니다. 전체 화면과 구성품 카드(model-4·5·21·22)를 눈으로 검토하여 글자·로고 부재와 구성품 가독성도 확인하세요. 경로 수나 자동 검사만으로 제품 충실도를 판정하지 않으며 출처와 렌더링을 눈으로 대조합니다.
 
 model-32는 D.THRONE 공식 이니셜 갤러리 사진, model-39는 Silver Cross Thailand의 Dune 2 사진과 해당 세대 설명서로 외형을 확인했습니다(2026-10-31). 두 모델 모두 조립된 본체를 그렸으며 국내 부속품 묶음은 미확인입니다. 기존 모델의 글로벌 구성·작은 부속품 가독성·DUALFIX 트림 간 동일 구조 한계도 유지합니다. 새 근거·실행 결과와 과거 기록은 [배치 4 제작 기록](docs/model-illustrations-batch-4.md#8-svg-직접-표시-및-누락-모델-보완-2026-10-31)을 참고하세요. 참조 사진·설명서는 저장소에 추가하지 않습니다.
 
