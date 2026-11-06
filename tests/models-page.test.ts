@@ -42,7 +42,7 @@ beforeAll(async () => {
   await insertModel('model-42', 430000);
   await insertModel('model-20', 670000);
   await insertModel('model-3', null);
-  await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
+  await memory.db.prepare("INSERT INTO sellers (id, name, source_url, registration_source, withdrawal_source, official_import_source) VALUES ('seller-1', 'Seller', 'https://example.com/seller', 'https://example.com/registration', 'https://example.com/withdrawal', 'https://example.com/import')").run();
   await insertDeal('d-active-1', 'model-1', 390000, '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z');
   await insertDeal('d-active-2', 'model-1', 410000, '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z');
   await insertDeal('d-ended', 'model-1', 300000, '2026-10-01T00:00:00Z', '2026-10-10T00:00:00Z');
@@ -109,6 +109,9 @@ test('cards show name, art or placeholder, official price and the lowest active 
   expect(html.match(/<a class="model-card"/g)).toHaveLength(4);
   for (const id of Object.keys(names)) {
     const card = cardOf(html, id);
+    for (const forbidden of ['통신판매업 신고', '청약철회 7일', '정식수입', '근거 확인', '미확인', 'badge', '/sellers', 'https://example.com/', '광고', 'checked', '2026-10-18', '2026-10-20']) {
+      expect(card).not.toContain(forbidden);
+    }
     for (const tag of ['<a ', '<time', '<button']) expect(card.slice(1)).not.toContain(tag);
     expect(card).not.toContain('class="eyebrow"');
     expect(card).not.toContain('model-discount');

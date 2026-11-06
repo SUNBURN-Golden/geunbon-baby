@@ -3,6 +3,7 @@ import { DealImage } from './_image';
 import Link from 'next/link';
 import { dealOfficialPrice, dealTiming, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
 import { dealsCopy } from '../../lib/deals-copy';
+import { SellerTrustBadges } from '../sellers/_trust-badges';
 
 function verificationCopy(level: string | null) {
   switch (level) {
@@ -97,6 +98,7 @@ export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number
       <DealPrice deal={deal} timing={timing} />
       <PriceGap deal={deal} gap={gap} showContext={false} />
       <PriceToneBadge gap={gap} timing={timing} />
+      <SellerTrustBadges registration_source={deal.seller_registration_source} withdrawal_source={deal.seller_withdrawal_source} official_import_source={deal.seller_official_import_source} />
       <DealCardLinks deal={deal} />
       <DealDisclaimer />
     </article>
@@ -175,6 +177,7 @@ export function DealDetail({ deal, nowMs }: { deal: DealWithContext; nowMs: numb
         <PriceGap deal={deal} gap={gap} />
         <PriceToneBadge gap={gap} timing={timing} />
         <DealFacts deal={deal} timing={timing} />
+        <SellerTrustBadges registration_source={deal.seller_registration_source} withdrawal_source={deal.seller_withdrawal_source} official_import_source={deal.seller_official_import_source} />
         <DealActions deal={deal} />
         <DealDisclaimer />
       </article>

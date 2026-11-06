@@ -19,6 +19,9 @@ export type DealWithContext = Deal & {
   model_verify_level: string | null;
   seller_joined_id: string | null;
   seller_name: string | null;
+  seller_registration_source: string | null;
+  seller_withdrawal_source: string | null;
+  seller_official_import_source: string | null;
 };
 
 export const dealOfficialPrice = (deal: DealWithContext) =>
@@ -35,7 +38,10 @@ export const DEAL_SELECT = `
          m.id AS model_joined_id, m.name AS model_name,
          m.official_price AS model_official_price, m.checked AS model_checked,
          m.verify_level AS model_verify_level,
-         s.id AS seller_joined_id, s.name AS seller_name
+         s.id AS seller_joined_id, s.name AS seller_name,
+         s.registration_source AS seller_registration_source,
+         s.withdrawal_source AS seller_withdrawal_source,
+         s.official_import_source AS seller_official_import_source
   FROM deals AS d
   LEFT JOIN models AS m ON m.id = d.model_id
   LEFT JOIN sellers AS s ON s.id = d.seller_id
