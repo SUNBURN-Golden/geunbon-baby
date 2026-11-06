@@ -51,6 +51,7 @@ const deal: DealWithContext = {
   model_joined_id: 'model-1', model_name: 'Example model', model_official_price: 430000,
   model_checked: '2026-10-18', model_verify_level: 'page_body',
   seller_joined_id: 'seller-1', seller_name: 'Example seller',
+  seller_registration_source: null, seller_withdrawal_source: null, seller_official_import_source: null,
 }; // Same isolated fixture values as tests/deals.test.ts; never persisted.
 corpus.push({ name: 'deal-detail-fixture', html: corpus[0].html.replace(/<main\b[\s\S]*?<\/main>/, renderToStaticMarkup(createElement(DealDetail, { deal, nowMs }))) });
 corpus.push({ name: 'home-populated-fixture', html: corpus[0].html.replace(/<section class="active-deals"[\s\S]*?<\/section>/, renderToStaticMarkup(createElement(ActiveDeals, { deals: [deal, { ...deal, id: 'deal-2' }, { ...deal, id: 'deal-3' }], nowMs }))) });

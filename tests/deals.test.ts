@@ -10,13 +10,19 @@ import DealsPage, { dynamic as listDynamic } from '../app/deals/page';
 import DealDetailPage, { dynamic as detailDynamic } from '../app/deals/[id]/page';
 import { all } from '../lib/db';
 import { memoryD1 } from './helpers/sqlite';
+import Layout from '../app/layout';
+import { siteCopy } from '../lib/site-copy';
 
 const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined }));
 vi.mock('../lib/db', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/db')>(),
   environment: () => ({ DB: context.db }),
 }));
-vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NEXT_NOT_FOUND'); } }));
+vi.mock('next/navigation', () => ({
+  notFound: () => { throw new Error('NEXT_NOT_FOUND'); },
+  usePathname: () => '/deals',
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const nowMs = Date.parse('2026-10-21T03:00:00Z');
 // Extra legacy fields must never reach the UI, even if supplied by a caller.
@@ -28,6 +34,7 @@ const fixture: DealWithContext & { model_note: string } = {
   model_joined_id: 'model-1', model_name: 'Example model', model_official_price: 430000,
   model_checked: '2026-10-18', model_verify_level: 'page_body', model_note: 'Other retailer: 123,456 KRW; used: 98,765 KRW.',
   seller_joined_id: 'seller-1', seller_name: 'Example seller',
+  seller_registration_source: null, seller_withdrawal_source: null, seller_official_import_source: null,
 };
 const card = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealCard, { deal: { ...fixture, ...patch }, nowMs }));
 const detail = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealDetail, { deal: { ...fixture, ...patch }, nowMs }));
@@ -399,6 +406,8 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
     await memory.db.prepare("INSERT INTO models VALUES ('model-1', 'Brand', 'Model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'search_summary', 'Retailer 123,456원; overseas $799; used 234,567원')").run();
     await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
+    await memory.db.prepare("INSERT INTO seller_accounts VALUES ('private.account.marker', 'seller-1', '2026-10-20')").run();
+    await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at, attribution, attribution_note) VALUES ('deal-1', 'https://example.com/private-source', 'private.account.marker', 'private ingestion marker', 'post', '2026-10-20', 'explicit', 'private attribution marker')").run();
     for (const d of [fixture, { ...fixture, id: 'missing-joins', model_id: 'absent-model', seller_id: 'absent-seller' }]) {
       await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .bind(d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.verify_level, d.checked, d.starts_at, d.ends_at, d.id === fixture.id ? 'https://cdninstagram.com/fixture.jpg?x=1&sig=synthetic%2Bvalue' : null).run();
@@ -414,7 +423,78 @@ describe('dynamic routes and LEFT JOIN projection', () => {
       id: 'deal-1', checked: fixture.checked, verify_level: 'manual', source_url: fixture.source_url,
       image_url: 'https://cdninstagram.com/fixture.jpg?x=1&sig=synthetic%2Bvalue', model_joined_id: 'model-1', model_checked: '2026-10-18', model_verify_level: 'search_summary', seller_name: 'Seller',
     });
-    expect(rows.find(d => d.id === 'missing-joins')).toMatchObject({ model_joined_id: null, seller_name: null });
+    expect(rows.find(d => d.id === 'missing-joins')).toMatchObject({
+      model_joined_id: null, seller_joined_id: null, seller_name: null,
+      seller_registration_source: null, seller_withdrawal_source: null, seller_official_import_source: null,
+    });
+  });
+
+  const evidence = [
+    ['seller_registration_source', '통신판매업 신고', 'https://example.com/registration'],
+    ['seller_withdrawal_source', '청약철회 7일', 'https://example.com/withdrawal'],
+    ['seller_official_import_source', '정식수입', 'https://example.com/import'],
+  ] as const;
+  // All eight combinations catch swapped fields and states inferred from another badge.
+  test.each([
+    ...Array.from({ length: 8 }, (_, mask) => ({ name: `evidence mask ${mask}`, mask, blank: false })),
+    { name: 'empty and whitespace evidence', mask: 0, blank: true },
+  ])('both deal routes render independent stored evidence: $name', async ({ mask, blank }) => {
+    const sources = evidence.map(([, , url], index) => mask & (1 << index) ? url : blank ? ['', ' ', '\t'][index] : null);
+    await memory.db.prepare('UPDATE sellers SET registration_source = ?, withdrawal_source = ?, official_import_source = ? WHERE id = ?')
+      .bind(...sources, 'seller-1').run();
+    try {
+      const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+      const row = rows.find(d => d.id === fixture.id)!;
+      evidence.forEach(([field], index) => expect(row[field]).toBe(sources[index]));
+      const list = await DealsPage();
+      const detail = await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) });
+      for (const page of [list, detail]) {
+        const html = renderToStaticMarkup(createElement(Layout, null, page));
+        const article = html.match(/<article class="deal-(?:card|detail)">[\s\S]*?<\/article>/)![0];
+        const badges = article.match(/<div class="badges">([\s\S]*?)<\/div>/)![1];
+        expect(badges.match(/class="badge(?: verified)?"/g)).toHaveLength(3);
+        evidence.forEach(([, label, url], index) => {
+          if (mask & (1 << index)) {
+            expect(badges).toContain(`<a class="badge verified" href="${url}" target="_blank" rel="noopener noreferrer">${label} · 근거 확인 ↗</a>`);
+          } else {
+            expect(badges).toContain(`<span class="badge">${label} · 미확인</span>`);
+            expect(badges).not.toContain(`href="${url}"`);
+          }
+        });
+        expect(badges.indexOf(evidence[0][1])).toBeLessThan(badges.indexOf(evidence[1][1]));
+        expect(badges.indexOf(evidence[1][1])).toBeLessThan(badges.indexOf(evidence[2][1]));
+        expect(article).toContain(`class="deal-ad">${dealsCopy.ad}`);
+        expect(article).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer"`);
+        expect(article).toContain(dealsCopy.disclaimer);
+        expect(article).toContain('href="/sellers#trust-seller-1"');
+        expect(html).toContain(siteCopy.transactionNotice);
+        expect(html).toContain(siteCopy.transactionTerms);
+        for (const marker of ['private.account.marker', 'private ingestion marker', 'private attribution marker', 'attribution', 'seller_accounts']) {
+          expect(JSON.stringify(rows)).not.toContain(marker);
+          expect(html).not.toContain(marker);
+        }
+      }
+    } finally {
+      await memory.db.prepare('UPDATE sellers SET registration_source = NULL, withdrawal_source = NULL, official_import_source = NULL').run();
+    }
+  });
+
+  test('missing seller remains visible on both routes with three noninteractive unconfirmed badges', async () => {
+    const pages = [await DealsPage(), await DealDetailPage({ params: Promise.resolve({ id: 'missing-joins' }) })];
+    for (const page of pages) {
+      const html = renderToStaticMarkup(createElement(Layout, null, page));
+      const articles = html.match(/<article class="deal-(?:card|detail)">[\s\S]*?<\/article>/g)!;
+      const article = articles.find(a => a.includes('/deals/missing-joins')) ?? articles[0];
+      const badges = article.match(/<div class="badges">([\s\S]*?)<\/div>/)![1];
+      expect(badges.match(/· 미확인/g)).toHaveLength(3);
+      expect(badges).not.toContain('<a');
+      expect(article).not.toContain('/sellers#');
+      expect(article).toContain(fixture.title);
+      expect(article).toContain(`class="deal-ad">${dealsCopy.ad}`);
+      expect(article).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer"`);
+      expect(article).toContain(dealsCopy.disclaimer);
+      expect(html).toContain(siteCopy.transactionNotice);
+    }
   });
 
   test('both routes are dynamic and capture time only once per render', async () => {

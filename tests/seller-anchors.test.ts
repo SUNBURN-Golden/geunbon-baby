@@ -96,3 +96,26 @@ test('seller href encodes the fragment while preserving the stable raw article i
   expect(sellerTrustHref('seller-1')).toBe('/sellers#trust-seller-1');
   expect(sellerTrustHref('seller/#한')).toBe('/sellers#trust-seller%2F%23%ED%95%9C');
 });
+
+test.each([0, 1, 2, 3, 4, 5, 6, 7])('seller badges preserve evidence mapping and order for mask %s', async mask => {
+  const evidence = [
+    ['통신판매업 신고', 'https://a.example/reg'],
+    ['청약철회 7일', 'https://a.example/withdrawal'],
+    ['정식수입', 'https://a.example/import'],
+  ];
+  await memory.db.prepare('INSERT INTO sellers (id, name, source_url, registration_source, withdrawal_source, official_import_source) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind('seller-1', 'Seller', 'https://a.example/shop', ...evidence.map(([, url], index) => mask & (1 << index) ? url : ['', ' ', null][index])).run();
+  const html = renderToStaticMarkup(await Sellers());
+  const badges = html.match(/<div class="badges">([\s\S]*?)<\/div>/)![1];
+  expect(badges.match(/class="badge(?: verified)?"/g)).toHaveLength(3);
+  evidence.forEach(([label, url], index) => {
+    expect(badges).toContain(mask & (1 << index)
+      ? `<a class="badge verified" href="${url}" target="_blank" rel="noopener noreferrer">${label} · 근거 확인 ↗</a>`
+      : `<span class="badge">${label} · 미확인</span>`);
+  });
+  expect(badges.indexOf(evidence[0][0])).toBeLessThan(badges.indexOf(evidence[1][0]));
+  expect(badges.indexOf(evidence[1][0])).toBeLessThan(badges.indexOf(evidence[2][0]));
+  expect(html).toContain('id="trust-seller-1" tabindex="-1"');
+  expect(html).toContain('href="https://a.example/shop" target="_blank" rel="noopener noreferrer"');
+  expect(html).toContain('목록에 있다는 것은 입점·추천·보증을 의미하지 않습니다.');
+});
