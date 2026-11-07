@@ -1,0 +1,61 @@
+{
+  "profile_id": "deepseek-web",
+  "profile_version": 1,
+  "model": {
+    "provider": "deepseek",
+    "default_model": "deepseek-chat",
+    "reasoning_note": "운영 시 DEEPSEEK_MODEL로 Flash/Reasoner 모델을 지정한다. API 키는 박스 환경변수만 사용한다."
+  },
+  "scope_categories": [
+    {
+      "id": "stroller",
+      "ko": ["유모차"],
+      "examples": ["Bugaboo", "Cybex", "Nuna"]
+    },
+    {
+      "id": "high_chair",
+      "ko": ["하이체어", "트립트랩"],
+      "examples": ["Stokke Tripp Trapp"]
+    },
+    {
+      "id": "car_seat",
+      "ko": ["카시트"],
+      "examples": ["Cybex", "Nuna", "Britax"]
+    },
+    {
+      "id": "play_gym",
+      "ko": ["플레이짐", "모빌"],
+      "examples": ["하베브릭스"]
+    },
+    {
+      "id": "carrier",
+      "ko": ["아기띠"],
+      "examples": ["아티포페", "Ergobaby", "BabyBjorn"]
+    }
+  ],
+  "prohibited_hosts": [
+    "instagram.com",
+    "cdninstagram.com",
+    "threads.net",
+    "facebook.com",
+    "fbcdn.net",
+    "gonggumoa.com"
+  ],
+  "fetch": {
+    "min_interval_ms": 8000,
+    "jitter_ms": [500, 2500],
+    "timeout_ms": 30000,
+    "max_bytes": 1048576,
+    "user_agent_note": "PoliteFetcher USER_AGENT; 로그인·쿠키·CAPTCHA 우회 없음"
+  },
+  "budget": {
+    "max_tokens_per_run": 32000,
+    "max_requests_per_run": 12,
+    "max_completion_tokens": 2048
+  },
+  "memory": {
+    "heartbeat_max_age_ms": 900000,
+    "max_queue_urls": 50
+  },
+  "seed_urls": []
+}

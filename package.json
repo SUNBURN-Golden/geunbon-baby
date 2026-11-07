@@ -15,6 +15,7 @@
     "db:seed": "tsx scripts/seed.ts && wrangler d1 execute DB --local --file=.local/seed.sql",
     "collector": "node --import tsx crawler/collector.mjs",
     "collector:worker": "node --import tsx crawler/src/local-worker.ts",
+    "deepseek-web": "node --import tsx crawler/deepseek-web/run.mjs",
     "build:clipper": "node scripts/build-clipper.mjs"
   },
   "dependencies": {
