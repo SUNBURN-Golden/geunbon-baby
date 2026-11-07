@@ -33,7 +33,7 @@ export function jobDefinition(store:CollectorStore,job:CollectionJob,trusted:Cid
     return {enabled:store.settings.sources.some(s=>s.enabled),run:(_id,callId)=>run(false,callId),preview:()=>run(true),result:output=>{
       const data=output as Awaited<ReturnType<typeof run>>,sources=data.health.sources;
       const failed=sources.some(s=>s.pages_failed||s.blocked||Object.keys(s.subrequest_failures).length);
-      return {status:failed?'partial_failure':'succeeded',reason:failed?'transport_failed':data.health.status==='review'?'quality_review':data.health.status==='idle'?'no_work':'completed',output,counts:{attempted:sources.reduce((n,s)=>n+s.pages_attempted,0),failed:sources.reduce((n,s)=>n+s.pages_failed,0),review:sources.filter(s=>s.status==='review').length}};
+      return {status:failed?'partial_failure':'succeeded',reason:failed?'transport_failed':data.health.status==='review'?'quality_review':data.health.status==='idle'?'no_work':'completed',output,counts:{pages_attempted:sources.reduce((n,s)=>n+s.pages_attempted,0),pages_ok:sources.reduce((n,s)=>n+s.pages_ok,0),pages_failed:sources.reduce((n,s)=>n+s.pages_failed,0),blocked_requests:sources.reduce((n,s)=>n+s.blocked,0),parsed_items:sources.reduce((n,s)=>n+s.parsed,0),eligible_items:sources.reduce((n,s)=>n+s.eligible,0),submissions_accepted:sources.reduce((n,s)=>n+s.sent,0),subrequest_failures:sources.reduce((n,s)=>n+Object.values(s.subrequest_failures).reduce((a,b)=>a+b,0),0),sources_review:sources.filter(s=>s.status==='review').length}};
     }};
   }};
 }

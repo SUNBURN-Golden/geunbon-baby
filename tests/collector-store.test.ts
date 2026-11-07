@@ -273,7 +273,7 @@ test('index migration backfills document keys without changing records or review
  const f=fixture();try{
   const a=intake(f.store,`${source.origin}/original`,price());const group=f.store.get<CollectionRecord>('collection_records',a.record_id)!.dedup_group_id;
   ready(f.store,group);const baseline=f.store.report();
-  f.store.db.exec('DROP TABLE dedup_keys; PRAGMA user_version=1;');f.reopen();expect(f.store.report()).toEqual(baseline);
+  f.store.db.exec('DROP TABLE dedup_keys; DROP INDEX collection_schedule_calls_slot; ALTER TABLE collection_schedule_calls DROP COLUMN expected_slot; ALTER TABLE collection_schedule_calls DROP COLUMN schedule_version; PRAGMA user_version=1;');f.reopen();expect(f.store.report()).toEqual(baseline);
   intake(f.store,`${source.origin}/translation`,{document_origin:`${source.origin}/original`,assertions:[]});
   expect(f.store.report().groups).toBe(1);expect(f.store.scope(group).group.ready_evidence_version).toBeNull();
  }finally{f.close();}

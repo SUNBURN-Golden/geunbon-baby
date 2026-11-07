@@ -19,7 +19,7 @@
 
 **Workers Cron은 수집기를 실행하지 않는 로그 stub입니다. Playwright와 OCR은 Linux에서만 실행합니다.** 사이트는 로컬 수집 레코드·URL·원문·셀러·근거를 가져오지 않습니다. 로컬 `seller_candidates`를 사이트 판매자로 자동 등록하지도 않습니다. 수집함의 `ready_to_publish`는 사람의 공개 검토를 마친 로컬 상태이며 실제 게시 동작이 아닙니다. Instagram pending → 사이트 관리자 승인 → deals 경로와 별개입니다.
 
-Linux 수집 예약은 `npm run collector:worker -- schedule`의 상주 슬롯 관리로 실행합니다. KST 누락 슬롯 병합, 수동·예약 공통 실행, 상태 기록과 전환 절차는 [수집 일정 운영](docs/collector/scheduling.md)을 참고하세요. 운영 PM2 전환은 별도로 수행합니다.
+Linux 수집 예약은 `npm run collector:worker -- schedule`의 상주 슬롯 관리로 실행합니다. KST 누락 슬롯 병합, 수동·예약 공통 실행, 상태 기록과 전환 절차는 [수집 일정 운영](docs/collector/scheduling.md)을 참고하세요. 운영 PM2 전환은 별도로 수행합니다. 추적되는 `crawler/local-worker.mjs`·`collector-scheduler.mjs`는 공통 시작/결과 NDJSON을 출력합니다. PM2 밖의 Linux systemd watchdog은 실제 PID 신원·인증된 readiness·SQLite 슬롯 이력을 감시하며, 소유자 부재가 확인된 앱만 영속 상한 안에서 복구합니다. PM2 online이나 최근 로그 하나는 수집 성공의 증거가 아닙니다.
 
 3경로는 자동 RSS/API/사이트맵/링크 발견(`auto_discovery`), 승인된 공개 브라우저 추출(`browser_extract`), Chrome 수동 담기(`manual_clip`)입니다. 저장 전·AI 전달 전 공통 개인정보 필터(`shared/privacy-rules.ts`)를 적용하고 자료를 `untrusted_source_data`로 격리합니다. AI는 필수가 아니며 자료 속 지시로 도구 실행·상태 승격·게시를 하지 않습니다.
 

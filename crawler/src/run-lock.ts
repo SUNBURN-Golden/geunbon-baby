@@ -17,7 +17,7 @@ export type RunLockResult = { attempts: number; waitedMs: number } & (
   { acquired: true; lock: RunLock } | { acquired: false; reason: RunLockSkipReason }
 );
 const STALE_MS=30_000, WAIT_MS=2_000, RETRY_MS=100, MAX_ATTEMPTS=21;
-type Owner = { pid: number; start_ticks: string; boot_id: string; started_at: string; kind: RunKind; token: string };
+export type Owner = { pid: number; start_ticks: string; boot_id: string; started_at: string; kind: RunKind; token: string };
 const readProc: ProcReader = path => readFileSync(path,'utf8');
 const code = (e: unknown) => (e as NodeJS.ErrnoException).code;
 const uuid = (s: unknown): s is string => typeof s==='string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
@@ -27,9 +27,13 @@ export function processStartTicks(stat: string): string {
   if (!value || !/^\d+$/.test(value) || !stat.includes(')')) throw new Error('invalid_proc_stat');
   return value;
 }
+export function processState(stat:string):string {
+  const state=stat.slice(stat.lastIndexOf(')')+1).trim().split(/\s+/)[0];
+  if(!stat.includes(')')||!state)throw new Error('invalid_proc_stat');return state;
+}
 const sameFile = (a: {ino:number;dev:number}, b: {ino:number;dev:number}) => a.ino===b.ino && a.dev===b.dev;
 
-function readLock(path: string) {
+export function readLock(path: string) {
   try { return readLockFile(path); }
   catch(e) {
     if(code(e)==='EACCES'||code(e)==='EPERM')throw new CollectorError('run_lock_unreadable',409,{path});
@@ -49,7 +53,7 @@ function readLockFile(path: string) {
     return {stat:opened, text:readFileSync(fd,'utf8')};
   } finally { closeSync(fd); }
 }
-function ownerOf(text: string, kind: RunKind, path: string): Owner {
+export function ownerOf(text: string, kind: RunKind, path: string): Owner {
   try {
     const o=JSON.parse(text) as Owner;
     if (!o || !Number.isSafeInteger(o.pid) || o.pid<1 || typeof o.start_ticks!=='string' || !/^\d+$/.test(o.start_ticks) || !uuid(o.boot_id) || !uuid(o.token) || o.kind!==kind || typeof o.started_at!=='string' || !Number.isFinite(Date.parse(o.started_at))) throw new Error('invalid');
@@ -65,12 +69,18 @@ function assertStale(owner: Owner, boot: string, proc: ProcReader, check: (pid: 
   const state=pidState(owner.pid,check);
   if (state==='unavailable') throw new CollectorError('run_locked',409,{...detail,verify:'unavailable'});
   if (owner.boot_id===boot && state!=='dead') {
-    let ticks: string|undefined;
-    try { ticks=processStartTicks(proc(`/proc/${owner.pid}/stat`)); }
+    let ticks: string|undefined,zombie=false;
+    try {
+      const stat=proc(`/proc/${owner.pid}/stat`);ticks=processStartTicks(stat);
+      if(processState(stat)==='Z'){
+        const again=proc(`/proc/${owner.pid}/stat`);
+        zombie=processStartTicks(again)===owner.start_ticks&&processState(again)==='Z';
+      }
+    }
     catch {
       if (pidState(owner.pid,check)!=='dead') throw new CollectorError('run_locked',409,{...detail,verify:'unavailable'});
     }
-    if (ticks===owner.start_ticks) throw new CollectorError('run_locked',409,detail);
+    if (ticks===owner.start_ticks&&!zombie) throw new CollectorError('run_locked',409,detail);
   }
   const age=now()-Date.parse(owner.started_at);
   if (!Number.isFinite(age) || age<STALE_MS) throw new CollectorError('run_locked',409,{...detail,verify:'not_stale'});

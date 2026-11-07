@@ -1,9 +1,10 @@
+import type { Identity } from './process-identity';
 import { timingSafeEqual, createHash } from 'node:crypto';
 import { CollectorError, CollectorStore, requireThat } from './store';
 import type { Binding } from '../../shared/collection-schema';
 export type LocalAuth={intakeToken:string;reviewToken:string;extensionOrigin:string;host:string};
 function equal(a:string,b:string){return timingSafeEqual(createHash('sha256').update(a).digest(),createHash('sha256').update(b).digest());}
-export async function handleLocal(request:Request,store:CollectorStore,auth:LocalAuth):Promise<Response>{
+export async function handleLocal(request:Request,store:CollectorStore,auth:LocalAuth,instance?:Identity):Promise<Response>{
   const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
   const reply=(data:unknown,status=200)=>Response.json({data},{status,headers});
   try{
@@ -13,6 +14,7 @@ export async function handleLocal(request:Request,store:CollectorStore,auth:Loca
     const intake=path.startsWith('/v1/intake');
     requireThat(intake?origin===auth.extensionOrigin:!origin,'invalid_origin',403);
     requireThat(equal(request.headers.get('authorization')??'',`Bearer ${intake?auth.intakeToken:auth.reviewToken}`),'unauthorized',401);
+    if(method==='GET'&&path==='/v1/readiness'){requireThat(instance,'readiness_unavailable',503);store.db.prepare('SELECT count(*) FROM collector_meta').get();return reply({ready:true,identity:instance});}
     let body:Record<string,unknown>={};
     if(method==='POST'){
       requireThat(request.headers.get('content-type')?.split(';')[0]==='application/json','content_type',415);
