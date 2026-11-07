@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, test } from 'vitest';
 import { loadDeepSeekWebConfig } from '../crawler/src/deepseek-web/config';
-import { budgetAllows, hostMatchesDenied, isProhibitedUrl } from '../crawler/src/deepseek-web/guards';
+import { admitCall, budgetAllows, holdCall, hostMatchesDenied, isProhibitedUrl, perCallTokenReserve, releaseCall, settleCall } from '../crawler/src/deepseek-web/guards';
 import { emptyMemory } from '../crawler/src/deepseek-web/memory';
 
 describe('deepseek-web guards', () => {
@@ -27,6 +27,24 @@ describe('deepseek-web guards', () => {
     expect(budgetAllows(memory, config).ok).toBe(false);
     const m2 = { ...emptyMemory(), requests_spent: config.budget.max_requests_per_run };
     expect(budgetAllows(m2, config).ok).toBe(false);
+  });
+  test('pre-request reservation blocks overshoot before completion', () => {
+    const reserve = perCallTokenReserve(config);
+    const memory = { ...emptyMemory(), token_spent: config.budget.max_tokens_per_run - reserve };
+    expect(admitCall(memory, config).ok).toBe(true);
+    const admission = admitCall(memory, config);
+    expect(admission.ok).toBe(true);
+    if (!admission.ok) return;
+    holdCall(memory, admission.reserve);
+    expect(admitCall(memory, config).ok).toBe(false);
+    settleCall(memory, admission.reserve, reserve);
+    expect(memory.token_spent).toBe(config.budget.max_tokens_per_run);
+    expect(admitCall(memory, config).ok).toBe(false);
+    const m3 = emptyMemory();
+    holdCall(m3, reserve);
+    releaseCall(m3, reserve);
+    expect(m3.tokens_reserved).toBe(0);
+    expect(m3.requests_reserved).toBe(0);
   });
   test('config loads from package path', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsw-'));

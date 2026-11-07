@@ -20,7 +20,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 | `validation-artifact.json` | 활성화 검증용 스냅샷 |
 | `proposals/*.json` | 파서 수정 제안 |
 
-`COLLECTOR_DB`가 있으면 `domain_state.stopped` 호스트는 건너뛴다.
+**`once`·`daemon`은 `COLLECTOR_DB` 필수**(없거나 열 수 없으면 `collector_db_required` / `collector_db_unavailable`). 열리면 `domain_state`를 읽어 **전역 `domain_stopped`가 하나라도 있으면 즉시 실패**하고, 호스트별 stopped는 해당 URL만 건너뜁니다(`dry-run`+주입 store로 오프라인 검증).
 
 ## PM2 (Linux, 부모 런타임 활성화)
 
@@ -28,7 +28,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 export PATH="$PWD/node_modules/node/bin:$PATH"
 # 박스에서: export DEEPSEEK_API_KEY=...  (이 README/저장소에 넣지 말 것)
 # 선택: export DEEPSEEK_MODEL=deepseek-chat
-# 선택: export COLLECTOR_DB=/path/to/collector.sqlite
+# 필수(once/daemon): export COLLECTOR_DB=/path/to/collector.sqlite
 
 pm2 start crawler/deepseek-web.ecosystem.config.cjs
 pm2 pid agamajung-deepseek-web          # 실제 PID 확인
@@ -59,7 +59,7 @@ cat .local/deepseek-web/heartbeat.json
 
 ```sh
 export PATH="$PWD/node_modules/node/bin:$PATH"
-npm test -- tests/deepseek-web-guards.test.ts tests/deepseek-web-extract.test.ts tests/deepseek-web-runner.test.ts
+npm test -- tests/deepseek-web-guards.test.ts tests/deepseek-web-extract.test.ts tests/deepseek-web-runner.test.ts tests/deepseek-web-cli.test.ts
 ```
 
 ## 원격 브랜치 `dev-daemon/45-deepseek-web-harness-*`

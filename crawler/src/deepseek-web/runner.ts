@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadDeepSeekWebConfig, stateDir } from './config';
-import { budgetAllows, domainStopped, isProhibitedUrl } from './guards';
+import { admitCall, anyDomainStopped, holdCall, isHostDomainStopped, isProhibitedUrl, releaseCall, settleCall } from './guards';
 import { createDeepSeekClient } from './client';
 import { buildExtractionPrompt, normalizeExtraction, parseModelJson } from './extract';
 import { createPublicFetcher, fetchPublicText } from './public-fetch';
@@ -25,6 +25,10 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
   const memory = await loadMemory(dir);
   const runId = newRunId();
   const model = process.env.DEEPSEEK_MODEL ?? config.model.default_model;
+  if (options.mode === 'once') {
+    if (!options.store) throw new Error('collector_db_required');
+    if (anyDomainStopped(options.store)) throw new Error('domain_stopped');
+  }
   const client = options.client ?? createDeepSeekClient({
     apiKey: options.mode === 'dry_run' ? 'mock' : (process.env.DEEPSEEK_API_KEY ?? ''),
     model,
@@ -44,33 +48,49 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
     const guard = isProhibitedUrl(pageUrl, config);
     if (guard.blocked) { blocked++; memory.plan_notes.push(`block ${pageUrl}: ${guard.reason}`); continue; }
     const host = new URL(pageUrl).hostname;
-    if (domainStopped(options.store, host)) { blocked++; memory.plan_notes.push(`block ${pageUrl}: domain_stopped`); continue; }
-    const budget = budgetAllows(memory, config);
-    if (!budget.ok) { memory.plan_notes.push(`halt: ${budget.reason}`); break; }
-    let text = '';
-    if (options.mode === 'dry_run' && host === 'fixture.example') {
-      const { readFile } = await import('node:fs/promises');
-      text = await readFile(join(process.cwd(), 'tests/fixtures/deepseek-web/sample-page.txt'), 'utf8');
-    } else {
-      if (options.mode === 'dry_run') { blocked++; continue; }
-      const page = await fetchPublicText(fetcher, pageUrl);
-      if (!page.ok) { blocked++; memory.plan_notes.push(`fetch_block ${pageUrl}: ${page.reason}`); continue; }
-      text = page.text;
-      pageUrl = page.finalUrl;
+    if (options.store && isHostDomainStopped(options.store, host)) {
+      blocked++; memory.plan_notes.push(`block ${pageUrl}: domain_stopped`); continue;
     }
-    const checked = new Date().toISOString().slice(0, 10);
-    const completion = await client.complete({ system: '당신은 가격을 발명하지 않는 공개 웹 추출기다. JSON만 출력한다.', user: buildExtractionPrompt(text, pageUrl) });
-    memory.token_spent += completion.usage.total_tokens;
-    memory.requests_spent += 1;
-    const extraction = normalizeExtraction(parseModelJson(completion.content), pageUrl, checked);
-    if (extraction.in_scope) {
-      await enqueueReview(dir, extraction);
-      extractions++;
+    const admission = admitCall(memory, config);
+    if (!admission.ok) { memory.plan_notes.push(`halt: ${admission.reason}`); break; }
+    holdCall(memory, admission.reserve);
+    let settled = false;
+    try {
+      let text = '';
+      if (host === 'fixture.example') {
+        const { readFile } = await import('node:fs/promises');
+        text = await readFile(join(process.cwd(), 'tests/fixtures/deepseek-web/sample-page.txt'), 'utf8');
+      } else if (options.mode === 'dry_run') {
+        blocked++; memory.plan_notes.push(`skip_live_fetch ${pageUrl}: dry_run`);
+        releaseCall(memory, admission.reserve);
+        continue;
+      } else {
+        const page = await fetchPublicText(fetcher, pageUrl);
+        if (!page.ok) {
+          blocked++; memory.plan_notes.push(`fetch_block ${pageUrl}: ${page.reason}`);
+          releaseCall(memory, admission.reserve);
+          continue;
+        }
+        text = page.text;
+        pageUrl = page.finalUrl;
+      }
+      const checked = new Date().toISOString().slice(0, 10);
+      const completion = await client.complete({ system: '당신은 가격을 발명하지 않는 공개 웹 추출기다. JSON만 출력한다.', user: buildExtractionPrompt(text, pageUrl) });
+      settleCall(memory, admission.reserve, completion.usage.total_tokens);
+      settled = true;
+      const extraction = normalizeExtraction(parseModelJson(completion.content), pageUrl, checked);
+      if (extraction.in_scope) {
+        await enqueueReview(dir, extraction);
+        extractions++;
+      }
+      const proposal = await maybeProposeParserFix(dir, pageUrl, text, extraction);
+      if (proposal) proposals++;
+      if (!memory.observed_urls.includes(seedUrl)) memory.observed_urls.push(seedUrl);
+      memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
+    } catch (error) {
+      if (!settled) releaseCall(memory, admission.reserve);
+      throw error;
     }
-    const proposal = await maybeProposeParserFix(dir, pageUrl, text, extraction);
-    if (proposal) proposals++;
-    if (!memory.observed_urls.includes(seedUrl)) memory.observed_urls.push(seedUrl);
-    memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
   }
   memory.last_run_id = runId;
   memory.output_counts = { extractions, proposals, blocked, review_pending: await countPending(dir) };

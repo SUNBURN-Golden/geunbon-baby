@@ -45,7 +45,7 @@ export type DeepSeekWebConfig = {
   scope_categories: { id: ScopedCategory; ko: string[]; examples: string[] }[];
   prohibited_hosts: string[];
   fetch: { min_interval_ms: number; jitter_ms: [number, number]; timeout_ms: number; max_bytes: number; user_agent_note: string };
-  budget: { max_tokens_per_run: number; max_requests_per_run: number; max_completion_tokens: number };
+  budget: { max_tokens_per_run: number; max_requests_per_run: number; max_completion_tokens: number; estimated_prompt_tokens: number };
   memory: { heartbeat_max_age_ms: number; max_queue_urls: number };
   seed_urls: string[];
 };
@@ -57,7 +57,9 @@ export type RunMemory = {
   observed_urls: string[];
   pending_urls: string[];
   token_spent: number;
+  tokens_reserved: number;
   requests_spent: number;
+  requests_reserved: number;
   last_heartbeat_at: string | null;
   last_run_id: string | null;
   output_counts: { extractions: number; proposals: number; blocked: number; review_pending: number };
