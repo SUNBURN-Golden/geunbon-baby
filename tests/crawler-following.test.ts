@@ -32,7 +32,7 @@ async function fixture() {
   const mock = mockPage(selector => {
     if (selector === 'role:link') return [{ name: '프로필', href: '/my_account/' }];
     if (selector === 'a[href="/my_account/following/"]') return [{}];
-    if (selector === 'role:dialog') return batches[batch].map(href => ({ href, evaluate: scroll }));
+    if (selector === 'role:dialog') return [{ evaluate: scroll, children: child => child === 'a[href]' ? batches[batch].map(href => ({ href })) : [] }];
     return [];
   });
   return { ctx, mock, scroll };

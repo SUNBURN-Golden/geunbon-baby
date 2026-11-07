@@ -10,9 +10,11 @@ import { loadConfig, parseSettings, type AccountsFile } from '../crawler/lib/con
 import { discoverSellers, discoveryTags, parseCandidate } from '../crawler/lib/discover';
 import { CrawlerState } from '../crawler/lib/state';
 import { mockPage } from './helpers/page';
+import { mediaDOM } from './helpers/media-dom';
+import { POST_ARTICLES, postTree, node } from './helpers/post-page';
 vi.mock('../crawler/lib/util', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/util')>(), sleep: vi.fn(async () => {}) }));
 let dir: string;
-beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'crawler-discover-')); });
+beforeEach(async () => { mediaDOM(); dir = await mkdtemp(join(tmpdir(), 'crawler-discover-')); });
 afterEach(async () => { vi.useRealTimers(); await rm(dir, { recursive: true, force: true }); });
 test('config covers all eight brands and Korean seller hashtags', () => {
   expect(new Set(accountsJson.seed_accounts.map(a => a.brand.toLowerCase()).filter(Boolean))).toEqual(new Set(['stokke', 'babybjorn', 'bugaboo', 'nuna', 'joie', 'cybex', 'egg', 'd.throne']));
@@ -54,7 +56,7 @@ test('discovery rotates tags across restart, obeys interval/caps, and leaves pos
   const { page, goto } = mockPage(selector => {
     if (selector.startsWith('a[href*="/p/"')) return [{ href: '/p/sale/?tracking=1' }];
     if (selector === 'article') return [{ text: '트립트랩 공구 39만원' }];
-    if (selector === 'article header a[href]') return [{ href: '/seller/' }];
+    if (selector === POST_ARTICLES) return [node(postTree('seller').article)];
     return [];
   });
   expect(await discoverSellers(page, { accounts, state, settings: config })).toBe(1);
@@ -116,7 +118,7 @@ test('discovery post misses include anchor count', async () => {
 test.each([
   [{ alternateName: '@seller' }, 'seller'], [{ identifier: { propertyID: 'username', value: 'Seller.Mom' } }, 'seller.mom'],
   [{ identifier: { propertyID: 'User ID', value: '123456789' }, url: 'https://www.instagram.com/seller/' }, 'seller'],
-  [{ identifier: { propertyID: 'username', value: 'other_seller' }, url: 'https://www.instagram.com/seller/' }, 'seller'],
+  [{ identifier: { propertyID: 'username', value: 'other_seller' }, url: 'https://www.instagram.com/seller/' }, null],
   [{ identifier: { propertyID: 'User ID', value: '123456789' } }, null],
   [{ identifier: { value: '123456789' } }, null],
   [{ identifier: { propertyID: 'User ID', value: 'seller.mom' } }, null],
@@ -129,4 +131,47 @@ test.each([
   const { page, goto } = mockPage(selector => selector === 'script[type="application/ld+json"]' ? [{ text: JSON.stringify({ author }) }] : []);
   expect(await postAuthor(page)).toBe(expected);
   expect(goto).not.toHaveBeenCalled();
+});
+
+test.each([
+  [{ author: [{ alternateName: '@seller' }, { alternateName: '@other' }] }, null],
+  [{ author: { url: '/seller/', alternateName: '@other' } }, null],
+  [{ author: { identifier: [{ propertyID: 'username', value: 'seller' }, { propertyID: 'handle', value: 'other' }] } }, null],
+  [{ '@graph': [{ author: { alternateName: '@other' } }, { author: { alternateName: '@seller' } }] }, null],
+  [{ url: '/p/other/', author: { alternateName: '@seller' } }, null],
+  [{ mainEntityOfPage: { '@id': '/reel/current/' }, author: { alternateName: '@seller' } }, null],
+  [{ '@id': '/p/current/', mainEntityOfPage: '/p/current/?x=1', author: { alternateName: '@seller' } }, 'seller'],
+] as const)('author resolution binds explicit metadata identities and rejects conflicts: %j', async (metadata, expected) => {
+  const { postAuthor } = await import('../crawler/lib/collect');
+  const mock = mockPage(selector => selector === 'script[type="application/ld+json"]' ? [{ text: '{malformed' }, { text: JSON.stringify(metadata) }] : []);
+  mock.setUrl('https://www.instagram.com/p/current/');
+  expect(await postAuthor(mock.page)).toBe(expected);
+});
+
+test.each([
+  ['10 likes - seller on Instagram: 공구', 'seller'],
+  ['10 likes, 1 comments - seller on November 7, 2026: "공구"', 'seller'],
+  ['공구 이야기 - seller on Instagram: 공구', null],
+  ['10 likes - display name on Instagram: 공구', null],
+  ['10 likes - seller on a shopping trip', null],
+  ['caption says: 10 likes - seller on Instagram: 공구', null],
+])('description author requires the recognized leading envelope: %s', async (description, expected) => {
+  const { postAuthor } = await import('../crawler/lib/collect');
+  const { page } = mockPage(selector => selector === 'meta[name="description"]' ? [{ attrs: { content: description } }] : []);
+  expect(await postAuthor(page)).toBe(expected);
+});
+
+test.each([true, false])('foreground dialog author cannot come from a background feed (has post: %s)', async hasPost => {
+  const { postAuthorDetailed } = await import('../crawler/lib/collect');
+  const { PostElement } = await import('./helpers/post-page');
+  const feed = postTree('background');
+  const dialog = new PostElement('div', undefined, { role: 'dialog' });
+  const foreground = new PostElement('article', dialog);
+  new PostElement('a', new PostElement('header', foreground), { href: '/seller/' });
+  const mock = mockPage(selector => {
+    if (selector === '[role="dialog"]') return [node(dialog)];
+    if (selector === POST_ARTICLES) return [node(feed.article), ...(hasPost ? [node(foreground)] : [])];
+    return [];
+  });
+  expect(await postAuthorDetailed(mock.page)).toEqual(hasPost ? { status: 'resolved', handle: 'seller' } : { status: 'unreadable' });
 });

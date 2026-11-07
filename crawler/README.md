@@ -72,7 +72,23 @@ node --env-file=.env.crawler --import tsx crawler/index.ts
 
 - 게시물 링크는 `/p/CODE/`, `/reel/CODE/` 및 `/handle/p/CODE/`, `/handle/reel/CODE/`를 같은 원문 URL로 정규화합니다. 예약 경로·잘못된 핸들은 제외합니다. 실제 URL 형태와 `anchors` 진단을 함께 확인하세요.
 - 캡션은 `article h1` → JSON-LD의 `articleBody`/`caption` → `article` 본문 → `main` 본문 → `meta[name="description"]`/`og:description` 순서로 최대 6,000자를 읽습니다. 잘릴 수 있는 meta는 마지막 대안입니다. JSON-LD 객체·배열·`@graph`를 지원하며 잘못된 JSON은 무시합니다.
-- 작성자는 기존 DOM 링크 세 후보 → JSON-LD `author.url`(검증된 Instagram 프로필), `author.alternateName`(선행 `@` 제거), `author.identifier.value` → description의 `- handle on ` 순서입니다. identifier는 `propertyID`가 `username` 또는 `handle`인 경우만 사용해 내부 `User ID` 오인을 막습니다. 모든 결과를 프로필 핸들로 검증합니다.
+- 프로필 수집은 탐색 후 실제 프로필 URL이 요청 계정과 일치해야 시작합니다. `main` 또는 `[role="main"]` 안의 단일 보이는 그리드 `article`에서만 링크를 찾습니다. 탐색 메뉴·헤더·대화상자·추천 섹션은 제외하며, 헤더/제목이 있는 피드·추천 article, 누락되거나 여러 개인 그리드는 페이지 전체 링크로 대체하지 않습니다. 명시된 `/다른계정/p/`·`/다른계정/reel/` 접두사는 정규화 전에 제외합니다. 일치하는 접두사도 작성자 증거는 아닙니다. 해시태그 발견의 기본 링크 탐색 범위는 유지합니다.
+- 작성자는 전경 게시물의 헤더 링크, JSON-LD `author.url`(검증된 Instagram 프로필)·`alternateName`(선행 `@` 제거)·`identifier.value`, description 시작의 인식된 `숫자 likes[, 숫자 comments] - handle on Instagram:` 또는 영문 날짜 작성자 형식에서 **모든 근거를 함께** 읽습니다. 전경 대화상자가 있으면 뒤의 피드 헤더는 사용하지 않고, 댓글·멘션·일반 링크는 작성자 증거가 아닙니다. identifier는 `propertyID`가 `username` 또는 `handle`일 때만 사용합니다. JSON-LD의 명시된 `url`·`@id`·`mainEntityOfPage`는 현재 정규 게시물 URL과 모두 일치해야 해당 레코드를 사용합니다. 객체·배열·`@graph`를 지원하고 잘못된 JSON 블록은 무시합니다. 서로 다른 유효 핸들이 둘 이상이면 근거 순서와 무관하게 충돌로 처리합니다.
+- 각 게시물은 캡션/미디어를 읽기 전과 전송 직전에 실제 정규 URL이 발견한 URL과 같고, 모호하지 않은 작성자가 요청 계정과 같아야 합니다. 호스트·추적 쿼리·끝 슬래시·프로필 접두사 정규화는 허용하지만 shortcode 또는 `/p/`·`/reel/`이 바뀐 리디렉트는 같은 작성자라도 제외합니다. 미확인·충돌·불일치·읽기 실패는 다음 후보로 넘어가며 전송/seen/성공 건수에 포함하지 않아 재시도할 수 있습니다. 스캔 시각과 행동 예약은 전송 성공을 뜻하지 않습니다. 정상 receipt 검증 후에만 seen을 저장하며, receipt 실패·응답 유실 후 재시작해도 미전송 URL을 재시도합니다. 휴식/보안 중단은 optional 읽기에서도 상위로 전달합니다.
+- 신원 제외 진단은 기존 `warn` 이벤트의 `scope: "post_identity"`와 고정 `code`만 사용합니다. 관측된 핸들·URL·본문·메타데이터·브라우저 예외·자격 증명·응답 본문은 담지 않습니다.
+
+  | code | 의미 |
+  | --- | --- |
+  | `profile_identity_mismatch` | 프로필 목적지가 요청 계정과 다름 |
+  | `profile_scope_missing` | 단일 프로필 그리드를 확인하지 못함 |
+  | `post_url_invalid` | 허용된 Instagram permalink가 아님 |
+  | `post_url_mismatch` | 다른 게시물로 이동함 |
+  | `post_author_missing` | 신뢰할 작성자 증거가 없음 |
+  | `post_author_conflict` | 작성자 증거끼리 충돌함 |
+  | `post_author_mismatch` | 작성자가 요청 계정과 다름 |
+  | `post_identity_unreadable` | 필요한 신원 근거를 읽거나 범위를 확정할 수 없음 |
+
+  오프라인 Playwright mock은 이 안전 계약을 검증하며 모든 실제 Instagram 레이아웃 호환성을 보장하지 않습니다. 미인식 레이아웃은 진단 후 건너뜁니다. 사이트의 pending → 사람 검수/승인 권한, 공유 계정 로그인/로그아웃, 스토리 및 독립 로컬 수집함 저장 경계는 그대로입니다.
 - 스토리 트레이는 기존 `/stories/` 링크를 먼저 읽습니다. 유효한 링크가 하나라도 있으면 alt·aria-label 대안을 읽지 않습니다. 링크가 없으면 `main`의 버튼/목록 이미지 alt → 버튼 aria-label에서 한국어·영어 프로필 사진 이름을 읽으며, `article` 안의 피드 아바타는 제외합니다. 컨테이너 후보에서도 `article` 내부를 제외하고 이미지 alt가 3개 이상인 첫 `main ul`로 제한하며, 없으면 `main` 전체를 사용합니다. 로그인 핸들은 제외하고 중복 없이 최대 30개를 반환합니다.
 - 로그인 프로필 링크는 접근성 이름 → 프로필 SVG가 있는 앵커 → 로그인 핸들과 일치하는 href → 로그인 핸들의 프로필 사진이 있는 nav 앵커 순서입니다. 모두 실패해도 로그인 식별자가 유효한 핸들이면 그 프로필로 진행하고 `following_profile_fallback`(`via: username`)을 기록합니다. 이메일이면 이 핸들 기반 대안과 본인 스토리 제외를 생략하므로 `AGAMAJUNG_IG_USER`에는 핸들을 권장합니다.
 - 새 셀렉터 폴백은 속성·본문만 읽으며 클릭·탐색·입력을 하지 않습니다. 기존 탐색 뒤 보안확인 검사와 즉시 중단 정책은 유지합니다.

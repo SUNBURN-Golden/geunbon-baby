@@ -143,9 +143,35 @@ export async function visibleHandles(page: Page, scope?: Locator): Promise<strin
   const hrefs = await base.locator('a[href]').evaluateAll(links => links.map(a => a.getAttribute('href') ?? ''));
   return [...new Set(hrefs.map(parseHandle).filter((h): h is string => h !== null))];
 }
-export async function postLinksDetailed(page: Page): Promise<{ links: string[]; anchors: number }> {
-  const hrefs = await page.locator('a[href*="/p/"], a[href*="/reel/"]').evaluateAll(links => links.map(a => a.getAttribute('href') ?? ''));
-  return { links: [...new Set(hrefs.map(canonicalPost).filter((url): url is string => url !== null))], anchors: hrefs.length };
+export const PROFILE_ARTICLES = 'main article, [role="main"] article';
+export const POST_ANCHORS = 'a[href*="/p/"], a[href*="/reel/"]';
+export async function postLinksDetailed(page: Page, scope?: { profile: string }): Promise<{ links: string[]; anchors: number; scopeMissing?: boolean }> {
+  let base: Page | Locator = page;
+  if (scope) {
+    const articles = page.locator(PROFILE_ARTICLES);
+    // A profile grid is a single visible article, not a feed post or a
+    // recommendation module. Unknown/ambiguous layouts have no broad fallback.
+    const indices = await articles.evaluateAll(elements => elements.flatMap((element, index) => {
+      if (element.closest('nav, header, aside, section, [role="navigation"], [role="dialog"], [role="region"], [role="complementary"], [hidden], [aria-hidden="true"]') ||
+          element.parentElement?.closest('article') || element.querySelector('header, h1, h2, h3, h4, h5, h6')) return [];
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' ? [index] : [];
+    }));
+    if (indices.length !== 1) return { links: [], anchors: 0, scopeMissing: true };
+    base = articles.nth(indices[0]);
+  }
+  const hrefs = await base.locator(POST_ANCHORS).evaluateAll((links, scoped) => links.filter(link => !scoped ||
+    !link.closest('nav, header, aside, section, [role="navigation"], [role="dialog"], [role="region"], [role="complementary"]'))
+    .map(a => a.getAttribute('href') ?? ''), Boolean(scope));
+  const candidates = scope ? hrefs.filter(href => {
+    try {
+      // Check the prefix before canonicalPost discards this discovery hint.
+      const prefix = /^\/([A-Za-z0-9._]{1,30})\/(?:p|reel)\//.exec(new URL(href, 'https://www.instagram.com/').pathname)?.[1];
+      return !prefix || prefix.toLowerCase() === scope.profile.toLowerCase();
+    } catch { return false; }
+  }) : hrefs;
+  return { links: [...new Set(candidates.map(canonicalPost).filter((url): url is string => url !== null))], anchors: hrefs.length };
 }
 
 export function parseStoryHandle(href: string): string | null {

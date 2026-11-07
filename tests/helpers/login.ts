@@ -54,7 +54,7 @@ export function loginFixture(options: {
     if (selector === 'input[name="code"], input[name="email_code"], input[name="confirmationCode"], input[name="confirmation_code"], input[name="emailCode"], input[inputmode="numeric"]') return stage.startsWith('email-') ? [{}] : [];
     if (selector === 'text') return stage === 'save' || stage === 'notifications' ? [{ text: titles[stage] }]
       : stage === 'email-ko' ? [{ text: '이메일을 확인하세요' }] : stage === 'email-en' ? [{ text: 'Check your email' }] : stage === 'blocked' ? [{ text: 'Action Blocked' }] : stage === 'challenge' ? [{ text: 'Enter the security code' }] : [];
-    if (selector === 'role:dialog') return options.fullPage ? [] : stage === 'activity' ? [{ href: '/fresh_seller/' }] : promptNode();
+    if (selector === 'role:dialog') return options.fullPage ? [] : stage === 'activity' ? [{ children: child => child === 'a[href]' ? [{ href: '/fresh_seller/' }] : [] }] : promptNode();
     if (selector === 'main, [role="main"]') return options.fullPage ? promptNode() : [];
     if (selector === 'role:link' && (stage === 'home' || stage === 'activity')) return [
       { name: 'Profile', href: '/offline_user/' },
@@ -62,7 +62,7 @@ export function loginFixture(options: {
     ];
     if (selector === 'role:button') return [{ name: 'Not Now', click: decoy }];
     if (selector === 'body') return [{ evaluate: surface }];
-    if (selector === '[role="main"], main') return stage === 'activity' ? [{ href: '/fresh_seller/' }] : [];
+    if (selector === '[role="main"], main') return stage === 'activity' ? [{ children: child => child === 'a[href]' ? [{ href: '/fresh_seller/' }] : [] }] : [];
     if (selector === 'a[href*="/stories/"]') return stage === 'home' ? [{ href: '/stories/story_seller/123/' }] : [];
     return [];
   });

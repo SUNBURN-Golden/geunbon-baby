@@ -1,17 +1,23 @@
 import { POST_MEDIA, STORY_MEDIA } from '../crawler/lib/media';
 import { mediaDOM, MediaElement, asElement } from './helpers/media-dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import settingsJson from '../crawler/config/settings.json';
 import { parseSettings } from '../crawler/lib/config';
-import { collectAccount, type CollectContext } from '../crawler/lib/collect';
+import { collectAccount, postAuthorDetailed, type CollectContext } from '../crawler/lib/collect';
 import { CrawlerState } from '../crawler/lib/state';
 import { IngestError } from '../crawler/lib/ingest';
 import { mockPage } from './helpers/page';
+import { flushHealth, initHealth } from '../crawler/lib/health';
+import { HaltError } from '../crawler/lib/browser';
+import { QuietWindowError } from '../crawler/lib/quiet-window';
+import { POST_ANCHORS, PROFILE_ARTICLES } from '../crawler/lib/selectors';
+import { POST_ARTICLES, PostElement, postTree, node, mockProfilePostPage } from './helpers/post-page';
+const matchingPage = (resolve: Parameters<typeof mockPage>[0] = () => []) => mockProfilePostPage('stokke', resolve);
 import { sleep } from '../crawler/lib/util';
 vi.mock('../crawler/lib/util', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/util')>(), sleep: vi.fn(async () => {}) }));
 vi.mock('node:child_process', async () => {
@@ -24,14 +30,15 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mediaDOM();
   dir = await mkdtemp(join(tmpdir(), 'crawler-collect-'));
+  await initHealth(dir);
   ctx = { account: 'stokke', crawlerDir: dir, state: await CrawlerState.open(join(dir, '.cache', 'state.json')), settings: parseSettings(settingsJson), api: new URL('https://ingest.invalid/api/v1/ingest'), token: 'test-ingest-token', scanPosts: true, scanStories: false };
   vi.mocked(promisify(execFile)).mockResolvedValue({ stdout: '스토케 트립트랩 공구 39만원', stderr: '' });
   vi.mocked(sleep).mockImplementation(async () => {});
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { id: 'item-1', status: 'pending' } }, { status: 202 })));
 });
-afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+afterEach(async () => { await flushHealth(); await rm(dir, { recursive: true, force: true }); });
 test('unprocessed profile posts remain eligible after per-tick limit and restart', async () => {
-  const { page } = mockPage(selector => {
+  const { page } = matchingPage(selector => {
     if (selector.startsWith('a[href*="/p/"')) return ['a', 'b', 'c'].map(id => ({ href: `/p/${id}/` }));
     if (selector === 'article') return [{ text: '스토케 트립트랩 공구가 390,000원 10/26~10/28' }];
     return [];
@@ -48,7 +55,7 @@ test('unprocessed profile posts remain eligible after per-tick limit and restart
 });
 test('blank caption and failed ingestion do not mark a post as delivered', async () => {
   let text = '';
-  const { page } = mockPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/a/' }] : selector === 'article' ? [{ text }] : []);
+  const { page } = matchingPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/a/' }] : selector === 'article' ? [{ text }] : []);
   expect(await collectAccount(page, ctx)).toEqual({ posts: 0, stories: 0 });
   expect(ctx.state.isSeen('https://www.instagram.com/p/a/')).toBe(false);
   text = '트립트랩 39만원';
@@ -60,7 +67,7 @@ test('story-only jobs run OCR, ingest once, remove screenshots, and never open a
   ctx.scanPosts = false; ctx.scanStories = true;
   ctx.settings.hourly_caps.story_opens = 1;
   let nextClicks = 0;
-  const mock = mockPage(selector => {
+  const mock = matchingPage(selector => {
     if (selector === STORY_MEDIA) return [{ dom: asElement(new MediaElement('VIDEO')), screenshot: async path => { await writeFile(path, 'mock-frame'); } }];
     if (selector === 'role:button') return [{ name: 'Pause' }, { name: 'Next', click: () => { nextClicks++; } }];
     return [];
@@ -77,7 +84,7 @@ test('OCR failures leave stories retryable and clean the screenshot', async () =
   ctx.scanPosts = false; ctx.scanStories = true;
   ctx.settings.per_tick.max_stories_per_account = 1;
   vi.mocked(promisify(execFile)).mockRejectedValueOnce(new Error('tesseract missing'));
-  const mock = mockPage(selector => selector === STORY_MEDIA ? [{ dom: asElement(new MediaElement('VIDEO')), screenshot: async path => { await writeFile(path, 'mock-frame'); } }] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
+  const mock = matchingPage(selector => selector === STORY_MEDIA ? [{ dom: asElement(new MediaElement('VIDEO')), screenshot: async path => { await writeFile(path, 'mock-frame'); } }] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
   mock.goto.mockImplementation(async () => { mock.setUrl('https://www.instagram.com/stories/stokke/123/'); });
   expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 0 });
   expect(ctx.state.isSeen('https://www.instagram.com/stories/stokke/123/')).toBe(false);
@@ -93,7 +100,7 @@ test.each([true, false])('autoplay cannot skip stories during pacing or OCR (Nex
   let ready = false;
   const captured: number[] = [];
   const pauses: number[] = [];
-  const mock = mockPage(selector => {
+  const mock = matchingPage(selector => {
     if (selector === STORY_MEDIA) return [{ dom: asElement(new MediaElement('VIDEO')), screenshot: async path => {
       expect(paused).toBe(true);
       captured.push(id);
@@ -123,7 +130,7 @@ test.each([true, false])('autoplay cannot skip stories during pacing or OCR (Nex
 
 test('stories with no pause control are left retryable without OCR or pacing', async () => {
   ctx.scanPosts = false; ctx.scanStories = true;
-  const mock = mockPage();
+  const mock = matchingPage();
   mock.goto.mockImplementation(async () => { mock.setUrl('https://www.instagram.com/stories/stokke/123/'); });
   expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 0 });
   expect(promisify(execFile)).not.toHaveBeenCalled();
@@ -136,7 +143,7 @@ test('post image payload preserves the signed query; failed deliveries remain re
   const image = new MediaElement('IMG', article);
   image.currentSrc = 'https://scontent.cdninstagram.com/product.jpg?sig=synthetic%2B%2F&x=1&x=2';
   const logs = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-  const { page } = mockPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/image/' }] : selector === 'article' ? [{ text: '트립트랩 공구' }] : selector === POST_MEDIA ? [{ dom: asElement(image) }] : []);
+  const { page } = matchingPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/image/' }] : selector === 'article' ? [{ text: '트립트랩 공구' }] : selector === POST_MEDIA ? [{ dom: asElement(image) }] : []);
   vi.mocked(fetch).mockRejectedValueOnce(new Error(`raw media failure ${image.currentSrc}`));
   await expect(collectAccount(page, ctx)).rejects.toBeInstanceOf(IngestError);
   expect(ctx.state.isSeen('https://www.instagram.com/p/image/')).toBe(false);
@@ -157,7 +164,7 @@ test.each(['image', 'poster', 'no-poster', 'unavailable'])('story %s uses the se
   if (kind === 'unavailable') element.currentSrc = 'blob:unavailable';
   const avatar = new MediaElement('IMG'); avatar.attrs.alt = 'profile';
   const screenshot = vi.fn(async (path: string) => { await writeFile(path, 'fixture'); });
-  const mock = mockPage(selector => selector === STORY_MEDIA ? [
+  const mock = matchingPage(selector => selector === STORY_MEDIA ? [
     { dom: asElement(avatar), screenshot: async () => { throw new Error('Avatar must not be captured'); } },
     { dom: asElement(element), screenshot },
   ] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
@@ -172,7 +179,7 @@ test.each(['image', 'poster', 'no-poster', 'unavailable'])('story %s uses the se
 test.each(['selection', 'ocr'])('story identity change during %s never delivers mixed text/image', async stage => {
   ctx.scanPosts = false; ctx.scanStories = true; ctx.settings.per_tick.max_stories_per_account = 1;
   const element = new MediaElement('IMG');
-  const mock = mockPage(selector => {
+  const mock = matchingPage(selector => {
     if (selector === STORY_MEDIA) {
       if (stage === 'selection') mock.setUrl('https://www.instagram.com/stories/stokke/124/');
       return [{ dom: asElement(element), screenshot: async path => { await writeFile(path, 'fixture'); } }];
@@ -195,7 +202,7 @@ test('story URL reading and OCR use a pinned node even when the live locator cha
   let reads = 0, swapped = false;
   Object.defineProperty(original, 'currentSrc', { get: () => { if (++reads === 2) swapped = true; return original.src; } });
   const captured: string[] = [];
-  const mock = mockPage(selector => selector === STORY_MEDIA ? [{
+  const mock = matchingPage(selector => selector === STORY_MEDIA ? [{
     dom: asElement(swapped ? replacement : original),
     screenshot: async path => { captured.push(swapped ? 'pinned-original' : 'original'); await writeFile(path, 'fixture'); },
   }] : selector === 'role:button' ? [{ name: 'Pause' }] : []);
@@ -236,7 +243,7 @@ function textFixture(kind: 'post' | 'story', raw: string) {
   const urlReads = vi.fn(() => imageUrl);
   Object.defineProperty(image, 'currentSrc', { get: urlReads });
   const screenshot = vi.fn(async (path: string) => { await writeFile(path, 'fixture'); });
-  const mock = mockPage(selector => {
+  const mock = matchingPage(selector => {
     if (selector.startsWith('a[href*="/p/"')) return [{ href: '/p/text/' }];
     if (selector === 'article') return [{ text: raw }];
     if (selector === POST_MEDIA || selector === STORY_MEDIA) return [{ dom: asElement(image), screenshot }];
@@ -322,7 +329,7 @@ test.each(IMAGE_SETTINGS)('filtered posts and stories allow later items within s
   ctx.settings.per_tick.max_stories_per_account = 2;
   let current = '', story = 123;
   const next = vi.fn(() => { story++; mock.setUrl(`https://www.instagram.com/stories/stokke/${story}/`); });
-  const mock = mockPage(selector => {
+  const mock = matchingPage(selector => {
     if (selector.startsWith('a[href*="/p/"')) return ['filtered', 'valid', 'capped'].map(id => ({ href: `/p/${id}/` }));
     if (selector === 'article') return [{ text: current.endsWith('/filtered/') ? FILTERED_TEXT : '스토케 트립트랩 공구가 390,000원' }];
     if (selector === STORY_MEDIA) return [{ dom: asElement(new MediaElement('VIDEO')), screenshot: async path => { await writeFile(path, 'fixture'); } }];
@@ -368,8 +375,8 @@ test.each(TEXT_CASES)('$kind requires a valid receipt after filtering and retrie
 });
 
 test('profile-prefixed posts and reels ingest prices from JSON-LD before article chrome', async () => {
-  const { page } = mockPage(selector => {
-    if (selector.startsWith('a[href*="/p/"')) return ['/babybjorn/p/a/', '/babybjorn/reel/b/'].map(href => ({ href }));
+  const { page } = matchingPage(selector => {
+    if (selector.startsWith('a[href*="/p/"')) return ['/stokke/p/a/', '/stokke/reel/b/'].map(href => ({ href }));
     if (selector === 'script[type="application/ld+json"]') return [{ text: '{broken' }, { text: JSON.stringify({ '@graph': [{ articleBody: '트립트랩 공구가 390,000원' }] }) }];
     if (selector === 'article') return [{ text: '댓글 보기' }];
     return [];
@@ -383,7 +390,7 @@ test('profile-prefixed posts and reels ingest prices from JSON-LD before article
 
 test('profile post miss includes the observed anchor count', async () => {
   const events = vi.spyOn(await import('../crawler/lib/health'), 'health');
-  const { page } = mockPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/babybjorn/tagged/' }] : []);
+  const { page } = matchingPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/babybjorn/tagged/' }] : []);
   expect(await collectAccount(page, ctx)).toEqual({ posts: 0, stories: 0 });
   expect(events).toHaveBeenCalledWith('selector_miss', { scope: 'profile_posts', account: 'stokke', anchors: 1 });
   events.mockRestore();
@@ -404,4 +411,214 @@ test('caption fallback priority preserves full text and uses meta last with a 60
     expect(await readCaption(page)).toBe(`${start}:공구 390,000원 ${'가'.repeat(6100)}`.slice(0, 6000));
     expect(goto).not.toHaveBeenCalled();
   }
+});
+
+const IDENTITY_URL = 'https://www.instagram.com/p/private_post/';
+const PRIVATE_AUTHOR = 'private_author';
+const PRIVATE_MARKER = 'PRIVATE_IDENTITY_CONTENT';
+function identityPage(options: { author?: string; metadata?: unknown; description?: string; links?: string[]; onCaption?: () => void } = {}) {
+  const grid = postTree();
+  for (const href of options.links ?? ['/p/private_post/']) new PostElement('a', grid.article, { href });
+  const post = postTree(options.author);
+  const mock = mockPage(selector => {
+    if (selector === PROFILE_ARTICLES) return [node(grid.article)];
+    if (selector === POST_ARTICLES) return [node(post.article)];
+    if (selector === 'script[type="application/ld+json"]') return options.metadata === undefined ? [] : [{ text: JSON.stringify(options.metadata) }];
+    if (selector === 'meta[name="description"]') return options.description ? [{ attrs: { content: options.description } }] : [];
+    if (selector === 'article') { options.onCaption?.(); return [{ text: `트립트랩 공구 39만원 ${PRIVATE_MARKER}` }]; }
+    return [];
+  });
+  return { ...mock, grid, post };
+}
+async function expectIdentitySkip(mock: ReturnType<typeof identityPage>, code: string, additionalSecrets: string[] = []) {
+  const events = vi.spyOn(await import('../crawler/lib/health'), 'health');
+  ctx.collectImages = false;
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 0 });
+  expect(fetch).not.toHaveBeenCalled();
+  expect(ctx.state.isSeen(IDENTITY_URL)).toBe(false);
+  ctx.state = await CrawlerState.open(join(dir, '.cache', 'state.json'));
+  expect(ctx.state.isSeen(IDENTITY_URL)).toBe(false);
+  const warnings = events.mock.calls.filter(([event, fields]) => event === 'warn' && fields?.scope === 'post_identity');
+  expect(warnings).toEqual([['warn', { scope: 'post_identity', code }]]);
+  await flushHealth();
+  const logs = (await Promise.all((await readdir(join(dir, 'logs'))).map(file => readFile(join(dir, 'logs', file), 'utf8')))).join('');
+  for (const secret of [PRIVATE_AUTHOR, PRIVATE_MARKER, IDENTITY_URL, ctx.token, ...additionalSecrets]) {
+    expect(JSON.stringify(warnings)).not.toContain(secret);
+    expect(logs).not.toContain(secret);
+  }
+}
+
+test.each([
+  ['DOM', { author: 'StOkKe' }],
+  ['JSON-LD url', { metadata: { author: { url: 'https://instagram.com/stokke/' } } }],
+  ['JSON-LD array', { metadata: [{ url: '/stokke/p/private_post/?x=1', author: { alternateName: '@Stokke' } }] }],
+  ['JSON-LD graph', { metadata: { '@graph': [{ '@id': IDENTITY_URL, author: { identifier: { propertyID: 'username', value: 'stokke' } } }] } }],
+  ['description', { description: '10 likes, 2 comments - stokke on Instagram: 공구 39만원' }],
+] as const)('verified %s author continues to pending review and persists seen after receipt', async (_name, options) => {
+  ctx.collectImages = false;
+  const mock = identityPage(options);
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 1, stories: 0 });
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string)).toMatchObject({ source_url: IDENTITY_URL, account: 'stokke', kind: 'post' });
+  ctx.state = await CrawlerState.open(join(dir, '.cache', 'state.json'));
+  expect(ctx.state.isSeen(IDENTITY_URL)).toBe(true);
+});
+
+test('comment, mention and navigation links never establish a missing author', async () => {
+  const mock = identityPage();
+  new PostElement('a', new PostElement('li', new PostElement('ul', mock.post.article)), { href: '/stokke/' });
+  new PostElement('a', new PostElement('nav', mock.post.main), { href: '/stokke/' });
+  new PostElement('a', mock.post.article, { href: '/stokke/', role: 'link' });
+  await expectIdentitySkip(mock, 'post_author_missing');
+});
+
+test.each([
+  { author: 'stokke', metadata: { author: { alternateName: PRIVATE_AUTHOR } } },
+  { author: PRIVATE_AUTHOR, metadata: { author: { alternateName: 'stokke' } } },
+  { metadata: { author: { url: 'https://instagram.com/stokke/', identifier: { propertyID: 'handle', value: PRIVATE_AUTHOR } } } },
+  { metadata: [{ author: { alternateName: 'stokke' } }, { author: { alternateName: PRIVATE_AUTHOR } }] },
+  { author: 'stokke', description: `10 likes - ${PRIVATE_AUTHOR} on Instagram: ${PRIVATE_MARKER}` },
+])('conflicting author evidence fails closed: %j', async options => {
+  await expectIdentitySkip(identityPage(options), 'post_author_conflict');
+});
+
+test('multiple DOM authors conflict regardless of order', async () => {
+  for (const authors of [['stokke', PRIVATE_AUTHOR], [PRIVATE_AUTHOR, 'stokke']]) {
+    const mock = identityPage({ author: authors[0] });
+    new PostElement('a', mock.post.article.querySelector('header')!, { href: `/${authors[1]}/` });
+    expect(await postAuthorDetailed(mock.page)).toEqual({ status: 'conflict' });
+  }
+});
+
+test('resolved unrelated author cannot be ingested under the requested profile', async () => {
+  await expectIdentitySkip(identityPage({ author: PRIVATE_AUTHOR }), 'post_author_mismatch');
+});
+
+test.each(['/p/redirected_private/', '/reel/private_post/', 'https://evil.invalid/p/private_post/'])('redirected identity %s stays retryable under both URLs', async destination => {
+  const mock = identityPage({ author: 'stokke' });
+  mock.goto.mockImplementation(async url => { mock.setUrl(url === IDENTITY_URL ? new URL(destination, 'https://www.instagram.com').href : url); });
+  await expectIdentitySkip(mock, destination.includes('evil') ? 'post_url_invalid' : 'post_url_mismatch', [destination]);
+  expect(ctx.state.isSeen(new URL(destination, 'https://www.instagram.com').href)).toBe(false);
+});
+
+test('equivalent normalized final permalink is accepted', async () => {
+  const mock = identityPage({ author: 'stokke' });
+  mock.goto.mockImplementation(async url => { mock.setUrl(url === IDENTITY_URL ? 'https://instagram.com/stokke/p/private_post?tracking=1' : url); });
+  ctx.collectImages = false;
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 1, stories: 0 });
+  expect(ctx.state.isSeen(IDENTITY_URL)).toBe(true);
+});
+
+test.each(['url', 'author'] as const)('%s replacement during caption extraction prevents transmission', async changed => {
+  const mock = identityPage({ author: 'stokke', onCaption: () => {
+    if (changed === 'url') mock.setUrl('https://www.instagram.com/p/changed_private/');
+    else mock.post.article.querySelector('header a[href]')!.attrs.href = `/${PRIVATE_AUTHOR}/`;
+  } });
+  await expectIdentitySkip(mock, changed === 'url' ? 'post_url_mismatch' : 'post_author_mismatch');
+});
+
+test('profile redirect skips discovery without exposing its destination', async () => {
+  const mock = identityPage({ author: 'stokke' });
+  mock.goto.mockImplementation(async () => { mock.setUrl(`https://instagram.com/${PRIVATE_AUTHOR}/?private=${PRIVATE_MARKER}`); });
+  await expectIdentitySkip(mock, 'profile_identity_mismatch');
+  expect(mock.goto).toHaveBeenCalledOnce();
+});
+
+test('unknown profile layout produces a fixed diagnostic and never visits page-wide recommendations', async () => {
+  const mock = identityPage({ author: 'stokke' });
+  const locator = vi.mocked(mock.page.locator).getMockImplementation()!;
+  vi.mocked(mock.page.locator).mockImplementation(selector => selector === PROFILE_ARTICLES ? mockPage().page.locator(selector) : locator(selector));
+  await expectIdentitySkip(mock, 'profile_scope_missing');
+  expect(mock.goto).toHaveBeenCalledOnce();
+});
+
+test('identity read errors skip with a fixed diagnostic and no raw browser details', async () => {
+  const mock = identityPage({ author: 'stokke' });
+  const locator = vi.mocked(mock.page.locator).getMockImplementation()!;
+  vi.mocked(mock.page.locator).mockImplementation(selector => {
+    if (selector === POST_ARTICLES) throw new Error(`${PRIVATE_MARKER} ${ctx.token}`);
+    return locator(selector);
+  });
+  await expectIdentitySkip(mock, 'post_identity_unreadable');
+});
+
+test('a rejected candidate does not prevent a later matching candidate within the caps', async () => {
+  const mock = identityPage({ author: 'stokke', links: ['/p/rejected/', '/p/private_post/'] });
+  mock.goto.mockImplementation(async url => {
+    mock.setUrl(url);
+    mock.post.article.querySelector('header a[href]')!.attrs.href = url.endsWith('/rejected/') ? `/${PRIVATE_AUTHOR}/` : '/stokke/';
+  });
+  ctx.collectImages = false;
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 1, stories: 0 });
+  expect(ctx.state.isSeen('https://www.instagram.com/p/rejected/')).toBe(false);
+  expect(ctx.state.isSeen(IDENTITY_URL)).toBe(true);
+  expect(ctx.state.countHour('post_views')).toBe(2);
+});
+
+test.each([new QuietWindowError(), new HaltError('challenge')])('identity and caption reads propagate %s before sending or marking seen', async error => {
+  for (const phase of ['identity', 'heading', 'body', 'meta', 'final']) {
+    const mock = identityPage({ author: 'stokke' });
+    const locator = vi.mocked(mock.page.locator).getMockImplementation()!;
+    let authorReads = 0;
+    vi.mocked(mock.page.locator).mockImplementation(selector => {
+      if (selector === POST_ARTICLES) authorReads++;
+      if ((phase === 'identity' && selector === POST_ARTICLES) || (phase === 'final' && selector === POST_ARTICLES && authorReads === 2)) throw error;
+      if (phase === 'body' && selector === 'article h1') return mockPage().page.locator(selector);
+      if (phase === 'meta' && ['article h1', 'article', 'main, [role="main"]'].includes(selector)) return mockPage().page.locator(selector);
+      const result = locator(selector);
+      if ((phase === 'heading' && selector === 'article h1') || (phase === 'body' && selector === 'article')) vi.mocked(result.first().innerText).mockRejectedValue(error);
+      if (phase === 'meta' && selector === 'meta[name="description"]') vi.mocked(result.first().getAttribute).mockRejectedValue(error);
+      return result;
+    });
+    ctx.collectImages = false;
+    await expect(collectAccount(mock.page, ctx)).rejects.toBe(error);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(ctx.state.isSeen(IDENTITY_URL)).toBe(false);
+    ctx.state = await CrawlerState.open(join(dir, '.cache', 'state.json'));
+    expect(ctx.state.isSeen(IDENTITY_URL)).toBe(false);
+  }
+});
+
+test('recommendations outside the profile grid are never visited', async () => {
+  const mock = identityPage({ author: 'stokke' });
+  const recommendation = new PostElement('article', new PostElement('section', mock.grid.main));
+  new PostElement('a', recommendation, { href: '/p/recommendation_private/' });
+  new PostElement('a', mock.grid.article, { href: `/${PRIVATE_AUTHOR}/p/prefixed_private/` });
+  const locator = vi.mocked(mock.page.locator).getMockImplementation()!;
+  vi.mocked(mock.page.locator).mockImplementation(selector => {
+    if (selector === PROFILE_ARTICLES) return mockPage(() => [node(mock.grid.article), node(recommendation)]).page.locator(selector);
+    if (selector === POST_ANCHORS) throw new Error('Unscoped profile discovery');
+    return locator(selector);
+  });
+  ctx.collectImages = false;
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 1, stories: 0 });
+  expect(mock.goto.mock.calls.map(([url]) => url)).toEqual(['https://www.instagram.com/stokke/', IDENTITY_URL]);
+});
+
+test('metadata read failure cannot be hidden by a matching DOM author', async () => {
+  const mock = identityPage({ author: 'stokke' });
+  const locator = vi.mocked(mock.page.locator).getMockImplementation()!;
+  vi.mocked(mock.page.locator).mockImplementation(selector => {
+    if (selector === 'script[type="application/ld+json"]') throw new Error(`${PRIVATE_MARKER} ${ctx.token}`);
+    return locator(selector);
+  });
+  await expectIdentitySkip(mock, 'post_identity_unreadable');
+});
+
+test.each(['url', 'author'] as const)('identity is rechecked after asynchronous media extraction changes %s', async changed => {
+  const mock = identityPage({ author: 'stokke' });
+  const locator = vi.mocked(mock.page.locator).getMockImplementation()!;
+  vi.mocked(mock.page.locator).mockImplementation(selector => {
+    if (selector === POST_MEDIA) {
+      if (changed === 'url') mock.setUrl('https://www.instagram.com/p/media_private/');
+      else mock.post.article.querySelector('header a[href]')!.attrs.href = `/${PRIVATE_AUTHOR}/`;
+    }
+    return locator(selector);
+  });
+  // This path exercises postImageUrl, including its optional metadata fallback.
+  const events = vi.spyOn(await import('../crawler/lib/health'), 'health');
+  expect(await collectAccount(mock.page, ctx)).toEqual({ posts: 0, stories: 0 });
+  expect(fetch).not.toHaveBeenCalled();
+  expect(ctx.state.isSeen(IDENTITY_URL)).toBe(false);
+  expect(events).toHaveBeenCalledWith('warn', { scope: 'post_identity', code: changed === 'url' ? 'post_url_mismatch' : 'post_author_mismatch' });
 });

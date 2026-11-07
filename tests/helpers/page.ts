@@ -29,7 +29,7 @@ export function mockLocator(nodes: () => Node[]): Locator {
     screenshot: vi.fn(async (options: { path: string }) => { await nodes()[0]?.screenshot?.(options.path); }),
     evaluateAll: vi.fn(async (fn: (elements: Element[], arg?: unknown) => unknown, arg?: unknown) => fn(nodes().map(node => node.dom ?? ({ getAttribute: (name: string) => node.attrs?.[name] ?? (name === 'href' ? node.href ?? null : null), closest: () => null, textContent: node.text ?? '' } as unknown as Element)), arg)),
     evaluate: vi.fn(async (fn: (element: Element) => unknown) => nodes()[0]?.evaluate ? nodes()[0].evaluate!() : nodes()[0]?.dom ? fn(nodes()[0].dom!) : undefined),
-    locator: () => cached('locator', nodes),
+    locator: (selector: string) => cached(`locator:${selector}`, () => nodes().flatMap(node => node.children?.(selector) ?? (node.dom ? [...node.dom.querySelectorAll(selector)].map(dom => ({ dom })) : []))),
     getByRole: (role: string, options?: { name?: RegExp }) => cached(`role:${role}:${options?.name}`, () => nodes().flatMap(node => node.children?.(`role:${role}`) ?? []).filter(node => !options?.name || options.name.test(node.name ?? ''))),
     filter: (options?: { hasText?: RegExp }) => cached(`filter:${options?.hasText}`, () => nodes().filter(node => !options?.hasText || options.hasText.test(node.text ?? ''))),
   };

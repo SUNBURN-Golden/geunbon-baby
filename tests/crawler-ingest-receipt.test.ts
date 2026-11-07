@@ -9,7 +9,8 @@ import { flushHealth, initHealth } from '../crawler/lib/health';
 import { IngestError, parseIngestReceipt, sendItem, type InstagramItem } from '../crawler/lib/ingest';
 import { CrawlerState } from '../crawler/lib/state';
 import { buildPayload } from '../crawler/lib/external/filter';
-import { mockPage } from './helpers/page';
+import { mediaDOM } from './helpers/media-dom';
+import { mockProfilePostPage } from './helpers/post-page';
 vi.mock('../crawler/lib/util', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/util')>(), sleep: vi.fn(async () => {}) }));
 
 const TOKEN = 'offline-ingest-token-private';
@@ -22,8 +23,9 @@ const raw = (body: BodyInit | null, headers: HeadersInit = { 'content-type': 'ap
 const flagged = (key: string, value: unknown) => Object.defineProperty(json(receipt()), key, { value });
 let dir: string;
 let ctx: CollectContext;
-const page = () => mockPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/receipt/' }] : selector === 'article' ? [{ text: CAPTION }] : []).page;
+const page = () => mockProfilePostPage('stokke', selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/receipt/' }] : selector === 'article' ? [{ text: CAPTION }] : []).page;
 beforeEach(async () => {
+  mediaDOM();
   dir = await mkdtemp(join(tmpdir(), 'ingest-receipt-'));
   await initHealth(dir);
   ctx = { account: 'stokke', crawlerDir: dir, state: await CrawlerState.open(join(dir, 'state.json')), settings: parseSettings(settingsJson), api: new URL('https://ingest.invalid/api/v1/ingest'), token: TOKEN, scanPosts: true, scanStories: false, collectImages: false };
@@ -36,6 +38,8 @@ async function expectRetryable(send: () => Promise<Response>, reason?: string) {
   expect(error).toBeInstanceOf(IngestError);
   expect(error.status).toBeUndefined();
   expect(error.cause).toBeUndefined();
+  expect(ctx.state.isSeen(URL_SENT)).toBe(false);
+  ctx.state = await CrawlerState.open(join(dir, 'state.json'));
   expect(ctx.state.isSeen(URL_SENT)).toBe(false);
   expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).text).toBe(CAPTION);
   expect(vi.mocked(fetch).mock.calls[0][1]!.redirect).toBe('error');
