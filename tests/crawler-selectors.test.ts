@@ -38,7 +38,7 @@ test('post links canonicalize tracking URLs, reject external URLs, and dedupe', 
   expect(canonicalPost('https://user:pass@instagram.com/p/a/')).toBeNull();
 });
 test('handle list parsing dedupes profile links', async () => {
-  const { page } = mockPage(() => ['/seller/', '/seller/', '/explore/', '/seller2/'].map(href => ({ href })));
+  const { page } = mockPage(selector => selector === 'body' ? [{ children: child => child === 'a[href]' ? ['/seller/', '/seller/', '/explore/', '/seller2/'].map(href => ({ href })) : [] }] : []);
   expect(await visibleHandles(page)).toEqual(['seller', 'seller2']);
 });
 
@@ -201,4 +201,37 @@ test('email username skips handle-only profile candidates', async () => {
     return [];
   });
   expect(await profileLink(page, 'x@y.test')).toBeNull();
+});
+
+test('profile discovery reads only the grid, checks account prefixes, and preserves hashtag discovery', async () => {
+  const { postLinksDetailed, POST_ANCHORS, PROFILE_ARTICLES } = await import('../crawler/lib/selectors');
+  const { PostElement, postTree, node } = await import('./helpers/post-page');
+  const { mediaDOM } = await import('./helpers/media-dom');
+  mediaDOM();
+  const { main, article } = postTree();
+  for (const href of ['/p/a/?tracking=1', '/Seller/p/a/', '/seller/reel/b/', '/someone/p/private/']) new PostElement('a', article, { href });
+  for (const tag of ['nav', 'header', 'aside', 'section']) new PostElement('a', new PostElement(tag, article), { href: `/p/${tag}/` });
+  new PostElement('a', new PostElement('div', article, { role: 'dialog' }), { href: '/p/dialog/' });
+  const recommendation = new PostElement('article', new PostElement('section', main));
+  new PostElement('a', recommendation, { href: '/p/recommended/' });
+  // Profile headers live outside the post-grid article.
+  article.children = article.children.filter(child => child.tagName !== 'HEADER');
+  const mock = mockPage(selector => selector === PROFILE_ARTICLES ? [node(article), node(recommendation)] : selector === POST_ANCHORS ? main.querySelectorAll(POST_ANCHORS).map(node) : []);
+  expect(await postLinksDetailed(mock.page, { profile: 'seller' })).toEqual({
+    links: ['https://www.instagram.com/p/a/', 'https://www.instagram.com/reel/b/'], anchors: 4,
+  });
+  expect((await postLinksDetailed(mock.page)).links).toContain('https://www.instagram.com/p/recommended/');
+});
+
+test.each([0, 2])('missing or ambiguous profile grid (%i) never falls back to page-wide links', async count => {
+  const { postLinksDetailed, POST_ANCHORS, PROFILE_ARTICLES } = await import('../crawler/lib/selectors');
+  const { postTree, node } = await import('./helpers/post-page');
+  const { mediaDOM } = await import('./helpers/media-dom');
+  mediaDOM();
+  const { page } = mockPage(selector => {
+    if (selector === PROFILE_ARTICLES) return Array.from({ length: count }, () => node(postTree().article));
+    if (selector === POST_ANCHORS) throw new Error('Page-wide discovery forbidden');
+    return [];
+  });
+  expect(await postLinksDetailed(page, { profile: 'seller' })).toEqual({ links: [], anchors: 0, scopeMissing: true });
 });
