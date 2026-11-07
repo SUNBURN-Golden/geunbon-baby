@@ -1,3 +1,4 @@
+import { digest } from '../crawler/src/dedup';
 import { expect, test, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -228,14 +229,14 @@ test.each([false,true])('discover CLI prints health JSON and one terminal line p
   const stdout=vi.spyOn(console,'log').mockImplementation(()=>{}),stderr=vi.spyOn(console,'error').mockImplementation(()=>{});
   try{
     process.argv=['node','local-worker.ts','discover',...(dry?['--dry-run']:[])];await main();
-    expect(stdout).toHaveBeenCalledTimes(1);const output=JSON.parse(stdout.mock.calls[0][0]);expect(output.dry_run).toBe(dry?true:undefined);
+    expect(stdout).toHaveBeenCalledTimes(2);const event=JSON.parse(stdout.mock.calls[1][0]);expect(event.generated_at).toMatch(/Z$/);const output=event.result;expect(output.dry_run).toBe(dry?true:undefined);
     expect(output.health.status).toBe('review');expect(output.health.sources).toHaveLength(2);leakGuard(output.health.sources);
     const details=stderr.mock.calls.map(c=>String(c[0])).filter(line=>line.startsWith('discover at='));
     expect(details).toHaveLength(2);
-    for(const h of output.health.sources)expect(details.filter(line=>line.includes(` source=${h.source_id} `))).toHaveLength(1);
+    for(const [i,h] of output.health.sources.entries()){expect(h.source_id).toBe(digest(settings.sources[i].id));expect(details.filter(line=>line.includes(` source=${settings.sources[i].id} `))).toHaveLength(1);}
     expect(details.every(line=>/at=.+\+09:00/.test(line))).toBe(true);
     expect(details[0]).toContain('status=ok');expect(details[1]).toContain('reason=network_error');
-    if(!dry)expect(output.jobs.sources.failed.failures).toEqual({network_error:1});
+    if(!dry)expect(output.jobs.sources[digest('failed')].failures).toEqual({network_error:1});
   }finally{process.argv=argv;rmSync(dir,{recursive:true,force:true});}
 });
 

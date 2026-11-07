@@ -14,7 +14,7 @@
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:seed": "tsx scripts/seed.ts && wrangler d1 execute DB --local --file=.local/seed.sql",
     "collector": "node --import tsx crawler/collector.mjs",
-    "collector:worker": "node --import tsx crawler/src/local-worker.ts",
+    "collector:worker": "node --import tsx crawler/local-worker.mjs",
     "build:clipper": "node scripts/build-clipper.mjs"
   },
   "dependencies": {

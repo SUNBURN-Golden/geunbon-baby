@@ -15,11 +15,11 @@ test('offline dry-run spends nothing, recovers no orphan holds, inserts no candi
  const f=discoveryFixture(),argv=process.argv;try{
   const id=f.runner.start({kind:'test',at:'hold'});f.runner.ledger.hold(10);const before=rows(f,'engine_costs');environment(f);
   const log=vi.spyOn(console,'log').mockImplementation(()=>{});process.argv=['node','local-worker.ts','discover-sources','--dry-run'];await main();
-  expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({dry_run:true,max_depth:2,shared_owner:'agamajung'});expect(rows(f,'source_candidates')).toHaveLength(0);expect(rows(f,'engine_runs')).toHaveLength(1);expect(rows(f,'engine_costs')).toEqual(before);expect(rows(f,'engine_cost_holds')).toHaveLength(1);
+  expect(JSON.parse(log.mock.calls.at(-1)![0]).result).toMatchObject({dry_run:true,max_depth:2,shared_owner:'agamajung'});expect(rows(f,'source_candidates')).toHaveLength(0);expect(rows(f,'engine_runs')).toHaveLength(1);expect(rows(f,'engine_costs')).toEqual(before);expect(rows(f,'engine_cost_holds')).toHaveLength(1);
   const skipped=vi.spyOn(console,'error').mockImplementation(()=>{}),run=vi.spyOn(SourceDiscoveryRunner.prototype,'run'),preview=vi.spyOn(SourceDiscoveryRunner.prototype,'preview'),calls=log.mock.calls.length;
   f.store.runLock('crawl');await expect(main()).resolves.toBeUndefined();expect(f.runner.engine.run(id)).toBeTruthy();
   expect(skipped.mock.calls).toHaveLength(2);expect(skipped.mock.calls[0][0]).toMatch(/^collector_start at=.+\+09:00 job=discover-sources /);expect(skipped.mock.calls[1][0]).toMatch(/^collector_end .+ outcome=skipped reason=run_locked$/);
-  expect(log.mock.calls).toHaveLength(calls);expect(run).not.toHaveBeenCalled();expect(preview).not.toHaveBeenCalled();
+  expect(log.mock.calls).toHaveLength(calls+2);expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({event:'result',outcome:'skipped',reason:'run_locked'});expect(run).not.toHaveBeenCalled();expect(preview).not.toHaveBeenCalled();
  }finally{process.argv=argv;f.close();}
 });
 test('real collect extraction → sanitized link cache → discovery → DB → CLI preserves product identity',async()=>{

@@ -58,7 +58,7 @@ async function pair(file:string,body:string,c=settings()) {
   workers.forEach(w=>w.go());return workers;
 }
 function integrity(store:CollectorStore) {
-  expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:7});
+  expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:8});
   expect(store.db.prepare('PRAGMA quick_check').get()).toMatchObject({quick_check:'ok'});
   expect(store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
 }
@@ -187,7 +187,7 @@ test('legacy empty DB lock is ignored and warned once; unreadable run locks are 
   const {file}=location(),legacy=file+'.lock';writeFileSync(legacy,'',{mode:0o600});
   const warning=vi.spyOn(console,'error').mockImplementation(()=>{}),store=new CollectorStore(file);
   try {
-    expect(warning.mock.calls).toEqual([['collector_warning legacy_lock_present path=collector.sqlite.lock']]);
+    expect(warning.mock.calls).toEqual([['collector_warning legacy_lock_present']]);
     for(const text of ['', '{invalid', '{}', JSON.stringify({...owner(),pid:0})]) {
       writeFileSync(file+'.crawl.lock',text,{mode:0o600});
       expect(caught(()=>store.runLock('crawl'))).toMatchObject({code:'run_lock_unreadable',detail:{kind:'crawl',path:file+'.crawl.lock'}});
@@ -235,10 +235,10 @@ test.each([false,true])('failed stale acquisition releases only its own lock (re
 test('discover CLI coexists with serve and reports a duplicate crawl owner',()=>{
   const {file,dir}=location(),store=new CollectorStore(file,settings()),cfg=join(dir,'config.json');
   writeFileSync(cfg,JSON.stringify({...settings(),sources:[]}),{mode:0o600});
-  const run=()=>spawnSync(process.execPath,['--import','tsx','crawler/src/local-worker.ts','discover','--dry-run'],{env:{...process.env,COLLECTOR_DB:file,COLLECTOR_CONFIG:cfg,COLLECTOR_TRUSTED_EGRESS_CIDRS:''},encoding:'utf8',timeout:10000});
+  const run=()=>spawnSync(process.execPath,['--import','tsx','crawler/local-worker.mjs','discover','--dry-run'],{env:{...process.env,COLLECTOR_DB:file,COLLECTOR_CONFIG:cfg,COLLECTOR_TRUSTED_EGRESS_CIDRS:''},encoding:'utf8',timeout:10000});
   try {
-    store.runLock('serve');const allowed=run();expect(allowed.status).toBe(0);expect(JSON.parse(allowed.stdout)).toMatchObject({dry_run:true});
-    store.runLock('crawl');const blocked=run();expect(blocked.status).toBe(0);expect(blocked.stdout).toBe('');
+    store.runLock('serve');const allowed=run();expect(allowed.status).toBe(0);expect(JSON.parse(allowed.stdout.trim().split('\n').at(-1)!)).toMatchObject({outcome:'dry_run',result:{dry_run:true}});
+    store.runLock('crawl');const blocked=run();expect(blocked.status).toBe(0);expect(JSON.parse(blocked.stdout.trim().split('\n').at(-1)!)).toMatchObject({outcome:'skipped',reason:'run_locked'});
     expect(blocked.stderr.match(/^collector_(?:start|end) .+$/gm)).toHaveLength(2);
     expect(blocked.stderr).toMatch(/collector_end .+ job=discover .+ outcome=skipped reason=run_locked/);
     expect(JSON.parse(readFileSync(file+'.crawl.lock','utf8')).pid).toBe(process.pid);
@@ -263,13 +263,14 @@ test.each([
   try {
     store.runLock(kind);const path=`${file}.${kind}.lock`,bytes=readFileSync(path,'utf8');
     const args=command==='failures'?['failures','retry','unused']: [command,'--dry-run'];
-    const result=spawnSync(process.execPath,['--import',guard,'--import','tsx','crawler/src/local-worker.ts',...args],{
+    const result=spawnSync(process.execPath,['--import',guard,'--import','tsx','crawler/local-worker.mjs',...args],{
       env:{...process.env,COLLECTOR_DB:file,COLLECTOR_CONFIG:cfg,COLLECTOR_RAW_DIR:join(dir,'raw'),COLLECTOR_TRUSTED_EGRESS_CIDRS:'',
         COLLECTOR_INTAKE_TOKEN:'fixture-intake-token-123456789',COLLECTOR_REVIEW_TOKEN:'fixture-review-token-123456789',
         COLLECTOR_EXTENSION_ORIGIN:`chrome-extension://${'a'.repeat(32)}`,COLLECTOR_SITE_URL:'',COLLECTOR_STATUS_TOKEN:''},
       encoding:'utf8',timeout:10000,
     });
-    expect(result.status,result.stderr).toBe(0);expect(result.stdout).toBe('');
+    expect(result.status,result.stderr).toBe(0);
+    if(['serve','discover','collect','discover-sources'].includes(command))expect(JSON.parse(result.stdout.trim().split('\n').at(-1)!)).toMatchObject({outcome:'skipped',reason:'run_locked'});else expect(result.stdout).toBe('');
     const lines=result.stderr.split('\n').filter(line=>line.startsWith('collector_'));
     if(['discover','collect','discover-sources'].includes(command)){
       expect(lines).toHaveLength(2);
@@ -290,11 +291,11 @@ test.each(['unreadable','unsafe'])('CLI preserves %s lock metadata and logs only
   const bytes=kind==='unreadable'?'{private-metadata-never-print':JSON.stringify(owner());
   writeFileSync(path,bytes,{mode:0o600});if(kind==='unsafe')chmodSync(path,0o644);
   try {
-    const result=spawnSync(process.execPath,['--import','tsx','crawler/src/local-worker.ts','discover','--dry-run'],{
+    const result=spawnSync(process.execPath,['--import','tsx','crawler/local-worker.mjs','discover','--dry-run'],{
       env:{...process.env,COLLECTOR_DB:file,COLLECTOR_CONFIG:cfg,COLLECTOR_TRUSTED_EGRESS_CIDRS:''},encoding:'utf8',timeout:10000,
     });
-    expect(result.status).toBe(kind==='unreadable'?0:1);expect(result.stdout).toBe('');
-    expect(result.stderr).toContain(kind==='unreadable'?'outcome=skipped reason=run_lock_unreadable':'collector_failed code=unsafe_file');
+    expect(result.status).toBe(kind==='unreadable'?0:1);expect(JSON.parse(result.stdout.trim().split('\n').at(-1)!)).toMatchObject({outcome:kind==='unreadable'?'skipped':'failed',reason:kind==='unreadable'?'run_lock_unreadable':'lock_error'});
+    expect(result.stderr).toContain(kind==='unreadable'?'outcome=skipped reason=run_lock_unreadable':'outcome=failed reason=lock_error');
     expect(result.stderr).not.toContain(bytes);expect(result.stderr).not.toContain(file);expect(readFileSync(path,'utf8')).toBe(bytes);
   }finally{store.close();}
 });

@@ -178,3 +178,23 @@ test('real DB faults remain failures and restore the busy timeout',async()=>{
     expect(f.store.db.prepare('PRAGMA busy_timeout').get()).toMatchObject({timeout:f.settings.busy_timeout_ms});
   }finally{f.close();}
 });
+
+test.each(['serve','crawl','schedule'] as const)('a verified zombie %s owner is reclaimed only after rechecking its state and age',async kind=>{
+  const f=fixture(),c=clock(f),old=existing(f),path=f.file+`.${kind}.lock`;
+  if(kind!=='crawl')unlinkSync(old.path);
+  writeFileSync(path,JSON.stringify({...old.owner,kind}),{mode:0o600});
+  const reads:string[]=[];
+  c.options.proc=p=>{reads.push(p);return p.endsWith('boot_id')?boot:stat(process.pid,p.includes(String(otherPid))?'22':'11').replace(') 0 ',') Z ');};
+  try{
+    expect(await f.store.waitForRunLock(kind,c.options)).toMatchObject({acquired:true});
+    expect(reads.filter(p=>p===`/proc/${otherPid}/stat`)).toHaveLength(2);
+    expect(JSON.parse(readFileSync(path,'utf8')).pid).toBe(process.pid);
+  }finally{f.close();}
+});
+test('a zombie observation followed by a live owner or unreadable proc never permits reclamation',async()=>{
+  for(const unavailable of [false,true]){
+    const f=fixture(),c=clock(f),old=existing(f);let n=0;
+    c.options.proc=p=>{if(p.endsWith('boot_id'))return boot;if(p===`/proc/${otherPid}/stat`){n++;if(unavailable&&n%2===0)throw errno('EPERM');return stat(otherPid,'22').replace(') 0 ',n%2?') Z ':') R ');}return stat(process.pid,'11');};
+    try{expect(await f.store.waitForRunLock('crawl',c.options)).toMatchObject({acquired:false});expect(readFileSync(old.path,'utf8')).toBe(old.bytes);}finally{f.close();}
+  }
+});
