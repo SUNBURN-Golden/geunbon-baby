@@ -18,6 +18,12 @@ export function loadDeepSeekWebConfig(path = join(root, 'config.json')): DeepSee
   if (!raw.selection || !Number.isInteger(raw.selection.max_pangpang_detail_per_cycle) || raw.selection.max_pangpang_detail_per_cycle < 0) {
     throw new Error('invalid_deepseek_web_config');
   }
+  if (!Number.isInteger(raw.selection.listing_discovery_policy_version) || raw.selection.listing_discovery_policy_version < 1) {
+    throw new Error('invalid_deepseek_web_config');
+  }
+  if (!Number.isInteger(raw.selection.listing_refresh_min_ms) || raw.selection.listing_refresh_min_ms < 0) {
+    throw new Error('invalid_deepseek_web_config');
+  }
   return raw;
 }
 export function stateDir() {

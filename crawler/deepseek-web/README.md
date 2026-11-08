@@ -24,7 +24,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 **예산(하드 캡 유지):** `config.json`의 `budget.max_tokens_per_run`(기본 32k)과 `max_requests_per_run`은 **daemon 틱마다** `cycle`에만 적용된다. `lifetime`은 감사용 누적이며 캡을 다시 소진하지 않는다. v1 `memory.json`의 `token_spent`/`requests_spent`는 마이그레이션 시 `lifetime`으로 이전되고, 다음 틱부터 `budget_tokens`로 영구 정지하지 않는다.
 
-**09pangpang:** 검색·홈 리스팅 HTML은 모델 호출 없이 프리미엄/육아 카테고리 후보의 `/post/` URL을 `pending_urls`에 넣는다. 동일 seed가 `observed`에만 있고 pending이 비면 **중복 모델 호출을 스킵**한다.
+**09pangpang:** 검색·홈 리스팅 HTML은 모델 호출 없이 프리미엄/육아 카테고리 후보의 `/post/` URL을 `pending_urls`에 넣는다. `listing_discovery`는 URL별 정책 버전·마지막 시도를 기록한다. **마이그레이션·정책 버전 미기록 observed listing**은 한 번 listing fetch/discovery를 허용한다(누적 `lifetime`·`observed_urls` 유지). 캐드 내 재시도는 `listing_refresh_min_ms`(기본 10분). 그 외 observed listing은 모델·불필요 fetch 없이 `idle_dedup` / `halt_reason: dedup_observed_seed`로 보고한다(`blocked` 아님).
 
 ## 박스 업그레이드 (8214336 → 최신, state 보존)
 

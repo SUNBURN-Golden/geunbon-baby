@@ -59,7 +59,9 @@
     "max_queue_urls": 50
   },
   "selection": {
-    "max_pangpang_detail_per_cycle": 3
+    "max_pangpang_detail_per_cycle": 3,
+    "listing_discovery_policy_version": 1,
+    "listing_refresh_min_ms": 600000
   },
   "seed_urls": []
 }

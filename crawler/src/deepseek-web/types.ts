@@ -62,7 +62,11 @@ export type DeepSeekWebConfig = {
   fetch: { min_interval_ms: number; jitter_ms: [number, number]; timeout_ms: number; max_bytes: number; user_agent_note: string };
   budget: { max_tokens_per_run: number; max_requests_per_run: number; max_completion_tokens: number; estimated_prompt_tokens: number };
   memory: { heartbeat_max_age_ms: number; max_queue_urls: number };
-  selection: { max_pangpang_detail_per_cycle: number };
+  selection: {
+    max_pangpang_detail_per_cycle: number;
+    listing_discovery_policy_version: number;
+    listing_refresh_min_ms: number;
+  };
   seed_urls: string[];
 };
 
@@ -82,10 +86,17 @@ export type RunMemory = {
   last_heartbeat_at: string | null;
   last_run_id: string | null;
   last_collection_status: CollectionStatus;
+  listing_discovery: Record<string, { policy_version: number; last_at: string; last_enqueue_count: number }>;
   output_counts: { extractions: number; proposals: number; blocked: number; review_pending: number };
 };
 
-export type CollectionStatus = 'active' | 'budget_saturated' | 'idle' | 'blocked';
+export type CollectionStatus =
+  | 'active'
+  | 'budget_saturated'
+  | 'idle'
+  | 'idle_dedup'
+  | 'listing_no_candidates'
+  | 'blocked';
 
 export type RunReport = {
   run_id: string;
@@ -104,6 +115,9 @@ export type RunReport = {
   proposals: number;
   blocked: number;
   review_pending: number;
+  listing_enqueued: number;
+  listing_refresh_attempts: number;
+  dedup_skips: number;
   collection_status: CollectionStatus;
   halt_reason: string | null;
   heartbeat_fresh: boolean;
