@@ -44,8 +44,21 @@ export async function deepSeekWebCli(args: string[], deps: DeepSeekWebCliDeps = 
   if (command === 'daemon') {
     const interval = Number(process.env.DEEPSEEK_WEB_DAEMON_MS ?? 600000);
     for (;;) {
-      const report = await withStore('once');
-      console.error(JSON.stringify({ event: 'deepseek_web_tick', ...report }));
+      let owned: CollectorStore | undefined;
+      const store = deps.store ?? (owned = openRuntimeCollectorStore());
+      assertDomainPolicyReadable(store);
+      try {
+        const report = await runDeepSeekWeb({
+          mode: 'daemon_tick',
+          store,
+          client: deps.client,
+          fetchImpl: deps.fetchImpl,
+          stateDir: deps.stateDir,
+        });
+        console.error(JSON.stringify({ event: 'deepseek_web_tick', ...report }));
+      } finally {
+        owned?.close();
+      }
       await new Promise(r => setTimeout(r, interval));
     }
   }

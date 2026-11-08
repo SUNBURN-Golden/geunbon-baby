@@ -14,11 +14,30 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 | 파일 | 설명 |
 |------|------|
-| `memory.json` | plan/act/observe/remember 메모리 |
+| `memory.json` | v2: `cycle`(틱별 예산)·`lifetime`(누적)·`observed_urls`/`pending_urls` |
+| `cycle-audit.jsonl` | 틱 종료 시 cycle↔lifetime 감사 로그 (기존 파일 이어쓰기) |
+| `outcomes.jsonl` | 추출·차단·중복·리스팅 enqueue 등 zero/부분 결과 사유 |
 | `review-queue.jsonl` | `pending` 검수 큐 |
-| `heartbeat.json` | 최신 하트비트 |
-| `validation-artifact.json` | 활성화 검증용 스냅샷 |
+| `heartbeat.json` | 최신 하트비트 (`collection_status`, `halt_reason`, `heartbeat_fresh`는 **쓰기 시점** 기준) |
+| `validation-artifact.json` | 마지막 틱 스냅샷 — `heartbeat_fresh=true`만으로 **현재 라이브 상태를 증명하지 않음** |
 | `proposals/*.json` | 파서 수정 제안 |
+
+**예산(하드 캡 유지):** `config.json`의 `budget.max_tokens_per_run`(기본 32k)과 `max_requests_per_run`은 **daemon 틱마다** `cycle`에만 적용된다. `lifetime`은 감사용 누적이며 캡을 다시 소진하지 않는다. v1 `memory.json`의 `token_spent`/`requests_spent`는 마이그레이션 시 `lifetime`으로 이전되고, 다음 틱부터 `budget_tokens`로 영구 정지하지 않는다.
+
+**09pangpang:** 검색·홈 리스팅 HTML은 모델 호출 없이 프리미엄/육아 카테고리 후보의 `/post/` URL을 `pending_urls`에 넣는다. 동일 seed가 `observed`에만 있고 pending이 비면 **중복 모델 호출을 스킵**한다.
+
+## 박스 업그레이드 (8214336 → 최신, state 보존)
+
+```sh
+cd /path/to/geunbon-baby
+git fetch origin cursor/deepseek-web-collector-0251
+git checkout cursor/deepseek-web-collector-0251
+npm ci && npm run typecheck && npm test -- tests/deepseek-web-*.test.ts
+# DEEPSEEK_WEB_STATE_DIR(또는 .local/deepseek-web) 삭제하지 말 것 — v1 memory 자동 마이그레이션
+pm2 reload agamajung-deepseek-web --update-env
+```
+
+정상 틱 후 기대: `memory.json` `version: 2`, `cycle.token_spent`는 틱별, `lifetime.token_spent`는 누적, `collection_status`가 `budget_saturated`일 때 `halt_reason: budget_tokens`와 **해당 틱** `cycle_requests_spent: 0`이 함께 기록된다.
 
 **`once`·`daemon`은 `COLLECTOR_DB` 필수**(없거나 읽을 수 없으면 `collector_db_required` / `collector_db_unavailable` / `domain_state_unavailable`). 정책은 **fetch 직전·리다이렉트 후·모델 직전**마다 재확인한다.
 
@@ -63,7 +82,7 @@ cat .local/deepseek-web/heartbeat.json
 
 ```sh
 export PATH="$PWD/node_modules/node/bin:$PATH"
-npm test -- tests/deepseek-web-guards.test.ts tests/deepseek-web-extract.test.ts tests/deepseek-web-runner.test.ts tests/deepseek-web-cli.test.ts tests/deepseek-web-domain-policy.test.ts
+npm test -- tests/deepseek-web-*.test.ts
 ```
 
 ## 원격 브랜치 `dev-daemon/45-deepseek-web-harness-*`

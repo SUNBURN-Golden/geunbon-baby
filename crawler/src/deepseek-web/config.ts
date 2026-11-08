@@ -15,6 +15,9 @@ export function loadDeepSeekWebConfig(path = join(root, 'config.json')): DeepSee
   if (raw.budget.estimated_prompt_tokens + raw.budget.max_completion_tokens > raw.budget.max_tokens_per_run) {
     throw new Error('invalid_deepseek_web_config');
   }
+  if (!raw.selection || !Number.isInteger(raw.selection.max_pangpang_detail_per_cycle) || raw.selection.max_pangpang_detail_per_cycle < 0) {
+    throw new Error('invalid_deepseek_web_config');
+  }
   return raw;
 }
 export function stateDir() {

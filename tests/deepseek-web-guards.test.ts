@@ -23,28 +23,31 @@ describe('deepseek-web guards', () => {
     expect(hostMatchesDenied('m.instagram.com', config.prohibited_hosts)).toBe(true);
   });
   test('token and request budget stops run', () => {
-    const memory = { ...emptyMemory(), token_spent: config.budget.max_tokens_per_run, requests_spent: 0 };
-    expect(budgetAllows(memory, config).ok).toBe(false);
-    const m2 = { ...emptyMemory(), requests_spent: config.budget.max_requests_per_run };
-    expect(budgetAllows(m2, config).ok).toBe(false);
+    const memory = emptyMemory();
+    memory.cycle.token_spent = config.budget.max_tokens_per_run;
+    expect(budgetAllows(memory.cycle, config).ok).toBe(false);
+    const memory2 = emptyMemory();
+    memory2.cycle.requests_spent = config.budget.max_requests_per_run;
+    expect(budgetAllows(memory2.cycle, config).ok).toBe(false);
   });
   test('pre-request reservation blocks overshoot before completion', () => {
     const reserve = perCallTokenReserve(config);
-    const memory = { ...emptyMemory(), token_spent: config.budget.max_tokens_per_run - reserve };
-    expect(admitCall(memory, config).ok).toBe(true);
-    const admission = admitCall(memory, config);
+    const memory = emptyMemory();
+    memory.cycle.token_spent = config.budget.max_tokens_per_run - reserve;
+    expect(admitCall(memory.cycle, config).ok).toBe(true);
+    const admission = admitCall(memory.cycle, config);
     expect(admission.ok).toBe(true);
     if (!admission.ok) return;
-    holdCall(memory, admission.reserve);
-    expect(admitCall(memory, config).ok).toBe(false);
-    settleCall(memory, admission.reserve, reserve);
-    expect(memory.token_spent).toBe(config.budget.max_tokens_per_run);
-    expect(admitCall(memory, config).ok).toBe(false);
+    holdCall(memory.cycle, admission.reserve);
+    expect(admitCall(memory.cycle, config).ok).toBe(false);
+    settleCall(memory.cycle, admission.reserve, reserve);
+    expect(memory.cycle.token_spent).toBe(config.budget.max_tokens_per_run);
+    expect(admitCall(memory.cycle, config).ok).toBe(false);
     const m3 = emptyMemory();
-    holdCall(m3, reserve);
-    releaseCall(m3, reserve);
-    expect(m3.tokens_reserved).toBe(0);
-    expect(m3.requests_reserved).toBe(0);
+    holdCall(m3.cycle, reserve);
+    releaseCall(m3.cycle, reserve);
+    expect(m3.cycle.tokens_reserved).toBe(0);
+    expect(m3.cycle.requests_reserved).toBe(0);
   });
   test('config loads from package path', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsw-'));

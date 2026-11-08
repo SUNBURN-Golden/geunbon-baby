@@ -58,5 +58,8 @@
     "heartbeat_max_age_ms": 900000,
     "max_queue_urls": 50
   },
+  "selection": {
+    "max_pangpang_detail_per_cycle": 3
+  },
   "seed_urls": []
 }

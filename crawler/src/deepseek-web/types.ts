@@ -38,6 +38,21 @@ export type ParserFixProposal = {
   self_edit: false;
 };
 
+export type CycleBudget = {
+  cycle_id: string;
+  token_spent: number;
+  tokens_reserved: number;
+  requests_spent: number;
+  requests_reserved: number;
+};
+
+export type LifetimeAudit = {
+  token_spent: number;
+  requests: number;
+  cycles: number;
+  model_calls: number;
+};
+
 export type DeepSeekWebConfig = {
   profile_id: string;
   profile_version: number;
@@ -47,36 +62,52 @@ export type DeepSeekWebConfig = {
   fetch: { min_interval_ms: number; jitter_ms: [number, number]; timeout_ms: number; max_bytes: number; user_agent_note: string };
   budget: { max_tokens_per_run: number; max_requests_per_run: number; max_completion_tokens: number; estimated_prompt_tokens: number };
   memory: { heartbeat_max_age_ms: number; max_queue_urls: number };
+  selection: { max_pangpang_detail_per_cycle: number };
   seed_urls: string[];
 };
 
 export type RunMemory = {
-  version: 1;
+  version: 2;
   updated_at: string;
   plan_notes: string[];
   observed_urls: string[];
   pending_urls: string[];
+  /** @deprecated tick-local mirror; prefer cycle */
   token_spent: number;
   tokens_reserved: number;
   requests_spent: number;
   requests_reserved: number;
+  cycle: CycleBudget;
+  lifetime: LifetimeAudit;
   last_heartbeat_at: string | null;
   last_run_id: string | null;
+  last_collection_status: CollectionStatus;
   output_counts: { extractions: number; proposals: number; blocked: number; review_pending: number };
 };
+
+export type CollectionStatus = 'active' | 'budget_saturated' | 'idle' | 'blocked';
 
 export type RunReport = {
   run_id: string;
   at: string;
   model: string;
   mode: 'once' | 'dry_run' | 'daemon_tick';
+  cycle_token_spent: number;
+  cycle_requests_spent: number;
+  lifetime_token_spent: number;
+  lifetime_cycles: number;
+  /** @deprecated use cycle_token_spent */
   token_spent: number;
+  /** @deprecated use cycle_requests_spent */
   requests_spent: number;
   extractions: number;
   proposals: number;
   blocked: number;
   review_pending: number;
+  collection_status: CollectionStatus;
+  halt_reason: string | null;
   heartbeat_fresh: boolean;
+  heartbeat_at: string;
   pid: number;
 };
 
