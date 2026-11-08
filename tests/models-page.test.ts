@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import Models from '../app/models/page';
 import { ModelCard } from '../app/models/_card';
 import { verification } from '../lib/data';
@@ -52,10 +52,12 @@ beforeAll(async () => {
 afterAll(() => memory.close());
 afterEach(() => { vi.useRealTimers(); });
 
-async function render(now: string) {
+type SearchParams = Awaited<Parameters<typeof Models>[0]['searchParams']>;
+
+async function render(now: string, params: SearchParams = {}) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(now);
-  return renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
+  return renderToStaticMarkup(await Models({ searchParams: Promise.resolve(params) }));
 }
 const cardOf = (html: string, id: string) => {
   const match = new RegExp(`<a class="model-card" href="/models/${id}">.*?</a>`).exec(html);
@@ -82,6 +84,134 @@ function expectIllustratedCard(html: string, id: string, displayName: string) {
     expect(html).not.toContain(forbidden);
   }
 }
+
+describe('model search parameters', () => {
+  const now = '2026-10-21T03:00:00Z';
+  // Deliberately insert brands out of alphabetical order, with and without active deals.
+  const fixtures = [
+    { id: 'model-4', brand: 'Nuna', name: 'Query stroller', category: 'stroller' },
+    { id: 'model-5', brand: 'Nuna', name: 'Query seat', category: 'car_seat' },
+    { id: 'model-6', brand: 'Bugaboo', name: 'Query stroller', category: 'stroller' },
+    { id: 'model-7', brand: 'Bugaboo', name: 'Query active stroller', category: 'stroller' },
+  ];
+  const baseline = ['model-1', 'model-3', 'model-5', 'model-7', 'model-42', 'model-20', 'model-4', 'model-6'];
+  const brandOrder = ['model-7', 'model-5', 'model-1', 'model-3', 'model-6', 'model-4', 'model-42', 'model-20'];
+  const stokke = ['model-1', 'model-3', 'model-42', 'model-20'];
+  const nuna = ['model-5', 'model-4'];
+  const strollers = ['model-7', 'model-4', 'model-6'];
+
+  beforeEach(async () => {
+    for (const model of fixtures) {
+      await memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(model.id, model.brand, model.name, model.category, 'Importer', null, 'https://example.com/model', '2026-10-18', 'official_unpublished', '').run();
+    }
+    for (const id of ['model-5', 'model-7']) {
+      await insertDeal(`query-${id}`, id, null, '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z');
+    }
+  });
+  afterEach(async () => {
+    for (const id of ['query-model-5', 'query-model-7']) {
+      await memory.db.prepare('DELETE FROM deals WHERE id = ?').bind(id).run();
+      await memory.db.prepare('DELETE FROM ingested_items WHERE id = ?').bind(id).run();
+    }
+    for (const model of fixtures) await memory.db.prepare('DELETE FROM models WHERE id = ?').bind(model.id).run();
+  });
+
+  function expectPage(html: string, ids: string[], params: SearchParams) {
+    expect([...html.matchAll(/class="model-card" href="\/models\/([^"]+)"/g)].map(m => m[1])).toEqual(ids);
+    expect(html).toContain(`<p class="muted">${ids.length}개 모델이에요.</p>`);
+    expect(html.includes('조건에 맞는 모델이 없습니다.')).toBe(ids.length === 0);
+    const form = html.match(/<form class="filters">.*?<\/form>/)![0];
+    const input = form.match(/<input\b[^>]*\bname="q"[^>]*>/)![0];
+    expect(input.match(/value="([^"]*)"/)?.[1] ?? '').toBe(params.q ?? '');
+    for (const key of ['brand', 'category'] as const) {
+      const select = form.match(new RegExp(`<select name="${key}">.*?</select>`))![0];
+      const selected = select.match(/<option(?: value="([^"]*)")? selected="">([^<]*)<\/option>/);
+      expect(selected ? selected[1] ?? selected[2] : '').toBe(params[key] ?? '');
+    }
+    expect(form.includes('<input type="hidden" name="by" value="brand"/>')).toBe(params.by === 'brand');
+    for (const id of ids) {
+      const card = cardOf(html, id);
+      if (id === 'model-42') {
+        expect(card.match(/<h2 /g)).toHaveLength(1);
+        expect(card.match(/<p /g)).toHaveLength(2);
+        expect(card.match(/<div /g)).toHaveLength(2);
+        expect(card).toContain('model-art-mark');
+      } else {
+        const fixture = fixtures.find(model => model.id === id);
+        expectIllustratedCard(card, id, fixture ? `${fixture.brand} ${fixture.name}` : `Stokke ${names[id as keyof typeof names]}`);
+      }
+      expect(card).toContain('class="model-deal"');
+      expect(card).toContain('class="model-official');
+    }
+  }
+
+  const ordinary: { label: string; params: SearchParams; ids: string[]; form?: SearchParams }[] = [
+    { label: 'omitted values', params: {}, ids: baseline },
+    { label: 'brand text search', params: { q: 'Nuna' }, ids: nuna },
+    { label: 'case insensitive search', params: { q: 'nUnA' }, ids: nuna },
+    { label: 'model name search', params: { q: 'QUERY' }, ids: ['model-5', 'model-7', 'model-4', 'model-6'] },
+    { label: 'preserved search whitespace', params: { q: ' Nuna ' }, ids: [] },
+    { label: 'exact brand', params: { brand: 'Nuna' }, ids: nuna },
+    { label: 'exact category', params: { category: 'stroller' }, ids: strollers },
+    { label: 'combined filters', params: { q: 'query', brand: 'Nuna', category: 'stroller', by: 'brand' }, ids: ['model-4'] },
+    { label: 'brand sorting within deal groups', params: { by: 'brand' }, ids: brandOrder },
+    { label: 'unknown sorting', params: { by: 'other' }, ids: baseline },
+    { label: 'sorting remains case sensitive', params: { by: 'Brand' }, ids: baseline },
+    { label: 'unknown brand', params: { brand: 'Unknown' }, ids: [], form: {} },
+    { label: 'unknown category', params: { category: 'unknown' }, ids: [], form: {} },
+    { label: 'brand remains case sensitive', params: { brand: 'nuna' }, ids: [], form: {} },
+    { label: 'category remains case sensitive', params: { category: 'Stroller' }, ids: [], form: {} },
+    { label: 'brand whitespace is significant', params: { brand: ' Nuna ' }, ids: [], form: {} },
+    { label: 'category whitespace is significant', params: { category: ' stroller ' }, ids: [], form: {} },
+  ];
+  test.each(ordinary)('$label retains results and form state', async ({ params, ids, form }) => {
+    expectPage(await render(now, params), ids, form ?? params);
+  });
+
+  const parameters: { key: keyof SearchParams; first: string; second: string; firstIds: string[]; secondIds: string[] }[] = [
+    { key: 'q', first: 'Nuna', second: 'Stokke', firstIds: nuna, secondIds: stokke },
+    { key: 'brand', first: 'Nuna', second: 'Stokke', firstIds: nuna, secondIds: stokke },
+    { key: 'category', first: 'stroller', second: 'high_chair', firstIds: strollers, secondIds: stokke },
+    { key: 'by', first: 'brand', second: 'other', firstIds: brandOrder, secondIds: baseline },
+  ];
+  describe.each(parameters)('$key normalization', ({ key, first, second, firstIds, secondIds }) => {
+    const cases: { label: string; value: SearchParams[typeof key]; scalar: string | undefined; ids: string[] }[] = [
+      { label: 'undefined', value: undefined, scalar: undefined, ids: baseline },
+      { label: 'empty array', value: [], scalar: undefined, ids: baseline },
+      { label: 'empty string', value: '', scalar: '', ids: baseline },
+      { label: 'single value', value: [first], scalar: first, ids: firstIds },
+      { label: 'single empty value', value: [''], scalar: '', ids: baseline },
+      { label: 'conflicting values', value: [first, second], scalar: first, ids: firstIds },
+      { label: 'reversed conflicting values', value: [second, first], scalar: second, ids: secondIds },
+      { label: 'empty first value', value: ['', first], scalar: '', ids: baseline },
+      { label: 'nonempty first value', value: [first, ''], scalar: first, ids: firstIds },
+    ];
+    test.each(cases)('$label matches its first scalar value', async ({ value, scalar, ids }) => {
+      const html = await render(now, { [key]: value });
+      expect(html).toBe(await render(now, { [key]: scalar }));
+      expectPage(html, ids, { [key]: scalar });
+    });
+  });
+
+  test.each<{ label: string; params: SearchParams; scalar: SearchParams; ids: string[] }>([
+    { label: 'all repeated', params: { q: ['sToKkE', 'Nuna'], brand: ['Stokke', 'Nuna'], category: ['high_chair', 'stroller'], by: ['brand', 'other'] },
+      scalar: { q: 'sToKkE', brand: 'Stokke', category: 'high_chair', by: 'brand' }, ids: stokke },
+    { label: 'all empty first', params: { q: ['', 'Stokke'], brand: ['', 'Nuna'], category: ['', 'stroller'], by: ['', 'brand'] },
+      scalar: { q: '', brand: '', category: '', by: '' }, ids: baseline },
+    { label: 'all empty arrays', params: { q: [], brand: [], category: [], by: [] }, scalar: {}, ids: baseline },
+    { label: 'mixed scalar, array and omitted', params: { q: 'query', brand: ['Nuna', 'Stokke'], by: ['other', 'brand'] },
+      scalar: { q: 'query', brand: 'Nuna', by: 'other' }, ids: nuna },
+    { label: 'mixed empty array and scalar', params: { q: [], brand: 'Nuna', category: ['stroller', 'car_seat'], by: 'brand' },
+      scalar: { brand: 'Nuna', category: 'stroller', by: 'brand' }, ids: ['model-4'] },
+    { label: 'unknown repeated filters', params: { brand: ['Unknown', 'Nuna'], category: ['unknown', 'stroller'], by: ['other', 'brand'] },
+      scalar: { brand: 'Unknown', category: 'unknown', by: 'other' }, ids: [] },
+  ])('$label matches scalar filtering, sorting and form rendering', async ({ params, scalar, ids }) => {
+    const html = await render(now, params);
+    expect(html).toBe(await render(now, scalar));
+    expectPage(html, ids, ids.length ? scalar : { by: scalar.by });
+  });
+});
 
 test.each(['page_text', 'search_summary'])('%s prices do not appear on cards or produce strikethroughs', async level => {
   await memory.db.prepare('UPDATE models SET verify_level = ? WHERE id IN (?, ?)').bind(level, 'model-1', 'model-20').run();
