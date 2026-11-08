@@ -35,6 +35,7 @@ export function migrateMemory(raw: Partial<RunMemory> & { version?: number }, cy
     last_run_id: raw.last_run_id ?? null,
     last_collection_status: raw.last_collection_status ?? 'idle',
     listing_discovery: raw.listing_discovery ?? {},
+    next_search_hints: raw.next_search_hints ?? [],
     output_counts: raw.output_counts ?? { extractions: 0, proposals: 0, blocked: 0, review_pending: 0 },
   };
 }

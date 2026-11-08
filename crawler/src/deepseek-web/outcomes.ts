@@ -4,6 +4,8 @@ export type OutcomeKind =
   | 'extracted'
   | 'out_of_scope'
   | 'listing_enqueued'
+  | 'listing_scope_no_core'
+  | 'listing_parser_empty'
   | 'listing_no_premium_targets'
   | 'duplicate_skip'
   | 'fetch_blocked'

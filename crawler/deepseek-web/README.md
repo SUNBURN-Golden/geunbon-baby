@@ -24,7 +24,11 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 **예산(하드 캡 유지):** `config.json`의 `budget.max_tokens_per_run`(기본 32k)과 `max_requests_per_run`은 **daemon 틱마다** `cycle`에만 적용된다. `lifetime`은 감사용 누적이며 캡을 다시 소진하지 않는다. v1 `memory.json`의 `token_spent`/`requests_spent`는 마이그레이션 시 `lifetime`으로 이전되고, 다음 틱부터 `budget_tokens`로 영구 정지하지 않는다.
 
-**09pangpang:** 검색·홈 리스팅 HTML은 모델 호출 없이 프리미엄/육아 카테고리 후보의 `/post/` URL을 `pending_urls`에 넣는다. `listing_discovery`는 URL별 정책 버전·마지막 시도를 기록한다. **마이그레이션·정책 버전 미기록 observed listing**은 한 번 listing fetch/discovery를 허용한다(누적 `lifetime`·`observed_urls` 유지). 캐드 내 재시도는 `listing_refresh_min_ms`(기본 10분). 그 외 observed listing은 모델·불필요 fetch 없이 `idle_dedup` / `halt_reason: dedup_observed_seed`로 보고한다(`blocked` 아님).
+**09pangpang:** 검색·홈 리스팅 HTML은 모델 호출 없이 **설정 범위(유모차·하이체어·카시트·플레이짐·아기띠)에 맞는** `/post/` 만 `pending_urls`에 넣는다. `/post/...?pid=&source=search` 추적 파라미터는 canonical 시 제거한다. `outcomes.jsonl`은 `raw_product_count`와 `scope_counts`를 분리 기록한다.
+
+**실패 메커니즘(2026-11-08 육아템 검색 증거):** HTML 30카드인데 `productCount:0`이었던 이유는 listing용 `?pid=&source=search` 링크가 `canonicalUrl`에서 거부돼 파서가 전부 `policy_block` 처리했기 때문이며, 스코프 필터 문제가 아니었다. 수정 후 동일 fixture에서 `raw_product_count:30`, `scoped_candidate_count:0`(액세서리·광의 육아용품만) → `listing_scope_no_core` + 허용된 핵심 검색 URL 제안.
+
+**09pangpang (운영):** `listing_discovery`는 URL별 정책 버전·마지막 시도를 기록한다. **마이그레이션·정책 버전 미기록 observed listing**은 한 번 listing fetch/discovery를 허용한다(누적 `lifetime`·`observed_urls` 유지). 캐드 내 재시도는 `listing_refresh_min_ms`(기본 10분). 그 외 observed listing은 모델·불필요 fetch 없이 `idle_dedup` / `halt_reason: dedup_observed_seed`로 보고한다(`blocked` 아님).
 
 ## 박스 업그레이드 (8214336 → 최신, state 보존)
 

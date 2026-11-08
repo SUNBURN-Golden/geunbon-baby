@@ -62,11 +62,11 @@ describe('deepseek-web budget cycle', () => {
     expect(second.requests_spent).toBe(0);
     f.close();
   });
-  test('pangpang listing enqueues premium detail without model call', async () => {
+  test('pangpang listing enqueues core detail without model call', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsw-pp-'));
     dirs.push(dir);
     const f = fixture();
-    const listHtml = await readFile(join(process.cwd(), 'tests/fixtures/external/pangpang/list.html'), 'utf8');
+    const coreList = `<div><a data-feed-index="0" href="/post/900001"><p class="line-clamp-2 text-base font-bold">Cybex 유모차</p></a><span class="text-category">키즈 &gt; 유모차</span><span>11/4 (월) 오픈</span></div>`;
     const complete = { complete: async () => { throw new Error('model_should_not_run'); } };
     const report = await runDeepSeekWeb({
       mode: 'once',
@@ -74,13 +74,37 @@ describe('deepseek-web budget cycle', () => {
       store: f.store,
       urls: [PANGPANG_SEARCH],
       client: complete,
-      fetchPage: async () => ({ ok: true, text: listHtml, finalUrl: PANGPANG_SEARCH }),
+      fetchPage: async () => ({ ok: true, text: coreList, finalUrl: PANGPANG_SEARCH }),
     });
     expect(report.requests_spent).toBe(0);
-    expect(report.listing_enqueued).toBeGreaterThan(0);
+    expect(report.listing_enqueued).toBe(1);
     const mem = await loadMemory(dir);
-    expect(mem.pending_urls.length).toBeGreaterThan(0);
-    expect(mem.lifetime.token_spent).toBe(0);
+    expect(mem.pending_urls).toEqual(['https://09pangpang.com/post/900001']);
+    f.close();
+  });
+  test('real 육아템 search fixture: 30 raw, 0 scoped, no model', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsw-pp-real-'));
+    dirs.push(dir);
+    const f = fixture();
+    const searchHtml = await readFile(join(process.cwd(), 'tests/fixtures/external/pangpang/search-yugatem.html'), 'utf8');
+    const report = await runDeepSeekWeb({
+      mode: 'once',
+      stateDir: dir,
+      store: f.store,
+      urls: [PANGPANG_SEARCH],
+      client: { complete: async () => { throw new Error('model_should_not_run'); } },
+      fetchPage: async () => ({ ok: true, text: searchHtml, finalUrl: PANGPANG_SEARCH }),
+    });
+    expect(report.requests_spent).toBe(0);
+    expect(report.listing_enqueued).toBe(0);
+    expect(report.collection_status).toBe('listing_no_candidates');
+    const mem = await loadMemory(dir);
+    expect(mem.pending_urls).toHaveLength(0);
+    expect(mem.next_search_hints.length).toBeGreaterThan(0);
+    const outcomes = (await readFile(join(dir, 'outcomes.jsonl'), 'utf8')).trim().split('\n');
+    const row = JSON.parse(outcomes[outcomes.length - 1]);
+    expect(row.outcome).toBe('listing_scope_no_core');
+    expect(row.detail.raw_product_count).toBe(30);
     f.close();
   });
   test('migrated observed pangpang seed runs listing discovery without touching lifetime', async () => {
@@ -106,34 +130,36 @@ describe('deepseek-web budget cycle', () => {
       output_counts: { extractions: 0, proposals: 0, blocked: 0, review_pending: 0 },
     }, null, 2)}\n`);
     const f = fixture();
-    const listHtml = await readFile(join(process.cwd(), 'tests/fixtures/external/pangpang/list.html'), 'utf8');
-    const fetchSpy = vi.fn(async () => ({ ok: true as const, text: listHtml, finalUrl: PANGPANG_SEARCH }));
+    const searchHtml = await readFile(join(process.cwd(), 'tests/fixtures/external/pangpang/search-yugatem.html'), 'utf8');
+    const fetchSpy = vi.fn(async () => ({ ok: true as const, text: searchHtml, finalUrl: PANGPANG_SEARCH }));
     const report = await runDeepSeekWeb({
       mode: 'once',
       stateDir: dir,
       store: f.store,
+      urls: [PANGPANG_SEARCH],
       client: { complete: async () => { throw new Error('model_should_not_run'); } },
       fetchPage: fetchSpy,
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(report.requests_spent).toBe(0);
     expect(report.lifetime_token_spent).toBe(19871);
-    expect(report.listing_enqueued).toBeGreaterThan(0);
-    expect(report.collection_status).toBe('active');
+    expect(report.listing_enqueued).toBe(0);
+    expect(report.collection_status).toBe('listing_no_candidates');
     const mem = await loadMemory(dir);
-    expect(mem.pending_urls.length).toBeGreaterThan(0);
+    expect(mem.pending_urls).toHaveLength(0);
     expect(mem.lifetime.token_spent).toBe(19871);
-    expect(mem.listing_discovery[PANGPANG_SEARCH]?.last_enqueue_count).toBeGreaterThan(0);
+    expect(mem.listing_discovery[PANGPANG_SEARCH]?.last_enqueue_count).toBe(0);
+    expect(mem.next_search_hints.some((u: string) => u.includes('%EC%9C%A0%EB%AA%A8%EC%B0%A8'))).toBe(true);
     f.close();
   });
   test('stable listing within refresh window dedups without refetch', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsw-pp-dedup-'));
     dirs.push(dir);
     const f = fixture();
-    const listHtml = await readFile(join(process.cwd(), 'tests/fixtures/external/pangpang/list.html'), 'utf8');
+    const searchHtml = await readFile(join(process.cwd(), 'tests/fixtures/external/pangpang/search-yugatem.html'), 'utf8');
     const t0 = Date.parse('2026-11-08T05:00:00.000Z');
     let t = t0;
-    const fetchSpy = vi.fn(async () => ({ ok: true as const, text: listHtml, finalUrl: PANGPANG_SEARCH }));
+    const fetchSpy = vi.fn(async () => ({ ok: true as const, text: searchHtml, finalUrl: PANGPANG_SEARCH }));
     await runDeepSeekWeb({
       mode: 'once',
       stateDir: dir,

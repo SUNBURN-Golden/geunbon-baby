@@ -1,13 +1,35 @@
 import { extractPangpang, pangpangIdentityAllowed, pangpangPost, pangpangQueryAllowed } from '../../lib/external/pangpang';
+import type { LinkReason } from '../../lib/external/pangpang';
 import { canonicalUrl } from '../../../shared/privacy-rules';
-const PREMIUM = /유모차|카시트|하이체어|트립트랩|스토케|부가부|bugaboo|stokke|cybex|nuna|joie|브리타克斯|britax|막시코시|maxi-cosi|에르고|ergobaby|babybjorn|베이비뵨|아기띠|silver\s*cross|실버크로스|play\s*gym|모빌|하베브릭스|lovevery|스트라이더|stroller|tripp\s*trapp|육아용품|육아템|기저귀|유모차\/카시트/i;
-export type PangpangPlan =
-  | { kind: 'detail'; productCount: number }
-  | { kind: 'listing'; enqueue: string[]; productCount: number; premiumCandidates: number };
+import type { DeepSeekWebConfig } from './types';
+import { corePublicSearchUrls, scopeRollup } from './deepseek-scope';
+
+export type PangpangListingDiagnosis = {
+  kind: 'listing';
+  raw_product_count: number;
+  parser_outcome_counts: Record<string, number>;
+  scope_counts: { core: number; accessory_or_broad: number; outside_scope: number };
+  enqueue: string[];
+  scoped_candidate_count: number;
+  zero_reason: 'parser_empty' | 'scope_no_core' | null;
+  suggested_searches: string[];
+};
+
+export type PangpangPlan = PangpangListingDiagnosis | { kind: 'detail'; productCount: number };
+
 export function isPangpangHost(hostname: string) {
   return hostname === '09pangpang.com' || hostname.endsWith('.09pangpang.com');
 }
-export function planPangpangPage(html: string, pageUrl: string, now: Date, maxDetail: number): PangpangPlan {
+
+function countOutcomes(outcomes: { reason: LinkReason }[]) {
+  return outcomes.reduce<Record<string, number>>((m, o) => {
+    m[o.reason] = (m[o.reason] ?? 0) + 1;
+    return m;
+  }, {});
+}
+
+export function planPangpangPage(html: string, pageUrl: string, now: Date, config: DeepSeekWebConfig): PangpangPlan {
+  const maxDetail = config.selection.max_pangpang_detail_per_cycle;
   const listingContext = !pangpangPost(pageUrl);
   const allowed = (url: string) => {
     try {
@@ -22,9 +44,23 @@ export function planPangpangPage(html: string, pageUrl: string, now: Date, maxDe
   };
   const page = extractPangpang(html, pageUrl, now, allowed);
   if (page.detail) return { kind: 'detail', productCount: page.products.length };
-  const premium = page.products.filter(p => PREMIUM.test(`${p.title}\n${p.category_text}\n${p.text}`));
-  const enqueue = [...new Set(premium.map(p => {
+  const parser_outcome_counts = countOutcomes(page.outcomes);
+  const { counts: scope_counts, core } = scopeRollup(page.products, config);
+  const enqueue = [...new Set(core.map(p => {
     try { return canonicalUrl(new URL(p.source_url, pageUrl).href); } catch { return p.source_url; }
   }))].slice(0, maxDetail);
-  return { kind: 'listing', enqueue, productCount: page.products.length, premiumCandidates: premium.length };
+  const suggested_searches = corePublicSearchUrls(config);
+  let zero_reason: PangpangListingDiagnosis['zero_reason'] = null;
+  if (page.products.length === 0) zero_reason = 'parser_empty';
+  else if (enqueue.length === 0) zero_reason = 'scope_no_core';
+  return {
+    kind: 'listing',
+    raw_product_count: page.products.length,
+    parser_outcome_counts,
+    scope_counts,
+    enqueue,
+    scoped_candidate_count: core.length,
+    zero_reason,
+    suggested_searches,
+  };
 }

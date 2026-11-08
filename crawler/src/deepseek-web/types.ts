@@ -87,6 +87,7 @@ export type RunMemory = {
   last_run_id: string | null;
   last_collection_status: CollectionStatus;
   listing_discovery: Record<string, { policy_version: number; last_at: string; last_enqueue_count: number }>;
+  next_search_hints: string[];
   output_counts: { extractions: number; proposals: number; blocked: number; review_pending: number };
 };
 

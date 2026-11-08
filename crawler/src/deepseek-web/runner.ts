@@ -12,6 +12,7 @@ import { writeHeartbeat } from './heartbeat';
 import { beginCycle, cycleAdmit, cycleHold, cycleRelease, cycleSettle, finalizeCycle } from './budget-cycle';
 import { logOutcome } from './outcomes';
 import { isPangpangHost, planPangpangPage } from './source-select';
+import { pickNextPublicSearchUrl, rememberSearchHints } from './search-query-plan';
 import { isPangpangListingUrl, listingDiscoveryDue, recordListingDiscovery, shouldDedupObservedSeed } from './listing-discovery';
 import type { CollectionStatus, RunReport } from './types';
 import type { CollectorStore } from '../store';
@@ -82,9 +83,13 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
   if (explicit.length) queue.push(...explicit);
   else if (!memory.pending_urls.length) {
     queue.push(...config.seed_urls);
-    for (const url of memory.observed_urls) {
-      if (isPangpangListingUrl(url) && listingDiscoveryDue(memory, url, config, nowMs()) && !queue.includes(url)) {
-        queue.push(url);
+    if (options.mode === 'once' || options.mode === 'daemon_tick') {
+      const planned = pickNextPublicSearchUrl(memory, config);
+      if (planned && !queue.includes(planned)) queue.push(planned);
+      for (const url of memory.observed_urls) {
+        if (isPangpangListingUrl(url) && listingDiscoveryDue(memory, url, config, nowMs()) && !queue.includes(url)) {
+          queue.push(url);
+        }
       }
     }
   }
@@ -145,6 +150,7 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
         if (host === 'fixture.example') {
           const { readFile } = await import('node:fs/promises');
           text = await readFile(join(process.cwd(), 'tests/fixtures/deepseek-web/sample-page.txt'), 'utf8');
+          pageUrl = seedUrl;
           fetched = true;
         } else if (options.mode === 'dry_run') {
           if (listingRefresh) {
@@ -177,8 +183,9 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
           }
         }
         if (isPangpangHost(host) && text) {
-          const plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config.selection.max_pangpang_detail_per_cycle);
+          const plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config);
           if (plan.kind === 'listing') {
+            rememberSearchHints(memory, plan.suggested_searches);
             const enqueueCount = plan.enqueue.length;
             recordListingDiscovery(memory, seedUrl, config, enqueueCount, new Date(nowMs()));
             if (enqueueCount) {
@@ -189,7 +196,22 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
                 cycle_id: cycleId,
                 url: pageUrl,
                 outcome: 'listing_enqueued',
-                detail: { enqueue: plan.enqueue, premiumCandidates: plan.premiumCandidates, migration_refresh: listingRefresh },
+                detail: {
+                  enqueue: plan.enqueue,
+                  raw_product_count: plan.raw_product_count,
+                  scoped_candidate_count: plan.scoped_candidate_count,
+                  scope_counts: plan.scope_counts,
+                  migration_refresh: listingRefresh,
+                },
+              });
+            } else if (plan.zero_reason === 'parser_empty') {
+              listingNoCandidates++;
+              await logOutcome(dir, {
+                run_id: runId,
+                cycle_id: cycleId,
+                url: pageUrl,
+                outcome: 'listing_parser_empty',
+                detail: { parser_outcome_counts: plan.parser_outcome_counts, migration_refresh: listingRefresh },
               });
             } else {
               listingNoCandidates++;
@@ -197,8 +219,13 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
                 run_id: runId,
                 cycle_id: cycleId,
                 url: pageUrl,
-                outcome: 'listing_no_premium_targets',
-                detail: { productCount: plan.productCount, migration_refresh: listingRefresh },
+                outcome: 'listing_scope_no_core',
+                detail: {
+                  raw_product_count: plan.raw_product_count,
+                  scope_counts: plan.scope_counts,
+                  suggested_searches: plan.suggested_searches,
+                  migration_refresh: listingRefresh,
+                },
               });
             }
             if (!memory.observed_urls.includes(seedUrl)) memory.observed_urls.push(seedUrl);
