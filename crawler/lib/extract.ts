@@ -17,63 +17,202 @@ const collapseNumberRuns = (text: string) => text.replace(/\d[\d,][\d,\s]*\d/g, 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // ── 모델 매칭 ────────────────────────────────────────────────────────────────
-const BRAND_ALIASES: Record<string, string[]> = {
-  Stokke: ['스토케', 'stokke'],
-  BabyBjorn: ['베이비뵨', '베이비본', '베이비비욘', 'babybjorn', 'babybjörn'],
-  Bugaboo: ['부가부', 'bugaboo'],
-  Cybex: ['싸이벡스', '사이벡스', 'cybex'],
-  Nuna: ['뉴나', 'nuna'],
-  Joie: ['조이', 'joie'],
-  Egg: ['에그', 'egg'],
-  'D.THRONE': ['디트로네', 'd.throne', 'dthrone'],
-  Britax: ['브리텍스', '브리탁스', 'britax'],
-  'Maxi-Cosi': ['맥시코시', 'maxi-cosi', 'maxicosi'],
-  'Silver Cross': ['실버크로스', 'silvercross'],
-  Ergobaby: ['에르고베이비', '에르고', 'ergobaby'],
-  Doona: ['두나', 'doona'],
-};
-// 모델명에서 토큰으로 삼기에 너무 일반적인 단어(단독으로는 모델을 특정하지 못한다).
-const GENERIC_NAME_TOKENS = new Set(['하이체어', '유모차', '카시트', '바운서', '아기띠', '캐리어', '베이비', '세트', '프레임', '구성', '신생아', '이유식', '겸용', '회전형', '디럭스', '리뉴', '리미티드', '프로', '클래식', '스타일', '메쉬', '시트', '베이스', '시스템', '트래블', '바구니', '포함', '소프트', '미니', '에어']);
-// 캡션에 로마자로 적힐 수 있는 모델명 별칭. 공백 제거 텍스트에서 찾는 소문자 기준.
-const LATIN_MODEL_ALIASES: Record<string, string[]> = {
-  트립트랩: ['tripptrapp'], 요요: ['yoyo'], 폭스: ['fox'], 버터플라이: ['butterfly'], 드래곤플라이: ['dragonfly'],
-  프리암: ['priam'], 미오스: ['mios'], 멜리오: ['melio'], 제로나: ['zerona'], 피파: ['pipa'], 트리브: ['triv'],
-  아이스핀: ['ispin'], 하모니: ['harmony'], 블리스: ['bliss'], 밸런스: ['balance'], 이니셜: ['initial'],
-  듀얼픽스: ['dualfix'], 미카: ['mica'], 타이탄: ['titan'], 리프: ['reef'], 듄: ['dune'], 옴니: ['omni'],
-  브리즈: ['breeze'], 애스턴마틴: ['astonmartin'], 익스플로리: ['explory'], 베이비세트: ['babyset'], 넥스트: ['next'],
-};
+// Only declared aliases contribute evidence. Seed frequency and unknown seed words
+// never establish an identity. Each form lists the internal OCR breaks we allow.
+type Role = 'distinctive' | 'ambiguous' | 'accessory' | 'variant' | 'phrase' | 'branded';
+type Alias = { key: string; role: Role; forms: string[][]; version?: string; qualifier?: string };
+const aliases: Alias[] = [];
+function alias(key: string, role: Role, forms: (string | string[])[] = [], version?: string, qualifier?: string) {
+  aliases.push({ key, role, forms: [key, ...forms].map(f => typeof f === 'string' ? [f] : f), version, qualifier });
+}
+alias('트립트랩', 'distinctive', [['트립', '트랩'], ['tripp', 'trapp']]);
+alias('익스플로리', 'distinctive', ['explory'], undefined, 'x');
+alias('프리암', 'distinctive', ['priam'], undefined, '4\\.0');
+alias('미오스', 'distinctive', ['mios'], undefined, '3\\.0');
+alias('멜리오', 'distinctive', ['melio'], undefined, '3\\.0');
+alias('제로나', 'distinctive', ['zerona'], undefined, 'gi|t');
+alias('피파', 'distinctive', ['pipa']);
+alias('트리브', 'distinctive', ['triv']);
+alias('아이스핀', 'distinctive', ['ispin'], undefined, '360');
+alias('듀얼픽스', 'distinctive', ['dualfix']);
+for (const [key, latin, version] of [
+  ['요요', 'yoyo', '3'], ['폭스', 'fox', '5'], ['버터플라이', 'butterfly', '2'],
+  ['에그', 'egg', '3'], ['리프', 'reef', '2'], ['듄', 'dune', '2'],
+]) alias(key, 'ambiguous', [latin], version);
+for (const [key, latin] of [
+  ['드래곤플라이', 'dragonfly'], ['블리스', 'bliss'], ['밸런스', 'balance'],
+  ['하모니', 'harmony'], ['이니셜', 'initial'], ['미카', 'mica'], ['타이탄', 'titan'],
+  ['옴니', 'omni'], ['브리즈', 'breeze'], ['넥스트', 'next'], ['두나', 'doona'],
+]) alias(key, 'ambiguous', [latin]);
+for (const [key, latin] of [
+  ['트레이', 'tray'], ['배시넷', 'bassinet'], ['범퍼바', 'bumper bar'], ['섀시', 'chassis'],
+  ['뉴본', 'newborn'], ['프레임', 'frame'], ['시트', 'seat'], ['베이스', 'base'],
+]) alias(key, 'accessory', [latin.split(' ')]);
+alias('베이비세트', 'accessory', ['babyset', ['baby', 'set'], ['베이비', '세트']]);
+for (const [key, latin] of [
+  ['너도밤나무', 'beech'], ['오크', 'oak'], ['느와르', 'noir'], ['카본', 'carbon'],
+  ['리뉴', 'renew'], ['리미티드', 'limited'], ['프로', 'pro'], ['메쉬', 'mesh'],
+  ['소프트', 'soft'], ['미니', 'mini'], ['원', 'one'], ['에어', 'air'],
+  ['LUX', 'lux'], ['STYLE', 'style'], ['CLASSIC', 'classic'],
+]) alias(key, 'variant', [latin]);
+alias('애스턴마틴', 'variant', [['애스턴', '마틴'], ['aston', 'martin']]);
+alias('옴니 브리즈', 'phrase', [['옴니', '브리즈'], ['omni', 'breeze']]);
+alias('피파넥스트', 'phrase', [['피파', '넥스트'], ['pipa', 'next']]);
+alias('토들넥스트', 'phrase', [['토들', '넥스트'], ['todl', 'next']]);
+alias('두나 카시트 겸용 유모차', 'phrase', [['두나', '카시트', '겸용', '유모차'], ['doona', 'car', 'seat', 'stroller']]);
+alias('원 에어', 'branded', [['원', '에어'], ['one', 'air']]);
 
-function nameTokens(name: string): string[] {
-  return name.replace(/[()+&/,.]/g, ' ').split(/[^\p{L}\p{N}]+/u).filter(t => t.length >= 2 && /\p{L}/u.test(t) && !GENERIC_NAME_TOKENS.has(t) && !/^[A-Za-z]{1,2}$/.test(t));
+const BRAND_ALIASES: Record<string, (string | string[])[]> = {
+  Stokke: ['스토케', '스토케코리아', 'stokke'],
+  BabyBjorn: ['베이비뵨', '베이비본', '베이비비욘', ['baby', 'bjorn'], ['baby', 'björn']],
+  Bugaboo: ['부가부', 'bugaboo'], Cybex: ['싸이벡스', '사이벡스', 'cybex'],
+  Nuna: ['뉴나', 'nuna'], Joie: ['조이', 'joie'], Egg: ['에그', 'egg'],
+  'D.THRONE': ['디트로네', 'd.throne', 'dthrone'], Britax: ['브리텍스', '브리탁스', 'britax'],
+  'Maxi-Cosi': ['맥시코시', 'maxi-cosi', ['maxi', 'cosi']],
+  'Silver Cross': ['실버크로스', ['silver', 'cross']],
+  Ergobaby: ['에르고베이비', '에르고', 'ergobaby'], Doona: ['두나', 'doona'],
+};
+type Rule = { families: string[]; refiners: string[]; bundle: string[] };
+const rules: Record<string, Rule> = {};
+function rule(ids: number[], families: string[], refiners: string[] = [], bundle: string[] = []) {
+  for (const id of ids) rules[`model-${id}`] = { families, refiners, bundle };
+}
+rule([1], ['트립트랩'], ['너도밤나무']); rule([2], ['트립트랩'], ['오크']);
+rule([3], ['트립트랩'], ['베이비세트'], ['베이비세트']);
+rule([4], ['트립트랩'], ['베이비세트', '트레이'], ['베이비세트', '트레이']);
+rule([5], ['트립트랩'], ['뉴본', '베이비세트', '트레이'], ['뉴본', '베이비세트', '트레이']);
+rule([6], ['익스플로리']); rule([7], ['요요'], ['프레임']);
+rule([8], ['요요'], ['프레임', '시트'], ['프레임', '시트']);
+rule([9], ['요요'], ['뉴본', '배시넷'], ['뉴본', '배시넷']);
+rule([10], ['폭스'], ['리뉴']); rule([11], ['폭스'], ['느와르', '리미티드']);
+rule([12], ['버터플라이'], ['범퍼바'], ['범퍼바']);
+rule([13], ['드래곤플라이'], ['배시넷'], ['배시넷']);
+rule([14], ['드래곤플라이'], ['섀시', '시트'], ['섀시', '시트']);
+rule([15], ['프리암']); rule([16], ['미오스']); rule([17], ['멜리오'], ['카본']);
+rule([18, 19], ['제로나']); rule([20], ['피파', '피파넥스트']);
+rule([21], ['넥스트', '토들넥스트', '피파넥스트'], ['베이스']);
+rule([22], ['트리브', '피파넥스트']); rule([23], ['아이스핀']); rule([24], ['아이스핀'], ['메쉬']);
+rule([25], ['블리스']); rule([26], ['밸런스'], ['소프트']); rule([27], ['하모니']);
+rule([28], ['원 에어'], ['원', '에어']); rule([29], [], ['미니']);
+rule([30], ['에그']); rule([31], ['에그'], ['애스턴마틴']); rule([32], ['이니셜']);
+rule([33], ['듀얼픽스'], ['프로', 'LUX']); rule([34], ['듀얼픽스'], ['프로', 'STYLE']);
+rule([35], ['듀얼픽스'], ['프로', 'CLASSIC']); rule([36], ['미카'], ['프로']); rule([37], ['타이탄'], ['프로']);
+rule([38], ['리프']); rule([39], ['듄']); rule([40], ['옴니', '브리즈', '옴니 브리즈']);
+rule([41], ['두나', '두나 카시트 겸용 유모차']);
+const MODEL_TABLE = seedModels.map((m, i) => ({ id: `model-${i + 1}`, brand: m.brand, name: m.model, rule: rules[`model-${i + 1}`] }));
+
+const WORD = String.raw`[\p{L}\p{M}\p{N}_]`;
+const PARTICLE = '에서|으로|은|는|이|가|을|를|과|와|도|만|의|에|로';
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const formsPattern = (forms: string[][]) => `(?:${forms.map(parts => parts.map(p => escape(p.normalize('NFKC').toLowerCase())).join('\\s*')).join('|')})`;
+function bounded(pattern: string, korean: boolean) {
+  return new RegExp(`(?<!${WORD})${pattern}(?:(?:공동구매|공구)${korean ? `|(?:${PARTICLE})` : ''})?(?!${WORD})`, 'gu');
+}
+function aliasPattern(a: Alias) {
+  return `${formsPattern(a.forms)}${a.version ? `(?:\\s*${a.version})?` : ''}${a.qualifier ? `(?:\\s+(?:${a.qualifier}))?` : ''}`;
+}
+type Hit = { key: string; role: Role | 'brand'; start: number; end: number; raw: string; identified: boolean; qualified?: string };
+const ALIAS_PATTERNS = aliases.flatMap(a => a.forms.flatMap(form => {
+  const korean = /[가-힣]/u.test(form.join(''));
+  const base = formsPattern([form]);
+  const qualifier = a.qualifier ? `(?:\\s+(?:${a.qualifier}))?` : '';
+  // A Latin family may take a Korean particle after its declared version,
+  // but an unversioned Latin word still requires the normal boundary.
+  return a.version && !korean
+    ? [{ a, re: bounded(`${base}\\s*${a.version}`, true) }, { a, re: bounded(base, false) }]
+    : [{ a, re: bounded(`${base}${a.version ? `(?:\\s*${a.version})?` : ''}${qualifier}`, korean) }];
+}));
+const BRAND_PATTERNS = Object.entries(BRAND_ALIASES).flatMap(([key, forms]) => forms.map(form => {
+  const parts = typeof form === 'string' ? [form] : form;
+  return { key, re: bounded(formsPattern([parts]), /[가-힣]/u.test(parts.join(''))) };
+}));
+// Concatenations are allowed only for these declared same-brand Korean pairs.
+const COMPOUNDS = [
+  ['스토케', 'Stokke', ['트립트랩', '익스플로리', '요요']], ['부가부', 'Bugaboo', ['폭스', '버터플라이', '드래곤플라이']],
+  ['싸이벡스', 'Cybex', ['프리암', '미오스', '멜리오', '제로나']], ['사이벡스', 'Cybex', ['프리암', '미오스', '멜리오', '제로나']],
+  ['뉴나', 'Nuna', ['피파', '트리브', '피파넥스트', '토들넥스트']],
+] as const;
+const COMPOUND_PATTERNS = COMPOUNDS.flatMap(([prefix, brand, keys]) => keys.map(key => {
+  const a = aliases.find(a => a.key === key)!;
+  return { prefix, brand, a, re: bounded(`${escape(prefix)}${aliasPattern(a)}`, true) };
+}));
+function modelHits(text: string): Hit[] {
+  const hits: Hit[] = [];
+  const addAlias = (a: Alias, start: number, raw: string) => hits.push({ key: a.key, role: a.role, start, end: start + raw.length, raw,
+    identified: a.role === 'distinctive' || a.role === 'phrase' || Boolean(a.version && /\d/u.test(raw)),
+    qualified: a.qualifier ? new RegExp(`\\s+(${a.qualifier})(?:(?:${PARTICLE})|공동구매|공구)?$`, 'u').exec(raw)?.[1] : undefined });
+  for (const { a, re } of ALIAS_PATTERNS) for (const m of text.matchAll(re)) addAlias(a, m.index!, m[0]);
+  for (const { key, re } of BRAND_PATTERNS) for (const m of text.matchAll(re)) hits.push({ key, role: 'brand', start: m.index!, end: m.index! + m[0].length, raw: m[0], identified: false });
+  for (const { prefix, brand, a, re } of COMPOUND_PATTERNS) for (const m of text.matchAll(re)) {
+    hits.push({ key: brand, role: 'brand', start: m.index!, end: m.index! + prefix.length, raw: prefix, identified: false });
+    addAlias(a, m.index! + prefix.length, m[0].slice(prefix.length));
+  }
+  // A complete phrase supersedes the words inside it, including a Doona brand
+  // alias which otherwise would corroborate its own ambiguous family word.
+  const unique = hits.filter((h, i) => hits.findIndex(p => p.key === h.key && p.role === h.role && p.start === h.start && p.end === h.end) === i);
+  return unique.filter(h => !unique.some(p => p.role === 'phrase' && p !== h && p.start <= h.start && p.end >= h.end));
+}
+const isFamily = (h: Hit) => ['distinctive', 'ambiguous', 'phrase', 'branded'].includes(h.role);
+const gap = (a: Hit, b: Hit) => Math.max(0, a.start - b.end, b.start - a.end);
+const MENTION_SEPARATOR = /[\p{P}+&|]|(?:^|\s)(?:그리고|및|또는|혹은|and|or|vs)(?:\s|$)|(?:과|와)\s*$/u;
+function connected(a: Hit, b: Hit, text: string, hits: Hit[], components = false): boolean {
+  const left = a.start < b.start ? a : b, right = left === a ? b : a;
+  const between = text.slice(left.end, right.start);
+  // Declared components/variants can use bundle notation or parentheses, as in
+  // the seed names. Another family/brand still stops that association below.
+  const mention = components ? between.replace(/[+&()[\]]/gu, ' ') : between;
+  if (MENTION_SEPARATOR.test(mention) || /(?:과|와)$/u.test(left.raw)) return false;
+  return !hits.some(h => h !== a && h !== b && h.start >= left.end && h.end <= right.start &&
+    (h.role === 'brand' || (isFamily(h) && h.key !== a.key && h.key !== b.key)));
+}
+function brandFor(h: Hit, text: string, hits: Hit[]): { brand?: Hit; conflict: boolean } {
+  const nearby = hits.filter(b => b.role === 'brand' && (b.end <= h.start || b.start >= h.end) && connected(h, b, text, hits));
+  const distance = Math.min(...nearby.map(b => gap(h, b)));
+  const nearest = nearby.filter(b => gap(h, b) === distance);
+  return { brand: nearest.length === 1 ? nearest[0] : undefined, conflict: nearest.length > 1 };
 }
 
-type ModelEntry = { id: string; brand: string; name: string; brandAliases: string[]; tokens: { display: string; keys: string[]; distinctive: boolean }[] };
-const MODEL_TABLE: ModelEntry[] = (() => {
-  const perModel = seedModels.map(m => nameTokens(m.model));
-  const frequency = new Map<string, number>();
-  for (const tokens of perModel) for (const token of new Set(tokens)) frequency.set(token, (frequency.get(token) ?? 0) + 1);
-  return seedModels.map((m, i) => ({
-    id: `model-${i + 1}`,
-    brand: m.brand,
-    name: m.model,
-    brandAliases: BRAND_ALIASES[m.brand] ?? [m.brand.toLowerCase()],
-    tokens: perModel[i].map(token => ({ display: token, keys: [token, ...(LATIN_MODEL_ALIASES[token] ?? [])], distinctive: frequency.get(token) === 1 })),
-  }));
-})();
-
-export function extractModels(text: string): ModelSuggestion[] {
-  const compact = stripUrls(text).replace(/\s+/g, '').toLowerCase();
-  if (compact.length < 2) return [];
-  const out: ModelSuggestion[] = [];
+// Rank independently assessed spans without ever joining their OCR text. Evidence
+// from separate mentions/fields cannot accumulate into a stronger identity.
+export function rankModels(models: ModelSuggestion[]): ModelSuggestion[] {
+  const sorted = models.slice().sort((a, b) => b.confidence - a.confidence || b.matched.length - a.matched.length || a.model_id.localeCompare(b.model_id));
+  return sorted.filter((m, i) => sorted.findIndex(other => other.model_id === m.model_id) === i).slice(0, 10);
+}
+export function extractModels(input: string): ModelSuggestion[] {
+  const text = stripUrls(input).normalize('NFKC').toLowerCase();
+  const hits = modelHits(text), out: ModelSuggestion[] = [];
   for (const m of MODEL_TABLE) {
-    const brandHit = m.brandAliases.find(alias => compact.includes(alias));
-    const hits = m.tokens.filter(token => token.keys.some(key => compact.includes(key)));
-    if (!brandHit && !hits.length) continue;
-    const distinctive = hits.some(token => token.distinctive);
-    const confidence = brandHit && distinctive ? 0.95 : brandHit && hits.length ? 0.9 : distinctive ? 0.8 : hits.length ? 0.75 : 0.35;
-    out.push({ model_id: m.id, brand: m.brand, name: m.name, matched: [brandHit, ...hits.map(h => h.display)].filter((v): v is string => Boolean(v)), confidence });
+    if (!m.rule) continue;
+    const { families, refiners, bundle } = m.rule;
+    for (const h of hits) {
+      const family = families.includes(h.key);
+      const weak = refiners.includes(h.key);
+      if (!family && !weak) continue;
+      if (family && !h.identified && hits.some(b => b.role === 'brand' && b.key === m.brand && b.start === h.start && b.end === h.end)) continue;
+      const association = brandFor(h, text, hits);
+      const brand = association.brand, matching = brand?.key === m.brand;
+      const conflict = association.conflict || Boolean(brand && !matching);
+      if (h.role === 'branded' && !matching) continue;
+      // Mini is a supported carrier phrase only when a matching brand is local.
+      const brandedCarrier = matching && ((m.id === 'model-29' && h.key === '미니') || h.role === 'branded');
+      if (!family && !matching) continue;
+      const established = (family && (h.identified || matching) && h.role !== 'branded') || brandedCarrier;
+      const local = hits.filter(r => refiners.includes(r.key) && connected(h, r, text, hits, true));
+      const variant = local.some(r => r.role === 'variant' && (r.start < h.start || r.end > h.end));
+      const complete = bundle.length > 0 && bundle.every(key => local.some(r => r.key === key));
+      const qualifier = h.qualified && ((m.id === 'model-18' && h.qualified === 'gi') || (m.id === 'model-19' && h.qualified === 't'));
+      // An explicit Gi/T must not rank the other variant as equally supported.
+      if (h.key === '제로나' && h.qualified && ['model-18', 'model-19'].includes(m.id) && !qualifier) continue;
+      let confidence = established ? variant || complete || qualifier ? 0.95 : matching ? 0.90 : 0.80 : family ? 0.50 : 0.60;
+      if (conflict) confidence = Math.min(confidence, 0.60);
+      out.push({ model_id: m.id, brand: m.brand, name: m.name,
+        matched: [...new Set([matching ? brand?.raw : undefined, h.key, ...local.map(r => r.key), qualifier ? h.qualified : undefined].filter((v): v is string => Boolean(v)))], confidence });
+    }
+    for (const brand of hits.filter(h => h.role === 'brand' && h.key === m.brand)) {
+      out.push({ model_id: m.id, brand: m.brand, name: m.name, matched: [brand.raw], confidence: 0.35 });
+    }
   }
-  return out.sort((a, b) => b.confidence - a.confidence || a.model_id.localeCompare(b.model_id)).slice(0, 10);
+  return rankModels(out);
 }
 
 // ── 가격 매칭 ────────────────────────────────────────────────────────────────
@@ -242,13 +381,17 @@ export function extractLinks(text: string): LinkSuggestion[] {
 }
 
 // ── 통합 ─────────────────────────────────────────────────────────────────────
+export function extractionConfidence(extraction: Pick<Extraction, 'models' | 'price' | 'dates' | 'links'>): number {
+  const confidences = [extraction.models[0]?.confidence, extraction.price?.confidence, extraction.dates?.confidence, extraction.links[0]?.confidence].filter((c): c is number => typeof c === 'number' && c > 0);
+  return confidences.length ? round2(confidences.reduce((a, b) => a + b, 0) / confidences.length) : 0;
+}
 export function extract(text: string, options: { now?: Date } = {}): Extraction {
   const links = extractLinks(text);
   const { prices, primary } = extractPrices(text);
   const dates = extractDates(text, options.now ?? new Date());
   const models = extractModels(text);
-  const confidences = [models[0]?.confidence, primary?.confidence, dates?.confidence, links[0]?.confidence].filter((c): c is number => typeof c === 'number' && c > 0);
-  return { models, price: primary, prices, dates, links, confidence: confidences.length ? round2(confidences.reduce((a, b) => a + b, 0) / confidences.length) : 0 };
+  const result = { models, price: primary, prices, dates, links };
+  return { ...result, confidence: extractionConfidence(result) };
 }
 
 // 수집 API 스키마에 맞는 형태로만 좁힌다(전체 후보 목록 등은 검수 화면에 보내지 않음).

@@ -1,6 +1,6 @@
 // 유아용품 판정, 개인정보 마스킹, 전송 페이로드 조립. 이미지 URL·페이지 전체 덤프는 다루지 않는다.
 import { models as seedModels } from '../../../seed/models.json';
-import { extract, extractModels, toSuggestions, type Suggestions } from '../extract';
+import { extract, extractModels, extractionConfidence, rankModels, toSuggestions, type ModelSuggestion, type Suggestions } from '../extract';
 import type { ParsedItem } from './parse';
 
 const BABY = /육아|유아|아기|아가|신생아|출산|임산부|베이비|유모차|카시트|아기띠|힙시트|바운서|하이체어|식탁의자|보행기|쏘서|젖병|이유식|아기침대|범보|속싸개|모빌|놀이매트|baby|stroller/i;
@@ -36,17 +36,31 @@ export type EligibilitySignals = {
   has_model_category:boolean;
   excluded_title:boolean; excluded_category:boolean; excluded_text:boolean;
 };
+type Assessment = {
+  models: ModelSuggestion[]; top: ModelSuggestion | undefined; modelMatch: boolean;
+  category: string | null; signals: EligibilitySignals;
+  reason: 'excluded_category' | 'not_baby_item' | null;
+};
+function assess(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): Assessment {
+  // Separate spans prevent OCR recovery or brand corroboration across fields.
+  const models = rankModels([ ...extractModels(item.title), ...extractModels(item.category_text) ]);
+  const top = models[0], modelMatch = (top?.confidence ?? 0) >= MODEL_CONFIDENCE;
+  const category = modelMatch ? categoryOf(top?.model_id) : null;
+  const signals: EligibilitySignals = {
+    keyword_match: BABY.test(`${item.title} ${item.category_text}`), model_threshold_match: modelMatch,
+    has_model_category: category !== null, excluded_title: EXCLUDED.test(item.title),
+    excluded_category: EXCLUDED.test(item.category_text), excluded_text: EXCLUDED.test(item.text),
+  };
+  const reason = signals.excluded_title || signals.excluded_category || signals.excluded_text ? 'excluded_category'
+    : signals.keyword_match || modelMatch ? null : 'not_baby_item';
+  return { models, top, modelMatch, category, signals, reason };
+}
 export function eligibilitySignals(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): EligibilitySignals {
-  const label = `${item.title} ${item.category_text}`;
-  const top=extractModels(label)[0],modelMatch=(top?.confidence??0)>=MODEL_CONFIDENCE;
-  return {keyword_match:BABY.test(label),model_threshold_match:modelMatch,has_model_category:modelMatch&&categoryOf(top?.model_id)!==null,
-    excluded_title:EXCLUDED.test(item.title),excluded_category:EXCLUDED.test(item.category_text),excluded_text:EXCLUDED.test(item.text)};
+  return assess(item).signals;
 }
 export type RejectionReason = 'excluded_category'|'not_baby_item'|'empty_title';
 export function eligibilityReason(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): Exclude<RejectionReason,'empty_title'>|null {
-  const signals=eligibilitySignals(item);
-  if(signals.excluded_title||signals.excluded_category||signals.excluded_text)return 'excluded_category';
-  return signals.keyword_match||signals.model_threshold_match?null:'not_baby_item';
+  return assess(item).reason;
 }
 
 export function isBabyItem(item: Pick<ParsedItem, 'title' | 'text' | 'category_text'>): boolean {
@@ -58,8 +72,8 @@ const categoryOf = (modelId: string | undefined) => (modelId ? seedModels[Number
 // 유아용품이 아니면 null.
 export type PayloadEvaluation = {accepted:true;payload:ExternalPayload} | {accepted:false;reason:RejectionReason};
 export function evaluatePayload(source: string, item: ParsedItem, capturedAt: Date): PayloadEvaluation {
-  const reason=eligibilityReason(item);
-  if (reason) return {accepted:false,reason};
+  const assessment = assess(item);
+  if (assessment.reason) return {accepted:false,reason:assessment.reason};
   const title = maskPersonal(item.title).trim().slice(0, TITLE_MAX);
   if (!title) return {accepted:false,reason:'empty_title'};
   const dates = item.dates?.starts_at && (!item.dates.ends_at || Date.parse(item.dates.ends_at) > Date.parse(item.dates.starts_at)) ? item.dates : null;
@@ -67,14 +81,14 @@ export function evaluatePayload(source: string, item: ParsedItem, capturedAt: Da
   const priceRaw = item.price ? maskPersonal(item.price.raw).slice(0, 60) : null;
   const text = maskPersonal([title, datesRaw && `기간 ${datesRaw}`, priceRaw && `가격 ${priceRaw}`, item.seller_handle && `셀러 @${item.seller_handle}`].filter(Boolean).join(' / ')).slice(0, TEXT_MAX);
   const extraction = extract(text, { now: capturedAt });
-  const top = extractModels(`${item.title} ${item.category_text}`)[0];
-  const modelMatch = (top?.confidence ?? 0) >= MODEL_CONFIDENCE;
+  extraction.models = assessment.models;
+  extraction.confidence = extractionConfidence(extraction);
   return {accepted:true,payload:{
     kind: 'external_listing', source, source_url: item.source_url, account: source, title, text,
     seller_handle: item.seller_handle, seller_name: 'seller_name' in item ? String(item.seller_name ?? '') || null : null, seller_url: item.seller_url,
     price_hint: item.price && Number.isSafeInteger(item.price.value) ? item.price.value : null, price_raw: priceRaw, price_basis: 'external_listing',
     starts_at: dates?.starts_at ?? null, ends_at: dates?.ends_at ?? null, dates_raw: datesRaw,
-    category: modelMatch ? categoryOf(top?.model_id) : null, model_match: modelMatch,
+    category: assessment.category, model_match: assessment.modelMatch,
     captured_at: capturedAt.toISOString(), suggestions: toSuggestions(extraction),
   }};
 }

@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { expect, test, vi } from 'vitest';
 import { extractPangpang, PANGPANG_VERSION, pangpangIdentityAllowed } from '../crawler/lib/external/pangpang';
-import { eligibilityReason, buildPayload } from '../crawler/lib/external/filter';
+import { eligibilityReason, eligibilitySignals, buildPayload } from '../crawler/lib/external/filter';
+import { extractModels } from '../crawler/lib/extract';
 import { config, visitAllowed, type SourcePolicy } from '../crawler/src/source-policy';
 import { measurePage } from '../crawler/src/discovery/measure';
 import { pangpangContext, reportPangpang, type PangpangEvent } from '../crawler/src/discovery/pangpang-diagnostics';
@@ -32,16 +33,35 @@ async function collect(f:ReturnType<typeof engineFixture>,at='one'){
   const run=f.pipeline.start({kind:'test',at});f.pipeline.seed(run);await f.pipeline.run(run);return run;
 }
 
-test('approved saved listing: 191 anchors, 60 product occurrences, 30 products, five classifier matches',()=>{
+test('approved saved listing: 191 anchors, 60 product occurrences, 30 products, four keyword-eligible cards',()=>{
   const p=extract(saved('list'));
   expect(p.products).toHaveLength(30);expect(p.links_encountered).toBe(191);
   expect(p.outcomes.map(o=>o.index)).toEqual(Array.from({length:191},(_,i)=>i));
   expect(counts(p.outcomes)).toEqual({accepted_product:30,duplicate_product:30,non_product_link:131});
   expect(p.products.every(p=>p.price===null&&/^https:\/\/09pangpang.com\/post\/\d+$/.test(p.source_url))).toBe(true);
-  expect(counts(p.products.map(p=>({reason:eligibilityReason(p)??'eligible'})))).toEqual({eligible:5,excluded_category:1,not_baby_item:24});
+  const training = p.products.find(p=>p.source_url===origin+'/post/849654')!;
+  expect(training.title).toBe('실내 점프 트레이닝');
+  expect(eligibilityReason(training)).toBe('not_baby_item');
+  expect(extractModels(training.title)).toEqual([]);
+  expect(extractModels(training.category_text)).toEqual([]);
+  expect(eligibilitySignals(training)).toMatchObject({keyword_match:false, model_threshold_match:false});
+  for (const [id, title] of [
+    ['849822', '바밤단호박'], ['849770', '사파 3in1 열제본 코팅기 BM100'],
+    ['849751', '루솔 이유식'], ['849583', '아기 바라클라바'],
+  ]) {
+    const product = p.products.find(p=>p.source_url===`${origin}/post/${id}`)!;
+    expect(product.title).toBe(title);
+    expect(eligibilityReason(product)).toBeNull();
+    expect(eligibilitySignals(product)).toMatchObject({keyword_match:true, model_threshold_match:false});
+    expect(buildPayload('pangpang',product,now)).toMatchObject({model_match:false, category:null, suggestions:{models:[]}});
+  }
+  const excluded = p.products.find(p=>p.source_url===origin+'/post/849637')!;
+  expect(excluded.title).toBe('캔코 기저귀 가방');
+  expect(eligibilityReason(excluded)).toBe('excluded_category');
+  expect(counts(p.products.map(p=>({reason:eligibilityReason(p)??'eligible'})))).toEqual({eligible:4,excluded_category:1,not_baby_item:25});
   const m=measurePage(saved('list'),origin+'/',source(),{...config,sources:[source()]},now,{listing:true});
-  expect(m).toMatchObject({parsed:30,eligible:5,links_found:191,price_checked:0});
-  expect(m.found).toHaveLength(30);expect(m.listing).toHaveLength(5);
+  expect(m).toMatchObject({parsed:30,eligible:4,links_found:191,price_checked:0});
+  expect(m.found).toHaveLength(30);expect(m.listing).toHaveLength(4);
 });
 
 test.each([
@@ -117,7 +137,7 @@ test.each([true,false])('discover saved pages share extraction in dry-run=%s, re
   try{
     if(!dry)runner.seed();const result=await runner.run(dry);
     expect(result.sources[0]).toMatchObject({parsed:31,unique_products:30,links_found:191,pages_ok:2,price_hints:0});
-    const summary=events.find(e=>e.event==='summary'&&e.parsed===30);expect(summary).toMatchObject({parsed:30,eligible:5,links_encountered:191});
+    const summary=events.find(e=>e.event==='summary'&&e.parsed===30);expect(summary).toMatchObject({parsed:30,eligible:4,links_encountered:191});
     expect(events.filter(e=>e.event==='link')).toHaveLength(191);
     expect(calls).toEqual(['/robots.txt','/','/post/849842']);
     if(dry){expect(f.store.report().total).toBe(0);for(const t of ['collection_jobs','intake_receipts','intake_reservations','evidence_assertions','seller_candidates'] as const)expect(f.store.list(t)).toEqual([]);}
