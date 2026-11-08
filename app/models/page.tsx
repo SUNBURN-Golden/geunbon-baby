@@ -5,8 +5,21 @@ import { categories, type Deal, type Model } from '../../lib/data';
 import { buildModelCards } from '../../lib/model-cards';
 import { ModelCard } from './_card';
 export const dynamic = 'force-dynamic';
-export default async function Models({ searchParams }: { searchParams: Promise<{ category?: string; brand?: string; q?: string; by?: string }> }) {
-  const filter = await searchParams;
+type SearchValue = string | string[] | undefined;
+
+// Repeated parameters use the first value, including an empty value.
+function firstValue(value: SearchValue): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function Models({ searchParams }: { searchParams: Promise<{ category?: SearchValue; brand?: SearchValue; q?: SearchValue; by?: SearchValue }> }) {
+  const params = await searchParams;
+  const filter = {
+    q: firstValue(params.q),
+    brand: firstValue(params.brand),
+    category: firstValue(params.category),
+    by: firstValue(params.by),
+  };
   const models = await all<Model>(environment().DB, 'SELECT * FROM models ORDER BY rowid');
   const selected = models.filter(m => (!filter.category || m.category === filter.category) && (!filter.brand || m.brand === filter.brand) && (!filter.q || `${m.brand} ${m.name}`.toLowerCase().includes(filter.q.toLowerCase())));
   if (filter.by === 'brand') selected.sort((a, b) => a.brand.localeCompare(b.brand));
