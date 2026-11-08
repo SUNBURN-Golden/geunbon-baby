@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadDeepSeekWebConfig, stateDir } from './config';
-import { admitCall, anyDomainStopped, holdCall, isHostDomainStopped, isProhibitedUrl, releaseCall, settleCall } from './guards';
+import { admitCall, holdCall, releaseCall, settleCall } from './guards';
+import { assertDomainPolicyReadable, evaluateUrlDomainPolicy, isGlobalEmergencyStop } from './domain-policy';
 import { createDeepSeekClient } from './client';
 import { buildExtractionPrompt, normalizeExtraction, parseModelJson } from './extract';
 import { createPublicFetcher, fetchPublicText } from './public-fetch';
@@ -11,6 +12,7 @@ import { enqueueReview, countPending } from './review-queue';
 import { writeHeartbeat } from './heartbeat';
 import type { RunReport } from './types';
 import type { CollectorStore } from '../store';
+export type FetchPageResult = { ok: true; text: string; finalUrl: string } | { ok: false; reason: string };
 export type RunnerOptions = {
   mode: 'once' | 'dry_run';
   urls?: string[];
@@ -18,6 +20,8 @@ export type RunnerOptions = {
   store?: CollectorStore;
   client?: ReturnType<typeof createDeepSeekClient>;
   fetchImpl?: typeof fetch;
+  /** Test hook only: bypass PoliteFetcher when supplied. */
+  fetchPage?: (url: string) => Promise<FetchPageResult>;
 };
 export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport> {
   const config = loadDeepSeekWebConfig();
@@ -27,7 +31,8 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
   const model = process.env.DEEPSEEK_MODEL ?? config.model.default_model;
   if (options.mode === 'once') {
     if (!options.store) throw new Error('collector_db_required');
-    if (anyDomainStopped(options.store)) throw new Error('domain_stopped');
+    assertDomainPolicyReadable(options.store);
+    if (isGlobalEmergencyStop(options.store)) throw new Error('emergency_stop');
   }
   const client = options.client ?? createDeepSeekClient({
     apiKey: options.mode === 'dry_run' ? 'mock' : (process.env.DEEPSEEK_API_KEY ?? ''),
@@ -45,12 +50,11 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
   memory.plan_notes.push(`${runId}: plan ${queue.length} url(s), mode=${options.mode}`);
   for (const seedUrl of queue.slice(0, config.memory.max_queue_urls)) {
     let pageUrl = seedUrl;
-    const guard = isProhibitedUrl(pageUrl, config);
-    if (guard.blocked) { blocked++; memory.plan_notes.push(`block ${pageUrl}: ${guard.reason}`); continue; }
-    const host = new URL(pageUrl).hostname;
-    if (options.store && isHostDomainStopped(options.store, host)) {
-      blocked++; memory.plan_notes.push(`block ${pageUrl}: domain_stopped`); continue;
+    const initialPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
+    if (initialPolicy.blocked) {
+      blocked++; memory.plan_notes.push(`block ${pageUrl}: ${initialPolicy.reason}`); continue;
     }
+    const host = new URL(pageUrl).hostname;
     const admission = admitCall(memory, config);
     if (!admission.ok) { memory.plan_notes.push(`halt: ${admission.reason}`); break; }
     holdCall(memory, admission.reserve);
@@ -65,7 +69,7 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
         releaseCall(memory, admission.reserve);
         continue;
       } else {
-        const page = await fetchPublicText(fetcher, pageUrl);
+        const page = options.fetchPage ? await options.fetchPage(pageUrl) : await fetchPublicText(fetcher, pageUrl);
         if (!page.ok) {
           blocked++; memory.plan_notes.push(`fetch_block ${pageUrl}: ${page.reason}`);
           releaseCall(memory, admission.reserve);
@@ -73,6 +77,19 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
         }
         text = page.text;
         pageUrl = page.finalUrl;
+        const redirectPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
+        if (redirectPolicy.blocked) {
+          blocked++; memory.plan_notes.push(`block_redirect ${pageUrl}: ${redirectPolicy.reason}`);
+          releaseCall(memory, admission.reserve);
+          continue;
+        }
+      }
+      if (options.store) assertDomainPolicyReadable(options.store);
+      const preModelPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
+      if (preModelPolicy.blocked) {
+        blocked++; memory.plan_notes.push(`block_pre_model ${pageUrl}: ${preModelPolicy.reason}`);
+        releaseCall(memory, admission.reserve);
+        continue;
       }
       const checked = new Date().toISOString().slice(0, 10);
       const completion = await client.complete({ system: '당신은 가격을 발명하지 않는 공개 웹 추출기다. JSON만 출력한다.', user: buildExtractionPrompt(text, pageUrl) });

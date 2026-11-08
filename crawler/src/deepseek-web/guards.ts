@@ -1,5 +1,4 @@
 import type { DeepSeekWebConfig, RunMemory } from './types';
-import type { CollectorStore } from '../store';
 export function hostMatchesDenied(hostname: string, denied: string[]) {
   const host = hostname.toLowerCase();
   return denied.some(d => host === d || host.endsWith(`.${d}`));
@@ -12,13 +11,6 @@ export function isProhibitedUrl(url: string, config: DeepSeekWebConfig) {
   if (hostMatchesDenied(parsed.hostname, config.prohibited_hosts)) return { blocked: true, reason: 'prohibited_domain' as const };
   if (/instagram|threads/i.test(parsed.hostname)) return { blocked: true, reason: 'prohibited_domain' as const };
   return { blocked: false as const, reason: null };
-}
-export function isHostDomainStopped(store: CollectorStore, hostname: string) {
-  const d = store.get<{ stopped?: boolean }>('domain_state', hostname);
-  return !!d?.stopped;
-}
-export function anyDomainStopped(store: CollectorStore) {
-  return store.list<{ stopped?: boolean }>('domain_state').some(d => d.stopped);
 }
 export function perCallTokenReserve(config: DeepSeekWebConfig) {
   return config.budget.estimated_prompt_tokens + config.budget.max_completion_tokens;

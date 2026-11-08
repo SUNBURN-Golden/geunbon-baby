@@ -20,14 +20,18 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 | `validation-artifact.json` | 활성화 검증용 스냅샷 |
 | `proposals/*.json` | 파서 수정 제안 |
 
-**`once`·`daemon`은 `COLLECTOR_DB` 필수**(없거나 열 수 없으면 `collector_db_required` / `collector_db_unavailable`). 열리면 `domain_state`를 읽어 **전역 `domain_stopped`가 하나라도 있으면 즉시 실패**하고, 호스트별 stopped는 해당 URL만 건너뜁니다(`dry-run`+주입 store로 오프라인 검증).
+**`once`·`daemon`은 `COLLECTOR_DB` 필수**(없거나 읽을 수 없으면 `collector_db_required` / `collector_db_unavailable` / `domain_state_unavailable`). 정책은 **fetch 직전·리다이렉트 후·모델 직전**마다 재확인한다.
+
+- **호스트별 `domain_state.stopped`** (예: `momcalendar.com`): 해당 호스트·서브도메인·리다이렉트 목적지만 차단. 다른 허용 도메인은 계속 수집한다. DB를 수정/삭제하지 않는다.
+- **전역 긴급 중단**: `collector_meta` id `deepseek_web:emergency_stop` 에 `{ "stopped": true, "reason": "..." }` 가 있을 때만 `once`/`daemon` 전체가 `emergency_stop`으로 즉시 실패한다.
 
 ## PM2 (Linux, 부모 런타임 활성화)
 
 ```sh
 export PATH="$PWD/node_modules/node/bin:$PATH"
 # 박스에서: export DEEPSEEK_API_KEY=...  (이 README/저장소에 넣지 말 것)
-# 선택: export DEEPSEEK_MODEL=deepseek-chat
+# 모델: export DEEPSEEK_MODEL=<박스에서 검증한 DeepSeek 모델 id>
+# (미설정 시 코드 기본값 deepseek-chat — Flash/Reasoner 여부는 박스에서 문서·대시보드로 확인 후 설정)
 # 필수(once/daemon): export COLLECTOR_DB=/path/to/collector.sqlite
 
 pm2 start crawler/deepseek-web.ecosystem.config.cjs
@@ -59,7 +63,7 @@ cat .local/deepseek-web/heartbeat.json
 
 ```sh
 export PATH="$PWD/node_modules/node/bin:$PATH"
-npm test -- tests/deepseek-web-guards.test.ts tests/deepseek-web-extract.test.ts tests/deepseek-web-runner.test.ts tests/deepseek-web-cli.test.ts
+npm test -- tests/deepseek-web-guards.test.ts tests/deepseek-web-extract.test.ts tests/deepseek-web-runner.test.ts tests/deepseek-web-cli.test.ts tests/deepseek-web-domain-policy.test.ts
 ```
 
 ## 원격 브랜치 `dev-daemon/45-deepseek-web-harness-*`

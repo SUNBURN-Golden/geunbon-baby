@@ -25,7 +25,7 @@ module.exports = {
       NODE_ENV: 'production',
       TZ: 'Asia/Seoul',
       // COLLECTOR_DB must be injected on the host for domain_state enforcement.
-      DEEPSEEK_MODEL: 'deepseek-chat',
+      // Set DEEPSEEK_MODEL on the host to your verified DeepSeek model id (optional; code default deepseek-chat).
       DEEPSEEK_WEB_DAEMON_MS: '600000',
     },
   }],
