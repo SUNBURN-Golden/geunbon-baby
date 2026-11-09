@@ -31,6 +31,11 @@
       "id": "carrier",
       "ko": ["아기띠"],
       "examples": ["아티포페", "Ergobaby", "BabyBjorn"]
+    },
+    {
+      "id": "bouncer",
+      "ko": ["바운서"],
+      "examples": ["BabyBjorn", "베이비뵨"]
     }
   ],
   "prohibited_hosts": [

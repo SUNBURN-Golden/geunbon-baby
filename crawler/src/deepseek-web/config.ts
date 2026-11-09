@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DeepSeekWebConfig, ScopedCategory } from './types';
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../deepseek-web');
-const allowed = new Set<ScopedCategory>(['stroller', 'high_chair', 'car_seat', 'play_gym', 'carrier']);
+const allowed = new Set<ScopedCategory>(['stroller', 'high_chair', 'car_seat', 'play_gym', 'carrier', 'bouncer']);
 export function loadDeepSeekWebConfig(path = join(root, 'config.json')): DeepSeekWebConfig {
   const raw = JSON.parse(readFileSync(path, 'utf8')) as DeepSeekWebConfig;
   if (raw.profile_id !== 'deepseek-web' || raw.profile_version !== 1) throw new Error('invalid_deepseek_web_config');

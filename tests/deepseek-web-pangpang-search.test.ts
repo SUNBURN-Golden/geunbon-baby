@@ -35,6 +35,6 @@ describe('pangpang 육아템 search (public fixture)', () => {
       expect(url).toMatch(/^https:\/\/09pangpang\.com\/search\/r\//);
       expect(url).not.toMatch(/\/api\/|\/admin\/|\/my\/|\/auth/);
     }
-    expect(plan.suggested_searches).toContain('https://09pangpang.com/search/r/%EC%9C%A0%EB%AA%A8%EC%B0%A8');
+    expect(plan.suggested_searches.some(u => u.includes('%EC%9C%A0%EB%AA%A8%EC%B0%A8') || u.includes('%ED%8A%B8%EB%A6%BD%ED%8A%B8%EB%9E%A9'))).toBe(true);
   });
 });

@@ -1,18 +1,23 @@
+import { catalogSearchUrls, loadGeunbonCatalog, nextCatalogSearch } from './catalog';
 import type { DeepSeekWebConfig, RunMemory } from './types';
-import { corePublicSearchUrls } from './deepseek-scope';
 import { isPangpangListingUrl } from './listing-discovery';
 
 export function rememberSearchHints(memory: RunMemory, hints: string[]) {
-  memory.next_search_hints = [...new Set(hints)].slice(0, 12);
+  memory.next_search_hints = [...new Set(hints)].slice(0, catalogSearchUrls(loadGeunbonCatalog()).length);
 }
 
-export function pickNextPublicSearchUrl(memory: RunMemory, config: DeepSeekWebConfig): string | null {
-  const hints = memory.next_search_hints?.length ? memory.next_search_hints : corePublicSearchUrls(config);
-  for (const url of hints) {
-    if (!isPangpangListingUrl(url)) continue;
-    if (memory.pending_urls.includes(url)) continue;
-    if (memory.observed_urls.includes(url) && memory.listing_discovery?.[url]) continue;
-    return url;
-  }
-  return null;
+export function pickNextPublicSearchUrl(memory: RunMemory, _config: DeepSeekWebConfig): string | null {
+  const catalog = loadGeunbonCatalog();
+  const picked = nextCatalogSearch(catalog, memory.catalog_search_cursor ?? 0);
+  if (!picked) return null;
+  if (!isPangpangListingUrl(picked.url)) return null;
+  if (memory.pending_urls.includes(picked.url)) return null;
+  memory.catalog_search_cursor = picked.next_cursor;
+  memory.last_catalog_search = {
+    product_id: picked.product_id,
+    category: picked.category,
+    term: picked.term,
+    url: picked.url,
+  };
+  return picked.url;
 }

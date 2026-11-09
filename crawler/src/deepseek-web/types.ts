@@ -1,6 +1,6 @@
 export const UNKNOWN = '정보 없음' as const;
 
-export type ScopedCategory = 'stroller' | 'high_chair' | 'car_seat' | 'play_gym' | 'carrier';
+export type ScopedCategory = 'stroller' | 'high_chair' | 'car_seat' | 'play_gym' | 'carrier' | 'bouncer';
 
 export type GongguExtraction = {
   brand: string;
@@ -15,6 +15,8 @@ export type GongguExtraction = {
   url: string;
   checked_date: string;
   in_scope: boolean;
+  catalog_product_id?: string;
+  offer_ref?: string;
   notes?: string;
 };
 
@@ -88,7 +90,17 @@ export type RunMemory = {
   last_collection_status: CollectionStatus;
   listing_discovery: Record<string, { policy_version: number; last_at: string; last_enqueue_count: number }>;
   next_search_hints: string[];
+  catalog_search_cursor: number;
+  last_catalog_search: { product_id: string; category: ScopedCategory; term: string; url: string } | null;
+  modeled_post_urls: string[];
+  pending_catalog_meta: Record<string, { catalog_product_id: string; category: ScopedCategory }>;
   output_counts: { extractions: number; proposals: number; blocked: number; review_pending: number };
+};
+
+export type TickCoverage = {
+  searches: { url: string; catalog_product_id: string | null; category: ScopedCategory | null; term: string | null }[];
+  listing: Partial<Record<ScopedCategory | 'unscoped', { raw: number; scoped: number; enqueued: number }>>;
+  extracted: Partial<Record<ScopedCategory, number>>;
 };
 
 export type CollectionStatus =
@@ -119,6 +131,7 @@ export type RunReport = {
   listing_enqueued: number;
   listing_refresh_attempts: number;
   dedup_skips: number;
+  coverage: TickCoverage;
   collection_status: CollectionStatus;
   halt_reason: string | null;
   heartbeat_fresh: boolean;

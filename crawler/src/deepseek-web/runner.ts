@@ -3,18 +3,19 @@ import { join } from 'node:path';
 import { loadDeepSeekWebConfig, stateDir } from './config';
 import { evaluateUrlDomainPolicy, assertDomainPolicyReadable, isGlobalEmergencyStop } from './domain-policy';
 import { createDeepSeekClient } from './client';
-import { buildExtractionPrompt, normalizeExtraction, parseModelJson } from './extract';
+import { buildExtractionPrompt, normalizeExtractionWithCatalog, parseModelJson } from './extract';
 import { createPublicFetcher, fetchPublicText } from './public-fetch';
 import { loadMemory, newRunId, saveMemory } from './memory';
 import { maybeProposeParserFix } from './proposals';
-import { enqueueReview, countPending } from './review-queue';
+import { enqueueReviewIfNew, countPending, hasPendingUrl } from './review-queue';
 import { writeHeartbeat } from './heartbeat';
 import { beginCycle, cycleAdmit, cycleHold, cycleRelease, cycleSettle, finalizeCycle } from './budget-cycle';
 import { logOutcome } from './outcomes';
 import { isPangpangHost, planPangpangPage } from './source-select';
 import { pickNextPublicSearchUrl, rememberSearchHints } from './search-query-plan';
 import { isPangpangListingUrl, listingDiscoveryDue, recordListingDiscovery, shouldDedupObservedSeed } from './listing-discovery';
-import type { CollectionStatus, RunReport } from './types';
+import { loadGeunbonCatalog, postIdFromUrl, searchMetaForUrl } from './catalog';
+import type { CollectionStatus, RunReport, ScopedCategory, TickCoverage } from './types';
 import type { CollectorStore } from '../store';
 
 export type FetchPageResult = { ok: true; text: string; finalUrl: string } | { ok: false; reason: string };
@@ -117,6 +118,8 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
   let listingNoCandidates = 0;
   let dedupSkips = 0;
   let policyBlocked = 0;
+  const coverage: TickCoverage = { searches: [], listing: {}, extracted: {} };
+  const catalog = loadGeunbonCatalog();
   memory.plan_notes.push(`${runId}: plan ${queue.length} url(s), mode=${options.mode}`);
   const cycleTouched = new Set<string>();
   if (reserve.ok) {
@@ -133,6 +136,17 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
         continue;
       }
       let pageUrl = seedUrl;
+      if (isPangpangListingUrl(seedUrl)) {
+        const meta = memory.last_catalog_search?.url === seedUrl
+          ? memory.last_catalog_search
+          : searchMetaForUrl(catalog, seedUrl);
+        coverage.searches.push({
+          url: seedUrl,
+          catalog_product_id: meta.product_id,
+          category: meta.category,
+          term: meta.term,
+        });
+      }
       const initialPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
       if (initialPolicy.blocked) {
         blocked++;
@@ -188,6 +202,25 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
             rememberSearchHints(memory, plan.suggested_searches);
             const enqueueCount = plan.enqueue.length;
             recordListingDiscovery(memory, seedUrl, config, enqueueCount, new Date(nowMs()));
+            for (const row of plan.enqueue_catalog) {
+              memory.pending_catalog_meta[row.url] = { catalog_product_id: row.catalog_product_id, category: row.category };
+            }
+            for (const [cat, n] of Object.entries(plan.scoped_by_category)) {
+              const key = cat as ScopedCategory;
+              const prev = coverage.listing[key] ?? { raw: 0, scoped: 0, enqueued: 0 };
+              coverage.listing[key] = {
+                raw: Math.max(prev.raw, plan.raw_product_count),
+                scoped: (prev.scoped ?? 0) + n,
+                enqueued: (prev.enqueued ?? 0) + plan.enqueue_catalog.filter(e => e.category === key).length,
+              };
+            }
+            if (!Object.keys(plan.scoped_by_category).length && plan.raw_product_count) {
+              coverage.listing.unscoped = {
+                raw: plan.raw_product_count,
+                scoped: plan.scope_counts.core,
+                enqueued: enqueueCount,
+              };
+            }
             if (enqueueCount) {
               mergePending(memory, plan.enqueue);
               listingEnqueued += enqueueCount;
@@ -235,6 +268,14 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
           }
         }
         if (!fetched || !text) continue;
+        const modeledKey = pageUrl;
+        if (memory.modeled_post_urls.includes(modeledKey) || (await hasPendingUrl(dir, modeledKey))) {
+          dedupSkips++;
+          memory.plan_notes.push(`skip_modeled_post ${modeledKey}`);
+          memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
+          await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'duplicate_skip', detail: { reason: 'already_modeled_or_pending' } });
+          continue;
+        }
         const admission = cycleAdmit(memory, config);
         if (!admission.ok) {
           haltReason = admission.reason;
@@ -262,11 +303,28 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
           cycleSettle(memory, admission.reserve, completion.usage.total_tokens);
           settled = true;
           cycleTouched.add(seedUrl);
-          const extraction = normalizeExtraction(parseModelJson(completion.content), pageUrl, checked);
+          const catalogHint = memory.pending_catalog_meta[seedUrl] ?? memory.pending_catalog_meta[pageUrl];
+          const offerRef = postIdFromUrl(pageUrl) ?? undefined;
+          const extraction = normalizeExtractionWithCatalog(parseModelJson(completion.content), pageUrl, checked, {
+            ...catalogHint,
+            offer_ref: offerRef,
+          });
+          if (!memory.modeled_post_urls.includes(modeledKey)) {
+            memory.modeled_post_urls = [...memory.modeled_post_urls, modeledKey].slice(-500);
+          }
           if (extraction.in_scope) {
-            await enqueueReview(dir, extraction);
-            extractions++;
-            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'extracted' });
+            const q = await enqueueReviewIfNew(dir, extraction);
+            if (q.enqueued) {
+              extractions++;
+              const cat = (extraction.category !== '정보 없음' ? extraction.category : catalogHint?.category) as ScopedCategory | undefined;
+              if (cat) {
+                coverage.extracted[cat] = (coverage.extracted[cat] ?? 0) + 1;
+              }
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'extracted', detail: { catalog_product_id: extraction.catalog_product_id } });
+            } else {
+              dedupSkips++;
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'duplicate_skip', detail: { reason: q.reason } });
+            }
           } else {
             await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'out_of_scope' });
           }
@@ -315,6 +373,7 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
     listing_enqueued: listingEnqueued,
     listing_refresh_attempts: listingRefreshAttempts,
     dedup_skips: dedupSkips,
+    coverage,
   });
   const heartbeatAt = new Date(nowMs()).toISOString();
   const report: RunReport = {
@@ -335,6 +394,7 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
     listing_enqueued: listingEnqueued,
     listing_refresh_attempts: listingRefreshAttempts,
     dedup_skips: dedupSkips,
+    coverage,
     collection_status: collectionStatus,
     halt_reason: haltReason,
     heartbeat_fresh: false,
