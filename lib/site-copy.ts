@@ -12,7 +12,7 @@ export const siteCopy = {
   newsletterCta: "로그인하고 소식지 받기",
   transactionNotice: "아가마중은 통신판매중개 정보를 제공해요. 거래 당사자는 아니에요.",
   transactionTerms: "모든 공동구매는 광고로 표시해요. 결제·배송·교환·환불은 연결된 판매처에서 확인해 주세요.",
-  priceNotice: "가격은 출처 확인일 기준이에요. 기저귀·분유는 다루지 않아요.",
+  priceNotice: "가격은 확인한 날 기준이에요. 기저귀·분유는 다루지 않아요.",
   modelsNav: "공식가",
   calendarNav: '달력',
   sellersFooter: '판매자 안내',
