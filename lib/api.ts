@@ -572,7 +572,9 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     const now = new Date().toISOString();
     if (b.action === 'reject') {
       const result = await env.DB.prepare("UPDATE ingested_items SET status = 'rejected', reviewed_at = ? WHERE id = ? AND status = 'pending'").bind(now, parts[2]).run();
-      return json({ data: { changed: result.meta.changes } });
+      return result.meta.changes === 1
+        ? json({ data: { changed: 1 } })
+        : json({ error: '이미 검수된 항목' }, 409);
     }
     const startsAt = normalizeTimestamp(b.starts_at);
     const endsAt = normalizeTimestamp(b.ends_at);
