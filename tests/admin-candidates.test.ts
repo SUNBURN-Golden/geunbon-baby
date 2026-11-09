@@ -30,16 +30,18 @@ afterEach(() => memory.close());
 function dismissAction(node: ReactNode): (form: FormData) => Promise<void> {
   for (const child of Children.toArray(node)) {
     if (!isValidElement<{ children?: ReactNode; action?: (form: FormData) => Promise<void> }>(child)) continue;
-    if (child.type === 'form' && Children.toArray(child.props.children).some(input => isValidElement<{ name?: string }>(input) && input.props.name === 'candidate_id')) return child.props.action!;
+    if (child.type === 'form' && Children.toArray(child.props.children).some(btn => isValidElement<{ children?: ReactNode }>(btn) && btn.type === 'button' && String(btn.props.children).includes('게시 안 함'))) {
+      return child.props.action!;
+    }
     if (child.props.children) { try { return dismissAction(child.props.children); } catch { /* siblings */ } }
   }
   throw new Error('Dismiss form not found');
 }
 
-test('the candidate section is reference-only: warning, source info, a single 확인 완료 button and no approval controls', async () => {
+test('the candidate section shows promote and dismiss controls with source metadata', async () => {
   const html = renderToStaticMarkup(await Admin({ searchParams: Promise.resolve({}) }));
   const section = html.slice(html.indexOf('외부 공구 모음 후보'));
-  expect(section).toContain('지난 가격 또는 AI 요약일 수 있어 공구가로 게시되지 않습니다. Instagram 원문을 찾아 검수하세요.');
+  expect(section).toContain('원문·가격·일정을 확인한 뒤 공개 /deals로 게시');
   expect(section).toContain('공구팡팡');
   expect(section).toContain('href="https://09pangpang.com/deal/1"');
   expect(section).toContain('@synthetic_seller');
@@ -47,9 +49,10 @@ test('the candidate section is reference-only: warning, source info, a single �
   expect(section).toContain('2026-10-22T00:30:00.000Z');
   expect(section).toContain('2026-10-22T09:30:00.000Z');
   expect(section).toContain('시드 모델 매칭 예');
-  expect(section.match(/<button/g)).toHaveLength(1);
-  expect(section).toContain('확인 완료');
-  expect(section).not.toMatch(/approve|승인|name="price"|name="model_id"|name="seller_id"/);
+  expect(section).toContain('원문 확인 후 /deals 게시');
+  expect(section).toContain('확인 완료(게시 안 함)');
+  expect(section).toContain('name="model_id"');
+  expect(section).toContain('name="seller_id"');
 });
 
 test('확인 완료 dismisses through the admin API, after which the candidate disappears', async () => {

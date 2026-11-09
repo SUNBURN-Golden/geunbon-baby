@@ -67,6 +67,31 @@ async function dismissCandidate(form: FormData) {
   'use server';
   await adminAction(['admin', 'candidates', String(form.get('candidate_id'))], { action: 'dismiss' }, 'review', form);
 }
+async function promoteCandidate(form: FormData) {
+  'use server';
+  const bundleRaw = String(form.get('bundle_json') ?? '').trim();
+  let bundle_items: { product_name: string; brand?: string; model_id?: string; price?: number | null }[] = [];
+  if (bundleRaw) {
+    try {
+      const parsed = JSON.parse(bundleRaw);
+      if (Array.isArray(parsed)) bundle_items = parsed;
+    } catch { /* validated server-side */ }
+  }
+  await adminAction(['admin', 'candidates', String(form.get('candidate_id'))], {
+    action: 'promote',
+    request_id: String(form.get('request_id') ?? crypto.randomUUID()),
+    promoted_by: 'admin-ui',
+    seller_id: String(form.get('seller_id') ?? '') || undefined,
+    model_id: String(form.get('model_id') ?? '') || undefined,
+    title: String(form.get('title') ?? '') || undefined,
+    price: form.get('price') === '' ? null : Number(form.get('price')),
+    starts_at: String(form.get('starts_at') ?? '') || null,
+    ends_at: String(form.get('ends_at') ?? '') || null,
+    source_ended: form.get('source_ended') === 'on',
+    reason: String(form.get('reason') ?? ''),
+    bundle_items,
+  }, 'review', form);
+}
 async function saveSeller(form: FormData) {
   'use server';
   const id = form.get('seller_id');
@@ -153,11 +178,11 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Ad
         {item.status === 'published' && <>
           <form action={correctDeal}>{navigationFields(state)}
             <input type="hidden" name="deal_id" value={item.id}/><input type="hidden" name="expected_version" value={item.version}/><input type="hidden" name="request_id" value={crypto.randomUUID()}/>
-            <label>모델<select name="model_id" required defaultValue={item.model_id}>{models.map(model => <option key={model.id} value={model.id}>{model.brand} {model.name}</option>)}</select></label>
+            <label>모델<select name="model_id" required defaultValue={item.model_id ?? ''}><option value="" disabled={!!item.model_id}>선택</option>{models.map(model => <option key={model.id} value={model.id}>{model.brand} {model.name}</option>)}</select></label>
             <label>제목<input name="title" required maxLength={200} defaultValue={item.title}/></label>
             <label>공구가(원, 미확인 시 공란)<input name="price" type="number" min="0" step="1" defaultValue={item.price ?? ''}/></label>
-            <label>시작(시간대 포함 ISO)<input name="starts_at" required defaultValue={item.starts_at}/></label>
-            <label>종료(시간대 포함 ISO)<input name="ends_at" required defaultValue={item.ends_at}/></label>
+            <label>시작(시간대 포함 ISO)<input name="starts_at" required defaultValue={item.starts_at ?? ''}/></label>
+            <label>종료(시간대 포함 ISO)<input name="ends_at" required defaultValue={item.ends_at ?? ''}/></label>
             {item.evidence?.image_url && <label><input type="checkbox" name="include_image" defaultChecked={!!item.image_url}/>이미지 포함</label>}
             <label>정정 사유<textarea name="reason" required minLength={10} maxLength={300}/></label><button>정정</button>
           </form>
@@ -193,5 +218,5 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Ad
       <p>연결 계정 {s.accounts.length ? '' : '없음'}</p>
       {s.accounts.map(account => <form action={unlinkSeller} key={account}>{navigationFields(state)}<input type="hidden" name="seller_id" value={s.id}/><input type="hidden" name="account" value={account}/><span>@{account} </span><button>계정 연결 해제</button></form>)}
     </article>)}
-  </section><section aria-label="외부 공구 모음 후보"><h2>외부 공구 모음 후보</h2>{invalid.includes('candidate_cursor') && <p role="alert">외부 후보 목록의 위치가 올바르지 않아 처음부터 표시합니다.</p>}<p>지난 가격 또는 AI 요약일 수 있어 공구가로 게시되지 않습니다. Instagram 원문을 찾아 검수하세요.</p>{!candidates.length && <div className="empty">{state.candidate_cursor ? '이 위치에 남아 있는 외부 후보가 없습니다. 처음부터 다시 확인하세요.' : '확인할 외부 후보가 없습니다.'}</div>}{candidates.map(c => <article className="seller" key={c.id}><h3>{c.title}</h3><p>{(EXTERNAL_SOURCES as Record<string, { name: string }>)[c.source]?.name ?? c.source} · <a href={c.source_url} target="_blank" rel="noopener noreferrer">출처 확인 ↗</a>{c.seller_handle && <> · 셀러 @{c.seller_handle}</>}</p><p>가격 힌트(참고용) {money(c.price_hint)}{c.price_raw && <> · 원문 {c.price_raw}</>} · 일정 {c.dates_raw ?? c.starts_at ?? '정보 없음'}</p><p>수집 {c.captured_at} · 마지막 확인 {c.last_seen_at} · 시드 모델 매칭 {c.model_match ? '예' : '아니오'}</p><form action={dismissCandidate}>{navigationFields(state)}<input type="hidden" name="candidate_id" value={c.id}/><button>확인 완료</button></form></article>)}{reviewNavigation(state, 'candidate_cursor', candidatePage.next_cursor, '외부 후보 페이지')}</section></main>;
+  </section><section aria-label="외부 공구 모음 후보"><h2>외부 공구 모음 후보</h2>{invalid.includes('candidate_cursor') && <p role="alert">외부 후보 목록의 위치가 올바르지 않아 처음부터 표시합니다.</p>}<p>원문·가격·일정을 확인한 뒤 공개 /deals로 게시하거나 확인 완료로 내립니다. 불명확한 가격·마감은 비워 두세요.</p>{!candidates.length && <div className="empty">{state.candidate_cursor ? '이 위치에 남아 있는 외부 후보가 없습니다. 처음부터 다시 확인하세요.' : '확인할 외부 후보가 없습니다.'}</div>}{candidates.map(c => <article className="seller" key={c.id}><h3>{c.title}</h3><p>{(EXTERNAL_SOURCES as Record<string, { name: string }>)[c.source]?.name ?? c.source} · <a href={c.source_url} target="_blank" rel="noopener noreferrer">출처 확인 ↗</a>{c.seller_handle && <> · 셀러 @{c.seller_handle}</>}</p><p>가격 힌트(참고용) {money(c.price_hint)}{c.price_raw && <> · 원문 {c.price_raw}</>} · 일정 {c.dates_raw ?? c.starts_at ?? '정보 없음'}</p><p>수집 {c.captured_at} · 마지막 확인 {c.last_seen_at} · 시드 모델 매칭 {c.model_match ? '예' : '아니오'}</p><form action={promoteCandidate}>{navigationFields(state)}<input type="hidden" name="candidate_id" value={c.id}/><input type="hidden" name="request_id" value={crypto.randomUUID()}/><label>게시 제목<input name="title" maxLength={200} defaultValue={c.title}/></label><label>모델(선택)<select name="model_id" defaultValue=""><option value="">없음</option>{models.map(m => <option key={m.id} value={m.id}>{m.brand} {m.name}</option>)}</select></label><label>판매자(선택)<select name="seller_id" defaultValue=""><option value="">자동(셀러명/출처)</option>{sellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>공구가(원, 미확인 시 공란)<input name="price" type="number" min="0" step="1" defaultValue={c.price_hint ?? ''}/></label><label>시작 ISO(선택)<input name="starts_at" defaultValue={c.starts_at ?? ''}/></label><label>종료 ISO(선택)<input name="ends_at" defaultValue={c.ends_at ?? ''}/></label><label><input type="checkbox" name="source_ended"/>원문상 종료/마감</label><label>묶음 JSON(선택)[<textarea name="bundle_json" rows={3} placeholder='[{"product_name":"조이 카시트","brand":"Joie"}]'/>]</label><label>게시 사유<textarea name="reason" required minLength={10} maxLength={300} defaultValue="외부 공구 원문 확인 후 공개 게시"/></label><button>원문 확인 후 /deals 게시</button></form><form action={dismissCandidate}>{navigationFields(state)}<input type="hidden" name="candidate_id" value={c.id}/><button>확인 완료(게시 안 함)</button></form></article>)}{reviewNavigation(state, 'candidate_cursor', candidatePage.next_cursor, '외부 후보 페이지')}</section></main>;
 }

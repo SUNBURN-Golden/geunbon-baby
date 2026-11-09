@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { environment } from '../../../lib/db';
+import { bundleItemsForDeal } from '../../../lib/deal-bundles';
 import { DEAL_SELECT, type DealWithContext } from '../../../lib/deals';
 import { DealDetail } from '../_components';
 
@@ -11,5 +12,6 @@ export default async function DealDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   const deal = await environment().DB.prepare(`${DEAL_SELECT} AND d.id = ?`).bind(id).first<DealWithContext>();
   if (!deal) notFound();
-  return <DealDetail deal={deal} nowMs={nowMs} />;
+  const bundleItems = await bundleItemsForDeal(environment().DB, deal.id);
+  return <DealDetail deal={deal} nowMs={nowMs} bundleItems={bundleItems} />;
 }

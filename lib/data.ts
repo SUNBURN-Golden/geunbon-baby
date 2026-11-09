@@ -2,7 +2,37 @@ export type Model = { id: string; brand: string; name: string; category: string;
 export type Seller = { id: string; name: string; source_url: string; registration_source: string | null; withdrawal_source: string | null; official_import_source: string | null };
 export const sellerAnchor = (id: string) => `trust-${id}`;
 export const sellerTrustHref = (id: string) => `/sellers#${encodeURIComponent(sellerAnchor(id))}`;
-export type Deal = { image_url: string | null; id: string; model_id: string; seller_id: string; title: string; price: number | null; source_url: string; verify_level: string; checked: string; starts_at: string; ends_at: string };
+export type DealOrigin = 'instagram' | 'external_web';
+export type Deal = {
+  image_url: string | null;
+  id: string;
+  model_id: string | null;
+  seller_id: string;
+  title: string;
+  price: number | null;
+  source_url: string;
+  verify_level: string;
+  checked: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  origin?: DealOrigin;
+  source_host?: string | null;
+  source_ended?: number;
+  brand_label?: string | null;
+  category_label?: string | null;
+  promoted_by?: string | null;
+  promoted_at?: string | null;
+  external_candidate_id?: string | null;
+};
+export type DealBundleItem = {
+  id: string;
+  deal_id: string;
+  position: number;
+  brand: string | null;
+  product_name: string;
+  model_id: string | null;
+  price: number | null;
+};
 export const categories: Record<string, string> = { high_chair: '하이체어', stroller: '유모차', car_seat: '카시트', bouncer: '바운서', carrier: '아기띠' };
 export const verification: Record<string, string> = { page_body: '공식 원문 본문 확인', official_unpublished: '공식가 미확인 · 정보 없음', page_text: '페이지 본문 확인', search_summary: '검색 요약 · 재확인 필요', seed_unspecified: '시드에 검증 수준 미기재', manual: '관리자 원문 확인' };
 export const unknownVerification = '확인 수준 정보 없음';
@@ -33,7 +63,8 @@ export type ExternalCandidate = {
   price_hint: number | null; price_raw: string | null; price_basis: string;
   starts_at: string | null; ends_at: string | null; dates_raw: string | null;
   category: string | null; model_match: number; suggestions: string | null;
-  captured_at: string; last_seen_at: string; status: 'candidate' | 'dismissed'; reviewed_at: string | null;
+  captured_at: string; last_seen_at: string; status: 'candidate' | 'dismissed' | 'promoted'; reviewed_at: string | null;
+  promoted_deal_id?: string | null;
 };
 
 // Lifecycle metadata and original evidence are exclusively for authenticated administrators.

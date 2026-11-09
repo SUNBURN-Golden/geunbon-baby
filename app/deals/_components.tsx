@@ -1,7 +1,7 @@
-import { sellerTrustHref, type Deal } from '../../lib/data';
+import { sellerTrustHref, type Deal, type DealBundleItem } from '../../lib/data';
 import { DealImage } from './_image';
 import Link from 'next/link';
-import { dealOfficialPrice, dealTiming, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
+import { dealOfficialPrice, dealTimingFor, formatDealDate, formatGap, priceGap, type DealWithContext, type Gap, type Timing } from '../../lib/deals';
 import { dealsCopy } from '../../lib/deals-copy';
 import { SellerTrustBadges } from '../sellers/_trust-badges';
 
@@ -43,13 +43,13 @@ export function DealStateChip({ timing }: { timing: Timing }) {
   );
 }
 
-export function DealPrice({ deal, timing }: { deal: DealWithContext; timing: Timing }) {
+export function DealPrice({ deal, timing, priceUnknownLabel = dealsCopy.unknownPrice }: { deal: DealWithContext; timing: Timing; priceUnknownLabel?: string }) {
   const validPrice = knownDealPrice(deal.price);
   return (
     <div className="deal-price-block">
       <p className="deal-context">{dealsCopy.groupBuyPrice}</p>
       <p className={validPrice ? 'deal-price' : 'deal-price-unknown'}>
-        {validPrice ? <>{deal.price!.toLocaleString('ko-KR')}<span>{dealsCopy.won}</span></> : dealsCopy.unknownPrice}
+        {validPrice ? <>{deal.price!.toLocaleString('ko-KR')}<span>{dealsCopy.won}</span></> : priceUnknownLabel}
       </p>
       {timing.state === 'ended' && <p className="deal-archive"><WithDate label={dealsCopy.archived}><CheckedDate value={deal.checked} /></WithDate></p>}
     </div>
@@ -82,25 +82,58 @@ export function PriceToneBadge({ gap, timing }: { gap: Gap | null; timing: Timin
   return <p className={`deal-tone${gap.relation === 'below' ? ' deal-tone-good' : ''}`}>{gap.relation === 'below' ? dealsCopy.good : dealsCopy.wait}</p>;
 }
 
-export function DealDisclaimer() {
-  return <p className="deal-disclaimer">{dealsCopy.disclaimer}</p>;
+export function DealDisclaimer({ external = false }: { external?: boolean }) {
+  return <p className="deal-disclaimer">{external ? dealsCopy.externalDisclaimer : dealsCopy.disclaimer}</p>;
+}
+
+export function DealExternalSource({ deal }: { deal: DealWithContext }) {
+  if (deal.origin !== 'external_web') return null;
+  const host = deal.source_host ?? new URL(deal.source_url).hostname;
+  return (
+    <p className="deal-context">
+      {dealsCopy.externalSource} · {host}
+      {deal.seller_name ? ` · ${deal.seller_name}` : ''}
+    </p>
+  );
+}
+
+export function DealBundleList({ items }: { items: readonly DealBundleItem[] }) {
+  if (!items.length) return null;
+  return (
+    <section className="deal-bundle" aria-label={dealsCopy.bundleHeading}>
+      <h2>{dealsCopy.bundleHeading}</h2>
+      <ul>
+        {items.map(item => (
+          <li key={item.id}>
+            <p>{item.brand ? `${item.brand} · ` : ''}{item.product_name}</p>
+            <p className="deal-context">
+              {item.price !== null && Number.isFinite(item.price) ? `${item.price.toLocaleString('ko-KR')}${dealsCopy.won}` : dealsCopy.unknownGongguPrice}
+              {item.model_id && <> · <Link href={`/models/${encodeURIComponent(item.model_id)}`}>{dealsCopy.secondary}</Link></>}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 export function DealCard({ deal, nowMs }: { deal: DealWithContext; nowMs: number }) {
-  const timing = dealTiming(deal.starts_at, deal.ends_at, nowMs);
+  const timing = dealTimingFor(deal, nowMs);
   const gap = priceGap(deal.price, dealOfficialPrice(deal));
+  const priceLabel = deal.origin === 'external_web' ? dealsCopy.unknownGongguPrice : dealsCopy.unknownPrice;
   return (
     <article className="deal-card">
       <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
       <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} /></div>
       <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link></h2>
-      <p className="deal-period"><DealPeriod deal={deal} timing={timing} /></p>
-      <DealPrice deal={deal} timing={timing} />
+      <p className="deal-period"><DealPeriod deal={deal} timing={timing} external={deal.origin === 'external_web'} /></p>
+      <DealPrice deal={deal} timing={timing} priceUnknownLabel={priceLabel} />
+      <DealExternalSource deal={deal} />
       <PriceGap deal={deal} gap={gap} showContext={false} />
       <PriceToneBadge gap={gap} timing={timing} />
       <SellerTrustBadges registration_source={deal.seller_registration_source} withdrawal_source={deal.seller_withdrawal_source} official_import_source={deal.seller_official_import_source} />
       <DealCardLinks deal={deal} />
-      <DealDisclaimer />
+      <DealDisclaimer external={deal.origin === 'external_web'} />
     </article>
   );
 }
@@ -131,11 +164,15 @@ export function DealHeader({ deal, timing }: { deal: DealWithContext; timing: Ti
   );
 }
 
-export function DealPeriod({ deal, timing }: { deal: Pick<Deal, 'starts_at' | 'ends_at'>; timing: Timing }) {
-  return <>{timing.state === 'unknown' ? dealsCopy.unknownSchedule : <>
-        <time dateTime={deal.starts_at}>{formatDealDate(deal.starts_at, true)}</time>
-        {' – '}<time dateTime={deal.ends_at}>{formatDealDate(deal.ends_at, true)}</time>
-      </>}</>;
+export function DealPeriod({ deal, timing, external = false }: { deal: Pick<Deal, 'starts_at' | 'ends_at'>; timing: Timing; external?: boolean }) {
+  if (timing.state === 'ended') return <>{dealsCopy.ended}</>;
+  if (!deal.ends_at && external) return <>{dealsCopy.unknownEnds}</>;
+  if (timing.state === 'unknown') return <>{dealsCopy.unknownSchedule}</>;
+  return <>
+    {deal.starts_at ? <time dateTime={deal.starts_at}>{formatDealDate(deal.starts_at, true)}</time> : dealsCopy.unknownSchedule}
+    {' – '}
+    {deal.ends_at ? <time dateTime={deal.ends_at}>{formatDealDate(deal.ends_at, true)}</time> : (external ? dealsCopy.unknownEnds : dealsCopy.unknownSchedule)}
+  </>;
 }
 
 export function DealFacts({ deal, timing }: { deal: DealWithContext; timing: Timing }) {
@@ -143,7 +180,8 @@ export function DealFacts({ deal, timing }: { deal: DealWithContext; timing: Tim
     <dl className="deal-facts">
       <div><dt>{dealsCopy.seller}</dt><dd>{deal.seller_name || dealsCopy.unknownSeller}</dd></div>
       {deal.model_joined_id && <div><dt>{dealsCopy.model}</dt><dd>{deal.model_name}</dd></div>}
-      <div><dt>{dealsCopy.period}</dt><dd><DealPeriod deal={deal} timing={timing} /></dd></div>
+      {!deal.model_joined_id && deal.brand_label && <div><dt>{dealsCopy.model}</dt><dd>{deal.brand_label}{deal.category_label ? ` · ${deal.category_label}` : ''}</dd></div>}
+      <div><dt>{dealsCopy.period}</dt><dd><DealPeriod deal={deal} timing={timing} external={deal.origin === 'external_web'} /></dd></div>
       <div><dt>{knownDealPrice(deal.price) ? dealsCopy.dealChecked : dealsCopy.dealEvidence}</dt><dd><CheckedDate value={deal.checked} /> · {verificationCopy(deal.verify_level)}</dd></div>
       {deal.model_joined_id && <div><dt>{confirmedOfficial(deal) ? dealsCopy.officialChecked : dealsCopy.officialEvidence}</dt><dd><CheckedDate value={deal.model_checked} /> · {verificationCopy(deal.model_verify_level)}</dd></div>}
     </dl>
@@ -157,29 +195,32 @@ export function DealActions({ deal }: { deal: DealWithContext }) {
         <a className="deal-primary" href={deal.source_url} target="_blank" rel="sponsored noopener noreferrer" aria-describedby="deal-new-tab">{dealsCopy.primary}</a>
         <small id="deal-new-tab">{dealsCopy.newTab}</small>
       </div>
-      {deal.model_joined_id && <Link className="deal-secondary" href={`/models/${encodeURIComponent(deal.model_id)}`}>{dealsCopy.secondary}</Link>}
+      {deal.model_joined_id && deal.model_id && <Link className="deal-secondary" href={`/models/${encodeURIComponent(deal.model_id)}`}>{dealsCopy.secondary}</Link>}
       {/* Native navigation hands fragment focus to the seller so Tab continues at its evidence. */}
       {deal.seller_joined_id && <a className="deal-secondary" href={sellerTrustHref(deal.seller_joined_id)}>{dealsCopy.sellerTrust}</a>}
     </div>
   );
 }
 
-export function DealDetail({ deal, nowMs }: { deal: DealWithContext; nowMs: number }) {
-  const timing = dealTiming(deal.starts_at, deal.ends_at, nowMs);
+export function DealDetail({ deal, nowMs, bundleItems = [] }: { deal: DealWithContext; nowMs: number; bundleItems?: readonly DealBundleItem[] }) {
+  const timing = dealTimingFor(deal, nowMs);
   const gap = priceGap(deal.price, dealOfficialPrice(deal));
+  const external = deal.origin === 'external_web';
   return (
     <main className="page deals-page">
       <Link className="deal-back" href="/deals">{dealsCopy.back}</Link>
       <article className="deal-detail">
         <DealHeader deal={deal} timing={timing} />
         <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
-        <DealPrice deal={deal} timing={timing} />
+        <DealPrice deal={deal} timing={timing} priceUnknownLabel={external ? dealsCopy.unknownGongguPrice : dealsCopy.unknownPrice} />
+        <DealExternalSource deal={deal} />
         <PriceGap deal={deal} gap={gap} />
         <PriceToneBadge gap={gap} timing={timing} />
         <DealFacts deal={deal} timing={timing} />
+        <DealBundleList items={bundleItems} />
         <SellerTrustBadges registration_source={deal.seller_registration_source} withdrawal_source={deal.seller_withdrawal_source} official_import_source={deal.seller_official_import_source} />
         <DealActions deal={deal} />
-        <DealDisclaimer />
+        <DealDisclaimer external={external} />
       </article>
     </main>
   );

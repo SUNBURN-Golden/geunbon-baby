@@ -165,7 +165,7 @@ test.each(invalid)('admin login, existing cookies and stale actions fail closed:
   const login = await action('name="token"');
   context.cookie = await issueAdminSession(valid.ADMIN_TOKEN!);
   const review = await action('name="id"');
-  const dismiss = await action('name="candidate_id"');
+  const dismiss = await action('확인 완료(게시 안 함)');
   context.env = { ...context.env!, ADMIN_TOKEN: undefined, INGEST_TOKEN: undefined, COLLECTOR_STATUS_TOKEN: undefined, ...config };
   for (const cookie of [config.ADMIN_TOKEN, await issueAdminSession(valid.ADMIN_TOKEN!)]) {
     context.cookie = cookie;
@@ -200,7 +200,7 @@ test('valid administrator login, review, dismiss and logout preserve the session
   expect(renderToStaticMarkup(tree)).toContain('게시 전 검수');
   noSecrets(renderToStaticMarkup(tree));
   const review = await action('name="id"');
-  const dismiss = await action('name="candidate_id"');
+  const dismiss = await action('확인 완료(게시 안 함)');
   const logout = await action('로그아웃');
   await expectRedirect(review, form({ id: 'item-1', ...approval, price: '' }), '/admin');
   await expectRedirect(dismiss, form({ candidate_id: 'cand-1' }), '/admin');
