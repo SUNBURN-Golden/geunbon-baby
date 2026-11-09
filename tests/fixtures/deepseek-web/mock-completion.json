@@ -1,0 +1,5 @@
+{
+  "model": "deepseek-chat",
+  "content": "{\"brand\":\"Stokke\",\"model\":\"트립트랩 하이체어 너도밤나무\",\"category\":\"high_chair\",\"gonggu_price\":\"390,000원\",\"regular_price\":\"430,000원\",\"period\":\"2026-10-25 ~ 2026-10-28\",\"gifts\":\"트레이 50% 할인 쿠폰\",\"conditions\":\"정식수입, KC인증\",\"seller\":\"sample_seller\",\"url\":\"https://fixture.example/deepseek-web-sample\",\"checked_date\":\"2026-10-20\",\"in_scope\":true}",
+  "usage": { "prompt_tokens": 800, "completion_tokens": 120, "total_tokens": 920 }
+}

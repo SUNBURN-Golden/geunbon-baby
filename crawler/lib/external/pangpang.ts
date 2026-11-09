@@ -12,7 +12,17 @@ export function pangpangPost(raw:string):string|null {
 // This one observed tracking variant is permitted BEFORE canonicalUrl removes it.
 export function pangpangQueryAllowed(u:URL):boolean {
   const entries=[...u.searchParams];
-  return entries.length===0 || !!pangpangPost(u.href)&&entries.length===1&&entries[0][0]==='source'&&entries[0][1]==='home';
+  if (entries.length !== new Set(entries.map(([k]) => k)).size) return false;
+  if (entries.length === 0) return true;
+  if (!pangpangPost(u.href)) return false;
+  const keys = new Set(entries.map(([k]) => k));
+  const source = u.searchParams.get('source');
+  if (keys.size === 1 && keys.has('source')) return source === 'home' || source === 'search';
+  if (keys.size === 2 && keys.has('source') && keys.has('pid')) {
+    const pid = u.searchParams.get('pid');
+    return source === 'search' && !!pid && /^\d+$/.test(pid);
+  }
+  return false;
 }
 export function pangpangIdentityAllowed(requested:string,destination:string):boolean {
   try {

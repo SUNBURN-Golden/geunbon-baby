@@ -1,0 +1,134 @@
+{
+  "catalog_version": 1,
+  "notes": "근본템 시드 — 공개 검색·판매 페이지에서 확인 가능한 브랜드/라인명만 포함. 액세서리·광의 육아용품 검색어는 제외.",
+  "accessory_exclude_patterns": [
+    "유모차용품",
+    "폰거치",
+    "거치대",
+    "스카프",
+    "빕",
+    "투약",
+    "자석교구",
+    "자석보드",
+    "미니두두"
+  ],
+  "products": [
+    {
+      "id": "stokke-tripp-trapp",
+      "category": "high_chair",
+      "brand": "Stokke",
+      "product_line": "Tripp Trapp",
+      "ko_aliases": ["스토케", "트립트랩", "트립트랩 체어"],
+      "en_aliases": ["Stokke", "Tripp Trapp"],
+      "search_terms": ["트립트랩", "스토케 하이체어"]
+    },
+    {
+      "id": "stokke-xplory",
+      "category": "stroller",
+      "brand": "Stokke",
+      "product_line": "Xplory",
+      "ko_aliases": ["스토케", "엑스플로리", "엑스플로리 유모차"],
+      "en_aliases": ["Stokke", "Xplory"],
+      "search_terms": ["스토케 유모차", "엑스플로리"]
+    },
+    {
+      "id": "bugaboo-fox",
+      "category": "stroller",
+      "brand": "Bugaboo",
+      "product_line": "Fox",
+      "ko_aliases": ["부가부", "폭스", "부가부 폭스"],
+      "en_aliases": ["Bugaboo", "Fox"],
+      "search_terms": ["부가부 유모차", "Bugaboo 폭스"]
+    },
+    {
+      "id": "cybex-sirona",
+      "category": "car_seat",
+      "brand": "Cybex",
+      "product_line": "Sirona",
+      "ko_aliases": ["사이벡스", "시로나", "시로나 카시트"],
+      "en_aliases": ["Cybex", "Sirona"],
+      "search_terms": ["사이벡스 카시트", "시로나"]
+    },
+    {
+      "id": "nuna-mixx",
+      "category": "stroller",
+      "brand": "Nuna",
+      "product_line": "MIXx",
+      "ko_aliases": ["뉴나", "믹스", "뉴나 유모차"],
+      "en_aliases": ["Nuna", "MIXx"],
+      "search_terms": ["뉴나 유모차", "Nuna MIXx"]
+    },
+    {
+      "id": "artipoppe-zeitgeist",
+      "category": "carrier",
+      "brand": "Artipoppe",
+      "product_line": "Zeitgeist",
+      "ko_aliases": ["아티포페", "아티포페 아기띠", "제이트가이스트"],
+      "en_aliases": ["Artipoppe", "Zeitgeist"],
+      "search_terms": ["아티포페", "Artipoppe 아기띠"]
+    },
+    {
+      "id": "ergobaby-omni",
+      "category": "carrier",
+      "brand": "Ergobaby",
+      "product_line": "Omni",
+      "ko_aliases": ["에르고베이비", "에르고", "옴니 아기띠"],
+      "en_aliases": ["Ergobaby", "Omni"],
+      "search_terms": ["에르고베이비", "에르고 아기띠"]
+    },
+    {
+      "id": "babybjorn-carrier",
+      "category": "carrier",
+      "brand": "BabyBjörn",
+      "product_line": "Baby Carrier",
+      "ko_aliases": ["베이비뵨", "베이비뵨 아기띠", "베이비뵨 캐리어"],
+      "en_aliases": ["BabyBjorn", "BabyBjörn", "Baby Carrier"],
+      "search_terms": ["베이비뵨 아기띠", "BabyBjorn carrier"]
+    },
+    {
+      "id": "babybjorn-bouncer-bliss",
+      "category": "bouncer",
+      "brand": "BabyBjörn",
+      "product_line": "Bouncer Bliss",
+      "ko_aliases": ["베이비뵨", "바운서", "블리스", "베이비뵨 바운서"],
+      "en_aliases": ["BabyBjorn", "BabyBjörn", "Bouncer Bliss", "Balance"],
+      "search_terms": ["베이비뵨 바운서", "BabyBjorn 바운서"]
+    },
+    {
+      "id": "babybjorn-bouncer-balance",
+      "category": "bouncer",
+      "brand": "BabyBjörn",
+      "product_line": "Bouncer Balance",
+      "ko_aliases": ["베이비뵨", "바운서", "밸런스"],
+      "en_aliases": ["BabyBjorn", "Bouncer Balance"],
+      "search_terms": ["베이비뵨 밸런스", "BabyBjorn Balance"]
+    },
+    {
+      "id": "habebrix-mobile",
+      "category": "play_gym",
+      "brand": "Habebrix",
+      "product_line": "Mobile",
+      "ko_aliases": ["하베브릭스", "하베브릭스 모빌"],
+      "en_aliases": ["Habebrix", "Habe"],
+      "search_terms": ["하베브릭스", "하베브릭스 모빌"]
+    },
+    {
+      "id": "lovevery-play-gym",
+      "category": "play_gym",
+      "brand": "Lovevery",
+      "product_line": "The Play Gym",
+      "ko_aliases": ["러브에버리", "플레이짐"],
+      "en_aliases": ["Lovevery", "Play Gym"],
+      "search_terms": ["러브에버리 플레이짐", "Lovevery"]
+    },
+    {
+      "id": "britax-dualfix",
+      "category": "car_seat",
+      "brand": "Britax",
+      "product_line": "DUALFIX",
+      "ko_aliases": ["브리타克斯", "듀얼픽스"],
+      "en_aliases": ["Britax", "DUALFIX"],
+      "search_terms": ["브리타ックス 카시트", "듀얼픽스"]
+    }
+  ]
+}

@@ -30,7 +30,27 @@ export function canonicalUrl(raw: string): string {
   try { path = decodeURIComponent(u.pathname); host = decodeURIComponent(u.hostname); } catch { throw new Error('unsafe_url'); }
   if (/\/(?:api|my|auth|login|logout|signin|signup|admin|account|member|mypage|oauth|session|messages|direct|mail|profile)(?:\/|$)/i.test(path) || filterText(path,4096) !== path) throw new Error('private_url');
   const entries = [...u.searchParams];
-  const pangpang = u.origin === 'https://09pangpang.com' && /^\/post\/\d+\/?$/.test(u.pathname) && entries.length === 1 && entries[0][0] === 'source' && entries[0][1] === 'home';
+  const pangpangPost = u.origin === 'https://09pangpang.com' && /^\/post\/\d+\/?$/.test(u.pathname);
+  const pangpangTrack = pangpangPost && (() => {
+    if (entries.length === 0) return true;
+    const keys = new Set(entries.map(([k]) => k));
+    if (entries.length !== keys.size) return false;
+    const source = u.searchParams.get('source');
+    if (keys.size === 1 && keys.has('source')) return source === 'home' || source === 'search';
+    if (keys.size === 2 && keys.has('source') && keys.has('pid')) {
+      return source === 'search' && /^\d+$/.test(u.searchParams.get('pid') ?? '');
+    }
+    return false;
+  })();
+  if (pangpangTrack) {
+    u.search = '';
+    u.hash = '';
+    u.hostname = u.hostname.toLowerCase();
+    u.pathname = u.pathname.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
+    if (filterText(host, 4096) !== host) throw new Error('unsafe_url');
+    return u.href;
+  }
+  const pangpang = pangpangPost && entries.length === 1 && entries[0][0] === 'source' && entries[0][1] === 'home';
   const params: [string,string][] = [];
   for (const [k,v] of entries) {
     if (pangpang || /^(?:utm_.+|fbclid|gclid|igshid|ref|from|share)$/i.test(k)) continue;
