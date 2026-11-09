@@ -49,7 +49,10 @@ function find(node: ReactNode, match: (el: ReactElement<Props>) => boolean, ance
 const checkboxes = (page: ReactNode) => find(page, el => el.type === 'input' && el.props.type === 'checkbox');
 const buttons = (page: ReactNode) => find(page, el => el.type === 'button' && typeof el.props.formAction === 'string');
 
-test('login page: one form holds the default-checked checkbox and sole Google button despite legacy Kakao settings', async () => {
+test.each([false, true])('login page: one form holds the default-checked checkbox and sole Google button (legacy Kakao settings: %s)', async legacy => {
+  context.env = { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret',
+    ...(legacy ? { KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: 'legacy-secret' } : {}),
+  };
   const page = await Login({ searchParams: Promise.resolve({}) });
   const boxes = checkboxes(page);
   expect(boxes).toHaveLength(1);
@@ -80,12 +83,17 @@ test.each<Record<string, string>>([
   { GOOGLE_CLIENT_ID: 'gid' },
   { GOOGLE_CLIENT_SECRET: 'gsecret' },
   { GOOGLE_CLIENT_ID: 'gid', KAKAO_REST_KEY: 'krest' },
+  { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: 'gsecret' },
+  { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: '' },
+  { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: 'gsecret', KAKAO_REST_KEY: 'krest' },
+  { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: '', KAKAO_REST_KEY: 'krest' },
 ])('login page shows no form when Google is unconfigured (%#)', async settings => {
   context.env = settings;
   const none = await Login({ searchParams: Promise.resolve({}) });
   expect(buttons(none)).toHaveLength(0);
   expect(find(none, el => el.type === 'form')).toHaveLength(0);
   expect(checkboxes(none)).toHaveLength(0);
+  expect(find(none, el => el.type === 'input')).toHaveLength(0);
   expect(renderToStaticMarkup(none)).toContain('Google 로그인이 아직 준비되지 않았어요');
 });
 
@@ -106,20 +114,22 @@ test('login page ignores unknown error codes such as config', async () => {
   expect(renderToStaticMarkup(await Login({ searchParams: Promise.resolve({ error: 'config' }) }))).not.toContain('role="alert"');
 });
 
-test('login redirects signed-in users to /me; /me redirects anonymous users to /login', async () => {
+const sessionCases = (['google', 'kakao'] as const).flatMap(provider => [false, true].map(configured => ({ provider, configured })));
+test.each(sessionCases)('existing $provider session redirects /login and reads /me (Google configured: $configured)', async ({ provider, configured }) => {
+  context.env = configured ? { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret' } : {};
   await expect(Me()).rejects.toThrow('NEXT_REDIRECT:/login');
   await memory.db.prepare("INSERT INTO users (id, email, created_at) VALUES ('u-1','a@example.com','2026-10-22T00:00:00.000Z')").run();
-  await memory.db.prepare("INSERT INTO user_identities VALUES ('kakao','1','u-1','a@example.com','x')").run();
+  await memory.db.prepare("INSERT INTO user_identities VALUES (?,'1','u-1','a@example.com','x')").bind(provider).run();
   context.session = await createSession(memory.db, 'u-1', new Date());
   await expect(Login({ searchParams: Promise.resolve({}) })).rejects.toThrow('NEXT_REDIRECT:/me');
   const html = renderToStaticMarkup(await Me());
-  expect(html).toContain('a@example.com'); expect(html).toContain('카카오');
+  expect(html).toContain('a@example.com'); expect(html).toContain(authCopy.providers[provider]);
 });
 
-test.each(['google', 'kakao'])('/me server actions withdraw, resubscribe and log out for %s identities', async provider => {
+test.each(sessionCases)('/me server actions withdraw, resubscribe and log out for $provider (Google configured: $configured)', async ({ provider, configured }) => {
   await memory.db.prepare("INSERT INTO users (id, email, created_at, newsletter_opt_in, newsletter_consented_at) VALUES ('u-1','a@example.com','2026-10-22T00:00:00.000Z',1,'2026-10-22T00:00:00.000Z')").run();
   await memory.db.prepare("INSERT INTO user_identities VALUES (?,'1','u-1','a@example.com','x')").bind(provider).run();
-  context.env = {}; // existing sessions do not depend on configured OAuth credentials
+  context.env = configured ? { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret' } : {};
   const token = context.session = await createSession(memory.db, 'u-1', new Date());
   const row = () => memory.db.prepare('SELECT newsletter_opt_in AS o, newsletter_consented_at AS c, newsletter_withdrawn_at AS w FROM users').first<{ o: number; c: string | null; w: string | null }>();
   const actions = async () => {

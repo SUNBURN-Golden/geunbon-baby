@@ -68,22 +68,35 @@ const configurations: { settings: Partial<LegacyEnv>; expected: string[] }[] = [
   { settings: { KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: SECRETS[1] }, expected: [] },
   { settings: { GOOGLE_CLIENT_ID: 'gid', KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: SECRETS[1] }, expected: [] },
   { settings: { GOOGLE_CLIENT_SECRET: 'gsecret', KAKAO_REST_KEY: 'krest' }, expected: [] },
+  { settings: { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: 'gsecret', KAKAO_REST_KEY: 'krest' }, expected: [] },
+  { settings: { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: '', KAKAO_REST_KEY: 'krest' }, expected: [] },
   { settings: { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret', KAKAO_REST_KEY: 'krest', KAKAO_CLIENT_SECRET: SECRETS[1] }, expected: ['google'] },
 ];
 test.each(configurations)('configuration enables only complete Google credentials (%#)', async ({ settings, expected }) => {
   env = { DB: memory.db, ...settings } as LegacyEnv;
+  const dbAccess = vi.fn(() => { throw new Error('Configuration checks must not access DB'); });
+  Object.defineProperty(env, 'DB', { get: dbAccess });
   expect(configuredProviders(env)).toEqual(expected);
   const response = await handleAuth(get('/api/auth/login/google'), ['login', 'google'], env, NOW);
   expect(response.status).toBe(expected.length ? 302 : 404);
   expect(response.headers.get('cache-control')).toBe('no-store');
   if (!expected.length) {
-    expect((await callback('google', { code: 'code-fixture', state: 'old-state' })).status).toBe(404);
+    const completed = await callback('google', { code: 'code-fixture', state: 'old-state' });
+    for (const rejected of [response, completed]) {
+      expect(rejected.status).toBe(404);
+      expect(rejected.headers.get('cache-control')).toBe('no-store');
+      expect(rejected.headers.has('location')).toBe(false);
+      expect(setCookies(rejected)).toEqual([]);
+      expect(await rejected.text()).toBe('Not found');
+    }
   }
+  expect(dbAccess).not.toHaveBeenCalled();
   expect(fetchMock).not.toHaveBeenCalled();
   expect(await count('sessions')).toBe(0);
 });
 
 test.each(['handleAuth', 'GET'] as const)('%s rejects Kakao before any DB access or provider request, including legacy state', async entrypoint => {
+  const google = await login('google');
   const oldState = Buffer.from(JSON.stringify({ state: 'old-state', verifier: null, newsletter: true })).toString('base64url');
   const dbAccess = vi.fn(() => { throw new Error('Disabled provider must not access DB'); });
   for (const googleConfigured of [false, true]) {
@@ -92,9 +105,14 @@ test.each(['handleAuth', 'GET'] as const)('%s rejects Kakao before any DB access
     } as LegacyEnv;
     Object.defineProperty(env, 'DB', { get: dbAccess });
     for (const action of ['login', 'callback']) {
-      for (const stateCookie of [undefined, `${STATE_COOKIE}=malformed`, `${STATE_COOKIE}=${oldState}`]) {
+      for (const { stateCookie, state } of [
+        { stateCookie: undefined, state: 'old-state' },
+        { stateCookie: `${STATE_COOKIE}=malformed`, state: 'old-state' },
+        { stateCookie: `${STATE_COOKIE}=${oldState}`, state: 'old-state' },
+        { stateCookie: google.cookie, state: google.state },
+      ]) {
         const parts = [action, 'kakao'];
-        const request = get(`/api/auth/${action}/kakao?code=legacy-code&state=old-state&newsletter=on`, stateCookie);
+        const request = get(`/api/auth/${action}/kakao?code=legacy-code&state=${state}&newsletter=on`, stateCookie);
         const response = entrypoint === 'GET'
           ? await GET(request, { params: Promise.resolve({ path: parts }) })
           : await handleAuth(request, parts, env, NOW);
@@ -138,7 +156,25 @@ test('login redirects to Google with fixed redirect_uri, scope, PKCE S256 and a 
   expect(location.toString()).not.toContain(SECRETS[0]);
   const cookie = setCookies(response)[0];
   expect(cookie).toContain('HttpOnly'); expect(cookie).toContain('SameSite=Lax'); expect(cookie).toContain('Path=/api/auth/callback'); expect(cookie).toContain('Secure');
+  expect(cookie).toContain('Max-Age=600');
   expect(response.headers.get('cache-control')).toBe('no-store');
+});
+
+test('each Google initiation generates fresh state and PKCE verifier values', async () => {
+  const first = await login('google');
+  const second = await login('google');
+  const saved = (response: Response) => JSON.parse(Buffer.from(cookieValue(response, STATE_COOKIE)!, 'base64url').toString()) as { state: string; verifier: string };
+  const a = saved(first.response); const b = saved(second.response);
+  for (const [start, value] of [[first, a], [second, b]] as const) {
+    expect(value.state).toBe(start.state);
+    expect(value.state).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(value.verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(value.state).not.toBe(value.verifier);
+    const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value.verifier))).toString('base64url');
+    expect(start.location.searchParams.get('code_challenge')).toBe(challenge);
+  }
+  expect(a.state).not.toBe(b.state);
+  expect(a.verifier).not.toBe(b.verifier);
 });
 
 test('AUTH_ORIGIN overrides the redirect origin and drops Secure for http', async () => {
@@ -201,6 +237,44 @@ test.each(['missing cookie', 'malformed cookie', 'mismatched state', 'missing st
   expect(response.headers.get('cache-control')).toBe('no-store');
   expect(setCookies(response)[0]).toContain('Max-Age=0');
   expect(await count('users') + await count('sessions')).toBe(0);
+});
+
+test.each([
+  { name: 'missing', verifier: undefined },
+  { name: 'null', verifier: null },
+  { name: 'empty', verifier: '' },
+  { name: 'non-string', verifier: 123 },
+  { name: 'too short', verifier: 'a'.repeat(42) },
+  { name: 'too long', verifier: 'a'.repeat(129) },
+  { name: 'reserved character', verifier: 'a'.repeat(42) + '+' },
+  { name: 'whitespace', verifier: 'a'.repeat(42) + ' ' },
+  { name: 'non-ASCII', verifier: 'a'.repeat(42) + '가' },
+  { name: 'trailing newline', verifier: 'a'.repeat(43) + '\n' },
+])('invalid PKCE verifier ($name) rejects matching state before provider or DB access', async ({ verifier }) => {
+  const start = await login('google');
+  const raw = Buffer.from(JSON.stringify({ state: start.state, verifier, newsletter: true })).toString('base64url');
+  const dbAccess = vi.fn(() => { throw new Error('Invalid PKCE must not access DB'); });
+  Object.defineProperty(env, 'DB', { get: dbAccess });
+  const response = await callback('google', { code: 'code-fixture', state: start.state }, `${STATE_COOKIE}=${raw}`);
+  expect(response.status).toBe(302);
+  expect(response.headers.get('location')).toBe(`${ORIGIN}/login?error=state`);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  expect(setCookies(response)).toEqual([`${STATE_COOKIE}=; Path=/api/auth/callback; Max-Age=0; HttpOnly; SameSite=Lax; Secure`]);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(dbAccess).not.toHaveBeenCalled();
+  expect(await count('users') + await count('user_identities') + await count('sessions')).toBe(0);
+});
+
+test.each([
+  { length: 43, verifier: 'a'.repeat(43) },
+  { length: 128, verifier: 'A0-._~'.repeat(21) + 'Az' },
+])('valid PKCE verifier of length $length is transmitted unchanged', async ({ verifier }) => {
+  const start = await login('google');
+  const raw = Buffer.from(JSON.stringify({ state: start.state, verifier, newsletter: false })).toString('base64url');
+  const response = await callback('google', { code: 'code-fixture', state: start.state }, `${STATE_COOKIE}=${raw}`);
+  expect(response.headers.get('location')).toBe(`${ORIGIN}/me`);
+  const body = (fetchMock.mock.calls[0][1] as RequestInit).body as URLSearchParams;
+  expect(body.get('code_verifier')).toBe(verifier);
 });
 
 test('provider denial redirects to error=denied without creating anything', async () => {
@@ -285,6 +359,16 @@ test('checked newsletter at signup stores opt-in with the consent time', async (
   expect(await memory.db.prepare('SELECT newsletter_opt_in AS o, newsletter_consented_at AS c FROM users').first()).toEqual({ o: 1, c: NOW.toISOString() });
 });
 
+test.each([true, false])('callback newsletter query cannot override initiation consent (%s)', async optedIn => {
+  const start = await login('google', optedIn ? '?newsletter=on' : '');
+  const params: Record<string, string> = { code: 'code-fixture', state: start.state };
+  if (!optedIn) params.newsletter = 'on';
+  const response = await callback('google', params, start.cookie);
+  expect(response.headers.get('location')).toBe(`${ORIGIN}/me`);
+  expect(await memory.db.prepare('SELECT newsletter_opt_in AS o, newsletter_consented_at AS c FROM users').first())
+    .toEqual({ o: optedIn ? 1 : 0, c: optedIn ? NOW.toISOString() : null });
+});
+
 test('a concurrent duplicate identity insert falls back to the existing user', async () => {
   const identity = { provider: 'google', provider_user_id: 'g-1' };
   await memory.db.prepare("INSERT INTO users (id, email, created_at) VALUES ('u-1','a@example.com','x')").run();
@@ -352,8 +436,9 @@ test('historical Kakao sessions retain newsletter controls until normal logout o
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-test('setNewsletter withdraws and resubscribes with timestamps', async () => {
-  await signIn('google', '?newsletter=on');
+test.each(['google', 'kakao'])('setNewsletter withdraws and resubscribes idempotently with timestamps for %s', async provider => {
+  if (provider === 'google') await signIn('google', '?newsletter=on');
+  else await seedKakao();
   const { id } = (await memory.db.prepare('SELECT id FROM users').first<{ id: string }>())!;
   const later = new Date('2026-10-23T00:00:00.000Z');
   await setNewsletter(memory.db, id, false, later);
@@ -363,14 +448,14 @@ test('setNewsletter withdraws and resubscribes with timestamps', async () => {
   const latest = new Date('2026-10-24T00:00:00.000Z');
   await setNewsletter(memory.db, id, false, latest);
   expect(await row()).toEqual(withdrawn); // repeated withdrawal does not change timestamps
-  await signIn('google', '?newsletter=on');
+  if (provider === 'google') await signIn('google', '?newsletter=on');
   expect(await row()).toEqual(withdrawn); // login never resubscribes a returning account
   await setNewsletter(memory.db, id, true, latest);
   const subscribed = { o: 1, w: null, c: latest.toISOString() };
   expect(await row()).toEqual(subscribed);
   await setNewsletter(memory.db, id, true, new Date('2026-10-25T00:00:00.000Z'));
   expect(await row()).toEqual(subscribed); // repeated consent does not change timestamps
-  await signIn('google', '');
+  if (provider === 'google') await signIn('google', '');
   expect(await row()).toEqual(subscribed);
 });
 

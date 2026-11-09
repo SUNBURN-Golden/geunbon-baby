@@ -129,10 +129,11 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 - 흐름: `/login`의 한 `<form method="get">`에 뉴스레터 체크박스(기본 체크)와 Google 버튼 하나가 함께 있습니다. `GET /api/auth/login/google`이 state·PKCE와 체크박스 값을 `agamajung_oauth` 쿠키(httpOnly·SameSite=Lax·Path=/api/auth/callback·10분)에 담아 Google로 302하고, `GET /api/auth/callback/google`이 state를 확인한 뒤 토큰 교환 → 이메일·공급자 id 조회 → D1 기록 → 세션 쿠키 발급 후 `/me`로 302합니다. 로그아웃은 `/me`의 서버 액션으로만 처리합니다(GET 라우트 없음). 모든 인증 응답은 `Cache-Control: no-store`입니다.
 - 환경변수(`.dev.vars` 또는 운영 비밀 바인딩): `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`(둘 다 필요), `AUTH_ORIGIN`(기본 `https://agamajoong.soulbound.co.kr`, 로컬은 `http://localhost:8787`). Google 자격 증명 중 하나라도 없으면 버튼·폼 없이 준비 중 안내만 보이고 Google login·callback은 404입니다. 쿠키 `Secure`는 `AUTH_ORIGIN`이 https일 때만 켜집니다. 리디렉트 URI는 Host 헤더가 아니라 `AUTH_ORIGIN`으로 고정됩니다.
 - Google Cloud Console에 등록할 리디렉트 URI는 `https://agamajoong.soulbound.co.kr/api/auth/callback/google`입니다. 로컬에서는 `AUTH_ORIGIN`에 맞는 Google 콜백 URI를 별도로 등록합니다.
-- `/api/auth/login/kakao`와 `/api/auth/callback/kakao`는 **항상 404·`Cache-Control: no-store`**입니다. 기존 `KAKAO_REST_KEY`·`KAKAO_CLIENT_SECRET` 바인딩, 인증 코드, 이전 state 쿠키가 있어도 공급자 요청이나 DB 접근 전에 거부합니다. 기존 바인딩은 무시하므로 배포 환경에서 먼저 제거할 필요가 없습니다.
+- Google 콜백은 일치하는 state와 유효한 PKCE verifier가 필수입니다. verifier는 43~128자의 영문·숫자·`-._~`만 허용하며 토큰 교환에 `code_verifier`로 항상 전달합니다. 누락·null·빈 값·길이/문자 오류는 공급자 요청이나 DB 접근 전에 `/login?error=state`로 302하고 state 쿠키를 만료시킵니다.
+- `/api/auth/login/kakao`와 `/api/auth/callback/kakao`는 **항상 404·본문 `Not found`·`Cache-Control: no-store`**입니다. 기존 `KAKAO_REST_KEY`·`KAKAO_CLIENT_SECRET` 바인딩, 인증 코드, 이전 state 쿠키나 유효한 Google state 쿠키가 있어도 공급자 요청이나 DB 접근 전에 거부합니다. 리디렉트나 쿠키 발급·변경은 없습니다. 기존 바인딩은 무시하므로 배포 환경에서 먼저 제거할 필요가 없습니다.
 - 수집 정보: 이메일과 Google 계정 id뿐입니다. 액세스·리프레시 토큰, 이름, 프로필은 저장하지 않습니다. Google의 `email_verified`가 참인 이메일만 받습니다.
 - 세션 토큰은 해시만 저장합니다(30일). 기존 Kakao 계정·identity·유효 세션은 그대로 보존합니다. `0005_users.sql` 변경이나 데이터 마이그레이션은 없으며, 기존 세션은 정상 만료나 로그아웃까지 `/me`와 뉴스레터 설정을 계속 사용할 수 있습니다. 이후 Kakao로 새 세션을 만들 수는 없습니다.
-- 뉴스레터: 신규 가입 때만 제출한 체크박스 값을 저장하고, 체크한 경우 동의 시각을 기록합니다. 재로그인은 기존 선택·동의·해지 시각을 바꾸지 않습니다. `/me`에서 해지·재구독할 수 있고 같은 선택의 반복 제출은 시각을 바꾸지 않습니다.
+- 뉴스레터: 신규 가입 때만 로그인 시작 시 제출한 체크박스 값을 저장하고, 체크한 경우 동의 시각을 기록합니다. 콜백의 쿼리 매개변수로 이 선택을 바꿀 수 없습니다. 재로그인은 기존 선택·동의·해지 시각을 바꾸지 않습니다. `/me`에서 해지·재구독할 수 있고 같은 선택의 반복 제출은 시각을 바꾸지 않습니다.
 - 계정은 `(provider, provider_user_id)`로 조회합니다. 기존 Kakao 계정과 이메일이 같은 Google 로그인도 별도 계정을 만들며 기존 계정을 수정하거나 자동 연결하지 않습니다. 따라서 **뉴스레터 발송 시 이메일 기준 중복 제거가 필요**합니다. **계정 삭제는 후속 과제**입니다. 레이트리밋은 Cloudflare 운영 설정에 맡깁니다. 이 인증 설정은 사이트 전용이며 Linux 수집기의 로그인·자격 증명·저장소와 분리됩니다.
 
 ## JSON REST API v1
@@ -162,9 +163,9 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | POST | `/api/v1/admin/candidates/:id` | `{ "action": "dismiss" }`만 허용(그 외 400, 이미 처리됨 409, 없는 id 404) |
 | GET | `/api/v1/images/:key` | R2 `IMAGES`의 `public/` 아래 jpg/jpeg/png/webp/avif. 허용 파일명·존재 여부 검사, 없으면 404 |
 | GET | `/api/auth/login/google` | Google OAuth 시작. 공급자 미설정 시 404 |
-| GET | `/api/auth/login/kakao` | 비활성. 기존 설정과 무관하게 DB·공급자 접근 전 항상 404·no-store |
+| GET | `/api/auth/login/kakao` | 비활성. 기존 설정과 무관하게 DB·공급자 접근 전 항상 404·본문 `Not found`·no-store |
 | GET | `/api/auth/callback/google` | Google OAuth 콜백. Google 미설정 시 404 |
-| GET | `/api/auth/callback/kakao` | 비활성. 코드·이전 state 쿠키·기존 설정과 무관하게 항상 404·no-store |
+| GET | `/api/auth/callback/kakao` | 비활성. 코드·state 쿠키·기존 설정과 무관하게 항상 404·본문 `Not found`·no-store |
 
 v1 분기는 `lib/api.ts`, 이미지 라우트는 `app/api/v1/images/[key]/route.ts`, OAuth는 `app/api/auth/[[...path]]/route.ts`와 `lib/auth.ts`에 있습니다. OAuth는 v1 밖의 별도 경로입니다. 공개 공구 상세 GET API는 없으며 모델 비교나 공구 목록을 사용합니다. 관리자 행은 모두 ADMIN_TOKEN이 필요합니다.
 
