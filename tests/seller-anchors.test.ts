@@ -117,5 +117,5 @@ test.each([0, 1, 2, 3, 4, 5, 6, 7])('seller badges preserve evidence mapping and
   expect(badges.indexOf(evidence[1][0])).toBeLessThan(badges.indexOf(evidence[2][0]));
   expect(html).toContain('id="trust-seller-1" tabindex="-1"');
   expect(html).toContain('href="https://a.example/shop" target="_blank" rel="noopener noreferrer"');
-  expect(html).toContain('목록에 있다는 것은 입점·추천·보증을 의미하지 않습니다.');
+  expect(html).toContain('아가마중에 소개된 판매처예요. 여기에 있다고 해서 입점이나 추천, 보증을 뜻하지는 않아요. 따로 확인된 자료가 없으면 미확인으로 보여요.');
 });
