@@ -49,13 +49,15 @@ function readCookie(request: Request, name: string) {
 }
 const cookie = (env: AuthEnv, name: string, value: string, path: string, maxAge: number) =>
   `${name}=${value}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure(env) ? '; Secure' : ''}`;
-type StateCookie = { state: string; verifier: string | null; newsletter: boolean };
+type StateCookie = { state: string; verifier: string; newsletter: boolean };
 const encodeState = (value: StateCookie) => b64url(new TextEncoder().encode(JSON.stringify(value)));
 function decodeState(raw: string | undefined): StateCookie | null {
   try {
     const value = JSON.parse(new TextDecoder().decode(fromB64url(raw ?? ''))) as Partial<StateCookie>;
     if (typeof value.state !== 'string' || !value.state || typeof value.newsletter !== 'boolean') return null;
-    return { state: value.state, verifier: typeof value.verifier === 'string' ? value.verifier : null, newsletter: value.newsletter };
+    // PKCE requires 43–128 unreserved ASCII characters, including on callbacks.
+    if (typeof value.verifier !== 'string' || value.verifier.length < 43 || value.verifier.length > 128 || /[^A-Za-z0-9._~-]/.test(value.verifier)) return null;
+    return { state: value.state, verifier: value.verifier, newsletter: value.newsletter };
   } catch { return null; }
 }
 
@@ -69,12 +71,12 @@ function redirect(location: string, cookies: string[]) {
 }
 
 // ── 공급자 통신 (액세스 토큰은 userinfo 호출에만 쓰고 저장하지 않는다) ───────────
-async function exchange(env: AuthEnv, provider: Provider, code: string, verifier: string | null): Promise<Identity | 'provider' | 'email'> {
+async function exchange(env: AuthEnv, provider: Provider, code: string, verifier: string): Promise<Identity | 'provider' | 'email'> {
   const endpoint = ENDPOINTS[provider];
   const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri(env, provider) });
   body.set('client_id', env.GOOGLE_CLIENT_ID!);
   body.set('client_secret', env.GOOGLE_CLIENT_SECRET!);
-  if (verifier) body.set('code_verifier', verifier);
+  body.set('code_verifier', verifier);
   try {
     const tokenResponse = await fetch(endpoint.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body });
     if (!tokenResponse.ok) return 'provider';
