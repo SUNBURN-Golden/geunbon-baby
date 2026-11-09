@@ -33,7 +33,6 @@ export function normalizeExtractionWithCatalog(
   checkedDate: string,
   catalog?: { catalog_product_id?: string; offer_ref?: string; category?: ScopedCategory },
 ) {
-  const base = normalizeExtraction(raw, pageUrl, checkedDate);
   const merged = {
     ...raw,
     catalog_product_id: raw.catalog_product_id ?? catalog?.catalog_product_id,

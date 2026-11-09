@@ -34,6 +34,7 @@ export function canonicalUrl(raw: string): string {
   const pangpangTrack = pangpangPost && (() => {
     if (entries.length === 0) return true;
     const keys = new Set(entries.map(([k]) => k));
+    if (entries.length !== keys.size) return false;
     const source = u.searchParams.get('source');
     if (keys.size === 1 && keys.has('source')) return source === 'home' || source === 'search';
     if (keys.size === 2 && keys.has('source') && keys.has('pid')) {

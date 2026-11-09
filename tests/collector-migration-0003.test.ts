@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CollectorStore } from '../crawler/src/store';
@@ -23,6 +23,7 @@ test('v2 synthetic 518 records and all legacy data survive 0003, with private ba
   db.exec('COMMIT');
   const before=db.prepare('SELECT * FROM collection_records ORDER BY id').all(),groups=db.prepare('SELECT * FROM dedup_groups ORDER BY id').all();db.close();
   const quarantined=before.map(row=>({...row,data:JSON.stringify({...JSON.parse(String(row.data)),record_version:2,identity_quarantined:true})}));
+  chmodSync(file,0o600);
   const store=new CollectorStore(file);try{
    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:8});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(quarantined);
    const migratedGroups=store.db.prepare('SELECT * FROM dedup_groups ORDER BY id').all();

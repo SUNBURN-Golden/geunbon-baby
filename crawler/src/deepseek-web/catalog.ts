@@ -108,7 +108,7 @@ export function rankListingCandidates(
   products: PangpangProduct[],
   catalog: GeunbonCatalog,
   maxDetail: number,
-  pageUrl: string,
+  _pageUrl: string,
 ) {
   const scored: { product: PangpangProduct; match: CatalogMatch }[] = [];
   const rollup = { raw: products.length, scoped: 0, accessory_or_broad: 0, outside_scope: 0 };

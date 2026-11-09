@@ -64,7 +64,7 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
   const runId = newRunId();
   const cycleId = runId;
   const nowMs = options.now ?? (() => Date.now());
-  let memory = beginCycle(await loadMemory(dir), cycleId);
+  const memory = beginCycle(await loadMemory(dir), cycleId);
   const model = process.env.DEEPSEEK_MODEL ?? config.model.default_model;
   if (options.mode === 'once' || options.mode === 'daemon_tick') {
     if (!options.store) throw new Error('collector_db_required');

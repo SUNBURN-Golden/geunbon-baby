@@ -17,7 +17,7 @@ export function scopeRollup(products: PangpangProduct[], catalog: GeunbonCatalog
       accessory_or_broad: ranked.rollup.accessory_or_broad,
       outside_scope: ranked.rollup.outside_scope,
     },
-    core: products.filter((p, i) => {
+    core: products.filter(p => {
       const v = classifyCatalogScope(p, catalog);
       return v.kind === 'catalog_match';
     }),
