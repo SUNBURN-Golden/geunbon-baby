@@ -7,7 +7,7 @@ import { validateProvenance, linkExtractedInside, type ProvenanceInput } from '.
 import { axesOf, mergeConflict, conflictAxes, contradictoryAxes, type Axes } from './merge-rules';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { STATUSES } from '../../shared/collection-schema';
 import { type AssertionInput, type Binding, type ClipPayload, type CollectionRecord, type Snapshot } from '../../shared/collection-schema';
@@ -49,7 +49,7 @@ export class CollectorStore {
       if (stat) requireThat(!stat.isSymbolicLink() && stat.isFile() && (stat.mode&0o077)===0,'unsafe_file');
     }
     // Legacy DB-wide locks are deliberately left untouched, including empty files.
-    if (lstatSync(`${file}.lock`,{throwIfNoEntry:false})) console.error(`collector_warning legacy_lock_present path=${basename(file)}.lock`);
+    if (lstatSync(`${file}.lock`,{throwIfNoEntry:false})) console.error('collector_warning legacy_lock_present');
     let opened:DatabaseSync|undefined;
     try {
       this.db=opened=new DatabaseSync(file);
@@ -69,6 +69,7 @@ export class CollectorStore {
       if(uv()<5)this.transaction(()=>{if(uv()<5)this.db.exec(readFileSync(new URL('../migrations/0005_missing_field_explorer.sql',import.meta.url),'utf8'));});
       initializeSourceRegistry(this);
       if(uv()<7)this.transaction(()=>{if(uv()<7)this.db.exec(readFileSync(new URL('../migrations/0007_collection_schedule.sql',import.meta.url),'utf8'));});
+      if(uv()<8)this.transaction(()=>{if(uv()<8)this.db.exec(readFileSync(new URL('../migrations/0008_collection_observability.sql',import.meta.url),'utf8'));});
       requireThat(!this.db.prepare('PRAGMA foreign_key_check').all().length,'database_foreign_key');
       requireThat((this.db.prepare('PRAGMA quick_check').get() as {quick_check:string}).quick_check==='ok','database_corrupt');
       this.secureFiles();

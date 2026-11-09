@@ -1,0 +1,11 @@
+[Unit]
+Description=Agamajung Linux collector process and slot watchdog
+
+[Service]
+Type=oneshot
+# Install as a user unit for the same Linux user and PID namespace as PM2.
+WorkingDirectory=/workspace/agamajung/repo
+EnvironmentFile=%h/.config/agamajung/collector.env
+ExecStart=/workspace/agamajung/repo/crawler/collector-watchdog.sh
+TimeoutStartSec=240
+UMask=0077

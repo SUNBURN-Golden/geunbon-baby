@@ -7,7 +7,7 @@ import type { CrawlerState } from './state';
 import type { Settings } from './config';
 import { assertHuman } from './browser';
 import { firstVisible, followingButton, HANDLE_HREF, nextStoryButton, parseHandle, postLinksDetailed } from './selectors';
-import { sleep } from './util';
+import { canonicalPost, sleep } from './util';
 import { health } from './health';
 import { sendItem } from './ingest';
 import { extract, toSuggestions } from './extract';
@@ -50,7 +50,7 @@ async function postMetadata(page: Page): Promise<Record<string, unknown>[]> {
 }
 
 export async function readCaption(page: Page): Promise<string> {
-  const heading = await page.locator('article h1').first().innerText({ timeout: 4000 }).catch(() => '');
+  const heading = await page.locator('article h1').first().innerText({ timeout: 4000 }).catch(error => { propagateMediaInterruption(error); return ''; });
   if (heading.trim()) return heading.slice(0, 6000);
   for (const record of await postMetadata(page)) {
     for (const value of [record.articleBody, record.caption]) {
@@ -58,43 +58,130 @@ export async function readCaption(page: Page): Promise<string> {
     }
   }
   for (const selector of ['article', 'main, [role="main"]']) {
-    const text = await page.locator(selector).first().innerText({ timeout: 4000 }).catch(() => '');
+    const text = await page.locator(selector).first().innerText({ timeout: 4000 }).catch(error => { propagateMediaInterruption(error); return ''; });
     if (text.trim()) return text.slice(0, 6000);
   }
   for (const selector of ['meta[name="description"]', 'meta[property="og:description"]']) {
-    const text = await page.locator(selector).first().getAttribute('content', { timeout: 4000 }).catch(() => '');
+    const text = await page.locator(selector).first().getAttribute('content', { timeout: 4000 }).catch(error => { propagateMediaInterruption(error); return ''; });
     if (text?.trim()) return text.slice(0, 6000);
   }
   return '';
 }
-export async function postAuthor(page: Page): Promise<string | null> {
-  for (const selector of ['article header a[href]', 'main header a[href]', 'article a[role="link"][href]']) {
-    const hrefs = await page.locator(selector).evaluateAll(links => links.map(a => a.getAttribute('href') ?? ''));
-    const author = hrefs.map(parseHandle).find(Boolean);
-    if (author) return author;
-  }
-  for (const record of await postMetadata(page)) {
-    for (const author of [record.author].flat()) {
-      if (!author || typeof author !== 'object') continue;
-      const { alternateName, identifier, url } = author as Record<string, unknown>;
-      if (typeof url === 'string') {
-        const handle = parseHandle(url);
-        if (handle) return handle;
-      }
-      // JSON-LD commonly stores an internal User ID here, not a handle.
-      const identity = identifier && typeof identifier === 'object' ? identifier as Record<string, unknown> : undefined;
-      const id = typeof identity?.propertyID === 'string' && /^(username|handle)$/i.test(identity.propertyID) ? identity.value : undefined;
-      for (const candidate of [alternateName, id]) {
-        if (typeof candidate !== 'string') continue;
-        const href = `/${candidate.replace(/^@/, '')}/`;
-        const handle = HANDLE_HREF.test(href) ? parseHandle(href) : null;
-        if (handle) return handle;
+const POST_ARTICLES = 'main article, [role="main"] article, [role="dialog"] article';
+type AuthorResult = { status: 'resolved'; handle: string } | { status: 'missing' | 'conflict' | 'unreadable' };
+
+// Explicit post identifiers bind metadata to this permalink. A different post's
+// record (e.g. a recommendation) cannot supply author evidence.
+function metadataMatches(record: Record<string, unknown>, current: string | null): boolean {
+  return ['url', '@id', 'mainEntityOfPage'].every(key => {
+    const value = record[key];
+    if (value === undefined) return true;
+    const id = typeof value === 'string' ? value : value && typeof value === 'object' ? (value as Record<string, unknown>)['@id'] : undefined;
+    return typeof id === 'string' && current !== null && canonicalPost(id) === current;
+  });
+}
+export async function postAuthorDetailed(page: Page): Promise<AuthorResult> {
+  try {
+    const current = canonicalPost(page.url());
+    const handles = new Set<string>();
+    const add = (value: unknown, href = false) => {
+      if (typeof value !== 'string') return;
+      const candidate = href ? value : `/${value.replace(/^@/, '')}/`;
+      const handle = (href || HANDLE_HREF.test(candidate)) && parseHandle(candidate);
+      if (handle) handles.add(handle);
+    };
+    const dialogs = await page.locator('[role="dialog"]').evaluateAll(elements => elements.filter(element => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && !element.closest('[hidden], [aria-hidden="true"]');
+    }).length);
+    const articles = page.locator(POST_ARTICLES);
+    const scopes = await articles.evaluateAll(elements => {
+      const visible = elements.flatMap((element, index) => {
+        if (element.closest('nav, aside, [hidden], [aria-hidden="true"]') || element.parentElement?.closest('article')) return [];
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'
+          ? [{ index, dialog: Boolean(element.closest('[role="dialog"]')) }] : [];
+      });
+      return visible.some(item => item.dialog) ? visible.filter(item => item.dialog) : visible;
+    });
+    if (scopes.length > 1 || dialogs > 1 || (dialogs && !scopes[0]?.dialog)) return { status: 'unreadable' };
+    if (scopes.length === 1) {
+      const hrefs = await articles.nth(scopes[0].index).locator('header a[href]').evaluateAll(links => links.filter(link =>
+        !link.closest('nav, aside, section, ul, ol, [role="navigation"]') && !link.closest('article')?.parentElement?.closest('article'))
+        .map(link => link.getAttribute('href') ?? ''));
+      hrefs.forEach(href => add(href, true));
+    }
+    for (const record of await postMetadata(page)) {
+      if (!metadataMatches(record, current)) continue;
+      for (const author of [record.author].flat()) {
+        if (!author || typeof author !== 'object') continue;
+        const { alternateName, identifier, url } = author as Record<string, unknown>;
+        add(url, true);
+        add(alternateName);
+        for (const identity of [identifier].flat()) {
+          if (!identity || typeof identity !== 'object') continue;
+          const entry = identity as Record<string, unknown>;
+          if (typeof entry.propertyID === 'string' && /^(username|handle)$/i.test(entry.propertyID)) add(entry.value);
+        }
       }
     }
+    const descriptions = await page.locator('meta[name="description"]').evaluateAll(elements => elements.map(element => element.getAttribute('content') ?? ''));
+    for (const description of descriptions) {
+      // Match only the known author envelope at the start, never a caption's
+      // incidental "- someone on ..." phrase. Internal IDs are not handles.
+      const author = /^(?:[\d,.]+ likes?(?:, [\d,.]+ comments?)?) - ([A-Za-z0-9._]{1,30}) on (?:Instagram|(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}):(?:\s|$)/.exec(description)?.[1];
+      add(author);
+    }
+    if (handles.size > 1) return { status: 'conflict' };
+    const handle = [...handles][0];
+    return handle ? { status: 'resolved', handle } : { status: 'missing' };
+  } catch (error) {
+    propagateMediaInterruption(error);
+    return { status: 'unreadable' };
   }
-  const description = await page.locator('meta[name="description"]').first().getAttribute('content', { timeout: 4000 }).catch(error => { propagateMediaInterruption(error); return null; });
-  const handle = /- ([A-Za-z0-9._]{1,30}) on /.exec(description ?? '')?.[1];
-  return handle ? parseHandle(`/${handle}/`) : null;
+}
+export async function postAuthor(page: Page): Promise<string | null> {
+  const author = await postAuthorDetailed(page);
+  return author.status === 'resolved' ? author.handle : null;
+}
+type IdentityCode = 'profile_identity_mismatch' | 'profile_scope_missing' | 'post_url_invalid' | 'post_url_mismatch' |
+  'post_author_missing' | 'post_author_conflict' | 'post_author_mismatch' | 'post_identity_unreadable';
+function identitySkip(code: IdentityCode) { health('warn', { scope: 'post_identity', code }); }
+async function verifiedPost(page: Page, canonical: string, account: string): Promise<boolean> {
+  try {
+    const destination = canonicalPost(page.url());
+    if (!destination) { identitySkip('post_url_invalid'); return false; }
+    if (destination !== canonical) { identitySkip('post_url_mismatch'); return false; }
+    const author = await postAuthorDetailed(page);
+    if (author.status !== 'resolved') {
+      identitySkip(author.status === 'missing' ? 'post_author_missing' : author.status === 'conflict' ? 'post_author_conflict' : 'post_identity_unreadable');
+      return false;
+    }
+    if (author.handle !== account) { identitySkip('post_author_mismatch'); return false; }
+    // Author reads are asynchronous too; do not accept a navigation during them.
+    const final = canonicalPost(page.url());
+    if (!final) { identitySkip('post_url_invalid'); return false; }
+    if (final !== canonical) { identitySkip('post_url_mismatch'); return false; }
+    return true;
+  } catch (error) {
+    propagateMediaInterruption(error);
+    identitySkip('post_identity_unreadable');
+    return false;
+  }
+}
+async function profilePosts(page: Page, account: string) {
+  try {
+    if (parseHandle(page.url()) !== account) { identitySkip('profile_identity_mismatch'); return { links: [], anchors: 0 }; }
+    const posts = await postLinksDetailed(page, { profile: account });
+    if (posts.scopeMissing) identitySkip('profile_scope_missing');
+    return posts;
+  } catch (error) {
+    propagateMediaInterruption(error);
+    identitySkip('post_identity_unreadable');
+    return { links: [], anchors: 0 };
+  }
 }
 async function ocrStory(page: Page, image: Locator, crawlerDir: string, settings: Settings, collectImages: boolean): Promise<{ text: string; image_url?: string }> {
   const file = resolve(crawlerDir, '.cache', 'story.png');
@@ -147,7 +234,8 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
     await assertHuman(page);
     if (await firstVisible(followingButton(page))) state.setFollowing(account, true);
     health('account_visit', { account });
-    const { links, anchors } = await postLinksDetailed(page);
+    const requested = parseHandle(`/${account}/`);
+    const { links, anchors } = await profilePosts(page, requested ?? '');
     if (!links.length) health('selector_miss', { scope: 'profile_posts', account, anchors });
     const fresh = links.filter(link => !state.isSeen(link)).slice(0, settings.per_tick.max_posts_per_account);
     for (const canonical of fresh) {
@@ -155,13 +243,16 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
       await page.goto(canonical, { waitUntil: 'domcontentloaded' });
       await sleep(...settings.delays_ms.action);
       await assertHuman(page);
+      if (!requested || !await verifiedPost(page, canonical, requested)) continue;
       const caption = await readCaption(page);
       if (!caption.trim()) { health('selector_miss', { scope: 'caption', account }); continue; }
       const prepared = prepareText(caption);
       if (!prepared) continue;
       const image_url = collectImages ? await postImageUrl(page) : undefined;
       const { text, suggestions } = prepared;
-      await sendItem(api, token, { source_url: canonical, account, kind: 'post', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions });
+      await assertHuman(page);
+      if (!await verifiedPost(page, canonical, requested)) continue;
+      await sendItem(api, token, { source_url: canonical, account: requested, kind: 'post', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions });
       state.markSeen(canonical);
       await state.save();
       result.posts++;

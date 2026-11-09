@@ -1,6 +1,6 @@
 # Linux 수집 슬롯과 따라잡기
 
-`npm run collector:worker -- schedule`은 Linux 상주 프로세스다. 시작 즉시 검사하고, 각 검사 종료 후 60초 뒤 현재 벽시각으로 다시 판단한다. 절전 중에는 실행할 수 없지만 깨어난 뒤 최신 도래 슬롯까지 한 번으로 합친다. Node는 저장소의 고정 22.22.3 런타임을 사용한다. HTTP `serve`와 수명이 분리되며 사이트·Workers Cron·D1·Instagram 세션을 사용하지 않는다. 기존 `src/scheduler.ts`는 요청 간격·robots·도메인 냉각 담당이다.
+`npm run collector:worker -- schedule`은 Linux 상주 프로세스다. 시작 즉시 검사하고, 각 검사 종료 후 60초 뒤 현재 벽시각으로 다시 판단한다. 별도 60초 평가 타이머는 긴 실행 중에도 heartbeat·작업별 평가·대기 호출을 기록한다. 시작 직후와 긴 실행을 시작하기 전에도 평가 시각을 `scheduler.json`에 먼저 게시하므로 watchdog 복구 확인이 실행 완료를 기다리지 않는다. 도래 슬롯도 진행 중 실행도 없는 유휴 검사는 `already_completed` 호출 행을 만들지 않고 평가 시각만 갱신한다. runner는 중복 호출하지 않고 수집은 직렬로 유지한다. 절전 중에는 실행할 수 없지만 깨어난 뒤 최신 도래 슬롯까지 한 번으로 합친다. Node는 저장소의 고정 22.22.3 런타임을 사용한다. HTTP `serve`와 수명이 분리되며 사이트·Workers Cron·D1·Instagram 세션을 사용하지 않는다. 기존 `src/scheduler.ts`는 요청 간격·robots·도메인 냉각 담당이다.
 
 ## 일정과 수동 호출
 
@@ -33,7 +33,20 @@ Linux migration `0007_collection_schedule.sql`은 사이트 D1 migration과 별�
 
 `<COLLECTOR_DB>.schedule/<job>.json`은 DB에서 재생성하는 요약이다. 디렉터리 0700, 파일 0600이며 symlink를 거부한다. 임시 파일 작성·fsync·rename·디렉터리 fsync로 게시한다. 누락/쓰기 실패를 빈 실행 이력으로 취급하지 않는다. SQLite만 중복 판단에 사용한다. 파일에는 마지막 성공 완료 시각과 마지막 성공 대상 슬롯을 따로 둔다. 잠금 실패 호출은 DB 호출 이력에만 추가하고 실행 중 요약과 마지막 성공을 덮어쓰지 않는다.
 
-stderr의 `collector_start`·`collector_end`는 `at=…+09:00`, 작업명, UUID 호출 ID, 출처, 결과, 고정 사유를 포함한다. discover 상세 줄에도 KST 시각·호출 ID가 붙는다. stdout은 기존 작업의 JSON 결과를 유지하며 같은 슬롯 건너뜀은 stdout이 없다. 실행 중 JSON의 종료 시각은 null이다. 강제 종료를 다음 소유자가 발견하면 실제 종료 시각은 null로 두고 `observed_at`과 `interrupted/owner_gone`을 남긴다. 원본 예외·환경변수·자격 증명·URL·본문은 실행 기록에 넣지 않는다.
+수동 CLI와 scheduler는 공통 JS bootstrap/결과 함수를 사용한다. 추적되는 진입점은 `crawler/local-worker.mjs`와 `crawler/collector-scheduler.mjs`다. 설정·동적 import·DB 초기화 전 호출 UUID와 시작 기록을 만들며 초기 오류도 고정 사유만 출력한다. stderr의 KST `collector_start`·`collector_end`도 유지한다.
+
+stdout은 호출별 start/result NDJSON(`schema_version=1`)이다. skip·disabled·dry-run·초기 실패에도 `generated_at`이 있으며 `outcome`은 `succeeded`, `disabled`, `skipped`, `partial_failure`, `halted`, `exhausted`, `pending`, `interrupted`, `already_completed`, `dry_run`, `failed` 중 하나다. 시작은 outcome=null/reason=started다. 정상 무작업은 succeeded/no_work 조합이다. 서비스 수명과 scheduler heartbeat는 별도 이벤트다.
+
+- 시각: UTC ISO `generated_at`, `started_at`, `ended_at`, `observed_at`. 강제 종료를 다음 소유자가 발견하면 이전 호출의 ended_at=null과 observed_at을 남긴다.
+- 식별: job/source/call_id, logical_run_id, engine_run_id. 평가한 expected_slot과 실제 귀속 first_slot/target_slot/slot_count/schedule_version을 구분한다. 없는 값은 null이다.
+- discover `counts.invocation`: pages_attempted, pages_ok, pages_failed, blocked_requests, parsed_items, eligible_items, submissions_accepted, subrequest_failures, sources_review. 이번 RunHealth 집계이며 submissions_accepted는 접수 성공 횟수다. 신규 상품 수가 아니다.
+- collect `counts.engine`: checkpoints_done, checkpoints_failed, checkpoints_skipped, checkpoints_unfinished, service_receipts_confirmed. failed에는 실패성 skipped도 포함하므로 서로 배타적인 합계가 아니다. receipt는 완료된 service 체크포인트가 가리키는 로컬 receipt의 distinct 개수이며 복구 연결도 포함한다.
+- collect `counts.invocation`: 동일 엔진 호출 전후 checkpoint_attempts_delta와 service_receipts_confirmed_delta. 미측정은 null이며 0으로 꾸미지 않는다.
+- `result`에는 기존 결과 중 허용된 집계·고정 enum·불투명 ID만 남긴다. 커스텀 source ID는 hash로 표현한다. 원문/URL/예외/stack/환경/PM2 원문/인증 헤더는 출력하지 않는다. history_status는 recorded/unavailable을 구분한다.
+
+Linux 전용 `0008_collection_observability.sql`은 calls에 expected_slot·schedule_version을 추가한다. 과거 행은 null로 유지한다. DB가 열리지 않아도 stdout에는 failed/initialization_failed와 call_history_unavailable 진단이 남는다. 결과 DB 확정 후 요약/출력 실패는 별도 summary_write_failed/result_publish_failed로 진단하며 수집을 반복하거나 결과를 실패로 덮어쓰지 않는다. bootstrap은 초기화 실패 시 고정 코드(`collectorFailure`)를 진단에 남기며, 추적되지 않는 CLI 명령도 stdout을 오염시키지 않고 stderr에 같은 고정 코드를 남긴다.
+
+호출 이력은 상주 scheduler가 시간당 한 번 정리한다. 종료된 `collection_schedule_calls` 중 7일이 지난 행만 삭제하며 진행 중 호출·실행 귀속·요약의 최근 성공 기록은 건드리지 않는다. PM2 로그는 자동 회전하지 않으므로 운영 환경에서 `pm2-logrotate`(max_size/retain) 또는 시스템 logrotate를 별도로 설정한다.
 
 | 엔진/작업 결과 | 슬롯 성공 | 후속 처리 |
 | --- | --- | --- |
@@ -83,22 +96,53 @@ stderr의 `collector_start`·`collector_end`는 `at=…+09:00`, 작업명, UUID 
 
 확정하려면 운영자가 (1) 호스트/하이퍼바이저의 10/30–31 suspend/resume·시간 동기화 기록, (2) PM2 데몬 시작 시각·당시 TZ/시스템 시간대, (3) 수동 restart/reload·재등록 감사 기록, (4) 당시 script 경로·코드 버전·croner 버전을 같은 시간축에 대조해야 한다. 비밀 환경 덤프나 수집 원문을 문서에 첨부하지 않는다.
 
+## 독립 Linux watchdog
+
+`crawler/collector-watchdog.sh`를 같은 Linux 사용자·호스트·PID namespace와 동일 COLLECTOR_DB로 실행한다. PM2 밖의 user systemd service/timer 템플릿은 `crawler/systemd/`에 있다. 60초마다 검사하며 watchdog은 수집 runner를 직접 부르지 않는다. 외부 PM2 원문은 메모리에서 허용 필드만 검증하고 출력/저장하지 않는다.
+
+`${db}.schedule/scheduler.json`은 0700 디렉터리/0600 파일이며 원자적 fsync/rename으로 게시한다. 프로세스 PID·boot ID·시작 ticks, checkout revision, 설정 hash, heartbeat, 작업별 평가 시각, 현재 call ID, 대기 사유, 마지막 진행 변경 시각을 담는다. heartbeat만 최신이고 실제 슬롯 평가가 멈췄는지도 별도로 판단한다. revision은 checkout 기준이며 dirty tree를 증명하지 않는다.
+
+| 조건 | 진단/조치 |
+| --- | --- |
+| 활성 도래 슬롯 +5분, 해당 평가 call과 검증된 범위의 run 모두 없음 | missing_slot |
+| heartbeat 또는 활성 작업별 평가가 180초 이상 오래됨 | 첫 관찰 stale_scheduler_suspected, 60초 뒤 재확인 stale_scheduler |
+| 마지막 성공 귀속 슬롯이 현재보다 과거/없음 | last_success_stale와 현재 status/next_at. 최근 generated_at 하나로 성공 판정하지 않음 |
+| 락 경합/이전 실행 대기 | slot_waiting_lock / slot_waiting_active_run |
+| schedule 비활성 | schedule_disabled. 기대 슬롯/누락 경보를 만들지 않음 |
+| 활성 schedule의 source 전부 비활성 | disabled/sources_disabled. 마지막 성공을 갱신하지 않음 |
+| DB 조회 실패/설정 hash 불일치 | monitor_db_unavailable / schedule_config_mismatch. 자동 복구 차단 |
+| 미래 retry/lease/cost 기한 | waiting_deadline. 기한 +5분 후 평가가 없으면 resume_overdue |
+| 실행 중 15분간 진행 변경 없음 | progress_stale. 이것만으로 재시작하지 않음 |
+
+PM2의 online/PID 파일만 믿지 않고 실제 `/proc` 신원·실행 경로·락 소유자와 대조한다. PID 0/부재도 검사한다. local-worker의 `GET /v1/readiness`는 loopback Host·Origin·검토 토큰 검증 후 DB 읽기 가능 여부와 인스턴스 신원만 반환한다. readiness timeout 단독, PM2 실패/잘못된 응답/중복 등록, 신원 불일치, `/proc` 검사 불가에는 재시작하지 않는다. 락 없이 실제 프로세스가 있으면 live_process_without_lock으로 보존하고 중복 기동하지 않는다.
+
+자동 복구는 60초 간격 두 관찰에서 소유자 부재 또는 검증된 zombie를 확인하고 다른 살아 있는 동일 서비스/수집 작업 소유자가 없을 때만 대상 앱을 restart한다. 직전에도 다시 관찰한다. watchdog은 락을 삭제하지 않으며 새 서비스가 기존 30초 유예·신원·inode/device/내용 검사를 통과해서 회수한다. 살아 있는 정지 scheduler는 강제 종료하지 않는다. 복구하지 않았다는 사실을 별도로 기록한다. 60초 안에 새 local-worker readiness 또는 새 scheduler 신원+첫 활성 작업별 평가가 있어야 프로세스 복구 성공이다. 수집 성공과는 별개다. scheduler 복구 확인은 `scheduler.json`의 heartbeat·활성 작업별 평가 시각이 확인 시작 시점(수 초 허용 오차 포함) 이후인지와 `config_hash` 일치를 요구한다. watchdog과 scheduler는 같은 체크아웃·같은 `crawler/config/schedule.json`에서 실행해야 하며, 설정이 다르면 `schedule_config_mismatch`로 복구를 완료하지 않는다.
+
+복구 상태는 `${db}.watchdog/state.json`(0700/0600)에 앱별 UUID·예약 시각·관찰 신원·조치/결과·최근 장애만 저장한다. 임시 파일→fsync→rename→디렉터리 fsync로 명령 전에 시도를 예약한다. 명령 중 종료한 reserved 시도도 상한에 포함한다. 앱별 최소 10분 간격, rolling 60분 최대 3회이며 재부팅/감시 재시작으로 초기화하지 않는다. 완료 시도·종료 장애는 7일, 열린 장애는 유지한다. 역행 시계/손상/읽기 실패/상태 파일 유실에는 자동 복구를 차단한다.
+
+watchdog 전체 검사·상태 변경·복구는 영구 `${db}.watchdog.flock` inode에 대한 Linux flock으로 직렬화한다. 경합 호출은 작업 없이 종료한다. 락 파일을 지워 경합을 풀지 않는다. `.mjs`를 직접 실행하지 않고 shell 진입점을 사용한다. 최초 `--init`은 DB의 watchdog_initialized 표식을 먼저 남기므로 상태 유실 후 같은 명령으로 상한을 초기화할 수 없다. 실패한 설치나 상태 유실은 운영자가 기존 기록/백업을 확인해 복구해야 한다.
+
 ## 운영 전환과 검증
 
-다음은 운영자가 별도 수행할 전환 절차다. 이 작업에서는 실행하지 않았다.
+다음은 별도 운영 전환 절차이며 코드 수정 작업에서는 실행하지 않는다. 구현 완료와 운영 복구 완료를 구분한다.
 
-1. 기존 discover·collect 일회성 cron 등록을 제거하거나 비활성화했는지 확인한다. sources/backfill 후보 일정도 중복 등록되지 않게 점검한다. dump를 그대로 출력하면 비밀 환경이 노출될 수 있으므로 필요한 필드만 확인한다.
-2. 진행 중인 수집을 종료까지 기다린다. 기존 PID 잠금과 engine lease를 삭제하거나 강제 만료시키지 않는다. DB의 일관된 백업을 보존한다.
-3. 저장소 밖의 0700 DB/RAW 디렉터리와 전용 COLLECTOR_DB·COLLECTOR_RAW_DIR을 비밀 환경에서 주입한다. 출처·검색 제공자 설정은 기존 승인 정책을 따로 확인한다.
-4. 고정 런타임으로 migration을 적용하는 명령을 한 번 실행하고, `crawler/collector-scheduler.ecosystem.config.cjs`의 상주 앱을 단일 인스턴스로 활성화한다. 이 정의에는 cron_restart가 없다. PM2는 생존만 관리한다. 기존 serve·Instagram·sync 운영은 각각 분리한다.
-5. 시작/종료 로그·작업별 JSON·engine-status를 대조해 슬롯 귀속, pending 기한, 마지막 성공 슬롯을 확인한다. scheduler를 재시작해도 최근 처리 슬롯에 새 엔진이 생기지 않아야 한다.
-6. 롤백은 scheduler를 정상 중단하고 진행 작업 종료 후 수행한다. 슬롯 DB 이력과 lease는 보존하며 구형 cron과 동시에 운영하지 않는다.
+1. 검증된 revision으로 운영 체크아웃을 갱신하고 추적되는 JS/TS 진입점이 존재하는지 확인한다. 진행 수집은 정상 종료를 기다리고 일관된 DB 백업을 보존한다. lease/일일 상한/attempts/domain_stopped를 초기화하지 않는다.
+2. 기존 discover/collect 일회성 cron과 sources/backfill 중복 재시작 등록을 제거한다. 비밀 환경 전체나 PM2 dump를 출력하지 않는다.
+3. 저장소 밖 0700 DB/RAW 디렉터리와 전용 COLLECTOR_DB·COLLECTOR_RAW_DIR·검토 토큰을 비밀 환경에 주입한다. 출처·제공자 승인은 별도 정책을 유지한다. 고정 런타임으로 Linux migration을 적용하는 명령을 한 번 실행한다.
+4. `crawler/local-worker.ecosystem.config.cjs`와 `collector-scheduler.ecosystem.config.cjs`를 각각 단일 fork 인스턴스로 등록한다. 둘 다 autorestart=false, max_restarts=1, restart_delay=10000, watch=false, cron_restart 없음, kill_timeout=90000, 고정 Node·명시적 로그 경로다. watchdog만 자동 복구한다. 실제 PM2 설정에 구형 cron/자동 재시작이 남으면 supervision_policy_mismatch로 전환 미완료다. Instagram/sync/사이트는 별도 시스템이다.
+5. 같은 비밀 환경에서 `crawler/collector-watchdog.sh --init`을 최초 한 번 실행한다. 템플릿 service의 WorkingDirectory/ExecStart와 비밀 EnvironmentFile 경로를 설치 위치에 맞춰 user systemd로 설치하고 timer를 활성화한다. systemd는 PM2 밖에서 실행되어야 한다. PM2 실행 파일 경로가 필요하면 COLLECTOR_PM2_BIN으로 지정한다. 실제 서비스와 watchdog의 COLLECTOR_DB가 같아야 한다.
+6. local-worker의 새 신원과 인증 readiness, scheduler 하나와 heartbeat/평가를 확인한다. 다음 도래 슬롯의 calls·runs·stdout을 서로 대조해 건수·귀속·성공/대기/실패를 확인해야 운영 복구 완료다. 최근 성공 파일이나 PM2 online만으로 완료하지 않는다.
+7. 유지보수/롤백은 watchdog timer/service를 먼저 중지하고 앱을 정상 중단한다. DB 이력·lease를 보존하며 구형 cron과 동시 운영하지 않는다. 소유자 없는 `.sqlite.lock`은 [crawler README](../../crawler/README.md#동시-실행과-잠금)의 운영자 점검 절차로만 처리한다. SQLite -wal/-shm/-journal을 삭제하지 않는다.
+
+### 2026-11-08 읽기 전용 재확인
+
+운영 경로 `/workspace/agamajung/repo` HEAD는 `3bac379db7250cea7212adbe22ab4daee79465f6`이고 `crawler/src/schedule-worker.ts`가 없었다. 따라서 그 체크아웃에서는 #77 상주 따라잡기가 동작할 수 없다. 과거 cron 시각이 분까지 어긋난 직접 원인은 여전히 미확정이다. 운영 체크아웃/PM2/cron은 이 구현에서 변경하지 않았다. 별도 전환과 다음 도래 슬롯의 실제 결과를 확인하기 전에는 운영 복구 완료를 주장하지 않는다.
 
 검증은 고정 Node를 PATH에 둔 상태에서 수행한다.
 
 ```sh
 export PATH="$PWD/node_modules/node/bin:$PATH"
-npm test -- tests/collection-schedule.test.ts tests/collector-concurrency.test.ts tests/source-discovery-cli.test.ts
+npm test -- tests/collection-schedule.test.ts tests/collector-concurrency.test.ts tests/source-discovery-cli.test.ts tests/collector-observability.test.ts tests/collector-watchdog.test.ts
 npm test
 npm run lint
 npm run typecheck

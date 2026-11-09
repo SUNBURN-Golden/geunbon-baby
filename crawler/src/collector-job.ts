@@ -1,3 +1,6 @@
+import { safeReason } from '../collector-bootstrap.mjs';
+import { invocation, jobEvent, publish, safeCounts, type Invocation, type Counts } from './collector-events';
+import { engineSnapshot, collectCounts } from './collector-measurements';
 import { randomUUID } from 'node:crypto';
 import { engineProgress } from '../engine/progress';
 import { digest } from './dedup';
@@ -8,28 +11,44 @@ import { CollectorStore, requireThat } from './store';
 export type JobResult={status:'succeeded'|'partial_failure'|'disabled';reason:string;output?:unknown;counts?:Record<string,number>};
 export type JobAdapter={enabled:boolean;start?:(slot:{kind:string;at:string;data?:Record<string,unknown>})=>string;seed?:(id:string)=>void;resume?:(id:string)=>string;run:(id?:string,callId?:string)=>Promise<unknown>;result?:(output:unknown)=>JobResult;preview?:()=>Promise<unknown>|unknown};
 export type JobDefinition={profileId?:string;create:(offline?:boolean)=>JobAdapter;output?:(id:string)=>unknown};
-export type JobOptions={source?:'manual'|'scheduled';resumeId?:string;dryRun?:boolean;lock?:RunLockOptions;log?:(line:string)=>void;fault?:(point:string)=>void};
+export type JobOptions={source?:'manual'|'scheduled';resumeId?:string;dryRun?:boolean;lock?:RunLockOptions;log?:(line:string)=>void;fault?:(point:string)=>void;context?:Invocation;output?:(line:string)=>void;onCall?:(id:string|null)=>void};
 export type InvocationResult={outcome:string;reason:string;run_id?:string;output?:unknown};
 export async function runCollectorJob(store:CollectorStore,schedule:JobSchedule,definition:JobDefinition,options:JobOptions={}):Promise<InvocationResult>{
-  const state=new ScheduleState(store),callId=randomUUID(),started=store.now(),source=options.source??'manual',log=options.log??(line=>console.error(line));
-  const emit=(event:string,outcome:string,reason:string)=>log(`collector_${event} at=${kstTime(store.now())} job=${schedule.job} call_id=${callId} source=${source} outcome=${outcome} reason=${reason}`);
+  const context=options.context??invocation(schedule.job,options.source??'manual',store.now());
+  const state=new ScheduleState(store),callId=context.call_id,started=context.started_at,source=options.source??'manual',log=options.log??(line=>console.error(line));
+  const expected=schedule.enabled?dueSlots(schedule,store.now()):undefined;
+  let measured:Counts={engine:null,invocation:null},before:ReturnType<typeof engineSnapshot>|undefined;
+  const publishResult=(outcome:string,reason:string,result?:unknown)=>{context.completed=true;try{publish(jobEvent(context,'result',store.now(),{logical,expected,outcome,reason,counts:measured,output:result,history_status:called&&reason!=='call_history_unavailable'?'recorded':'unavailable'}),options.output);}catch{publish({schema_version:1,event:'diagnostic',generated_at:new Date(store.now()).toISOString(),reason:'result_publish_failed'},options.output);}};
+  if(!options.context)publish(jobEvent(context,'start',store.now(),{expected}),options.output);
+  options.onCall?.(callId);
+  const emit=(event:string,outcome:string,reason:string)=>{try{log(`collector_${event} at=${kstTime(store.now())} job=${schedule.job} call_id=${callId} source=${source} outcome=${outcome} reason=${safeReason(reason)}`);}catch{publish({schema_version:1,event:'diagnostic',generated_at:new Date(store.now()).toISOString(),reason:'result_publish_failed'},options.output);}};
   emit('start','running','started');
   let lock;
-  try{lock=await acquireRunLockWithRetry(store,'crawl',options.lock);}
-  catch(error){emit('end','failed','lock_error');throw error;}
-  if(!lock.acquired){state.call(callId,schedule.job,source,'skip',started);state.endCall(callId,'skipped',lock.reason);emit('end','skipped',lock.reason);return {outcome:'skipped',reason:lock.reason};}
   let logical:LogicalRun|undefined,called=false;
+  try{lock=await acquireRunLockWithRetry(store,'crawl',options.lock);}
+  catch(error){publishResult('failed','lock_error');options.onCall?.(null);emit('end','failed','lock_error');throw error;}
+  if(!lock.acquired){try{state.call(callId,schedule.job,source,'skip',started,undefined,expected);state.endCall(callId,'skipped',lock.reason);called=true;}catch{publishResult('failed','call_history_unavailable');options.onCall?.(null);throw new Error('call_history_unavailable');}publishResult('skipped',lock.reason);options.onCall?.(null);emit('end','skipped',lock.reason);return {outcome:'skipped',reason:lock.reason};}
   const call=(action:'new'|'resume'|'skip'|'dry_run')=>{
     if(called)store.transaction(()=>store.db.prepare('UPDATE collection_schedule_calls SET run_id=?,action=? WHERE id=?').run(logical?.id??null,action,callId));
-    else{state.call(callId,schedule.job,source,action,started,logical);called=true;}
+    else{state.call(callId,schedule.job,source,action,started,logical,expected);called=true;}
   };
   const finish=(outcome:string,reason:string,output?:unknown,counts:Record<string,number>={}):InvocationResult=>{
-    if(!called)call('skip');state.endCall(callId,outcome,reason,counts);state.writeSummary(schedule.job);emit('end',outcome,reason);
+    if(logical?.engine_id&&schedule.job==='collect')measured=collectCounts(store,logical.engine_id,before,code=>emit('diagnostic','failed',code));
+    else if(Object.keys(counts).length)measured={engine:null,invocation:counts};
+    measured={engine:safeCounts(measured.engine),invocation:safeCounts(measured.invocation)};
+    if(!called)call('skip');state.endCall(callId,outcome,reason,measured);
+    try{state.writeSummary(schedule.job);}catch{emit('status_error','failed','summary_write_failed');}
+    publishResult(outcome,reason,output);emit('end',outcome,reason);
     return {outcome,reason,...(logical?.engine_id?{run_id:logical.engine_id}:{}),...(output!==undefined?{output}:{})};
   };
   try{
     // The lock proves there is no surviving crawler owner. Leases remain untouched.
-    state.recoverCalls(schedule.job);call('skip');
+    for(const recovered of state.recoverCalls(schedule.job)){
+      const previous=invocation(schedule.job,recovered.source,recovered.started_at);previous.call_id=recovered.id as typeof previous.call_id;
+      const event=jobEvent(previous,'result',store.now(),{logical:recovered.run_id?state.get(recovered.run_id):undefined,expected:recovered.expected_slot!==null&&recovered.schedule_version!==null?{target:recovered.expected_slot,version:recovered.schedule_version}:undefined,outcome:'interrupted',reason:'owner_gone'});
+      publish({...event,ended_at:null,observed_at:new Date(store.now()).toISOString()},options.output);
+    }
+    call('skip');
     options.fault?.('before_claim');
     if(options.dryRun){call('dry_run');const adapter=definition.create(true);return finish('dry_run','preview',await adapter.preview?.());}
     logical=state.active(schedule.job);
@@ -92,6 +111,7 @@ export async function runCollectorJob(store:CollectorStore,schedule:JobSchedule,
       state.update(logical.id,'interrupted','owner_gone');return finish('interrupted','owner_gone');
     }
     if(profile&&logical.engine_id){
+      if(schedule.job==='collect')before=engineSnapshot(store,logical.engine_id);
       let progress=engineProgress(store,logical.engine_id);
       if(progress.status==='halted'&&options.resumeId){definition.create().resume!(logical.engine_id);progress=engineProgress(store,logical.engine_id);}
       if(progress.status!=='pending'){
@@ -120,13 +140,14 @@ export async function runCollectorJob(store:CollectorStore,schedule:JobSchedule,
     }
     if(profile){
       // A crash between engine creation and linking is recovered using the saved key.
-      const before=engineProgress(store,logical.engine_id!);
-      if(before.status==='pending'){
+      if(schedule.job==='collect'&&!before)before=engineSnapshot(store,logical.engine_id!);
+      const progressBefore=engineProgress(store,logical.engine_id!);
+      if(progressBefore.status==='pending'){
         if(resuming)adapter.resume!(logical.engine_id!);
         if(!logical.seeded){adapter.seed!(logical.engine_id!);store.transaction(()=>store.db.prepare('UPDATE collection_schedule_runs SET seeded=1 WHERE id=?').run(logical!.id));}
       }
       state.update(logical.id,'running','started');state.writeSummary(schedule.job);
-      if(before.status==='pending')await adapter.run(logical.engine_id!,callId);
+      if(progressBefore.status==='pending')await adapter.run(logical.engine_id!,callId);
       options.fault?.('before_result');
       const progress=engineProgress(store,logical.engine_id!);
       const reason=logical.engine_origin==='legacy_unassigned'?'legacy_unassigned':progress.reason;
@@ -136,13 +157,13 @@ export async function runCollectorJob(store:CollectorStore,schedule:JobSchedule,
     }
     state.update(logical.id,'running','started');state.writeSummary(schedule.job);
     const output=await adapter.run(undefined,callId);options.fault?.('before_result');
-    const result=adapter.result!(output);state.update(logical.id,result.status,result.reason,null,store.now());options.fault?.('after_result');
-    return finish(result.status,result.reason,result.output??output,result.counts);
+    const result=adapter.result!(output);state.update(logical.id,result.status,safeReason(result.reason),null,store.now());options.fault?.('after_result');
+    return finish(result.status,safeReason(result.reason),result.output??output,result.counts);
   }catch(error){
-    if(!called)call('skip');state.endCall(callId,'failed','execution_error');
+    let recorded=true;
+    try{if(!called)call('skip');state.endCall(callId,'failed','execution_error');}catch{recorded=false;}
     // Keep intents and engine ownership for deterministic recovery; do not turn errors into successes.
-    if(logical&&!definition.profileId&&state.get(logical.id).status==='running')state.update(logical.id,'interrupted','execution_error');
-    try{state.writeSummary(schedule.job);}catch{emit('status_error','failed','summary_write_failed');}
-    emit('end','failed','execution_error');throw error;
-  }finally{lock.lock.release();}
+    try{if(logical&&!definition.profileId&&state.get(logical.id).status==='running')state.update(logical.id,'interrupted','execution_error');state.writeSummary(schedule.job);}catch{emit('status_error','failed','summary_write_failed');}
+    publishResult('failed',recorded?'execution_error':'call_history_unavailable');emit('end','failed',recorded?'execution_error':'call_history_unavailable');throw error;
+  }finally{options.onCall?.(null);lock.lock.release();}
 }

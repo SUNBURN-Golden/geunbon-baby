@@ -47,3 +47,15 @@ test.each(['product_no=101','product_no=202','sku=synthetic_private_value'])('lo
   expect(f.store.list('daily_budgets')).toEqual([]);expect(f.store.list('collection_records')).toEqual([]);expect(f.store.list('intake_reservations')).toEqual([]);
  }finally{f.close();}
 });
+
+test('readiness requires the review token, Host and no Origin, and exposes only verified instance identity plus a DB read',async()=>{
+  const { identity }=await import('../crawler/src/process-identity');
+  const f=fixture();try{
+    const own=identity(),auth={intakeToken:'fixture-intake-token-123456789',reviewToken:'fixture-review-token-123456789',extensionOrigin:`chrome-extension://${'a'.repeat(32)}`,host:'127.0.0.1:4318'};
+    const request=(extra:Record<string,string>={})=>new Request('http://127.0.0.1:4318/v1/readiness',{headers:{host:auth.host,authorization:`Bearer ${auth.reviewToken}`,...extra}});
+    const ok=await handleLocal(request(),f.store,auth,own);expect(ok.status).toBe(200);expect(await ok.json()).toEqual({data:{ready:true,identity:own}});
+    for(const headers of [{authorization:`Bearer ${auth.intakeToken}`},{origin:auth.extensionOrigin},{host:'evil.invalid'}] as Record<string,string>[])expect((await handleLocal(request(headers),f.store,auth,own)).status).toBeGreaterThanOrEqual(400);
+    expect((await handleLocal(request(),f.store,auth)).status).toBe(503);
+    vi.spyOn(f.store.db,'prepare').mockImplementation(()=>{throw new Error('private-secret');});const failed=await handleLocal(request(),f.store,auth,own);expect(failed.status).toBe(400);expect(await failed.text()).not.toContain('private-secret');
+  }finally{f.close();}
+});

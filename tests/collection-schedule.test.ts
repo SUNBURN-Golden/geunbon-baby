@@ -204,7 +204,7 @@ test('unexpired lease survives restart; expired external lease recovers receipt 
     const before=['intake_receipts','daily_budgets','sync_outbox','engine_costs'].map(t=>rows(f,t)),calls=f.calls.length;
     f.reopen();const recover=vi.spyOn(f.pipeline.handlers.service,'recover'),execute=vi.spyOn(f.pipeline.handlers.service,'run');
     move(f,Number(ck.lease_until)-1);expect((await job(f)).outcome).toBe('pending');expect(recover).not.toHaveBeenCalled();expect(f.calls).toHaveLength(calls);
-    move(f,Number(ck.lease_until));expect((await job(f))).toMatchObject({outcome:'succeeded',run_id:run.engine_id});expect(recover).toHaveBeenCalledTimes(1);expect(execute).not.toHaveBeenCalled();expect(['intake_receipts','daily_budgets','sync_outbox','engine_costs'].map(t=>rows(f,t))).toEqual(before);
+    move(f,Number(ck.lease_until));const events:string[]=[];expect((await job(f,{output:line=>events.push(line)}))).toMatchObject({outcome:'succeeded',run_id:run.engine_id});expect(JSON.parse(events.at(-1)!)).toMatchObject({counts:{engine:{service_receipts_confirmed:1},invocation:{checkpoint_attempts_delta:0,service_receipts_confirmed_delta:1}}});expect(recover).toHaveBeenCalledTimes(1);expect(execute).not.toHaveBeenCalled();expect(['intake_receipts','daily_budgets','sync_outbox','engine_costs'].map(t=>rows(f,t))).toEqual(before);
     expect(rows(f,'engine_checkpoints').find(c=>c.id===ck.id)).toMatchObject({phase:'done',attempts:0});
   }finally{f.close();}
 });
@@ -247,7 +247,7 @@ test('summaries contain KST times, fixed outcomes and counts, use private permis
     expect(statSync(dir).mode&0o777).toBe(0o700);expect(statSync(path).mode&0o777).toBe(0o600);expect(summary.call).toMatchObject({outcome:'succeeded',action:'new'});expect(summary.call.started_at).toMatch(/\+09:00$/);expect(summary.call.ended_at).toMatch(/\+09:00$/);
     expect(lines).toHaveLength(2);expect(lines.every(line=>/at=.+\+09:00 .*call_id=/.test(line))).toBe(true);
     const calls=f.calls.length;unlinkSync(path);await job(f);expect(f.calls).toHaveLength(calls);expect(existsSync(path)).toBe(true);
-    unlinkSync(path);symlinkSync(join(f.dir,'do-not-create'),path);await expect(job(f)).rejects.toThrow('unsafe_file');expect(f.calls).toHaveLength(calls);expect(existsSync(join(f.dir,'do-not-create'))).toBe(false);
+    unlinkSync(path);symlinkSync(join(f.dir,'do-not-create'),path);expect(await job(f)).toMatchObject({outcome:'already_completed'});expect(f.calls).toHaveLength(calls);expect(existsSync(join(f.dir,'do-not-create'))).toBe(false);
   }finally{f.close();}
 });
 test('corrupt checkpoint times stop automatic work without transport, attempts or a replacement engine',async()=>{
@@ -260,8 +260,8 @@ test('worker immediately checks, uses one scheduler owner, and keeps other jobs 
   const f=fixture();try{
     const executions:string[]=[],def=(job:string):JobDefinition=>({create:()=>({enabled:true,run:async()=>{executions.push(job);return {};},result:()=>({status:'succeeded',reason:'completed'})})});
     const controller=new AbortController(),worker=new ScheduleWorker(f.store,def,loadSchedule(),silent);
-    const sleep=vi.fn(async(ms:number)=>{expect(ms).toBe(60000);expect((await new ScheduleWorker(f.store,def,loadSchedule(),silent).run(new AbortController().signal,{lock:quickLock()})).reason).toBe('run_locked');controller.abort();});
-    await worker.run(controller.signal,{sleep});expect(executions).toEqual(['discover','collect']);expect(sleep).toHaveBeenCalledTimes(1);
+    const sleep=vi.fn(async(ms:number)=>{expect(ms).toBe(60000);expect((await new ScheduleWorker(f.store,def,loadSchedule(),silent).run(new AbortController().signal,{lock:quickLock(),processes:()=>[]})).reason).toBe('run_locked');controller.abort();});
+    await worker.run(controller.signal,{sleep,processes:()=>[]});expect(executions).toEqual(['discover','collect']);expect(sleep).toHaveBeenCalledTimes(1);
     await worker.tick();expect(executions).toHaveLength(2);
   }finally{f.close();}
 });

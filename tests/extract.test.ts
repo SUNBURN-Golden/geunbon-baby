@@ -164,3 +164,110 @@ test('extracted hints always fit the review schema, even with many long links', 
   assert.ok(JSON.stringify(hints).length <= 8000);
   assert.ok(parseSuggestions(hints));
 });
+
+
+test('incidental substrings, undeclared spacing and hashtag continuations never create models', () => {
+  for (const text of [
+    '트레이닝', '실내 점프 트레이닝', '트레이 닝', 'unbalanced', '요요현상', '조이스틱',
+    '트립트랩과자', '요요3현상', '#트립트랩공구소식', '앞트립트랩', '트립트랩뒤',
+    'mytripptrapp', 'tripptrapper', 'fox5news', '트 립 트 랩', '부가부코리아',
+    'dXthrone', 'maxiXcosi', 'https://example.test/tripptrapp/트립트랩',
+    '_트립트랩', '트립트랩_', 'tripptrapp\u0301', 'tripptrapp은',
+  ]) assert.deepEqual(extractModels(text), [], text);
+});
+
+test('bare accessories, materials, trims and categories have no identity score', () => {
+  for (const text of [
+    '트레이', 'tray', '베이비세트', 'babyset', 'baby set', '배시넷', 'bassinet',
+    '범퍼바', 'bumper bar', '섀시', 'chassis', '뉴본', 'newborn', '프레임', '시트', '베이스',
+    '너도밤나무', '오크', '느와르', '카본', '애스턴마틴', 'Aston Martin',
+    'LUX STYLE CLASSIC 리뉴 리미티드 프로 메쉬 소프트 미니 원 에어', '하이체어 유모차 카시트 바운서',
+  ]) assert.deepEqual(extractModels(text), [], text);
+  for (const text of ['스토케', '스토케코리아', 'BabyBjörn', 'D.THRONE', 'Maxi-Cosi', '에그', '두나']) {
+    const models = extractModels(text);
+    assert.ok(models.length > 0, text);
+    assert.ok(models.every(m => m.confidence === 0.35), text);
+  }
+  for (const text of ['스토케 너도밤나무', '스토케 트레이 트레이 트레이', '부가부 느와르 리미티드']) {
+    assert.ok(extractModels(text).every(m => m.confidence < 0.75), text);
+  }
+});
+
+test('branded tray references remain weak suggestions and complete bundles rank first', () => {
+  for (const text of ['스토케 트레이', 'Stokke tray']) {
+    const models = extractModels(text);
+    assert.equal(models.find(m => m.model_id === 'model-4')?.confidence, 0.60, text);
+    assert.ok(models.every(m => m.confidence < 0.75), text);
+  }
+  const tray = extractModels('트립트랩 트레이');
+  assert.equal(tray.find(m => m.model_id === 'model-4')?.confidence, 0.80);
+  assert.ok(tray.every(m => m.confidence < 0.95));
+  for (const text of ['트립트랩 베이비세트 트레이', 'Stokke Tripp Trapp baby set tray', '스토케 트립트랩+베이비세트+트레이', 'Tripp Trapp (baby set & tray)']) {
+    const models = extractModels(text);
+    assert.equal(models[0].model_id, 'model-4', text);
+    assert.equal(models[0].confidence, 0.95, text);
+    assert.ok(models.find(m => m.model_id === 'model-1')!.confidence < models[0].confidence);
+    assert.ok(models.every(m => m.brand === 'Stokke'), text);
+  }
+  assert.equal(extractModels('트립트랩 하이체어(오크)')[0].model_id, 'model-2');
+  assert.ok(extractModels('트립트랩 + 폭스5 + 오크').filter(m => m.brand === 'Stokke').every(m => m.confidence < 0.95));
+});
+
+test('explicit Korean particles, commerce suffixes, OCR aliases and same-brand compounds survive', () => {
+  for (const text of [
+    '트립\n트랩', '트립 트랩', 'Tripp Trapp', 'tripp\ntrapp', 'Ｔｒｉｐｐ Ｔｒａｐｐ',
+    '#트립트랩공구', '#트립트랩공동구매', '스토케트립트랩',
+    ...['은', '는', '이', '가', '을', '를', '과', '와', '도', '만', '의', '에', '에서', '으로', '로'].map(p => `트립트랩${p}`),
+  ]) {
+    const models = extractModels(text);
+    assert.ok(models.some(m => m.model_id === 'model-1' && m.confidence >= 0.80), text);
+    assert.ok(models.every(m => m.brand === 'Stokke'), text);
+  }
+});
+
+test('declared versions, qualifiers and identifying phrases establish the supported families', () => {
+  for (const [text, id] of [
+    ['폭스5', 'model-10'], ['fox5', 'model-10'], ['요요3', 'model-7'], ['yoyo3', 'model-7'],
+    ['버터플라이2', 'model-12'], ['butterfly2', 'model-12'], ['에그3', 'model-30'], ['egg3', 'model-30'],
+    ['리프2', 'model-38'], ['reef2', 'model-38'], ['듄2', 'model-39'], ['dune2', 'model-39'],
+    ['요요3은', 'model-7'], ['yoyo3은', 'model-7'], ['제로나 T는', 'model-19'], ['제로나 T', 'model-19'], ['zerona Gi', 'model-18'], ['아이스핀 360', 'model-23'],
+    ['옴니 브리즈', 'model-40'], ['omni breeze', 'model-40'], ['피파넥스트', 'model-20'], ['pipa next', 'model-20'],
+    ['토들넥스트', 'model-21'], ['베이비뵨 원 에어', 'model-28'], ['BabyBjörn mini', 'model-29'],
+    ['두나 카시트 겸용 유모차', 'model-41'], ['Silver Cross reef2', 'model-38'], ['D.THRONE initial', 'model-32'],
+    ['Maxi-Cosi mica', 'model-36'], ['에그3 Aston Martin', 'model-31'],
+  ]) assert.ok(extractModels(text).some(m => m.model_id === id && m.confidence >= 0.75), text);
+  assert.ok(!extractModels('제로나 T').some(m => m.model_id === 'model-18'));
+  assert.ok(!extractModels('제로나 Gi').some(m => m.model_id === 'model-19'));
+  for (const text of ['T', 'Gi', '360', '3', '원 에어', '제로나T', '아이스핀360', '폭스5현상']) {
+    assert.ok(extractModels(text).every(m => m.confidence < 0.75), text);
+  }
+});
+
+test('ambiguous families need local matching evidence; other mentions and brands cannot boost them', () => {
+  for (const text of ['요요', '폭스', '블리스', '밸런스', '하모니', '미카', '타이탄', '브리즈', '넥스트']) {
+    assert.ok(extractModels(text).every(m => m.confidence <= 0.50), text);
+  }
+  for (const [text, id] of [['부가부 폭스', 'model-10'], ['스토케 요요', 'model-7'], ['BabyBjörn balance', 'model-26']]) {
+    assert.equal(extractModels(text).find(m => m.model_id === id)?.confidence, 0.90, text);
+  }
+  for (const text of [
+    '스토케 폭스', '스토케 폭스5', '부가부 트립트랩', '스토케 폭스 부가부', '부가부 폭스 부가부',
+    '부가부, 폭스', '부가부. 폭스', '부가부 그리고 폭스', '부가부 또는 폭스', '부가부 트립트랩 폭스',
+    '부가부와 폭스', '스토케 폭스 폭스 느와르',
+  ]) assert.ok(extractModels(text).filter(m => ['model-10', 'model-11'].includes(m.model_id)).every(m => m.confidence < 0.75), text);
+  const two = extractModels('스토케 트립트랩과 부가부 폭스');
+  assert.equal(two.find(m => m.model_id === 'model-1')?.confidence, 0.90);
+  assert.equal(two.find(m => m.model_id === 'model-10')?.confidence, 0.90);
+  const independent = extractModels('트립트랩과 요요3');
+  assert.ok(independent.some(m => m.model_id === 'model-1' && m.confidence === 0.80));
+  assert.ok(independent.some(m => m.model_id === 'model-7' && m.confidence === 0.80));
+});
+
+test('ordering and ten-result limit stay deterministic without accumulating repeated weak words', () => {
+  const caption = '트립트랩 요요3 폭스5 버터플라이2 프리암 미오스 멜리오 트리브 아이스핀';
+  const models = extractModels(caption);
+  assert.equal(models.length, 10);
+  assert.deepEqual(models, extractModels(caption));
+  assert.deepEqual(models.map(m => m.model_id), models.map(m => m.model_id).sort((a, b) => a.localeCompare(b)));
+  assert.deepEqual(extractModels('스토케 트레이 트레이'), extractModels('스토케 트레이'));
+});

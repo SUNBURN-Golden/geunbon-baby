@@ -19,7 +19,7 @@
 
 **Workers Cron은 수집기를 실행하지 않는 로그 stub입니다. Playwright와 OCR은 Linux에서만 실행합니다.** 사이트는 로컬 수집 레코드·URL·원문·셀러·근거를 가져오지 않습니다. 로컬 `seller_candidates`를 사이트 판매자로 자동 등록하지도 않습니다. 수집함의 `ready_to_publish`는 사람의 공개 검토를 마친 로컬 상태이며 실제 게시 동작이 아닙니다. Instagram pending → 사이트 관리자 승인 → deals 경로와 별개입니다.
 
-Linux 수집 예약은 `npm run collector:worker -- schedule`의 상주 슬롯 관리로 실행합니다. KST 누락 슬롯 병합, 수동·예약 공통 실행, 상태 기록과 전환 절차는 [수집 일정 운영](docs/collector/scheduling.md)을 참고하세요. 운영 PM2 전환은 별도로 수행합니다.
+Linux 수집 예약은 `npm run collector:worker -- schedule`의 상주 슬롯 관리로 실행합니다. KST 누락 슬롯 병합, 수동·예약 공통 실행, 상태 기록과 전환 절차는 [수집 일정 운영](docs/collector/scheduling.md)을 참고하세요. 운영 PM2 전환은 별도로 수행합니다. 추적되는 `crawler/local-worker.mjs`·`collector-scheduler.mjs`는 공통 시작/결과 NDJSON을 출력합니다. PM2 밖의 Linux systemd watchdog은 실제 PID 신원·인증된 readiness·SQLite 슬롯 이력을 감시하며, 소유자 부재가 확인된 앱만 영속 상한 안에서 복구합니다. PM2 online이나 최근 로그 하나는 수집 성공의 증거가 아닙니다.
 
 3경로는 자동 RSS/API/사이트맵/링크 발견(`auto_discovery`), 승인된 공개 브라우저 추출(`browser_extract`), Chrome 수동 담기(`manual_clip`)입니다. 저장 전·AI 전달 전 공통 개인정보 필터(`shared/privacy-rules.ts`)를 적용하고 자료를 `untrusted_source_data`로 격리합니다. AI는 필수가 아니며 자료 속 지시로 도구 실행·상태 승격·게시를 하지 않습니다.
 
@@ -27,7 +27,20 @@ Linux 수집 예약은 `npm run collector:worker -- schedule`의 상주 슬롯 �
 
 ### 사이트에 표시하는 수집 현황
 
-`/admin`은 후보(`discovered`)·원문 확인(`source_check_needed`)·중복 제외(`dedup_excluded`)·검증 완료(`verified_waiting`)·공개 대기(`ready_to_publish`)의 건수만 표시합니다. 미수신은 **미동기화**이며 0건으로 간주하지 않습니다. 생성 후 60분을 넘긴 현황은 **동기화 지연**입니다. 여러 작업기는 각각 표시하고 고유 자료량으로 합산하지 않습니다. 같은 버전의 다른 payload는 409이고 이전 버전은 최신 현황을 바꾸지 않습니다.
+`/admin`은 사이트 D1에 저장된 건수 스냅샷만 읽어 후보(`discovered`)·원문 확인(`source_check_needed`)·중복 제외(`dedup_excluded`)·검증 완료(`verified_waiting`)·공개 대기(`ready_to_publish`)를 표시합니다.
+
+| 조건 | 표시 |
+| --- | --- |
+| 조회 성공, 수신된 스냅샷 없음 | **미동기화**, 건수 없음 |
+| 유효한 스냅샷, 생성 후 60분 이하 | **동기화됨**, 저장된 건수·생성/수신 시각 |
+| 유효한 스냅샷, 생성 후 60분 초과 | **동기화 지연**, 저장된 건수·생성/수신 시각 |
+| D1 조회 실패 또는 저장된 JSON·스냅샷 구조·집계·시각 오류 | **수집 현황을 불러오지 못했습니다**, 건수·시각·동기화 성공 표시 없음 |
+
+미수신과 읽기 실패는 0건으로 간주하지 않습니다. 유효한 스냅샷에 실제로 저장된 0건은 표시합니다. 여러 작업기는 각각 표시하고 고유 자료량으로 합산하지 않습니다. 하나라도 잘못된 행이 있으면 수집 현황 전체를 읽기 실패로 표시하며 일부 작업기만 정상인 것처럼 표시하지 않습니다. 같은 버전의 다른 payload는 409이고 이전 버전은 최신 현황을 바꾸지 않습니다.
+
+읽기 실패는 Linux 수집기의 건강 상태를 판단하는 근거가 아닙니다. 새로고침 후에도 계속되면 사이트 D1 가용성, `DB` 바인딩, `0007_collector_status.sql` 적용 여부와 저장된 스냅샷의 무결성을 확인하세요. 화면에는 DB 오류·원시 payload·자격 증명을 표시하지 않습니다. 다른 관리자 구역은 각자의 조회가 성공하면 검수·판매자·공구·후보 폼을 계속 사용할 수 있습니다. 전체 D1 장애에서는 이 기능들의 사용을 보장하지 않습니다.
+
+**동기화 지연**이면 별도 Linux 시스템의 [건수 동기화](crawler/README.md#건수-동기화) 실행 간격과 outbox·재전송 상태를 확인하세요. 사이트에서 수집기를 실행하거나 Linux SQLite에 접근하지 않습니다.
 
 ## 가격 원칙
 
@@ -101,6 +114,8 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 
 별도 `/brands` 페이지는 없습니다. `/models?by=brand`와 `GET /api/v1/brands`를 사용합니다.
 
+`/models`의 `q`, `brand`, `category`, `by`가 반복되면 **빈 문자열을 포함해 첫 번째 값만** 사용합니다. 누락되거나 빈 배열이면 값 없음으로 처리하며 공백·대소문자는 보존합니다. 빈 값은 해당 필터를 해제하므로 `?q=&q=Stokke`는 검색 제한이 없습니다. 검색은 대소문자를 구분하지 않고 브랜드·종류는 정확히 일치해야 하며, `by`의 첫 값이 `brand`일 때만 브랜드순으로 정렬합니다. 진행 중 공구 우선순위는 유지합니다.
+
 `/models` 카드(`app/models/_card.tsx`)는 **상품명(브랜드+모델), 1:1 손그림, 공식가, 현재 공구가** 네 항목만 표시합니다. 공구가 없으면 **진행 중인 공구 없음**입니다. 광고·검증 배지·확인 시각·추가 메타데이터를 붙이지 않습니다. 출처 링크와 확인일(`checked_at`에 해당하는 현재 필드 `checked`)·검증 수준은 모델 상세에 표시합니다. `/`(진행 중 공구만)·`/deals`·`/calendar`·`/models/:id`는 하나의 공구 카드를 사용하며 광고·기간·공구가·검증된 공식가 비교·`rel=sponsored` 판매처 원문 링크·통신판매업 신고·청약철회 7일·정식수입 인라인 증빙 배지(저장된 근거 URL이 있으면 근거 확인 링크, 없으면 미확인)·판매자 행이 있을 때 신뢰 정보 링크·직접 판매/거래 당사자가 아니라는 안내를 표시합니다. `/deals/:id` 상세도 같은 증빙 배지와 광고·거래 안내를 표시합니다. 증빙은 사이트 D1의 공개 판매자 URL만 사용하며 계정 연결·승인 귀속 사유는 노출하지 않습니다.
 
 `/admin`은 httpOnly·SameSite strict·1시간 쿠키와 Server Actions 동일 origin 검증을 사용합니다. 로그아웃은 발급 시와 같은 Path=/admin·HttpOnly·SameSite=strict·Secure(프로덕션에서만) 속성으로 쿠키를 만료시킵니다. 서비스 토큰 설정이 잘못되면 기존 쿠키가 있어도 설정 안내만 표시하고 로그인·검수를 차단합니다. 공개 화면에는 대기 원문을 전달하지 않습니다. 로컬 관리자 접속은 localhost를 사용하고 공유/운영 환경은 HTTPS를 사용합니다. 토큰을 URL에 넣지 마세요.
@@ -114,15 +129,16 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 - 흐름: `/login`의 한 `<form method="get">`에 뉴스레터 체크박스(기본 체크)와 Google 버튼 하나가 함께 있습니다. `GET /api/auth/login/google`이 state·PKCE와 체크박스 값을 `agamajung_oauth` 쿠키(httpOnly·SameSite=Lax·Path=/api/auth/callback·10분)에 담아 Google로 302하고, `GET /api/auth/callback/google`이 state를 확인한 뒤 토큰 교환 → 이메일·공급자 id 조회 → D1 기록 → 세션 쿠키 발급 후 `/me`로 302합니다. 로그아웃은 `/me`의 서버 액션으로만 처리합니다(GET 라우트 없음). 모든 인증 응답은 `Cache-Control: no-store`입니다.
 - 환경변수(`.dev.vars` 또는 운영 비밀 바인딩): `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`(둘 다 필요), `AUTH_ORIGIN`(기본 `https://agamajoong.soulbound.co.kr`, 로컬은 `http://localhost:8787`). Google 자격 증명 중 하나라도 없으면 버튼·폼 없이 준비 중 안내만 보이고 Google login·callback은 404입니다. 쿠키 `Secure`는 `AUTH_ORIGIN`이 https일 때만 켜집니다. 리디렉트 URI는 Host 헤더가 아니라 `AUTH_ORIGIN`으로 고정됩니다.
 - Google Cloud Console에 등록할 리디렉트 URI는 `https://agamajoong.soulbound.co.kr/api/auth/callback/google`입니다. 로컬에서는 `AUTH_ORIGIN`에 맞는 Google 콜백 URI를 별도로 등록합니다.
-- `/api/auth/login/kakao`와 `/api/auth/callback/kakao`는 **항상 404·`Cache-Control: no-store`**입니다. 기존 `KAKAO_REST_KEY`·`KAKAO_CLIENT_SECRET` 바인딩, 인증 코드, 이전 state 쿠키가 있어도 공급자 요청이나 DB 접근 전에 거부합니다. 기존 바인딩은 무시하므로 배포 환경에서 먼저 제거할 필요가 없습니다.
+- Google 콜백은 일치하는 state와 유효한 PKCE verifier가 필수입니다. verifier는 43~128자의 영문·숫자·`-._~`만 허용하며 토큰 교환에 `code_verifier`로 항상 전달합니다. 누락·null·빈 값·길이/문자 오류는 공급자 요청이나 DB 접근 전에 `/login?error=state`로 302하고 state 쿠키를 만료시킵니다.
+- `/api/auth/login/kakao`와 `/api/auth/callback/kakao`는 **항상 404·본문 `Not found`·`Cache-Control: no-store`**입니다. 기존 `KAKAO_REST_KEY`·`KAKAO_CLIENT_SECRET` 바인딩, 인증 코드, 이전 state 쿠키나 유효한 Google state 쿠키가 있어도 공급자 요청이나 DB 접근 전에 거부합니다. 리디렉트나 쿠키 발급·변경은 없습니다. 기존 바인딩은 무시하므로 배포 환경에서 먼저 제거할 필요가 없습니다.
 - 수집 정보: 이메일과 Google 계정 id뿐입니다. 액세스·리프레시 토큰, 이름, 프로필은 저장하지 않습니다. Google의 `email_verified`가 참인 이메일만 받습니다.
 - 세션 토큰은 해시만 저장합니다(30일). 기존 Kakao 계정·identity·유효 세션은 그대로 보존합니다. `0005_users.sql` 변경이나 데이터 마이그레이션은 없으며, 기존 세션은 정상 만료나 로그아웃까지 `/me`와 뉴스레터 설정을 계속 사용할 수 있습니다. 이후 Kakao로 새 세션을 만들 수는 없습니다.
-- 뉴스레터: 신규 가입 때만 제출한 체크박스 값을 저장하고, 체크한 경우 동의 시각을 기록합니다. 재로그인은 기존 선택·동의·해지 시각을 바꾸지 않습니다. `/me`에서 해지·재구독할 수 있고 같은 선택의 반복 제출은 시각을 바꾸지 않습니다.
+- 뉴스레터: 신규 가입 때만 로그인 시작 시 제출한 체크박스 값을 저장하고, 체크한 경우 동의 시각을 기록합니다. 콜백의 쿼리 매개변수로 이 선택을 바꿀 수 없습니다. 재로그인은 기존 선택·동의·해지 시각을 바꾸지 않습니다. `/me`에서 해지·재구독할 수 있고 같은 선택의 반복 제출은 시각을 바꾸지 않습니다.
 - 계정은 `(provider, provider_user_id)`로 조회합니다. 기존 Kakao 계정과 이메일이 같은 Google 로그인도 별도 계정을 만들며 기존 계정을 수정하거나 자동 연결하지 않습니다. 따라서 **뉴스레터 발송 시 이메일 기준 중복 제거가 필요**합니다. **계정 삭제는 후속 과제**입니다. 레이트리밋은 Cloudflare 운영 설정에 맡깁니다. 이 인증 설정은 사이트 전용이며 Linux 수집기의 로그인·자격 증명·저장소와 분리됩니다.
 
 ## JSON REST API v1
 
-읽기 응답은 `{ "data": ... }`, 실패는 `{ "error": "..." }`입니다. 현재 동일 origin API이며 향후 Expo 네이티브 클라이언트에서도 사용할 수 있습니다. 브라우저 cross-origin CORS는 열지 않았습니다.
+읽기 응답은 `{ "data": ... }`, 실패는 `{ "error": "..." }`입니다. 현재 동일 origin API이며 공개 읽기 API는 향후 Expo 네이티브 클라이언트에서도 사용할 수 있습니다. 관리자 호환 현황 API는 공개 모바일 클라이언트에 `ADMIN_TOKEN`, `INGEST_TOKEN`, `COLLECTOR_STATUS_TOKEN`을 포함할 권한을 부여하지 않습니다. 관리용 서비스 자격 증명은 서버 측에만 보관합니다. 브라우저 cross-origin CORS는 열지 않았습니다.
 
 | 메서드 | 경로 | 설명 |
 | --- | --- | --- |
@@ -134,6 +150,7 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | GET | `/api/v1/calendar` | 시작일순 검수 완료 공구 |
 | POST | `/api/v1/ingest` | INGEST_TOKEN. Instagram pending 접수 또는 쓰기 가능한 legacy 외부 후보 접수 |
 | POST | `/api/v1/collector/status` | COLLECTOR_STATUS_TOKEN. 건수 스냅샷만 접수 |
+| GET | `/api/v1/collector-status` | ADMIN_TOKEN 전용 관리용 호환 경로. `/api/v1/admin/collection-status`와 동일한 건수 현황 |
 | GET | `/api/v1/admin/collection-status` | ADMIN_TOKEN. 작업기별 다섯 상태·생성/수신 시각·지연 여부 |
 | GET | `/api/v1/admin/queue` | ADMIN_TOKEN 전용, pending만 captured_at·id 오름차순 페이지. limit 기본/최대 100, 응답 `{ data, next_cursor }` |
 | POST | `/api/v1/admin/review/:id` | 관리자 승인/반려, 승인 시 모델·판매자·귀속 근거 필수 |
@@ -147,11 +164,19 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | POST | `/api/v1/admin/candidates/:id` | `{ "action": "dismiss" }`만 허용(그 외 400, 이미 처리됨 409, 없는 id 404) |
 | GET | `/api/v1/images/:key` | R2 `IMAGES`의 `public/` 아래 jpg/jpeg/png/webp/avif. 허용 파일명·존재 여부 검사, 없으면 404 |
 | GET | `/api/auth/login/google` | Google OAuth 시작. 공급자 미설정 시 404 |
-| GET | `/api/auth/login/kakao` | 비활성. 기존 설정과 무관하게 DB·공급자 접근 전 항상 404·no-store |
+| GET | `/api/auth/login/kakao` | 비활성. 기존 설정과 무관하게 DB·공급자 접근 전 항상 404·본문 `Not found`·no-store |
 | GET | `/api/auth/callback/google` | Google OAuth 콜백. Google 미설정 시 404 |
-| GET | `/api/auth/callback/kakao` | 비활성. 코드·이전 state 쿠키·기존 설정과 무관하게 항상 404·no-store |
+| GET | `/api/auth/callback/kakao` | 비활성. 코드·state 쿠키·기존 설정과 무관하게 항상 404·본문 `Not found`·no-store |
 
 v1 분기는 `lib/api.ts`, 이미지 라우트는 `app/api/v1/images/[key]/route.ts`, OAuth는 `app/api/auth/[[...path]]/route.ts`와 `lib/auth.ts`에 있습니다. OAuth는 v1 밖의 별도 경로입니다. 공개 공구 상세 GET API는 없으며 모델 비교나 공구 목록을 사용합니다. 관리자 행은 모두 ADMIN_TOKEN이 필요합니다.
+
+### 관리자 건수 현황 호환 API
+
+`GET /api/v1/collector-status`는 `GET /api/v1/admin/collection-status`와 같은 인증·응답을 사용하는 관리용 호환 경로입니다. 두 경로 모두 `Authorization: Bearer ADMIN_TOKEN`이 필요하며, 누락·오류 또는 수집/현황 토큰·관리자 세션 쿠키 값을 bearer로 사용하면 401입니다. D1 조회 전에 관리자·수집 토큰이 각각 24자 이상, 앞뒤 공백 없이 서로 다른지 검증하고 선택 현황 토큰과의 충돌도 차단합니다. 설정 오류는 인증보다 먼저 503으로 거부합니다. 별개의 현황 토큰이 누락되거나 짧아도 관리자 읽기를 차단하지 않으며, 현황 토큰의 강도는 기존 POST 접수 경로에서 별도로 검증합니다.
+
+응답은 `{ "data": { "synced": false, "workers": [] } }`(미수신) 또는 `synced: true`와 작업기별 `{ snapshot, received_at, stale }`입니다. `snapshot`에는 `worker_id`, `version`, `generated_at`, 다섯 상태의 `counts`, 보조 집계 `total`, `unique`, `groups`, `unresolved_conflicts`, `recheck_due`만 있습니다. 로컬 수집 레코드·URL·원문·근거는 제공하지 않습니다. 유효한 저장값 0건은 유지하고, 미수신을 0건으로 만들지 않습니다. 여러 작업기는 작업기 ID순으로 각각 반환하며 합산하지 않습니다. `stale`은 수신 시각이 아니라 생성 후 **60분 초과**일 때 true이며, 정확히 60분은 false입니다.
+
+D1 오류나 잘못된 저장 스냅샷은 원시 자료·부분 결과 없이 일반 503 오류를 반환합니다. 호환 경로의 인증된 POST는 405이며, 성공 및 401/503/405 응답 모두 `Cache-Control: no-store`입니다. 이 API는 사이트 D1의 건수만 읽으며 Linux 수집기 실행·동기화나 로컬 저장소 접근을 허용하지 않습니다.
 
 ### 관리자 검수 목록 페이지 계약
 
@@ -265,11 +290,13 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 
 `pm2 start crawler/ecosystem.config.cjs`는 등록 즉시 한 번 실행합니다. 예약만 등록하는 절차와 보안 중단 후 수동 확인은 수집기 운영 문서를 따르세요. discover/collect는 별도 상주 스케줄러 정의를 제공하며 sync 타이머는 운영자가 관리합니다.
 
+사이트 현황의 **읽기 실패**와 Linux 전송의 **동기화 지연**은 점검 경로가 다릅니다. 읽기 실패는 사이트 D1·바인딩·마이그레이션·저장 스냅샷을, 지연은 Linux sync 실행 간격·outbox를 확인합니다. 구체적인 상태 구분은 [사이트에 표시하는 수집 현황](#사이트에-표시하는-수집-현황)을 따릅니다.
+
 ## 블루프린트와 다른 점
 
 인증은 블루프린트대로 Google만 활성화하며 Kakao·Naver는 보류합니다. 별도 가입 양식 없이 뉴스레터는 기본 체크입니다. 기존 Kakao identity·세션을 보존하는 것은 새 Kakao 로그인을 허용하지 않습니다.
 
-1. collector-status는 **POST `/api/v1/collector/status`**(현황 토큰)와 **GET `/api/v1/admin/collection-status`**(관리자)로 나뉘며 건수 스냅샷만 저장합니다.
+1. collector-status는 **POST `/api/v1/collector/status`**(현황 토큰)와 **GET `/api/v1/admin/collection-status`**(관리자)로 나뉘며 건수 스냅샷만 저장합니다. 블루프린트의 **GET `/api/v1/collector-status`**는 같은 관리자 전용 읽기의 호환 경로입니다.
 2. `/brands` 페이지는 없고 `/models?by=brand`와 `GET /api/v1/brands`가 브랜드 탐색을 담당합니다.
 3. `/me`, `/sellers`, `/api/v1/images/:key`(R2 `public/`만), 관리자 판매자·공구 정정/철회·후보 API가 추가되어 있습니다.
 4. legacy **`kind: "external_listing"` ingest는 여전히 쓰기 가능**합니다. 새 external_candidates 삽입과 candidate 갱신만 하며 dismissed는 보존합니다. 관리자는 조회·dismiss만 할 수 있고 후보를 공구로 승격하는 경로는 없습니다. price_hint/price_raw는 공구가나 공식가로 표시되지 않습니다.

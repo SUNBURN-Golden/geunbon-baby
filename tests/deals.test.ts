@@ -434,6 +434,44 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     ['seller_withdrawal_source', '청약철회 7일', 'https://example.com/withdrawal'],
     ['seller_official_import_source', '정식수입', 'https://example.com/import'],
   ] as const;
+
+  test('list and detail render seller evidence with one joined read each and no evidence fetches', async () => {
+    await memory.db.prepare('UPDATE sellers SET registration_source = ?, withdrawal_source = ?, official_import_source = ? WHERE id = ?')
+      .bind(...evidence.map(([, , url]) => url), 'seller-1').run();
+    // Observe executed reads as well as preparations, after all fixture writes.
+    const statementPrototype = Object.getPrototypeOf(memory.db.prepare(DEAL_SELECT)) as D1PreparedStatement;
+    const prepare = vi.spyOn(memory.db, 'prepare');
+    const bind = vi.spyOn(statementPrototype, 'bind');
+    const readAll = vi.spyOn(statementPrototype, 'all');
+    const readFirst = vi.spyOn(statementPrototype, 'first');
+    try {
+      const list = renderToStaticMarkup(await DealsPage());
+      expect(list.match(/class="deal-card"/g)).toHaveLength(2);
+      expect(list.match(/class="badge verified"/g)).toHaveLength(3);
+      expect(list.match(/· 미확인/g)).toHaveLength(3);
+      expect(prepare).toHaveBeenCalledExactlyOnceWith(DEAL_SELECT);
+      expect(readAll).toHaveBeenCalledTimes(1);
+      expect(readFirst).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+
+      vi.clearAllMocks();
+
+      const detail = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) }));
+      expect(detail.match(/class="badge verified"/g)).toHaveLength(3);
+      expect(prepare).toHaveBeenCalledExactlyOnceWith(`${DEAL_SELECT} AND d.id = ?`);
+      expect(bind).toHaveBeenCalledExactlyOnceWith(fixture.id);
+      expect(readFirst).toHaveBeenCalledTimes(1);
+      expect(readAll).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      prepare.mockRestore();
+      bind.mockRestore();
+      readAll.mockRestore();
+      readFirst.mockRestore();
+      await memory.db.prepare('UPDATE sellers SET registration_source = NULL, withdrawal_source = NULL, official_import_source = NULL').run();
+    }
+  });
+
   // All eight combinations catch swapped fields and states inferred from another badge.
   test.each([
     ...Array.from({ length: 8 }, (_, mask) => ({ name: `evidence mask ${mask}`, mask, blank: false })),

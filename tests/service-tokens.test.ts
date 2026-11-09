@@ -78,6 +78,7 @@ function noSecrets(value: string, config: TokenConfig = context.env!) {
 }
 async function expectResponse(response: Response, status: number) {
   expect(response.status).toBe(status);
+  expect(response.headers.get('cache-control')).toBe('no-store');
   noSecrets(await response.text());
 }
 async function unchanged() {
@@ -128,8 +129,9 @@ test.each([undefined, '', 'a'.repeat(23), ` ${valid.ADMIN_TOKEN}`, `${valid.ADMI
 
 test.each(invalid)('protected APIs fail closed and public reads remain available: $name', async ({ config }) => {
   context.env = { ...context.env!, ADMIN_TOKEN: undefined, INGEST_TOKEN: undefined, COLLECTOR_STATUS_TOKEN: undefined, ...config };
+  const prepare = vi.spyOn(memory.db, 'prepare');
   for (const [path, body] of [
-    ['admin/queue', undefined], ['admin/candidates', undefined], ['admin/collection-status', undefined],
+    ['admin/queue', undefined], ['admin/candidates', undefined], ['admin/collection-status', undefined], ['collector-status', undefined], ['collector-status', {}],
     ['admin/review/item-1', approval], ['admin/candidates/cand-1', { action: 'dismiss' }],
   ] as const) {
     await expectResponse(await call(path, config.ADMIN_TOKEN, body), 503);
@@ -137,19 +139,21 @@ test.each(invalid)('protected APIs fail closed and public reads remain available
   await expectResponse(await call('ingest', config.INGEST_TOKEN, ingest), 503);
   await expectResponse(await call('admin/queue'), 503);
   await expectResponse(await call('ingest', undefined, ingest), 503);
+  expect(prepare).not.toHaveBeenCalled();
+  prepare.mockRestore();
   for (const path of ['brands', 'models', 'models/model-1', 'deals', 'calendar', 'sellers']) await expectResponse(await call(path), 200);
   await unchanged();
 });
 
 test('valid credentials retain separate privileges, including collector isolation', async () => {
   for (const token of [undefined, valid.INGEST_TOKEN, valid.COLLECTOR_STATUS_TOKEN]) {
-    for (const path of ['admin/queue', 'admin/candidates', 'admin/collection-status']) await expectResponse(await call(path, token), 401);
+    for (const path of ['admin/queue', 'admin/candidates', 'admin/collection-status', 'collector-status']) await expectResponse(await call(path, token), 401);
     await expectResponse(await call('admin/review/item-1', token, approval), 401);
     await expectResponse(await call('admin/candidates/cand-1', token, { action: 'dismiss' }), 401);
   }
   for (const token of [undefined, valid.ADMIN_TOKEN, valid.COLLECTOR_STATUS_TOKEN]) await expectResponse(await call('ingest', token, ingest), 401);
   await unchanged();
-  for (const path of ['admin/queue', 'admin/candidates', 'admin/collection-status']) await expectResponse(await call(path, valid.ADMIN_TOKEN), 200);
+  for (const path of ['admin/queue', 'admin/candidates', 'admin/collection-status', 'collector-status']) await expectResponse(await call(path, valid.ADMIN_TOKEN), 200);
   await expectResponse(await call('ingest', valid.INGEST_TOKEN, ingest), 202);
   await expectResponse(await call('admin/review/item-1', valid.ADMIN_TOKEN, approval), 200);
   await expectResponse(await call('admin/candidates/cand-1', valid.ADMIN_TOKEN, { action: 'dismiss' }), 200);
