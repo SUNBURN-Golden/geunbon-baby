@@ -270,7 +270,7 @@ describe('server rendered deals UI', () => {
       expect(html).not.toContain(dealsCopy.remaining.replace('{n}', '0'));
     }
     const endedCard = card(patch);
-    expect(endedCard.match(/<time /g)).toHaveLength(3);
+    expect(endedCard).toContain(dealsCopy.ended);
     expect(endedCard).not.toContain(dealsCopy.qualification);
     expect(endedCard).not.toContain(dealsCopy.dealChecked);
     expect(endedCard).not.toContain(dealsCopy.officialChecked);
@@ -458,10 +458,12 @@ describe('dynamic routes and LEFT JOIN projection', () => {
 
       const detail = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) }));
       expect(detail.match(/class="badge verified"/g)).toHaveLength(3);
-      expect(prepare).toHaveBeenCalledExactlyOnceWith(`${DEAL_SELECT} AND d.id = ?`);
-      expect(bind).toHaveBeenCalledExactlyOnceWith(fixture.id);
+      expect(prepare).toHaveBeenCalledTimes(2);
+      expect(prepare).toHaveBeenNthCalledWith(1, `${DEAL_SELECT} AND d.id = ?`);
+      expect(prepare).toHaveBeenNthCalledWith(2, expect.stringContaining('deal_bundle_items'));
+      expect(bind).toHaveBeenCalledWith(fixture.id);
       expect(readFirst).toHaveBeenCalledTimes(1);
-      expect(readAll).not.toHaveBeenCalled();
+      expect(readAll).toHaveBeenCalledTimes(1);
       expect(fetch).not.toHaveBeenCalled();
     } finally {
       prepare.mockRestore();

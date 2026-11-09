@@ -504,7 +504,38 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
   if (request.method === 'POST' && admin && parts.length === 3 && parts[1] === 'candidates') {
     let b;
     try { b = await body(request); } catch { return json({ error: '32KB 이하 JSON 필요' }, 400); }
-    if (!b || typeof b !== 'object' || b.action !== 'dismiss') return json({ error: 'dismiss 필요' }, 400);
+    if (!b || typeof b !== 'object') return json({ error: '잘못된 입력' }, 400);
+    if (b.action === 'promote') {
+      const requestId = typeof b.request_id === 'string' ? b.request_id : '';
+      const promotedBy = typeof b.promoted_by === 'string' ? b.promoted_by.trim() : 'admin';
+      if (!/^[A-Za-z0-9-]{8,64}$/.test(requestId)) return json({ error: 'request_id 필요' }, 400);
+      const bundle = Array.isArray(b.bundle_items) ? b.bundle_items : [];
+      const { promoteExternalCandidate } = await import('./promote-external');
+      const result = await promoteExternalCandidate(env.DB, {
+        candidate_id: parts[2],
+        promoted_by: promotedBy.slice(0, 120),
+        request_id: requestId,
+        reason: typeof b.reason === 'string' ? b.reason : null,
+        seller_id: typeof b.seller_id === 'string' ? b.seller_id : null,
+        model_id: b.model_id === null ? null : typeof b.model_id === 'string' ? b.model_id : null,
+        title: typeof b.title === 'string' ? b.title : null,
+        price: b.price === null ? null : Number.isSafeInteger(b.price) ? b.price as number : undefined,
+        starts_at: typeof b.starts_at === 'string' ? b.starts_at : null,
+        ends_at: typeof b.ends_at === 'string' ? b.ends_at : null,
+        source_ended: b.source_ended === true ? true : b.source_ended === false ? false : undefined,
+        brand_label: typeof b.brand_label === 'string' ? b.brand_label : null,
+        category_label: typeof b.category_label === 'string' ? b.category_label : null,
+        bundle_items: bundle.map((row: Record<string, unknown>) => ({
+          brand: typeof row.brand === 'string' ? row.brand : null,
+          product_name: String(row.product_name ?? ''),
+          model_id: typeof row.model_id === 'string' ? row.model_id : null,
+          price: row.price === null ? null : Number.isSafeInteger(row.price) ? row.price as number : null,
+        })),
+      });
+      if (!result.ok) return json({ error: result.code, ...(result.detail ?? {}) }, result.status);
+      return json({ data: { deal_id: result.deal_id, created: result.created, promotion_id: result.promotion_id } });
+    }
+    if (b.action !== 'dismiss') return json({ error: 'dismiss 또는 promote 필요' }, 400);
     const candidate = await env.DB.prepare('SELECT status FROM external_candidates WHERE id = ?').bind(parts[2]).first<{ status: string }>();
     if (!candidate) return json({ error: '항목 없음' }, 404);
     if (candidate.status !== 'candidate') return json({ error: '이미 처리된 항목' }, 409);

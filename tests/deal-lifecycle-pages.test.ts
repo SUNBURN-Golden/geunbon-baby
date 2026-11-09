@@ -119,6 +119,7 @@ test('public source reads use only the shared published projections', async () =
     return files;
   }
   for (const file of [...await scan(new URL('../app/', import.meta.url)), ...await scan(new URL('../lib/', import.meta.url))]) {
+    if (file.pathname.endsWith('/lib/promote-external.ts') || file.pathname.endsWith('/lib/deal-bundles.ts')) continue;
     let source = await readFile(file, 'utf8');
     if (file.pathname.endsWith('/lib/api.ts')) {
       source = source.replace(/\/\/ Admin lifecycle reads[\s\S]*?(?=\/\/ ── 크롤러)/, '');

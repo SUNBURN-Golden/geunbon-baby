@@ -17,7 +17,8 @@ export function buildModelCards(
 ): ModelCardData[] {
   const best = new Map<string, number | null>();
   for (const deal of deals) {
-    if (dealTiming(deal.starts_at, deal.ends_at, nowMs).state !== 'active') continue;
+    if (!deal.model_id) continue;
+    if (dealTiming(deal.starts_at, deal.ends_at, nowMs, (deal as { source_ended?: number }).source_ended === 1).state !== 'active') continue;
     const price = deal.price !== null && deal.price >= 0 ? deal.price : null;
     const current = best.get(deal.model_id);
     if (current === undefined || (price !== null && (current === null || price < current))) best.set(deal.model_id, price);

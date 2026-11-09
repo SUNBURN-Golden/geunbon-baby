@@ -1,4 +1,4 @@
-import { dealTiming, sortDeals, type DealWithContext } from '../lib/deals';
+import { dealTimingFor, isDealPubliclyActive, sortDeals, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
 import { DealCard } from './deals/_components';
 
@@ -7,7 +7,7 @@ export function ActiveDealCount({ count }: { count: number }) {
 }
 
 export function ActiveDeals({ deals, nowMs }: { deals: readonly DealWithContext[]; nowMs: number }) {
-  const active = sortDeals(deals.filter(deal => dealTiming(deal.starts_at, deal.ends_at, nowMs).state === 'active'), nowMs);
+  const active = sortDeals(deals.filter(deal => isDealPubliclyActive(deal, nowMs)), nowMs);
   return (
     <section className="active-deals" aria-labelledby="active-deals-title">
       <h2 id="active-deals-title">{dealsCopy.activeHeading} <ActiveDealCount count={active.length} /></h2>

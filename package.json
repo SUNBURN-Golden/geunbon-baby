@@ -16,6 +16,7 @@
     "collector": "node --import tsx crawler/collector.mjs",
     "collector:worker": "node --import tsx crawler/local-worker.mjs",
     "deepseek-web": "node --import tsx crawler/deepseek-web/run.mjs",
+    "promote-external": "node scripts/promote-external.mjs",
     "build:clipper": "node scripts/build-clipper.mjs"
   },
   "dependencies": {

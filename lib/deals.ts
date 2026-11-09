@@ -12,6 +12,11 @@ export type Gap = {
 };
 
 export type DealWithContext = Deal & {
+  origin?: 'instagram' | 'external_web';
+  source_host?: string | null;
+  source_ended?: number;
+  brand_label?: string | null;
+  category_label?: string | null;
   model_joined_id: string | null;
   model_name: string | null;
   model_official_price: number | null;
@@ -28,13 +33,16 @@ export const dealOfficialPrice = (deal: DealWithContext) =>
   deal.model_joined_id ? displayableOfficialPrice({ official_price: deal.model_official_price, verify_level: deal.model_verify_level }) : null;
 
 // Public reads exclude withdrawn deals and all lifecycle metadata.
-export const PUBLIC_DEAL_COLUMNS = 'id, model_id, seller_id, title, price, source_url, image_url, verify_level, checked, starts_at, ends_at';
+export const PUBLIC_DEAL_COLUMNS = `id, model_id, seller_id, title, price, source_url, image_url, verify_level, checked, starts_at, ends_at,
+  COALESCE(origin, 'instagram') AS origin, source_host, COALESCE(source_ended, 0) AS source_ended, brand_label, category_label`;
 export const PUBLISHED_DEALS = `SELECT ${PUBLIC_DEAL_COLUMNS} FROM deals WHERE status = 'published'`;
 
 // Joined IDs distinguish missing rows from rows whose price is unknown.
 export const DEAL_SELECT = `
   SELECT d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.image_url,
          d.verify_level, d.checked, d.starts_at, d.ends_at,
+         COALESCE(d.origin, 'instagram') AS origin, d.source_host, COALESCE(d.source_ended, 0) AS source_ended,
+         d.brand_label, d.category_label,
          m.id AS model_joined_id, m.name AS model_name,
          m.official_price AS model_official_price, m.checked AS model_checked,
          m.verify_level AS model_verify_level,
@@ -93,24 +101,35 @@ function kstDay(ms: number): number {
   return Math.floor((ms + KST_OFFSET_MS) / DAY_MS);
 }
 
-export function dealTiming(startsAt: string, endsAt: string, nowMs: number): Timing {
-  const start = parseTimestamp(startsAt);
-  const end = parseTimestamp(endsAt);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(nowMs) || end < start) {
-    return { state: 'unknown', days: null };
+export function dealTiming(startsAt: string | null, endsAt: string | null, nowMs: number, sourceEnded = false): Timing {
+  if (sourceEnded) return { state: 'ended', days: null };
+  const start = startsAt ? parseTimestamp(startsAt) : NaN;
+  const end = endsAt ? parseTimestamp(endsAt) : NaN;
+  if (!Number.isFinite(nowMs)) return { state: 'unknown', days: null };
+  if (Number.isFinite(start) && Number.isFinite(end) && end < start) return { state: 'unknown', days: null };
+  if (endsAt && Number.isFinite(end) && nowMs > end && (!startsAt || Number.isFinite(start))) return { state: 'ended', days: null };
+  if (startsAt && Number.isFinite(start) && nowMs < start) return { state: 'upcoming', days: kstDay(start) - kstDay(nowMs) };
+  if (Number.isFinite(end) && Number.isFinite(start)) {
+    return { state: 'active', days: kstDay(end) - kstDay(nowMs) };
   }
-  if (nowMs < start) return { state: 'upcoming', days: kstDay(start) - kstDay(nowMs) };
-  if (nowMs > end) return { state: 'ended', days: null };
-  return { state: 'active', days: kstDay(end) - kstDay(nowMs) };
+  return { state: 'unknown', days: null };
+}
+
+export function dealTimingFor(deal: Pick<Deal, 'starts_at' | 'ends_at'> & { source_ended?: number }, nowMs: number) {
+  return dealTiming(deal.starts_at, deal.ends_at, nowMs, deal.source_ended === 1);
+}
+
+export function isDealPubliclyActive(deal: Pick<Deal, 'starts_at' | 'ends_at'> & { source_ended?: number }, nowMs: number) {
+  return dealTimingFor(deal, nowMs).state === 'active';
 }
 
 export function sortDeals<T extends Deal>(deals: readonly T[], nowMs: number): T[] {
   const rank = { active: 0, upcoming: 1, ended: 2, unknown: 3 };
   return deals.map(deal => {
-    const { state } = dealTiming(deal.starts_at, deal.ends_at, nowMs);
-    const time = state === 'upcoming' ? parseTimestamp(deal.starts_at)
-      : state === 'active' ? parseTimestamp(deal.ends_at)
-      : state === 'ended' ? -parseTimestamp(deal.ends_at) : 0;
+    const { state } = dealTimingFor(deal, nowMs);
+    const time = state === 'upcoming' && deal.starts_at ? parseTimestamp(deal.starts_at)
+      : state === 'active' && deal.ends_at ? parseTimestamp(deal.ends_at)
+      : state === 'ended' && deal.ends_at ? -parseTimestamp(deal.ends_at) : 0;
     return { deal, rank: rank[state], time };
   }).sort((a, b) => a.rank - b.rank || a.time - b.time ||
     (a.deal.id < b.deal.id ? -1 : a.deal.id > b.deal.id ? 1 : 0)
