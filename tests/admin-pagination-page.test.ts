@@ -122,7 +122,7 @@ test('approval, rejection, dismissal, and review errors preserve incoming cursor
   expect(await target(review[1], { action: 'reject' })).toBe(expected);
   expect(await target(dismiss[0])).toBe(expected);
   // A second administrator's stale form reaches the conflict path.
-  expect(await target(review[0], { action: 'reject' })).toBe(adminUrl(state, {}, 'review'));
+  expect(await target(review[0], { action: 'reject' })).toBe(adminUrl(state, {}, 'review_conflict'));
   expect(await target(dismiss[0])).toBe(adminUrl(state, {}, 'review'));
   expect(bodies).toHaveLength(6);
   expect(bodies.every(body => Object.keys(body).every(key => !key.startsWith('nav_')))).toBe(true);
@@ -173,7 +173,7 @@ test.each(['queue', 'candidates'] as const)('%s page emptied by concurrent proce
   const state = await laterState(20, 20);
   const tree = await page(state), stale = forms(tree, actions[list])[0];
   await memory.db.prepare(`UPDATE ${reviewTables[list]} SET status = ?`).bind(list === 'queue' ? 'rejected' : 'dismissed').run();
-  expect(await target(stale, list === 'queue' ? { action: 'reject' } : {})).toBe(adminUrl(state, {}, 'review'));
+  expect(await target(stale, list === 'queue' ? { action: 'reject' } : {})).toBe(adminUrl(state, {}, list === 'queue' ? 'review_conflict' : 'review'));
   const empty = await page(state), html = renderToStaticMarkup(empty);
   expect(html).toContain(list === 'queue' ? '이 위치에 남아 있는 검수 대기 항목이 없습니다.' : '이 위치에 남아 있는 외부 후보가 없습니다.');
   expect(forms(empty, actions[list])).toHaveLength(0);
