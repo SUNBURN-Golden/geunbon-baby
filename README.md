@@ -138,7 +138,7 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 
 ## JSON REST API v1
 
-읽기 응답은 `{ "data": ... }`, 실패는 `{ "error": "..." }`입니다. 현재 동일 origin API이며 향후 Expo 네이티브 클라이언트에서도 사용할 수 있습니다. 브라우저 cross-origin CORS는 열지 않았습니다.
+읽기 응답은 `{ "data": ... }`, 실패는 `{ "error": "..." }`입니다. 현재 동일 origin API이며 공개 읽기 API는 향후 Expo 네이티브 클라이언트에서도 사용할 수 있습니다. 관리자 호환 현황 API는 공개 모바일 클라이언트에 `ADMIN_TOKEN`, `INGEST_TOKEN`, `COLLECTOR_STATUS_TOKEN`을 포함할 권한을 부여하지 않습니다. 관리용 서비스 자격 증명은 서버 측에만 보관합니다. 브라우저 cross-origin CORS는 열지 않았습니다.
 
 | 메서드 | 경로 | 설명 |
 | --- | --- | --- |
@@ -150,6 +150,7 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | GET | `/api/v1/calendar` | 시작일순 검수 완료 공구 |
 | POST | `/api/v1/ingest` | INGEST_TOKEN. Instagram pending 접수 또는 쓰기 가능한 legacy 외부 후보 접수 |
 | POST | `/api/v1/collector/status` | COLLECTOR_STATUS_TOKEN. 건수 스냅샷만 접수 |
+| GET | `/api/v1/collector-status` | ADMIN_TOKEN 전용 관리용 호환 경로. `/api/v1/admin/collection-status`와 동일한 건수 현황 |
 | GET | `/api/v1/admin/collection-status` | ADMIN_TOKEN. 작업기별 다섯 상태·생성/수신 시각·지연 여부 |
 | GET | `/api/v1/admin/queue` | ADMIN_TOKEN 전용, pending만 captured_at·id 오름차순 페이지. limit 기본/최대 100, 응답 `{ data, next_cursor }` |
 | POST | `/api/v1/admin/review/:id` | 관리자 승인/반려, 승인 시 모델·판매자·귀속 근거 필수 |
@@ -168,6 +169,14 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | GET | `/api/auth/callback/kakao` | 비활성. 코드·state 쿠키·기존 설정과 무관하게 항상 404·본문 `Not found`·no-store |
 
 v1 분기는 `lib/api.ts`, 이미지 라우트는 `app/api/v1/images/[key]/route.ts`, OAuth는 `app/api/auth/[[...path]]/route.ts`와 `lib/auth.ts`에 있습니다. OAuth는 v1 밖의 별도 경로입니다. 공개 공구 상세 GET API는 없으며 모델 비교나 공구 목록을 사용합니다. 관리자 행은 모두 ADMIN_TOKEN이 필요합니다.
+
+### 관리자 건수 현황 호환 API
+
+`GET /api/v1/collector-status`는 `GET /api/v1/admin/collection-status`와 같은 인증·응답을 사용하는 관리용 호환 경로입니다. 두 경로 모두 `Authorization: Bearer ADMIN_TOKEN`이 필요하며, 누락·오류 또는 수집/현황 토큰·관리자 세션 쿠키 값을 bearer로 사용하면 401입니다. D1 조회 전에 관리자·수집 토큰이 각각 24자 이상, 앞뒤 공백 없이 서로 다른지 검증하고 선택 현황 토큰과의 충돌도 차단합니다. 설정 오류는 인증보다 먼저 503으로 거부합니다. 별개의 현황 토큰이 누락되거나 짧아도 관리자 읽기를 차단하지 않으며, 현황 토큰의 강도는 기존 POST 접수 경로에서 별도로 검증합니다.
+
+응답은 `{ "data": { "synced": false, "workers": [] } }`(미수신) 또는 `synced: true`와 작업기별 `{ snapshot, received_at, stale }`입니다. `snapshot`에는 `worker_id`, `version`, `generated_at`, 다섯 상태의 `counts`, 보조 집계 `total`, `unique`, `groups`, `unresolved_conflicts`, `recheck_due`만 있습니다. 로컬 수집 레코드·URL·원문·근거는 제공하지 않습니다. 유효한 저장값 0건은 유지하고, 미수신을 0건으로 만들지 않습니다. 여러 작업기는 작업기 ID순으로 각각 반환하며 합산하지 않습니다. `stale`은 수신 시각이 아니라 생성 후 **60분 초과**일 때 true이며, 정확히 60분은 false입니다.
+
+D1 오류나 잘못된 저장 스냅샷은 원시 자료·부분 결과 없이 일반 503 오류를 반환합니다. 호환 경로의 인증된 POST는 405이며, 성공 및 401/503/405 응답 모두 `Cache-Control: no-store`입니다. 이 API는 사이트 D1의 건수만 읽으며 Linux 수집기 실행·동기화나 로컬 저장소 접근을 허용하지 않습니다.
 
 ### 관리자 검수 목록 페이지 계약
 
@@ -287,7 +296,7 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 
 인증은 블루프린트대로 Google만 활성화하며 Kakao·Naver는 보류합니다. 별도 가입 양식 없이 뉴스레터는 기본 체크입니다. 기존 Kakao identity·세션을 보존하는 것은 새 Kakao 로그인을 허용하지 않습니다.
 
-1. collector-status는 **POST `/api/v1/collector/status`**(현황 토큰)와 **GET `/api/v1/admin/collection-status`**(관리자)로 나뉘며 건수 스냅샷만 저장합니다.
+1. collector-status는 **POST `/api/v1/collector/status`**(현황 토큰)와 **GET `/api/v1/admin/collection-status`**(관리자)로 나뉘며 건수 스냅샷만 저장합니다. 블루프린트의 **GET `/api/v1/collector-status`**는 같은 관리자 전용 읽기의 호환 경로입니다.
 2. `/brands` 페이지는 없고 `/models?by=brand`와 `GET /api/v1/brands`가 브랜드 탐색을 담당합니다.
 3. `/me`, `/sellers`, `/api/v1/images/:key`(R2 `public/`만), 관리자 판매자·공구 정정/철회·후보 API가 추가되어 있습니다.
 4. legacy **`kind: "external_listing"` ingest는 여전히 쓰기 가능**합니다. 새 external_candidates 삽입과 candidate 갱신만 하며 dismissed는 보존합니다. 관리자는 조회·dismiss만 할 수 있고 후보를 공구로 승격하는 경로는 없습니다. price_hint/price_raw는 공구가나 공식가로 표시되지 않습니다.

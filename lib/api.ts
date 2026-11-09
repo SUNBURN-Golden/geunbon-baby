@@ -448,7 +448,7 @@ async function body(request: Request) {
 }
 export async function handleApi(request: Request, parts: string[], env: Env): Promise<Response> {
   const path = parts.join('/');
-  const admin = parts[0] === 'admin';
+  const admin = parts[0] === 'admin' || path === 'collector-status';
   if (path === 'collector/status') {
     if (request.method !== 'POST') return json({ error: 'method' }, 405);
     if (!strongToken(env.COLLECTOR_STATUS_TOKEN) || env.COLLECTOR_STATUS_TOKEN === env.ADMIN_TOKEN || env.COLLECTOR_STATUS_TOKEN === env.INGEST_TOKEN) return json({ error: 'status_token_config' }, 503);
@@ -461,7 +461,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     if (!tokens) return json({ error: '서비스 토큰 설정 확인 필요' }, 503);
     if (!await authorized(request, admin ? tokens.admin : tokens.ingest)) return json({ error: '인증 필요' }, 401);
   }
-  if (path === 'admin/collection-status' && request.method === 'GET') return json({ data: await collectionStatus(env.DB) });
+  if ((path === 'admin/collection-status' || path === 'collector-status') && request.method === 'GET') return json({ data: await collectionStatus(env.DB) });
   if (request.method === 'GET') {
     if (path === 'brands') return json({ data: await all(env.DB, 'SELECT brand AS name, COUNT(*) AS model_count FROM models GROUP BY brand ORDER BY brand') });
     if (path === 'models') {
