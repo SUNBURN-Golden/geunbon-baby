@@ -21,6 +21,9 @@ if (!token) {
 
 let candidateId = args['candidate-id'];
 let reviewFacts;
+let bundleItems = [];
+let bundleTitle = null;
+let bundleLabels = {};
 if (args['from-review-queue']) {
   const path = args['from-review-queue'];
   const line = Number(args.line ?? 0);
@@ -28,8 +31,11 @@ if (args['from-review-queue']) {
   const item = rows[line];
   if (!item?.extraction?.url) throw new Error('review queue line missing extraction.url');
   const { tsImport } = await import('tsx/esm/api');
-  const { reviewPromotionFacts } = await tsImport('./review-facts.ts', import.meta.url);
+  const { reviewPromotionFacts, reviewBundleItems, reviewBundleTitle, reviewBundleLabels } = await tsImport('./review-facts.ts', import.meta.url);
   reviewFacts = reviewPromotionFacts(item.extraction);
+  bundleItems = reviewBundleItems(item.extraction);
+  bundleTitle = reviewBundleTitle(item.extraction);
+  bundleLabels = reviewBundleLabels(item.extraction);
   const ingest = await fetch(`${origin}/api/v1/ingest`, {
     method: 'POST',
     headers: { authorization: `Bearer ${process.env.INGEST_TOKEN ?? token}`, 'content-type': 'application/json' },
@@ -37,7 +43,7 @@ if (args['from-review-queue']) {
       kind: 'external_listing',
       source: 'pangpang',
       source_url: item.extraction.url,
-      title: `${item.extraction.brand} ${item.extraction.model}`.trim().slice(0, 200) || 'DeepSeek 추출 공구',
+      title: bundleTitle || `${item.extraction.brand} ${item.extraction.model}`.trim().slice(0, 200) || 'DeepSeek 추출 공구',
       text: item.extraction.url,
       seller_handle: /^[A-Za-z0-9._]{1,30}$/.test(item.extraction.seller?.replace(/^@/, '') ?? '') ? item.extraction.seller.replace(/^@/, '') : null,
       price_hint: reviewFacts.price,
@@ -66,6 +72,12 @@ const body = {
   model_id: args['model-id'] || null,
   reason: args.reason ?? 'CLI promote after manual review',
 };
+// Review-queue bundles ride along automatically; --bundle-json stays an explicit override.
+if (bundleItems.length) {
+  if (bundleTitle) body.title = bundleTitle;
+  body.bundle_items = bundleItems;
+  Object.assign(body, bundleLabels);
+}
 if (args['bundle-json']) body.bundle_items = JSON.parse(readFileSync(args['bundle-json'], 'utf8'));
 
 const res = await fetch(`${origin}/api/v1/admin/candidates/${encodeURIComponent(candidateId)}`, {

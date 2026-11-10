@@ -1,6 +1,53 @@
 export const UNKNOWN = '정보 없음' as const;
 
+export const BUNDLE_ITEMS_VERSION = 'bundle-items@1' as const;
+
 export type ScopedCategory = 'stroller' | 'high_chair' | 'car_seat' | 'play_gym' | 'carrier' | 'bouncer';
+
+/** Raw item emitted by the model, before any source verification. */
+export type RawBundleItem = {
+  region_index: number;
+  source_brand: string | null;
+  product_name: string;
+  option_text: string | null;
+  category: ScopedCategory | null;
+  gonggu_price: string | null;
+  source_quote: string;
+};
+
+export type ItemModelMatch = {
+  model_id: string;
+  brand: string;
+  confidence: number;
+  matched: string;
+};
+
+/** Durable, source-verified bundle item. */
+export type CheckedBundleItem = {
+  position: number;
+  region_index: number;
+  source_brand: string | null;
+  brand: string | null;
+  product_name: string;
+  option_text: string | null;
+  category: ScopedCategory | null;
+  source_quote: string;
+  source_span: { start: number; end: number };
+  price_fact: import('../../lib/deal-fact-check').Fact<number>;
+  model_match: ItemModelMatch | null;
+  model_status: 'matched' | 'ambiguous' | 'no_match';
+};
+
+export type BundleItem = RawBundleItem | CheckedBundleItem;
+
+export type BundleCheck = {
+  version: typeof BUNDLE_ITEMS_VERSION;
+  item_price_version: import('../../lib/deal-fact-check').ItemFactVersion;
+  status: 'verified' | 'dropped_not_bundle_page' | 'dropped_out_of_scope';
+  region_count: number;
+  item_count: number;
+  dropped_count?: number;
+};
 
 export type GongguExtraction = {
   brand: string;
@@ -22,14 +69,18 @@ export type GongguExtraction = {
   catalog_product_id?: string;
   offer_ref?: string;
   notes?: string;
+  bundle_title?: string;
+  bundle_items?: BundleItem[];
+  bundle_check?: BundleCheck;
 };
 
 /** New durable facts: numbers/nulls and structured source dates, never raw candidates. */
-export type CheckedGongguExtraction = Omit<GongguExtraction, 'gonggu_price' | 'regular_price' | 'start_date' | 'end_date' | 'fact_check' | 'needs_fact_check'> & {
+export type CheckedGongguExtraction = Omit<GongguExtraction, 'gonggu_price' | 'regular_price' | 'start_date' | 'end_date' | 'fact_check' | 'needs_fact_check' | 'bundle_items'> & {
   gonggu_price: number | null; regular_price: number | null;
   start_date: import('../../lib/deal-fact-check').CheckedDate | null;
   end_date: import('../../lib/deal-fact-check').CheckedDate | null;
   fact_check: import('../../lib/deal-fact-check').FactCheck;
+  bundle_items?: CheckedBundleItem[];
 };
 
 export type ReviewQueueItem = {

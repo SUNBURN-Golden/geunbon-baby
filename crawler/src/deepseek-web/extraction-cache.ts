@@ -1,4 +1,4 @@
-import { FACT_CHECK_VERSION, CHECKED_SCHEMA_VERSION, INTERPRETATION_POLICY } from '../../lib/deal-fact-check';
+import { FACT_CHECK_VERSION, CHECKED_SCHEMA_VERSION, INTERPRETATION_POLICY, ITEM_FACT_VERSION } from '../../lib/deal-fact-check';
 import { lstatSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalUrl, filterChanged, filterText, PRIVACY_VERSION, URL_IDENTITY_VERSION } from '../../../shared/privacy-rules';
@@ -8,7 +8,7 @@ import { sha256, PREPARATION_VERSION } from './page-content';
 import { CANDIDATE_FILTER_VERSION, type CandidateDecision } from './candidate-filter';
 import { PROMPT_VERSION, SYSTEM_INSTRUCTIONS, OUTPUT_SCHEMA, VALIDATION_VERSION, validateLegacyExtraction, validateCheckedExtraction, isCheckedExtraction } from './extract';
 import type { GeunbonCatalog } from './catalog';
-import type { DeepSeekWebConfig, GongguExtraction, ModelProfile, ParserFixProposal } from './types';
+import { BUNDLE_ITEMS_VERSION, type DeepSeekWebConfig, type GongguExtraction, type ModelProfile, type ParserFixProposal } from './types';
 import { REQUEST_REPRESENTATION } from '../../lib/external/fetch';
 export const CACHE_VERSION = 2;
 export { stableSerialize, cacheKey } from './cache-identity';
@@ -16,7 +16,8 @@ import { stableSerialize, cacheKey } from './cache-identity';
 export function contractHash(config: DeepSeekWebConfig, catalog: GeunbonCatalog, profile: ModelProfile) {
   return sha256(stableSerialize({ provider: config.model.provider, profile, response_format: 'json_object', system: SYSTEM_INSTRUCTIONS, schema: OUTPUT_SCHEMA,
     prompt: PROMPT_VERSION, preparation: PREPARATION_VERSION, privacy: PRIVACY_VERSION, identity: URL_IDENTITY_VERSION,
-    filter: CANDIDATE_FILTER_VERSION, catalog, scope: config.scope_categories, validation: VALIDATION_VERSION, fact_check: FACT_CHECK_VERSION, checked_schema: CHECKED_SCHEMA_VERSION, interpretation: INTERPRETATION_POLICY }));
+    filter: CANDIDATE_FILTER_VERSION, catalog, scope: config.scope_categories, validation: VALIDATION_VERSION, fact_check: FACT_CHECK_VERSION, checked_schema: CHECKED_SCHEMA_VERSION, interpretation: INTERPRETATION_POLICY,
+    item_check: ITEM_FACT_VERSION, bundle_schema: BUNDLE_ITEMS_VERSION }));
 }
 export const urlContractKey = (url: string, contract: string) => sha256(stableSerialize([url, contract, REQUEST_REPRESENTATION]));
 export type CacheEntry = {
@@ -45,8 +46,8 @@ export function validEntry(e: CacheEntry): boolean {
   try {
     if (!e || ![1, 2].includes(e.version) || !hex(e.cache_key) || !hex(e.content_hash) || !hex(e.contract_hash) || canonicalUrl(e.canonical_url) !== e.canonical_url || e.cache_key !== cacheKey(e.canonical_url, e.content_hash, e.contract_hash) || !time(e.extracted_at) || typeof e.pending_delivery !== 'boolean') return false;
     if (Buffer.byteLength(JSON.stringify(e), 'utf8') > 48000 || Object.keys(e).some(k => !['version', 'cache_key', 'canonical_url', 'content_hash', 'contract_hash', 'candidate', 'result', 'extracted_at', 'proposal', 'pending_delivery'].includes(k))) return false;
-    if (!e.candidate?.accepted || !['candidate_pangpang_deal', 'candidate_text_deal'].includes(e.candidate.code) || !e.candidate.match || typeof e.candidate.match.product_id !== 'string') return false;
-    if (Object.keys(e.candidate).some(k => !['accepted', 'code', 'match'].includes(k)) || Object.keys(e.result).some(k => !['brand', 'model', 'category', 'gonggu_price', 'regular_price', 'period', 'gifts', 'conditions', 'seller', 'url', 'checked_date', 'in_scope', 'notes', 'catalog_product_id', 'offer_ref', ...(e.version === 2 ? ['start_date', 'end_date', 'fact_check'] : [])].includes(k))) return false;
+    if (!e.candidate?.accepted || !['candidate_pangpang_deal', 'candidate_text_deal', 'candidate_bundle_deal'].includes(e.candidate.code) || !e.candidate.match || typeof e.candidate.match.product_id !== 'string') return false;
+    if (Object.keys(e.candidate).some(k => !['accepted', 'code', 'match'].includes(k)) || Object.keys(e.result).some(k => !['brand', 'model', 'category', 'gonggu_price', 'regular_price', 'period', 'gifts', 'conditions', 'seller', 'url', 'checked_date', 'in_scope', 'notes', 'catalog_product_id', 'offer_ref', ...(e.version === 2 ? ['start_date', 'end_date', 'fact_check', 'bundle_title', 'bundle_items', 'bundle_check'] : [])].includes(k))) return false;
     const match = e.candidate.match;
     if (!['stroller', 'high_chair', 'car_seat', 'play_gym', 'carrier', 'bouncer'].includes(match.category) || ![match.product_id, match.brand, match.product_line].every(v => typeof v === 'string' && v.length > 0 && v.length <= 100 && !filterChanged(v)) || !Number.isSafeInteger(match.score) || match.score < 1) return false;
     if (e.result.offer_ref !== undefined && (typeof e.result.offer_ref !== 'string' || !/^\d{1,40}$/.test(e.result.offer_ref))) return false;
