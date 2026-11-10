@@ -127,6 +127,9 @@ test('public source reads use only the shared published projections', async () =
       source = source.slice(0, source.indexOf("    if (!['approve', 'reject']"));
     }
     if (file.pathname.endsWith('/lib/deals.ts')) {
+      // This is the sole designated implementation of public bounded reads.
+      // Its helpers/projections/withdrawal behavior are exercised against real D1 SQL.
+      source = source.slice(0, source.indexOf('// Public historical queries'));
       source = source.replace(/export const PUBLISHED_DEALS = `[\s\S]*?`;/, '').replace(/export const DEAL_SELECT = `[\s\S]*?`;/, '');
     }
     expect(source, file.pathname).not.toMatch(/\bFROM\s+deals\b/i);

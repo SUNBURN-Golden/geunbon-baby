@@ -313,7 +313,7 @@ test.each(seed.models.map((model, index) => ({ ...model, id: `model-${index + 1}
   const [card] = buildModelCards([{
     id: model.id, brand: model.brand, name: model.model,
     official_price: model.kr_official_price_krw, verify_level: model.verify_level,
-  }], [], Date.parse('2026-10-21T03:00:00Z'));
+  }], new Map());
   const html = renderToStaticMarkup(createElement(ModelCard, { card }));
   const displayName = renderToStaticMarkup(`${model.brand} ${model.model}`);
   expectIllustratedCard(html, model.id, displayName);

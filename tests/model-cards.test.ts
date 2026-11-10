@@ -3,14 +3,12 @@ import { buildModelCards, discountLabel, showStrike } from '../lib/model-cards';
 import { ILLUSTRATED_MODEL_IDS, modelIllustration } from '../lib/model-illustrations';
 import type { Gap } from '../lib/deals';
 
-const NOW = Date.parse('2026-10-21T03:00:00Z');
 const model = (id: string, official: number | null = 430000) => ({ id, name: `name-${id}`, brand: 'Stokke', official_price: official, verify_level: 'page_body' });
-const deal = (model_id: string, price: number | null, starts_at: string, ends_at: string) => ({ model_id, price, starts_at, ends_at });
-const ACTIVE = ['2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z'] as const;
+const summaries = (...rows: [string, number, number | null][]) => new Map(rows.map(([model_id, active_count, lowest_price]) => [model_id, { model_id, active_count, lowest_price }]));
 const gap = (relation: Gap['relation'], percent: number): Gap => ({ relation, won: 1, percent });
 
 test.each(['page_text', 'search_summary'])('gates %s prices before calculating model card discounts', verify_level => {
-  const [card] = buildModelCards([{ ...model('model-1', 500000), verify_level }], [deal('model-1', 400000, ...ACTIVE)], NOW);
+  const [card] = buildModelCards([{ ...model('model-1', 500000), verify_level }], summaries(['model-1', 2, 400000]));
   expect(card.official_price).toBeNull();
   expect(card.gap).toBeNull();
   expect(card.deal).toEqual({ price: 400000 });
@@ -19,47 +17,40 @@ test.each(['page_text', 'search_summary'])('gates %s prices before calculating m
 });
 
 test('page_body prices retain model card discounts and strikethroughs', () => {
-  const [card] = buildModelCards([model('model-1', 500000)], [deal('model-1', 400000, ...ACTIVE)], NOW);
+  const [card] = buildModelCards([model('model-1', 500000)], summaries(['model-1', 2, 400000]));
   expect(card.official_price).toBe(500000);
   expect(card.gap).toEqual({ relation: 'below', won: 100000, percent: 20 });
   expect(showStrike(card.gap)).toBe(true);
   expect(discountLabel(card.gap)).toBe('-20%');
 });
 
-test('uses the lowest active price and ignores ended, upcoming and unknown deals', () => {
-  const [card] = buildModelCards([model('model-1')], [
-    deal('model-1', 410000, ...ACTIVE),
-    deal('model-1', 390000, ...ACTIVE),
-    deal('model-1', 300000, '2026-10-01T00:00:00Z', '2026-10-10T00:00:00Z'),
-    deal('model-1', 200000, '2026-11-01T00:00:00Z', '2026-11-10T00:00:00Z'),
-    deal('model-1', 100000, 'bad', 'dates'),
-    deal('model-2', 1000, ...ACTIVE),
-  ], NOW);
+test('uses the aggregated minimum without loading deal history', () => {
+  const [card] = buildModelCards([model('model-1')], summaries(['model-1', 3, 390000]));
   expect(card.deal).toEqual({ price: 390000 });
   expect(card.gap?.relation).toBe('below');
   expect(discountLabel(card.gap)).toBe('-9%');
 });
 
 test('an active deal without any price keeps a null-price deal and no gap', () => {
-  const [card] = buildModelCards([model('model-3')], [deal('model-3', null, ...ACTIVE)], NOW);
+  const [card] = buildModelCards([model('model-3')], summaries(['model-3', 2, null]));
   expect(card.deal).toEqual({ price: null });
   expect(card.gap).toBeNull();
-  const [mixed] = buildModelCards([model('model-3')], [deal('model-3', null, ...ACTIVE), deal('model-3', 400000, ...ACTIVE)], NOW);
+  const [mixed] = buildModelCards([model('model-3')], summaries(['model-3', 2, 400000]));
   expect(mixed.deal).toEqual({ price: 400000 });
 });
 
 test('no gap when the official price is unknown', () => {
-  const [card] = buildModelCards([model('model-1', null)], [deal('model-1', 390000, ...ACTIVE)], NOW);
+  const [card] = buildModelCards([model('model-1', null)], summaries(['model-1', 1, 390000]));
   expect(card.deal).toEqual({ price: 390000 });
   expect(card.gap).toBeNull();
 });
 
 test('active models come first, otherwise input order is kept and inputs are not mutated', () => {
   const models = [model('a'), model('b'), model('c'), model('d')];
-  const deals = [deal('d', 1, ...ACTIVE), deal('b', 2, ...ACTIVE)];
+  const deals = summaries(['d', 1, 1], ['b', 1, 2], ['a', 0, null]);
   const modelsCopy = structuredClone(models);
   const dealsCopy = structuredClone(deals);
-  const cards = buildModelCards(models, deals, NOW);
+  const cards = buildModelCards(models, deals);
   expect(cards.map(c => c.id)).toEqual(['b', 'd', 'a', 'c']);
   expect(models).toEqual(modelsCopy);
   expect(deals).toEqual(dealsCopy);

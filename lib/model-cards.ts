@@ -1,5 +1,5 @@
-import { displayableOfficialPrice, type Deal, type Model } from './data';
-import { dealTiming, priceGap, type Gap } from './deals';
+import { displayableOfficialPrice, type Model } from './data';
+import { priceGap, type Gap, type ModelDealSummary } from './deals';
 
 export type ModelCardData = {
   id: string;
@@ -12,20 +12,11 @@ export type ModelCardData = {
 
 export function buildModelCards(
   models: readonly Pick<Model, 'id' | 'name' | 'brand' | 'official_price' | 'verify_level'>[],
-  deals: readonly Pick<Deal, 'model_id' | 'price' | 'starts_at' | 'ends_at'>[],
-  nowMs: number,
+  summaries: ReadonlyMap<string, ModelDealSummary>,
 ): ModelCardData[] {
-  const best = new Map<string, number | null>();
-  for (const deal of deals) {
-    if (!deal.model_id) continue;
-    if (dealTiming(deal.starts_at, deal.ends_at, nowMs, (deal as { source_ended?: number }).source_ended === 1).state !== 'active') continue;
-    const price = deal.price !== null && deal.price >= 0 ? deal.price : null;
-    const current = best.get(deal.model_id);
-    if (current === undefined || (price !== null && (current === null || price < current))) best.set(deal.model_id, price);
-  }
   const cards = models.map((m): ModelCardData => {
-    const price = best.get(m.id);
-    const deal = price === undefined ? null : { price };
+    const summary = summaries.get(m.id);
+    const deal = summary && summary.active_count > 0 ? { price: summary.lowest_price } : null;
     const official = displayableOfficialPrice(m);
     return {
       id: m.id, name: m.name, brand: m.brand, official_price: official, deal,
