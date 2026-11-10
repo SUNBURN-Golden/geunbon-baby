@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { loadDeepSeekWebConfig } from '../crawler/src/deepseek-web/config';
 import { beginCycle, finalizeCycle, cycleAdmit, cycleSettle, cycleHold } from '../crawler/src/deepseek-web/budget-cycle';
 import { admitCall, perCallTokenReserve } from '../crawler/src/deepseek-web/guards';
-import { emptyMemory, loadMemory } from '../crawler/src/deepseek-web/memory';
+import { loadMemory } from '../crawler/src/deepseek-web/memory';
 import { fixture } from './helpers/collector';
 import { runDeepSeekWeb } from '../crawler/src/deepseek-web/runner';
 import { readFile } from 'node:fs/promises';
@@ -46,18 +46,17 @@ describe('deepseek-web budget cycle', () => {
     memory = beginCycle(memory, 'tick-3');
     expect(cycleAdmit(memory, config).ok).toBe(true);
   });
-  test('duplicate fixture seed uses idle_dedup not blocked', async () => {
+  test('unchanged fixture is revalidated and uses the content cache', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsw-dup-'));
     dirs.push(dir);
     const f = fixture();
     const url = 'https://fixture.example/deepseek-web-sample';
-    const complete = { complete: async () => ({ content: '{"brand":"A","model":"B","in_scope":false}', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, model: 'deepseek-chat' }) };
+    const complete = { complete: async () => ({ content: '{"brand":"A","model":"B","category":"정보 없음","gonggu_price":"정보 없음","regular_price":"정보 없음","period":"정보 없음","gifts":"정보 없음","conditions":"정보 없음","seller":"정보 없음","url":"정보 없음","checked_date":"정보 없음","in_scope":false}', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, model: 'deepseek-chat' }) };
     const first = await runDeepSeekWeb({ mode: 'dry_run', stateDir: dir, store: f.store, urls: [url], client: complete });
     expect(first.requests_spent).toBe(1);
     const second = await runDeepSeekWeb({ mode: 'dry_run', stateDir: dir, store: f.store, urls: [url], client: complete });
-    expect(second.collection_status).toBe('idle_dedup');
-    expect(second.halt_reason).toBe('dedup_observed_seed');
-    expect(second.dedup_skips).toBe(1);
+    expect(second.extraction_cache_hits).toBe(1);
+    expect(second.deepseek_calls_attempted).toBe(0);
     expect(second.blocked).toBe(0);
     expect(second.requests_spent).toBe(0);
     f.close();

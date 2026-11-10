@@ -1,6 +1,9 @@
 import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 export type OutcomeKind =
+  | 'preparation_truncated'
+  | 'candidate_rejected'
+  | 'extraction_cache_hit'
   | 'extracted'
   | 'out_of_scope'
   | 'listing_enqueued'

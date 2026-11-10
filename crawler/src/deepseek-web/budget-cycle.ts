@@ -7,7 +7,7 @@ import { emptyCycle } from './memory-schema';
 import { admitCall, holdCall, releaseCall, settleCall } from './guards';
 /** Start a new per-tick budget window while preserving lifetime totals in memory. */
 export function beginCycle(memory: RunMemory, cycleId: string): RunMemory {
-  if (memory.active_cycle || memory.pending_audit || memory.cycle.token_spent || memory.cycle.requests_spent || memory.cycle.tokens_reserved || memory.cycle.requests_reserved) throw new Error('accounting_recovery_required');
+  if (memory.pending_result || memory.active_cycle || memory.pending_audit || memory.cycle.token_spent || memory.cycle.requests_spent || memory.cycle.tokens_reserved || memory.cycle.requests_reserved) throw new Error('accounting_recovery_required');
   memory.cycle = emptyCycle(cycleId);
   memory.token_spent = 0;
   memory.tokens_reserved = 0;

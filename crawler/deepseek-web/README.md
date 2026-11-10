@@ -14,7 +14,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 | 파일 | 설명 |
 |------|------|
-| `memory.json` | v3: `cycle`(틱별 예산)·`lifetime`(누적)·`observed_urls`/`pending_urls` |
+| `memory.json` | v4: `cycle`(틱별 예산)·`lifetime`(누적)·`observed_urls`/`pending_urls` |
 | `cycle-audit.jsonl` | 틱 종료 시 cycle↔lifetime 감사 로그 (기존 파일 이어쓰기) |
 | `outcomes.jsonl` | 추출·차단·중복·리스팅 enqueue 등 zero/부분 결과 사유 |
 | `review-queue.jsonl` | `pending` 검수 큐 |
@@ -34,7 +34,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 ## 상태 보존 업그레이드
 
-운영자는 아래 supervision 안내에 따라 절대 경로 state와 호스트 시크릿을 보존한다. v1 누적 예산과 v2 업무 상태는 v3로 이행한다. 상태 파일을 삭제해 재시작하지 않는다. 브랜치 전환·게시·운영 재시작은 이 구현 작업에서 수행하지 않는다.
+운영자는 아래 supervision 안내에 따라 절대 경로 state와 호스트 시크릿을 보존한다. v1 누적 예산과 v2/v3 업무 상태는 v4로 이행한다. 상태 파일을 삭제해 재시작하지 않는다. 브랜치 전환·게시·운영 재시작은 이 구현 작업에서 수행하지 않는다.
 
 **`once`·`daemon`은 `COLLECTOR_DB` 필수**(없거나 읽을 수 없으면 `collector_db_required` / `collector_db_unavailable` / `domain_state_unavailable`). 정책은 **fetch 직전·리다이렉트 후·모델 직전**마다 재확인한다.
 
@@ -47,7 +47,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 export PATH="$PWD/node_modules/node/bin:$PATH"
 # 박스에서: export DEEPSEEK_API_KEY=...  (이 README/저장소에 넣지 말 것)
 # 모델: export DEEPSEEK_MODEL=<박스에서 검증한 DeepSeek 모델 id>
-# (미설정 시 코드 기본값 deepseek-chat — Flash/Reasoner 여부는 박스에서 문서·대시보드로 확인 후 설정)
+# (기본 프로필 deepseek-flash; 활성화 전 아래 모델 프로필 이행 절차로 호스트에서 확인)
 # 필수(once/daemon): export COLLECTOR_DB=/path/to/collector.sqlite
 
 pm2 start crawler/deepseek-web.ecosystem.config.cjs
@@ -112,7 +112,7 @@ Re-run `pm2 save` after intentional registration changes. The saved process list
 
 Path: **`${DEEPSEEK_WEB_STATE_DIR}/heartbeat.json`**, default **`<configured repository cwd>/.local/deepseek-web/heartbeat.json`**. Every owned cycle publishes a start and terminal snapshot, including DB/policy/emergency-stop/config/memory initialization failures. Writing requires writable safe storage and acquired writer ownership. If either fails, a fixed diagnostic is emitted, no model calls occur, and the prior heartbeat is preserved. Unknown historical totals and unread queue size are `null`.
 
-Schema 1 adds cycle ID, PID/mode, `heartbeat_at`, effective `cycle_interval_ms`, KST ISO `cycle_started_at_kst`/`cycle_ended_at_kst` (`+09:00`), `outcome`/fixed `reason`, attempted/succeeded model calls, provider-reported token subtotal, complete token total or `null`, `usage_complete`, extraction/review counts, `backoff`, and `last_completed_cycle`. `items_extracted` counts normalized in-scope results before dedup; `items_sent_to_review` counts confirmed new appends. Legacy `extractions` still counts review appends; `review_pending` is queue size. Existing report budget/coverage/listing/proposal/block fields retain their normal meanings.
+Schema 2 retains the schema-1 cycle ID, PID/mode, `heartbeat_at`, effective `cycle_interval_ms`, KST ISO `cycle_started_at_kst`/`cycle_ended_at_kst` (`+09:00`), `outcome`/fixed `reason`, attempted/succeeded model calls, provider-reported token subtotal, complete token total or `null`, `usage_complete`, extraction/review counts, `backoff`, and `last_completed_cycle`. `items_extracted` counts normalized in-scope results before dedup; `items_sent_to_review` counts confirmed new appends. Legacy `extractions` still counts review appends; `review_pending` is queue size. Existing report budget/coverage/listing/proposal/block fields retain their normal meanings.
 
 `validation-artifact.json` shares the terminal snapshot's cycle ID and retains `profile`, `validated_at`, and warning fields. Each file uses private temporary files, fsync, rename and directory fsync; the two replacements are not simultaneous. Unsafe paths/symlinks are rejected. Deprecated `heartbeat_fresh`/`heartbeat_age_ms` describe write time only.
 
@@ -124,7 +124,7 @@ Only typed **DeepSeek model API** HTTP 402/429 triggers persisted backoff, never
 
 A successful completion response clears the sequence durably before more model work, even if later parsing/enqueueing fails. No-call policy/DB/emergency-stop/budget/empty/dedup cycles and other network/model failures neither increment nor clear it. An expired deadline with no call waits one normal interval; there is no busy loop. Current-cycle `reason` and unresolved `backoff` are separate. Corrupt or unwritable control state fails closed and retries initialization at normal cadence.
 
-`memory.json` **v3** is the accounting checkpoint. It persists cycle/call intent before invocation, settles acknowledged usage before parsing or review appends, and stores a terminal checkpoint. One atomic replacement folds lifetime totals, sets `finalized_cycle_id`, retains a terminal summary/pending audit row, and clears the active budget. Recovery finishes the pending `cycle-audit.jsonl` append once, verifies duplicate IDs/content, repairs only a matching incomplete trailing append, fsyncs, and clears the intent before another cycle. Conflicting audit rows fail closed. v1 totals and v2 business state are retained; nonzero v2 active counters require matching existing audit/lifetime totals or explicit reconciliation.
+`memory.json` **v4** is the accounting checkpoint. It persists cycle/call intent before invocation, checkpoints acknowledged usage together with a bounded validated result receipt before cache promotion or review appends, and stores a terminal checkpoint. One atomic replacement folds lifetime totals, sets `finalized_cycle_id`, retains a terminal summary/pending audit row, and clears the active budget. Recovery finishes the pending `cycle-audit.jsonl` append once, verifies duplicate IDs/content, repairs only a matching incomplete trailing append, fsyncs, and clears the intent before another cycle. Conflicting audit rows fail closed. v1 totals and v2 business state are retained; nonzero v2 active counters require matching existing audit/lifetime totals or explicit reconciliation.
 
 Missing, negative, fractional or unreported token counts are unknown, never zero. Totals may be explicitly derived from both valid components. `deepseek_tokens_reported` is the known subtotal; `deepseek_tokens_used` is `null` if any call lacks accounting. A successful response with unknown usage keeps its reservation and stops the cycle with `usage_unknown`; reservations are not billed totals. A response lost before its durable settlement cannot prove exact provider billing. In-flight uncertainty survives recovery. Cap values, admission/reservation arithmetic and known-usage settlement rules remain unchanged; caps are per cycle and lifetime totals are cumulative audit values. The separate collector cost ledger is unchanged.
 
@@ -158,3 +158,57 @@ node --import tsx tests/helpers/deepseek-web-pm2-acceptance.mjs
 ```
 
 The harness tests cycle updates, real SIGKILL/new PID with the production restart delay, singleton writer reclamation after grace, persisted backoff through restart, and read-only stale status. It starts/kills only its temporary PM2 daemon and deletes only its own temporary state. Unit/child-process tests inject clocks, clients and failures, including accounting/audit crash windows; they do not prove the historical outage's cause or operational installation health. Robots/ToS, momcalendar host/subdomain/redirect stops, source registry gates, privacy, emergency stop and review/publication rules are unchanged.
+
+
+## Filtered Flash extraction and durable result reuse (Linux only)
+
+The Linux collector owns URL discovery, canonical identity, scope filtering, cache state and human review. These changes do not add execution to Next.js/Cloudflare, alter D1/R2 or status-sync payloads, run the scheduler/Instagram worker, or publish deals.
+
+The bounded work order is canonicalize/deduplicate → current domain/robots policy → fetch/revalidate → deterministic discovery and preparation → candidate decision → compatible result-cache lookup → current policy → budget admission on a miss → Flash → validate and checkpoint usage/result → cache promotion → idempotent review/proposal delivery. Detail URLs explicitly supplied or rediscovered are fetched again; `observed_urls`, `modeled_post_urls` and pending reviews are histories, not evidence of unchanged content. Listing cadence is retained. Budget denial leaves the miss pending while discovery and result-cache hits continue; emergency stop and scheduled model 402/429 backoff still stop work.
+
+### Candidate and preparation contract
+
+`candidate-filter.ts` version 1 requires a checked-in catalog product, an enabled category and group-buy evidence in one product region. Diapers/formula and accessory-only titles are excluded first. The 09pangpang adapter requires its exact numeric post identity, one article and one identifying heading, plus seller/schedule fields or explicit group-buy text. Other HTML requires one product microdata region, article or main region with one identifying heading, and `공구`/`공동구매` wording in the title or an offer/schedule/conditions block. `공구 아님`, `공동구매 아님`, `공구 없음` invalidate their textual evidence. Ordinary retail discounts, navigation, recommendations, seller names and discovery hints cannot establish product identity. Price and end date may be missing.
+
+No whole-document matching, rendering or OCR fallback is used. Rejections have fixed `candidate_*` codes, including `candidate_empty`, `candidate_evidence_unavailable` and `candidate_preparation_limit`. Unsupported JavaScript/image evidence makes zero model calls. Offline positive and negative fixtures are in `tests/deepseek-web-cache.test.ts`.
+
+`page-content.ts` uses the bounded HTML parser, removes scripts/forms/private/hidden and unrelated regions, and inspects privacy/injection lines before collapsing insignificant whitespace. Its immutable prepared text orders identity, source offer/schedule fields and description; raw date evidence is preserved. The 12,000-character cutoff happens once. `preparation_truncated` records limited extraction coverage. Changes only outside this text reuse the result when candidate eligibility is unchanged. Discovery catalog hints never enter the prompt, normalization or cache identity.
+
+### Cache and conditional requests
+
+`extraction-cache/entries/<cache_key>.json` stores bounded, versioned candidate proof, sanitized validated results, original extraction time and pending delivery information. Raw HTML and provider responses are never stored. `extraction-cache/urls/<url_contract_key>.json` records the latest observed representation, exact fetch URL, safe ETag/Last-Modified and separate revalidation time. There is no TTL/LRU eviction in this change.
+
+- `content_hash`: SHA-256 of the exact UTF-8 prepared text sent to Flash.
+- `contract_hash`: SHA-256 of stable serialized provider/profile/parameters, immutable instructions/schema, prompt/preparation/privacy/identity/filter/validation versions, catalog and scope configuration.
+- `cache_key`: SHA-256 of stable serialized canonical final URL, content hash and contract hash.
+- `url_contract_key`: SHA-256 of canonical URL, contract hash and the fixed HTTP request representation.
+
+An entry is fsynced before its pointer is published. Missing/stale indexes and well-formed dangling pointers use unconditional fetch plus hash lookup. Corrupt, unreadable, symlinked or identity-inconsistent state fails closed with `extraction_cache_unavailable`; do not delete state to conceal a failure. A fresh 200 invalidates the old reuse pointer before parsing/model work, so incomplete or ineligible replacements cannot leave stale conditional reuse enabled. Historical content remains addressable by hash; the URL pointer follows observation order.
+
+Safe validators are transmitted unchanged only for a reusable result and its exact request URL. They never go to robots or any redirect destination. Cross-origin redirects remain refused. Compatible 304 responses reuse the result after current policy checks; an unusable 304 receives exactly one unconditional GET, then `source_response_invalid` if still unusable. A 200 always compares prepared content regardless of validator changes.
+
+### Model profile migration and stable prefix
+
+The checked-in `flash` profile selects provider ID `deepseek-flash`, disabled thinking, JSON-object output and the existing 2,048-token completion limit. `DEEPSEEK_MODEL` selects a configured profile ID, provider ID or approved alias. An unregistered override, including legacy `deepseek-chat`, fails with `deepseek_model_profile_unverified` before requests; it is never silently mapped to Flash.
+
+Before operational activation, the operator must verify the target account/gateway's model ID and supported parameters using its provider documentation/model inventory and dashboard. Register that verified ID in `config.json` under `model.profiles` with a unique profile ID, explicit aliases, `thinking: {"type":"disabled"}` and the unchanged completion limit, then set the selector through the host environment. Keep secrets in the host secret mechanism. If an existing `deepseek-chat` override is present, replace it with a verified selector or register it only after the host confirms that exact alias serves the approved Flash profile. This implementation performs no live completion, operational restart or activation.
+
+DeepSeek's public [Chat Completions documentation](https://api-docs.deepseek.com/api/create-chat-completion/) lists `deepseek-flash` and disabled thinking. That establishes the public API contract, not account/gateway availability. Claude Code model-catalog warnings do not validate or invalidate this direct HTTP integration and require no Claude Code configuration changes here.
+
+Every request has the same immutable system instructions followed by immutable user schema/rules, canonical URL, then `untrusted_source_data` with the prepared text last. No cycle time, mutable hints, hashes or catalog dump enters the prefix. Provider [context caching](https://api-docs.deepseek.com/guides/kv_cache/) is best effort; the local result cache is what guarantees zero repeated calls after durable valid-result acknowledgement.
+
+### Results, recovery and review
+
+Only strictly schema-valid, privacy-safe results (including `in_scope:false`) enter the cache. Empty, malformed, truncated, schema-invalid and transport/HTTP failures remain retryable. Source URL and observation date are collector metadata. Acknowledged usage is settled even if validation fails.
+
+Memory v4 holds one bounded pending-result receipt alongside the existing call/accounting checkpoint; it adds no billing ledger. Recovery under writer ownership promotes that receipt before beginning another cycle. The cache then owns pending delivery, and deferred pages return through current source/robots/candidate checks. Failure to promote blocks model work. Finalization preserves the receipt. A result lost before acknowledgement remains uncertain; exactly-once provider billing is not claimed.
+
+Review rows carry content/contract hashes, deterministic delivery ID, predecessor, change reason and extraction/observation times. The same effective revision adds nothing. Changed content and historical-content returns append new pending transitions; approved/rejected and legacy rows remain intact. Pending counts resolve the latest revision per canonical URL. A valid out-of-scope transition after an existing deal is visible for human review. Proposals use cache key plus proposal-rule version, so delivery retries add no duplicate files. Nothing publishes or changes a human decision automatically.
+
+### Cycle metrics and compatibility
+
+Heartbeat schema 2, validation artifacts, audit snapshots and read-only status add `deepseek_prompt_cache_hit_tokens`, `deepseek_prompt_cache_miss_tokens`, `deepseek_completion_tokens`, `cache_usage_complete`, `extraction_cache_hits`, `extraction_cache_misses`, `candidate_pages_accepted` and `candidate_pages_rejected`. Provider cache-hit and cache-miss counts must be nonnegative safe integers summing to valid prompt tokens. Missing/inconsistent breakdowns are unknown (`null`); completion and existing total-usage completeness remain independent. Zero-call cycles report zero tokens. Local reuse does not add prior call usage, and provider-cached input still consumes the existing caps without a billing discount.
+
+Schema-1 heartbeats and validated memory versions 1–3 remain readable. Missing historical metrics become unknown, including embedded active/terminal/last-cycle snapshots. Existing pending audit rows are replayed byte-for-byte without enrichment; totals and recovery controls remain authoritative. New diagnostics expose fixed codes for cache, receipt, profile, result, review, proposal and source-response failures, never raw exceptions or provider/cache contents.
+
+The offline acceptance suite uses injected clients/responses/clocks and temporary state. SIGKILL tests cover acknowledgement, entry/index writes, review/proposal delivery, receipt clearing and prior accounting/audit windows. No operational queue edits or live API requests are part of verification.

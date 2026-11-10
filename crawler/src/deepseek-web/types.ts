@@ -27,6 +27,7 @@ export type ReviewQueueItem = {
   extraction: GongguExtraction;
   source_kind: 'public_web';
   verify_level: 'model_extract';
+  revision?: { version: 1; canonical_url: string; content_hash: string; contract_hash: string; cache_key: string; delivery_id: string; prior_revision_id: string | null; change_reason: 'first_observation' | 'legacy_predecessor' | 'content_changed' | 'contract_changed' | 'content_returned'; extracted_at: string; observed_at: string };
 };
 
 export type ParserFixProposal = {
@@ -58,7 +59,7 @@ export type LifetimeAudit = {
 export type DeepSeekWebConfig = {
   profile_id: string;
   profile_version: number;
-  model: { provider: string; default_model: string; reasoning_note: string };
+  model: { provider: string; default_model: string; reasoning_note: string; profiles: ModelProfile[] };
   scope_categories: { id: ScopedCategory; ko: string[]; examples: string[] }[];
   prohibited_hosts: string[];
   fetch: { min_interval_ms: number; jitter_ms: [number, number]; timeout_ms: number; max_bytes: number; user_agent_note: string };
@@ -73,7 +74,8 @@ export type DeepSeekWebConfig = {
 };
 
 export type RunMemory = {
-  version: 3;
+  version: 4;
+  pending_result: import('./extraction-cache').PendingResult | null;
   finalized_cycle_id: string | null;
   terminal_summary: RunReport | null;
   pending_audit: Record<string, unknown> | null;
@@ -116,7 +118,7 @@ export type CollectionStatus =
   | 'blocked';
 
 export type RunReport = {
-  schema_version: 1;
+  schema_version: 1 | 2;
   cycle_id: string;
   cycle_interval_ms: number | null;
   cycle_started_at_kst: string;
@@ -129,6 +131,14 @@ export type RunReport = {
   deepseek_tokens_reported: number;
   deepseek_tokens_used: number | null;
   usage_complete: boolean;
+  deepseek_prompt_cache_hit_tokens: number | null;
+  deepseek_prompt_cache_miss_tokens: number | null;
+  deepseek_completion_tokens: number | null;
+  cache_usage_complete: boolean;
+  extraction_cache_hits: number | null;
+  extraction_cache_misses: number | null;
+  candidate_pages_accepted: number | null;
+  candidate_pages_rejected: number | null;
   counts_complete: boolean;
   items_extracted: number;
   items_sent_to_review: number;
@@ -161,10 +171,12 @@ export type RunReport = {
   pid: number;
 };
 
-export type DeepSeekUsage = { prompt_tokens: number | null; completion_tokens: number | null; total_tokens: number | null; total_source?: 'reported' | 'derived' | 'unknown' };
+export type ModelProfile = { id: string; provider_model: string; aliases: string[]; thinking: { type: 'disabled' }; max_completion_tokens: number };
+
+export type DeepSeekUsage = { prompt_cache_hit_tokens?: number | null; prompt_cache_miss_tokens?: number | null; prompt_tokens: number | null; completion_tokens: number | null; total_tokens: number | null; total_source?: 'reported' | 'derived' | 'unknown' };
 
 export type DeepSeekClient = {
-  complete: (input: { system: string; user: string; signal?: AbortSignal }) => Promise<{ content: string; usage: DeepSeekUsage; model: string }>;
+  complete: (input: { system: string; user: string; signal?: AbortSignal }) => Promise<{ content: string; usage: DeepSeekUsage; model: string; finish_reason?: string | null }>;
 };
 
 /** A suppressed invocation references existing state; it is never a synthetic collection cycle. */

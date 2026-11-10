@@ -14,7 +14,7 @@ try {
   }
 } catch (err) {
   // Runner failures have already been reduced to fixed diagnostics.
-  const allowed = /^(collector_db_required|collector_db_unavailable|domain_state_unavailable|emergency_stop|invalid_deepseek_web_config|invalid_cycle_interval|memory_unavailable|backoff_state_unavailable|deepseek_api_key_missing|audit_conflict|audit_unavailable|writer_busy|writer_unavailable|unsafe_state_path|cycle_failed|dry_run_state_conflict)$/;
+  const allowed = /^(extraction_cache_unavailable|pending_result_unavailable|deepseek_model_profile_unverified|extraction_result_invalid|review_state_unavailable|proposal_state_unavailable|source_response_invalid|collector_db_required|collector_db_unavailable|domain_state_unavailable|emergency_stop|invalid_deepseek_web_config|invalid_cycle_interval|memory_unavailable|backoff_state_unavailable|deepseek_api_key_missing|audit_conflict|audit_unavailable|writer_busy|writer_unavailable|unsafe_state_path|cycle_failed|dry_run_state_conflict)$/;
   console.error(err instanceof Error && allowed.test(err.message) ? err.message : 'deepseek_web_failed');
   process.exitCode = 1;
 }

@@ -19,7 +19,7 @@ const temp = async () => { const dir = await mkdtemp(join(tmpdir(), 'ds-lifecycl
 const db = () => { const f = fixture(); fixtures.push(f); return f.store; };
 afterEach(async () => { for (const f of fixtures.splice(0)) f.close(); for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }); vi.unstubAllEnvs(); });
 const urls = ['https://fixture.example/one', 'https://fixture.example/two'];
-const completion = (tokens: number | null = 15) => ({ content: '{"brand":"A","model":"B","in_scope":false}', usage: { prompt_tokens: null, completion_tokens: null, total_tokens: tokens }, model: 'deepseek-chat' });
+const completion = (tokens: number | null = 15) => ({ content: '{"brand":"A","model":"B","category":"정보 없음","gonggu_price":"정보 없음","regular_price":"정보 없음","period":"정보 없음","gifts":"정보 없음","conditions":"정보 없음","seller":"정보 없음","url":"정보 없음","checked_date":"정보 없음","in_scope":false}', usage: { prompt_tokens: null, completion_tokens: null, total_tokens: tokens }, model: 'deepseek-chat' });
 
 test('402 → 402 → 429 → success persists capped backoff and once returns without DB or network', async () => {
   const dir = await temp(), store = db();
@@ -69,7 +69,7 @@ test('daemon remains alive across model backoff; expired no-call cycles wait a n
   expect(readBackoff(dir)?.failures).toBe(1);
 });
 
-test.each(['db', 'policy', 'emergency', 'budget', 'empty', 'dedup', 'network'] as const)('no-call/unrelated %s failures preserve the expired DeepSeek sequence', async kind => {
+test.each(['db', 'policy', 'emergency', 'budget', 'empty', 'network'] as const)('no-call/unrelated %s failures preserve the expired DeepSeek sequence', async kind => {
   const dir = await temp(), store = db();
   const start = Date.parse('2026-11-10T00:00:00Z');
   const b = failBackoff(dir, null, 429, start), now = Date.parse(b.next_attempt_at);
@@ -78,10 +78,6 @@ test.each(['db', 'policy', 'emergency', 'budget', 'empty', 'dedup', 'network'] a
   if (kind === 'policy') vi.spyOn(store, 'list').mockImplementation(() => { throw new Error('secret'); });
   const config = loadDeepSeekWebConfig();
   if (kind === 'budget') config.budget.max_tokens_per_run = 0;
-  if (kind === 'dedup') {
-    const { emptyMemory, saveMemory } = await import('../crawler/src/deepseek-web/memory');
-    const m = emptyMemory(); m.observed_urls = [urls[0]]; await saveMemory(dir, m);
-  }
   const run = runDeepSeekWeb({ mode: 'daemon_tick', stateDir: dir, store: kind === 'db' ? undefined : store, urls: kind === 'empty' ? ['https://www.instagram.com/blocked'] : urls.slice(0, 1), client: { complete }, now: () => now, loadConfig: () => config });
   vi.stubEnv('COLLECTOR_DB', '');
   await run;
@@ -109,7 +105,7 @@ test('unknown usage retains reservation, stops further calls, and is distinct fr
 test('successful completion clears backoff even if extraction parsing fails', async () => {
   const dir = await temp(), store = db(), t = Date.now() - 3600000;
   failBackoff(dir, null, 402, t);
-  await expect(runDeepSeekWeb({ mode: 'once', stateDir: dir, store, urls, client: { complete: async () => ({ ...completion(), content: 'malformed' }) } })).rejects.toThrow('cycle_failed');
+  await expect(runDeepSeekWeb({ mode: 'once', stateDir: dir, store, urls, client: { complete: async () => ({ ...completion(), content: 'malformed' }) } })).rejects.toThrow('extraction_result_invalid');
   expect(readBackoff(dir)).toBeNull();
   const h = await readHeartbeat(dir);
   expect(h?.deepseek_tokens_used).toBe(15); expect(h?.deepseek_calls_succeeded).toBe(1);
@@ -233,7 +229,7 @@ test('unwritable state preserves the old heartbeat and prevents model calls', as
 
 test('items_extracted is counted before offer dedup; legacy extractions still counts only new appends', async () => {
   const dir = await temp(), store = db();
-  const client = { complete: async () => ({ ...completion(), content: '{"brand":"Stokke","model":"Tripp Trapp","category":"high_chair","in_scope":true,"seller":"same","period":"same"}' }) };
+  const client = { complete: async () => ({ ...completion(), content: '{"brand":"Stokke","model":"Tripp Trapp","category":"high_chair","gonggu_price":"정보 없음","regular_price":"정보 없음","period":"same","gifts":"정보 없음","conditions":"정보 없음","seller":"same","url":"정보 없음","checked_date":"정보 없음","in_scope":true}' }) };
   const first = await runDeepSeekWeb({ mode: 'once', stateDir: dir, store, urls: urls.slice(0, 1), client });
   const { loadMemory, saveMemory } = await import('../crawler/src/deepseek-web/memory');
   const m = await loadMemory(dir); m.observed_urls = []; m.modeled_post_urls = []; await saveMemory(dir, m);
@@ -248,7 +244,7 @@ test('items_extracted is counted before offer dedup; legacy extractions still co
 
 test('partial successful usage and counts survive a later 402 in the same cycle', async () => {
   const dir = await temp(), store = db();
-  const complete = vi.fn().mockResolvedValueOnce({ ...completion(), content: '{"brand":"Stokke","model":"Tripp Trapp","category":"high_chair","in_scope":true}' }).mockRejectedValueOnce(new DeepSeekHttpError(402));
+  const complete = vi.fn().mockResolvedValueOnce({ ...completion(), content: '{"brand":"Stokke","model":"Tripp Trapp","category":"high_chair","gonggu_price":"정보 없음","regular_price":"정보 없음","period":"정보 없음","gifts":"정보 없음","conditions":"정보 없음","seller":"정보 없음","url":"정보 없음","checked_date":"정보 없음","in_scope":true}' }).mockRejectedValueOnce(new DeepSeekHttpError(402));
   const r = await runDeepSeekWeb({ mode: 'once', stateDir: dir, store, urls, client: { complete } });
   expect(r.outcome).toBe('backoff'); expect(r.deepseek_calls_attempted).toBe(2); expect(r.deepseek_calls_succeeded).toBe(1);
   expect(r.deepseek_tokens_reported).toBe(15); expect(r.deepseek_tokens_used).toBeNull(); expect(r.lifetime_token_spent).toBe(15);
@@ -278,7 +274,7 @@ test('a pre-schema-1 heartbeat is never embedded and cannot brick later cycles',
   const first = await runDeepSeekWeb({ mode: 'once', stateDir: dir, store, urls: urls.slice(0, 1), client });
   expect(first.outcome).toBe('completed');
   expect(first.last_completed_cycle).toBeNull();
-  expect((await readHeartbeat(dir))?.schema_version).toBe(1);
+  expect((await readHeartbeat(dir))?.schema_version).toBe(2);
   // The upgraded memory checkpoint written by the first cycle must load cleanly.
   const second = await runDeepSeekWeb({ mode: 'once', stateDir: dir, store, urls: urls.slice(1), client });
   expect(second.outcome).toBe('completed');

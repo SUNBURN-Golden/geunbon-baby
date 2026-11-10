@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DeepSeekClient, DeepSeekUsage } from './types';
-export type ClientOptions = { apiKey: string; model: string; maxCompletionTokens: number; baseUrl?: string; fetchImpl?: typeof fetch; fixturePath?: string };
+export type ClientOptions = { apiKey: string; model: string; maxCompletionTokens: number; thinking?: { type: 'disabled' }; baseUrl?: string; fetchImpl?: typeof fetch; fixturePath?: string };
 export class DeepSeekHttpError extends Error {
   readonly reason: string;
   constructor(readonly status: number) {
@@ -15,7 +15,9 @@ export function usageFrom(data: { usage?: Partial<DeepSeekUsage> }): DeepSeekUsa
   const u = data.usage ?? {};
   const prompt = valid(u.prompt_tokens), completion = valid(u.completion_tokens), reported = valid(u.total_tokens);
   const derived = prompt !== null && completion !== null ? valid(prompt + completion) : null;
-  return { prompt_tokens: prompt, completion_tokens: completion, total_tokens: reported ?? derived, total_source: reported !== null ? u.total_source === 'derived' && derived === reported ? 'derived' : 'reported' : derived !== null ? 'derived' : 'unknown' };
+  let hit = valid(u.prompt_cache_hit_tokens), miss = valid(u.prompt_cache_miss_tokens);
+  if (prompt === null || hit === null || miss === null || hit + miss !== prompt) hit = miss = null;
+  return { prompt_cache_hit_tokens: hit, prompt_cache_miss_tokens: miss, prompt_tokens: prompt, completion_tokens: completion, total_tokens: reported ?? derived, total_source: reported !== null ? u.total_source === 'derived' && derived === reported ? 'derived' : 'reported' : derived !== null ? 'derived' : 'unknown' };
 }
 export function createDeepSeekClient(options: ClientOptions): DeepSeekClient {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -39,6 +41,7 @@ export function createDeepSeekClient(options: ClientOptions): DeepSeekClient {
         headers: { authorization: `Bearer ${options.apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify({
           model: options.model,
+          thinking: options.thinking ?? { type: 'disabled' },
           max_tokens: options.maxCompletionTokens,
           messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
           response_format: { type: 'json_object' },
@@ -48,11 +51,11 @@ export function createDeepSeekClient(options: ClientOptions): DeepSeekClient {
         await response.body?.cancel().catch(() => {});
         throw new DeepSeekHttpError(response.status);
       }
-      const data = await response.json() as { choices?: { message?: { content?: string } }[]; usage?: DeepSeekUsage; model?: string };
+      const data = await response.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: DeepSeekUsage; model?: string };
       const content = data.choices?.[0]?.message?.content;
       // A successful HTTP completion settles accounting even if content is unusable.
       if (typeof content !== 'string') return { content: '', usage: usageFrom(data), model: options.model };
-      return { content, usage: usageFrom(data), model: data.model ?? options.model };
+      return { content, usage: usageFrom(data), model: data.model ?? options.model, finish_reason: data.choices?.[0]?.finish_reason ?? null };
     },
   };
 }
