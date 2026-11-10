@@ -54,7 +54,12 @@ export async function enqueueReview(dir: string, extraction: GongguExtraction) {
 function substantive(e: GongguExtraction) {
   const p = projectExtraction(e);
   const date = (d: GongguExtraction['start_date']) => d ? [d.year,d.month,d.day,d.hour,d.minute,d.second,d.precision] : null;
-  return JSON.stringify([isCheckedExtraction(e), p.catalog_product_id, p.brand, p.model, p.category, p.in_scope, p.seller, p.gonggu_price, p.regular_price, date(p.start_date), date(p.end_date), p.gifts, p.conditions]);
+  // An item name/option/price/model change is substantive: it must not be hidden
+  // by duplicate_offer against a different URL.
+  const bundle = p.bundle_items?.map(item => 'price_fact' in item
+    ? [item.region_index, item.brand, item.product_name, item.option_text, item.category, item.price_fact.value, item.model_match?.model_id ?? null]
+    : [item.region_index, item.source_brand, item.product_name, item.option_text, item.category, item.gonggu_price]) ?? null;
+  return JSON.stringify([isCheckedExtraction(e), p.catalog_product_id, p.brand, p.model, p.category, p.in_scope, p.seller, p.gonggu_price, p.regular_price, date(p.start_date), date(p.end_date), p.gifts, p.conditions, bundle]);
 }
 export async function enqueueReviewIfNew(dir: string, extraction: GongguExtraction, entry?: CacheEntry, observedAt = new Date().toISOString()): Promise<{ enqueued: boolean; reason?: string }> {
   if (!isCheckedExtraction(extraction) || entry && (entry.version !== 2 || !isCheckedExtraction(entry.result) || JSON.stringify(entry.result) !== JSON.stringify(extraction) || entry.canonical_url !== canonicalUrl(extraction.url) || entry.content_hash !== extraction.fact_check.source_hash || entry.cache_key !== cacheKey(entry.canonical_url,entry.content_hash,entry.contract_hash))) throw new Error('extraction_result_invalid');

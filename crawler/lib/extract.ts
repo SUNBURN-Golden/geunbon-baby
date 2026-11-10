@@ -2,6 +2,7 @@
 // 외부 I/O·Playwright 의존이 없어 단위 테스트(tests/extract.test.ts)로만 검증한다.
 // 추출 결과는 어디까지나 검수 보조 '제안'이며, 사람이 원문을 확인하기 전에는 게시되지 않는다.
 import { models as seedModels } from '../../seed/models.json';
+import type { ScopedCategory } from '../src/deepseek-web/types';
 
 export type ModelSuggestion = { model_id: string; brand: string; name: string; matched: string[]; confidence: number };
 export type PriceSuggestion = { value: number; raw: string; confidence: number; source_line: string };
@@ -99,7 +100,28 @@ rule([33], ['듀얼픽스'], ['프로', 'LUX']); rule([34], ['듀얼픽스'], ['
 rule([35], ['듀얼픽스'], ['프로', 'CLASSIC']); rule([36], ['미카'], ['프로']); rule([37], ['타이탄'], ['프로']);
 rule([38], ['리프']); rule([39], ['듄']); rule([40], ['옴니', '브리즈', '옴니 브리즈']);
 rule([41], ['두나', '두나 카시트 겸용 유모차']);
-const MODEL_TABLE = seedModels.map((m, i) => ({ id: `model-${i + 1}`, brand: m.brand, name: m.model, rule: rules[`model-${i + 1}`] }));
+const MODEL_TABLE = seedModels.map((m, i) => ({ id: `model-${i + 1}`, brand: m.brand, name: m.model, category: m.category, rule: rules[`model-${i + 1}`] }));
+
+export function modelCategory(modelId: string): ScopedCategory | null {
+  const model = MODEL_TABLE.find(m => m.id === modelId);
+  return model ? model.category as ScopedCategory : null;
+}
+export function modelRefiners(modelId: string): string[] {
+  return MODEL_TABLE.find(m => m.id === modelId)?.rule?.refiners ?? [];
+}
+/** Resolve an exact declared brand alias. Ambiguous or unknown text stays null. */
+export function canonicalBrand(raw: string): string | null {
+  const text = raw.normalize('NFKC').toLowerCase();
+  const matched = new Set<string>();
+  for (const [brand, forms] of Object.entries(BRAND_ALIASES)) {
+    for (const form of forms) {
+      const parts = typeof form === 'string' ? [form] : form;
+      const pattern = parts.map(part => escape(part.normalize('NFKC').toLowerCase())).join('\\s*');
+      if (new RegExp(`(?<!${WORD})${pattern}(?!${WORD})`, 'u').test(text)) { matched.add(brand); break; }
+    }
+  }
+  return matched.size === 1 ? [...matched][0] : null;
+}
 
 const WORD = String.raw`[\p{L}\p{M}\p{N}_]`;
 const PARTICLE = '에서|으로|은|는|이|가|을|를|과|와|도|만|의|에|로';

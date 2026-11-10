@@ -13,7 +13,7 @@
         "thinking": {
           "type": "disabled"
         },
-        "max_completion_tokens": 2048
+        "max_completion_tokens": 8192
       }
     ]
   },
@@ -104,7 +104,7 @@
   "budget": {
     "max_tokens_per_run": 32000,
     "max_requests_per_run": 12,
-    "max_completion_tokens": 2048,
+    "max_completion_tokens": 8192,
     "estimated_prompt_tokens": 12000
   },
   "memory": {

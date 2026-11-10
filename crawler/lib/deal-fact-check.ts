@@ -4,6 +4,8 @@ import { canonicalUrl, filterChanged } from '../../shared/privacy-rules';
 import { extractModels } from './extract';
 import { DAY, KST_OFFSET, kstDate } from './kst';
 export const FACT_CHECK_VERSION = 'deal-facts@1';
+export const ITEM_FACT_VERSION = 'item-price@1';
+export type ItemFactVersion = typeof ITEM_FACT_VERSION;
 export const CHECKED_SCHEMA_VERSION = 1;
 export const INTERPRETATION_POLICY = 'kst-observation-year@1';
 export type CheckedDate = { year: number | null; month: number; day: number; hour: number | null; minute: number | null; second: number | null; precision: 'day' | 'hour' | 'minute' | 'second' };
@@ -171,6 +173,35 @@ export function checkDealFacts(candidates: FactCandidates, text: string, source:
     }
   }
   return { version: FACT_CHECK_VERSION, schema_version: CHECKED_SCHEMA_VERSION, interpretation_policy: INTERPRETATION_POLICY, source, source_hash: sourceHash(text), text_length: text.length, observed_at: new Date(observedAt).toISOString(), observation_year_kst: +kstDate(observedAt).slice(0, 4), truncated, fields };
+}
+// Bundle items are independent offers. "옵션" is deliberately allowed: it names
+// the product option, not an add-on purchase.
+const itemExcludedContext = /(?:추가\s*(?:구성|옵션|금액|비용)|별도\s*(?:구매|결제|비용|금액)|배송비|배송료|설치비|사은품|증정|쿠폰|적립|할부|보증|보험|다른\s*상품|타\s*상품)/;
+export function moneyValuePresent(text: string, value: number): boolean {
+  return monies(text.normalize('NFKC')).some(t => t.value === value);
+}
+/**
+ * Verify one bundle item's price against that item's own quote only.
+ * A valid quote without the declared literal never borrows a price from another
+ * region; it simply becomes null with a reason.
+ */
+export function checkItemPrice(candidate: string | number | null, quote: string, quoteStart: number, source: string): Fact<number> {
+  const n = normalized(quote);
+  const tokens = monies(n.value);
+  if (missing(candidate)) return failed(tokens.length ? 'not_found' : 'missing');
+  const value = normalizeMoney(candidate);
+  if (value === null) return failed('invalid');
+  if (!Number.isSafeInteger(quoteStart) || quoteStart < 0) return failed('invalid');
+  const eligible = tokens.filter(token => {
+    if (token.role === 'regular') return false;
+    const before = n.value.slice(Math.max(0, token.start - 40), token.start);
+    return !itemExcludedContext.test(before);
+  });
+  const matches = eligible.filter(token => token.value === value);
+  if (!matches.length) return failed('not_found');
+  if (new Set(eligible.map(token => token.value)).size > 1) return failed('ambiguous');
+  const token = matches[0], start = n.starts[token.start], end = n.ends[token.end - 1];
+  return { value, reason: null, evidence: { source, start: quoteStart + start, end: quoteStart + end, quote: quote.slice(start, end) } };
 }
 /** Publication requires a written year. Date-only ends are inclusive through their KST day. */
 export function dateTimestamp(d: CheckedDate | null, end = false): number | null {
