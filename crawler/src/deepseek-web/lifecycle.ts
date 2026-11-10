@@ -30,7 +30,7 @@ export function initialReport(mode: RunReport['mode'], now: number): RunReport {
     items_extracted: 0, items_sent_to_review: 0, backoff: null, last_completed_cycle: null,
     cycle_token_spent: 0, cycle_requests_spent: 0, lifetime_token_spent: null, lifetime_cycles: null, token_spent: 0, requests_spent: 0,
     extractions: 0, proposals: 0, blocked: 0, review_pending: null, listing_enqueued: 0, listing_refresh_attempts: 0, dedup_skips: 0,
-    coverage: { searches: [], listing: {}, extracted: {} }, collection_status: 'idle', halt_reason: null };
+    coverage: { searches: [], listing: {}, extracted: {}, rotation: { cursor_before: 0, cursor_after: 0, scheduled: [], served: [], planned_pages: 0, skipped_pending: 0 }, official: {} }, collection_status: 'idle', halt_reason: null };
 }
 export type CycleContext = {
   dir: string; config: DeepSeekWebConfig; memory: RunMemory; report: RunReport;

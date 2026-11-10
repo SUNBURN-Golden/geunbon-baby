@@ -18,6 +18,8 @@ export class PoliteFetcher {
   private tails = new Map<string, Promise<unknown>>();
   private lastAt = new Map<string, number>();
   private robots = new Map<string, Promise<Robots>>();
+  /** Most recent blocked request, for callers that need to classify the block after `get()` returns null. */
+  lastBlock: BlockInfo | null = null;
   constructor(private options: PoliteOptions, private deps: FetcherDeps, private onBlock: (info: BlockInfo) => void = () => {}) {}
 
   // 같은 호스트의 요청 시작 시점을 직렬화한다. 렌더링 중 브라우저의 데이터 요청도 이 큐를 쓴다.
@@ -57,8 +59,10 @@ export class PoliteFetcher {
   // 차단되면 요청 없이 null. 전송·상태 오류는 ExternalFetchError.
   async get(target: string, ctx: FetchContext): Promise<FetchResult | null> {
     if (!decide(target, ctx.origin).allowed) return this.blocked(target, ctx.origin, ctx.source);
+    // The robots URL itself is policy-checked here; `follow()` would check it a
+    // second time, so it is not passed through as well.
     ctx.beforeRequest?.(new URL('/robots.txt', ctx.origin).href);
-    const robots = await this.robotsFor(ctx.origin, ctx.beforeRequest);
+    const robots = await this.robotsFor(ctx.origin);
     const result = await this.follow(target, ctx.origin, ctx.source, robots, false, ctx);
     if (result && (result.status < 200 || result.status >= 300 && !(ctx.allowNotModified && result.status === 304))) throw new ExternalFetchError(`외부 사이트 응답 오류(${result.status})`);
     return result;
@@ -68,7 +72,10 @@ export class PoliteFetcher {
     const decision = decide(target, origin, robots);
     let path = '';
     try { path = new URL(target).pathname; } catch { /* 경로를 알 수 없음 */ }
-    if (!decision.allowed) this.onBlock({ source, reason: decision.reason, resource_type: 'document', path });
+    if (!decision.allowed) {
+      this.lastBlock = { source, reason: decision.reason, resource_type: 'document', path };
+      this.onBlock(this.lastBlock);
+    }
     return null;
   }
 
@@ -78,7 +85,7 @@ export class PoliteFetcher {
       if (!decide(current, origin, robots).allowed) return this.blocked(current, origin, source, robots);
       ctx?.beforeRequest?.(current);
       const conditional = hop === 0 && current === ctx?.conditional?.fetch_url ? ctx.conditional : undefined;
-      const response = await this.request(new URL(current), conditional, ctx?.beforeRequest);
+      const response = await this.request(new URL(current), conditional);
       if (response.location !== null) {
         try { current = new URL(response.location, current).href; } catch { throw new ExternalFetchError('잘못된 리디렉트'); }
         continue;
@@ -89,9 +96,8 @@ export class PoliteFetcher {
     throw new ExternalFetchError('리디렉트 횟수 초과');
   }
 
-  private request(url: URL, conditional?: ConditionalRequest, beforeRequest?: (url: string) => void): Promise<{ status: number; location: string | null; text: string; etag: string | null; last_modified: string | null }> {
+  private request(url: URL, conditional?: ConditionalRequest): Promise<{ status: number; location: string | null; text: string; etag: string | null; last_modified: string | null }> {
     return this.pace(url.host, async () => {
-      beforeRequest?.(url.href);
       let response: Response;
       try {
         response = await this.deps.fetch(url.href, {

@@ -178,7 +178,7 @@ test('legacy schema-1 embedded reports migrate to unknown metrics without rewrit
   const legacy = { ...m.terminal_summary }; delete legacy.deepseek_prompt_cache_hit_tokens; delete legacy.cache_usage_complete; m.terminal_summary = legacy;
   const audit = { ...legacy, lifetime_token_spent: m.lifetime.token_spent, lifetime_cycles: m.lifetime.cycles }; m.pending_audit = audit;
   writeFileSync(join(s.dir, 'memory.json'), JSON.stringify(m));
-  const loaded = await loadMemory(s.dir); expect(loaded.version).toBe(4); expect(loaded.terminal_summary?.deepseek_prompt_cache_hit_tokens).toBeNull(); expect(loaded.pending_audit).toEqual(audit);
+  const loaded = await loadMemory(s.dir); expect(loaded.version).toBe(5); expect(loaded.terminal_summary?.deepseek_prompt_cache_hit_tokens).toBeNull(); expect(loaded.pending_audit).toEqual(audit);
   writeFileSync(join(s.dir, 'heartbeat.json'), JSON.stringify(legacy));
   expect(await heartbeatStatus(s.dir)).toMatchObject({ deepseek_prompt_cache_hit_tokens: null });
 });

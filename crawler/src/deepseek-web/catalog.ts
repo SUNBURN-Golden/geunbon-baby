@@ -69,6 +69,8 @@ export function nextCatalogSearch(
   return { ...rows[idx], next_cursor: idx + 1 };
 }
 
+export const CATEGORY_ORDER: readonly ScopedCategory[] = ['stroller', 'high_chair', 'car_seat', 'play_gym', 'carrier', 'bouncer'];
+
 function accessoryHit(blob: string, catalog: GeunbonCatalog) {
   const patterns = catalog.accessory_exclude_patterns;
   return patterns.some(p => blob.includes(p));
@@ -109,8 +111,9 @@ export function rankListingCandidates(
   catalog: GeunbonCatalog,
   maxDetail: number,
   _pageUrl: string,
+  options?: { categoryCursor?: number; categoryOrder?: readonly ScopedCategory[] },
 ) {
-  const scored: { product: PangpangProduct; match: CatalogMatch }[] = [];
+  const groups: Partial<Record<ScopedCategory, { product: PangpangProduct; match: CatalogMatch }[]>> = {};
   const rollup = { raw: products.length, scoped: 0, accessory_or_broad: 0, outside_scope: 0 };
   const byCategory: Partial<Record<ScopedCategory, number>> = {};
   for (const p of products) {
@@ -120,15 +123,25 @@ export function rankListingCandidates(
     else {
       rollup.scoped++;
       byCategory[v.match.category] = (byCategory[v.match.category] ?? 0) + 1;
-      scored.push({ product: p, match: v.match });
+      (groups[v.match.category] ??= []).push({ product: p, match: v.match });
     }
   }
-  scored.sort((a, b) => b.match.score - a.match.score || a.product.title.localeCompare(b.product.title));
-  const enqueue = scored.slice(0, maxDetail).map(({ product, match }) => ({
-    url: product.source_url,
-    catalog_product_id: match.product_id,
-    category: match.category,
-  }));
+  for (const rows of Object.values(groups)) rows.sort((a, b) => b.match.score - a.match.score || a.product.title.localeCompare(b.product.title));
+  // Round-robin across categories so one crowded category cannot take every detail slot.
+  // Use the configured category order so listing rotation stays aligned with the planner
+  // even when `scope_categories` is reordered.
+  const order = options?.categoryOrder?.length ? options.categoryOrder : CATEGORY_ORDER;
+  const cursor = options?.categoryCursor ?? 0;
+  const start = ((cursor % order.length) + order.length) % order.length;
+  const enqueue: { url: string; catalog_product_id: string; category: ScopedCategory }[] = [];
+  while (enqueue.length < maxDetail) {
+    let added = false;
+    for (let i = 0; i < order.length && enqueue.length < maxDetail; i++) {
+      const next = groups[order[(start + i) % order.length]]?.shift();
+      if (next) { enqueue.push({ url: next.product.source_url, catalog_product_id: next.match.product_id, category: next.match.category }); added = true; }
+    }
+    if (!added) break;
+  }
   return { enqueue, rollup, by_category: byCategory };
 }
 

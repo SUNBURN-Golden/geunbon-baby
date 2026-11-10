@@ -12,6 +12,12 @@ export type OutcomeKind =
   | 'listing_no_premium_targets'
   | 'duplicate_skip'
   | 'fetch_blocked'
+  | 'official_visit'
+  | 'official_registry_denied'
+  | 'official_domain_blocked'
+  | 'official_robots_blocked'
+  | 'official_redirect_blocked'
+  | 'official_fetch_failed'
   | 'model_failed';
 export async function logOutcome(dir: string, row: {
   run_id: string;

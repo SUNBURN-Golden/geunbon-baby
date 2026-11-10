@@ -70,6 +70,14 @@
 - source kind와 official_fields는 필드별 권한이다. 일반 공식몰 할인가를 official_msrp로 바꾸지 않는다. 공구 판매처의 직접 본문·사람 검수에 사용할 공구 가격 권한도 별도로 등록한다. Instagram·공구 모음은 official_fields가 없다.
 - 호스트·경로·query_keys·redirect·egress·페이지/용량 상한을 현행 정책대로 검사한다. 차단 경로가 허용 경로보다 우선한다. 레거시 external-sources.json enabled를 권한 근거로 쓰지 않는다.
 
+## DeepSeek 공개 웹 러너 연동
+
+- 러너는 레지스트리를 **읽기 전용**으로 소비한다. `SourceRegistryStore.decide(source_id, url, fields)`만 호출하고 `approveRevision`·시드·권한 변경은 하지 않는다. `unknown_source`, `permission_unknown`, `approval_required`, `reevaluation_due`, `blocked_path`, `field_denied` 등은 모두 fail-closed다.
+- 승인은 운영자가 대역 외에서 `approveRevision`으로 기록하며, 러너의 `official_sources` 활성화와는 별개다. 활성화만으로 권한이 생기지 않는다.
+- `crawler/deepseek-web/config.json`의 `official_sources`는 `seed/models.json`에서 파생한 11건이며 모두 `enabled:false`다. D.THRONE는 `idx` 쿼리를 `canonicalUrl`이 거부해 제외했다. BabyBjörn는 레지스트리 경로 정규식을 위해 끝 슬래시가 있는 raw URL로 방문하고, 식별자에만 canonical URL을 쓴다.
+- **공식 레인은 방문 전용이다.** `PoliteFetcher`가 robots.txt를 실시간 확인하고, 리다이렉트를 포함한 매 요청 직전에 레지스트리 범위를 재확인한다. 성공한 HTML은 모델 추출·추출 캐시·`candidateDecision`·`pending_urls`/`observed_urls`로 전달하지 않고, `rotation.official_visits`와 `coverage.official`에 방문 결과만 남긴다.
+- 공식 페이지 우선 방문과 카테고리 쿼터 로테이션은 `crawler/src/deepseek-web/rotation.ts`의 플래너가 담당한다. due 공식 페이지를 먼저 선택하고, 이어서 카테고리마다 틱당 최대 `category_quota_per_cycle`개의 pending 상세 또는 검색 1건을 고르는 혼합 로테이션 윈도우를 돈다. 공정성 보장은 `categoryCap = max_pages_per_cycle - min(legacy_budget_per_cycle, legacy_work)`, `categoriesPerCycle = max(1, floor(categoryCap / category_quota_per_cycle))`, `N = ceil(C / min(categoriesPerCycle, categoryCap))`이다. 검색이 같은 윈도우에 포함되므로 한 카테고리의 backlog가 검색 전용 카테고리를 굶기지 않는다. `scope_categories`에서 제거된 카테고리의 pending 상세는 legacy 작업으로 처리한다.
+
 ## 초기 실제 레코드 목록
 
 모든 아래 행에 공통으로 `permission.robots/terms={status:unknown, checked_at:null, url:null, summary:null}`, `basis:null`, `state:disabled`, `enabled:false`, `owner:"아가마중 운영 담당(미지정)"`, `full_text_allowed:false`를 적용한다. exception은 없으며 자동 수집을 시작하지 않는다. 2026-10-23 본문 확인은 일회성 에이전트 조회이며 자동 수집 권한 확인이 아니다. 아래 시간·보관은 제안이며 활성화 전에 승인한다. kind가 복수 역할이면 레코드의 kind는 앞의 값, 나머지는 data 역할로 둔다.

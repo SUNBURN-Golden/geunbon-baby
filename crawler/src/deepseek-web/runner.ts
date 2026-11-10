@@ -7,6 +7,7 @@ import { buildExtractionPrompt, SYSTEM_INSTRUCTIONS, validateExtraction, checkEx
 import { createPublicFetcher, fetchPublicText } from './public-fetch';
 import { buildParserProposal } from './proposals';
 import { canonicalUrl } from '../../../shared/privacy-rules';
+import { digest } from '../../engine/util';
 import { modelProfile } from './config';
 import { preparePage } from './page-content';
 import { candidateDecision } from './candidate-filter';
@@ -17,13 +18,17 @@ import { countPending } from './review-queue';
 import { cycleAdmit } from './budget-cycle';
 import { cycleLifecycle, waitFor, type CycleContext } from './lifecycle';
 import type { WriterOwnership } from './writer-ownership';
-import type { DeepSeekWebConfig } from './types';
+import type { DeepSeekWebConfig, OfficialSourceConfig, OfficialVisitOutcome, RunMemory, ScopedCategory } from './types';
 import { logOutcome } from './outcomes';
 import { isPangpangHost, planPangpangPage } from './source-select';
-import { pickNextPublicSearchUrl, rememberSearchHints } from './search-query-plan';
+import { rememberSearchHints } from './search-query-plan';
 import { isPangpangListingUrl, listingDiscoveryDue, recordListingDiscovery, shouldDedupObservedSeed } from './listing-discovery';
-import { loadGeunbonCatalog, postIdFromUrl, searchMetaForUrl } from './catalog';
-import type { CollectionReport, CollectionStatus, ScopedCategory, TickCoverage } from './types';
+import { catalogSearchUrls, loadGeunbonCatalog, postIdFromUrl, searchMetaForUrl } from './catalog';
+import { enabledOfficialSources, effectiveRecheckMs, officialDue, admitOfficial, officialLegacySources } from './official-sources';
+import { normalizeRotationForDigest, planRotation, type LegacyItem, type OfficialCandidate, type PendingItem, type SearchRow, type WorkItem } from './rotation';
+import { SourceRegistryStore } from '../source-registry/store';
+import { loadRegistrySeed } from '../source-registry/seed';
+import type { CollectionReport, CollectionStatus, TickCoverage } from './types';
 import type { CollectorStore } from '../store';
 
 export type FetchPageResult = { ok: true; text: string; finalUrl: string; status?: number; etag?: string | null; last_modified?: string | null } | { ok: false; reason: string };
@@ -32,6 +37,7 @@ export type RunnerOptions = {
   urls?: string[];
   stateDir?: string;
   store?: CollectorStore;
+  registry?: SourceRegistryStore;
   client?: ReturnType<typeof createDeepSeekClient>;
   fetchImpl?: typeof fetch;
   fetchPage?: (url: string, conditional?: ConditionalRequest) => Promise<FetchPageResult>;
@@ -42,6 +48,18 @@ export type RunnerOptions = {
   loadConfig?: () => DeepSeekWebConfig;
 };
 
+class OfficialRegistryBlocked extends Error {
+  constructor(readonly stage: 'initial' | 'redirect', readonly reason: string) {
+    super('official_registry_blocked');
+  }
+}
+
+class OfficialDomainBlocked extends Error {
+  constructor(readonly policyReason: string) {
+    super('official_domain_blocked');
+  }
+}
+
 function mergePending(memory: { pending_urls: string[] }, urls: string[]) {
   const seen = new Set(memory.pending_urls);
   for (const url of urls) {
@@ -50,6 +68,36 @@ function mergePending(memory: { pending_urls: string[] }, urls: string[]) {
       seen.add(url);
     }
   }
+}
+
+/** Remove a URL from the bounded pending queue and its category metadata together. */
+function forgetPending(memory: RunMemory, url: string) {
+  memory.pending_urls = memory.pending_urls.filter(u => u !== url);
+  delete memory.pending_catalog_meta[url];
+}
+
+function categoryPolicyDigest(config: DeepSeekWebConfig): string {
+  return digest({
+    policy_version: 1,
+    categories: config.scope_categories.map(category => category.id),
+    category_quota_per_cycle: config.selection.category_quota_per_cycle,
+    legacy_budget_per_cycle: config.selection.legacy_budget_per_cycle,
+    max_pages_per_cycle: config.selection.max_pages_per_cycle,
+  });
+}
+
+/** Registry URL identity is unescaped; fetch URLs keep the original spelling. */
+function registryCheckUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    return `${url.origin}${decodeURI(url.pathname)}${url.search}`;
+  } catch {
+    return raw;
+  }
+}
+
+function emptyOfficialCoverage() {
+  return { due: 0, attempted: 0, fetched: 0, registry_denied: 0, domain_blocked: 0, robots_blocked: 0, redirect_blocked: 0, fetch_failed: 0 };
 }
 
 function resolveCollectionStatus(input: {
@@ -80,24 +128,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
   const nowMs = options.now ?? Date.now;
   const fetchImpl: typeof fetch = (url, init) => (options.fetchImpl ?? fetch)(url, { ...init, signal: options.signal ? AbortSignal.any([options.signal, ...(init?.signal ? [init.signal] : [])]) : init?.signal });
   const fetcher = createPublicFetcher(config, { fetch: fetchImpl, sleep: async ms => { await waitFor(ms, options.signal); options.signal?.throwIfAborted(); } });
-  const queue: string[] = [...memory.pending_urls];
   const explicit = options.urls?.length ? [...options.urls] : [];
-  if (explicit.length) queue.push(...explicit);
-  else if (!memory.pending_urls.length) {
-    queue.push(...config.seed_urls);
-    if (options.mode === 'once' || options.mode === 'daemon_tick') {
-      const planned = pickNextPublicSearchUrl(memory, config);
-      if (planned && !queue.includes(planned)) queue.push(planned);
-      for (const url of memory.observed_urls) {
-        if (isPangpangListingUrl(url) && listingDiscoveryDue(memory, url, config, nowMs()) && !queue.includes(url)) {
-          queue.push(url);
-        }
-      }
-    }
-  }
-  if (!queue.length && options.mode === 'dry_run') {
-    queue.push('https://fixture.example/deepseek-web-sample');
-  }
   const cache = new ExtractionCache(dir);
   const contract = contractHash(config, loadGeunbonCatalog(), modelProfile(config));
   let haltReason: string | null = null;
@@ -109,22 +140,218 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
   let listingNoCandidates = 0;
   let dedupSkips = 0;
   let policyBlocked = 0;
-  const coverage: TickCoverage = { searches: [], listing: {}, extracted: {} };
+  const coverage: TickCoverage = {
+    searches: [], listing: {}, extracted: {}, official: {},
+    rotation: { cursor_before: memory.rotation.category_cursor, cursor_after: memory.rotation.category_cursor, scheduled: [], served: [], planned_pages: 0, skipped_pending: 0 },
+  };
   const catalog = loadGeunbonCatalog();
-  memory.plan_notes.push(`${runId}: plan ${queue.length} url(s), mode=${options.mode}`);
+  const categories = config.scope_categories.map(category => category.id);
+  const enabledOfficial = enabledOfficialSources(config);
+  let registry = options.registry;
+  if (!registry && options.store && enabledOfficial.length) {
+    registry = new SourceRegistryStore(
+      options.store,
+      [...options.store.settings.sources, ...officialLegacySources(config, loadRegistrySeed())],
+    );
+  }
+  const sourcesById = new Map(enabledOfficial.map(source => [source.id, source]));
   const cycleTouched = new Set<string>();
+
+  const recordOfficialVisit = (source: OfficialSourceConfig, outcome: OfficialVisitOutcome, reason: string | null, at: number) => {
+    const recheck = outcome === 'fetched' ? effectiveRecheckMs(source, config) : Math.min(effectiveRecheckMs(source, config), 900000);
+    let canonical = source.url;
+    try { canonical = canonicalUrl(source.url); } catch { /* keep the raw fetch URL as identity fallback */ }
+    memory.rotation.official_visits[source.id] = {
+      source_id: source.id,
+      url: source.url,
+      canonical_url: canonical,
+      last_at: new Date(at).toISOString(),
+      next_due_at: new Date(at + recheck).toISOString(),
+      outcome,
+      reason,
+    };
+  };
+
+  // Build this cycle's bounded work list.
+  const rotationBefore = memory.rotation.category_cursor;
+  let workItems: WorkItem[] = [];
+  let scheduled: ScopedCategory[] = [];
+  let served: ScopedCategory[] = [];
+  if (explicit.length) {
+    // Operator diagnostics bypass rotation entirely and never advance cursors.
+    workItems = explicit.map(url => ({ kind: 'explicit', tier: -1, url } as WorkItem));
+    for (const url of memory.pending_urls) {
+      if (!explicit.includes(url)) workItems.push({ kind: 'legacy', tier: 4, url, operation: memory.observed_urls.includes(url) ? 'recheck' : 'discovery' });
+    }
+  } else if (options.mode === 'dry_run') {
+    // Fixture/seed dry runs never plan or advance rotation state.
+    const urls = memory.pending_urls.length ? [...memory.pending_urls] : config.seed_urls.length ? [...config.seed_urls] : ['https://fixture.example/deepseek-web-sample'];
+    workItems = urls.map(url => ({ kind: 'legacy', tier: 4, url, operation: 'discovery' } as WorkItem));
+  } else {
+    const nextDigest = categoryPolicyDigest(config);
+    memory.rotation = normalizeRotationForDigest(memory.rotation, nextDigest);
+    const pending: PendingItem[] = [];
+    const legacy: LegacyItem[] = [];
+    const legacyUrls = new Set<string>();
+    const scopedCategories = new Set(categories);
+    for (const url of memory.pending_urls) {
+      const meta = memory.pending_catalog_meta[url];
+      const operation = memory.observed_urls.includes(url) ? 'recheck' as const : 'discovery' as const;
+      // A removed scope category used to strand its queued details forever. Treat
+      // orphaned metadata as legacy work so it is still drained (and its metadata
+      // is cleared when the URL finally leaves the queue).
+      if (meta && scopedCategories.has(meta.category)) pending.push({ url, category: meta.category, operation });
+      else if (!legacyUrls.has(url)) { legacy.push({ url, operation }); legacyUrls.add(url); }
+    }
+    for (const url of config.seed_urls) {
+      if (!legacyUrls.has(url) && !memory.pending_urls.includes(url)) { legacy.push({ url, operation: 'discovery' }); legacyUrls.add(url); }
+    }
+    for (const url of memory.observed_urls) {
+      if (isPangpangListingUrl(url) && listingDiscoveryDue(memory, url, config, nowMs()) && !memory.pending_urls.includes(url) && !legacyUrls.has(url)) {
+        legacy.push({ url, operation: 'discovery' });
+        legacyUrls.add(url);
+      }
+    }
+
+    const official: OfficialCandidate[] = [];
+    if (enabledOfficial.length && !registry) {
+      memory.plan_notes.push(`${runId}: official lane skipped: registry_unavailable`);
+    } else if (registry) {
+      for (const source of enabledOfficial) {
+        if (!officialDue(memory.rotation, source, nowMs())) continue;
+        const cov = coverage.official[source.category] ??= emptyOfficialCoverage();
+        cov.due++;
+        const decision = admitOfficial(registry, source);
+        if (!decision.allowed) {
+          cov.registry_denied++;
+          recordOfficialVisit(source, 'registry_denied', decision.reason, nowMs());
+          await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: source.url, outcome: 'official_registry_denied', detail: { reason: decision.reason, registry_id: source.registry_id } });
+          continue;
+        }
+        let canonical: string;
+        try { canonical = canonicalUrl(source.url); } catch { continue; }
+        official.push({ id: source.id, fetch_url: source.url, canonical_url: canonical, category: source.category, registry_id: source.registry_id, fields: source.fields });
+      }
+    }
+
+    const searchRows: Partial<Record<ScopedCategory, SearchRow[]>> = {};
+    for (const row of catalogSearchUrls(catalog)) (searchRows[row.category] ??= []).push(row);
+    const plan = planRotation({
+      categories,
+      categoryQuota: config.selection.category_quota_per_cycle,
+      maxPages: config.selection.max_pages_per_cycle,
+      legacyBudget: config.selection.legacy_budget_per_cycle,
+      pending,
+      legacy,
+      official,
+      searchRows: searchRows as Record<ScopedCategory, SearchRow[]>,
+      pendingUrls: new Set(memory.pending_urls),
+      rotation: memory.rotation,
+      categoryDigest: nextDigest,
+    });
+    memory.rotation = plan.rotation;
+    workItems = plan.items;
+    scheduled = plan.scheduled;
+    served = plan.served;
+  }
+  workItems.sort((a, b) => a.tier - b.tier);
+  const selectedUrls = new Set(workItems.map(item => item.url));
+  coverage.rotation = {
+    cursor_before: rotationBefore,
+    cursor_after: memory.rotation.category_cursor,
+    scheduled,
+    served,
+    planned_pages: workItems.length,
+    skipped_pending: memory.pending_urls.filter(url => !selectedUrls.has(url)).length,
+  };
+  if (!explicit.length && options.mode !== 'dry_run') {
+    memory.plan_notes.push(`${runId}: rotation ${rotationBefore}->${memory.rotation.category_cursor}, scheduled [${scheduled.join(',')}], pages ${workItems.length}, skipped_pending ${coverage.rotation.skipped_pending}`);
+  }
+  const maxQueue = Math.max(config.memory.max_queue_urls, explicit.length);
+  memory.plan_notes.push(`${runId}: plan ${workItems.length} url(s), mode=${options.mode}`);
+
   const progress = async () => {
     Object.assign(report, { extractions, items_sent_to_review: extractions, proposals, blocked, listing_enqueued: listingEnqueued, listing_refresh_attempts: listingRefreshAttempts, dedup_skips: dedupSkips, coverage });
     await ctx.checkpoint();
   };
+
+  const executeOfficial = async (item: Extract<WorkItem, { kind: 'official' }>) => {
+    const source = sourcesById.get(item.source_id);
+    if (!source || !registry) return;
+    const cov = coverage.official[item.category] ??= emptyOfficialCoverage();
+    cov.attempted++;
+    options.signal?.throwIfAborted();
+    let outcome: OfficialVisitOutcome;
+    let reason: string | null = null;
+    try {
+      // Defense in depth: verify current authority immediately before fetching.
+      const pre = evaluateUrlDomainPolicy(options.store, item.url, config);
+      if (pre.blocked) throw new OfficialDomainBlocked(pre.reason!);
+      const readmit = admitOfficial(registry, source);
+      if (!readmit.allowed) throw new OfficialRegistryBlocked('initial', readmit.reason);
+      const checkPolicy = (raw: string) => {
+        const policy = evaluateUrlDomainPolicy(options.store, raw, config);
+        if (policy.blocked) throw new OfficialDomainBlocked(policy.reason!);
+        if (new URL(raw).pathname === '/robots.txt') return;
+        const decision = registry!.decide(item.registry_id, registryCheckUrl(raw), item.fields);
+        if (!decision.allowed) throw new OfficialRegistryBlocked(raw === item.url ? 'initial' : 'redirect', decision.reason);
+      };
+      fetcher.lastBlock = null;
+      const page = await fetchPublicText(fetcher, item.url, undefined, checkPolicy);
+      if (!page.ok) {
+        const block = page.block ?? fetcher.lastBlock;
+        if (block?.reason === 'robots') { outcome = 'robots_blocked'; reason = 'robots'; }
+        else if (block && ['cross_origin', 'scheme', 'hard_block', 'denylist'].includes(block.reason)) { outcome = 'redirect_blocked'; reason = block.reason; }
+        else { outcome = 'fetch_failed'; reason = 'robots_or_policy'; }
+      } else {
+        const finalDecision = registry.decide(item.registry_id, registryCheckUrl(page.finalUrl), item.fields);
+        if (!finalDecision.allowed) { outcome = 'redirect_blocked'; reason = finalDecision.reason; }
+        else { outcome = 'fetched'; reason = null; }
+      }
+    } catch (error) {
+      if (error instanceof OfficialRegistryBlocked) {
+        outcome = error.stage === 'initial' ? 'registry_denied' : 'redirect_blocked';
+        reason = error.reason;
+      } else if (error instanceof OfficialDomainBlocked) {
+        outcome = 'domain_blocked';
+        reason = error.policyReason;
+      } else {
+        outcome = 'fetch_failed';
+        reason = error instanceof Error ? error.message : 'official_fetch_failed';
+      }
+    }
+    const at = nowMs();
+    recordOfficialVisit(source, outcome, reason, at);
+    if (outcome === 'fetched') cov.fetched++;
+    else if (outcome === 'registry_denied') cov.registry_denied++;
+    else if (outcome === 'domain_blocked') cov.domain_blocked++;
+    else if (outcome === 'robots_blocked') cov.robots_blocked++;
+    else if (outcome === 'redirect_blocked') cov.redirect_blocked++;
+    else cov.fetch_failed++;
+    const outcomeKind = outcome === 'fetched' ? 'official_visit'
+      : outcome === 'registry_denied' ? 'official_registry_denied'
+      : outcome === 'domain_blocked' ? 'official_domain_blocked'
+      : outcome === 'robots_blocked' ? 'official_robots_blocked'
+      : outcome === 'redirect_blocked' ? 'official_redirect_blocked'
+      : 'official_fetch_failed';
+    await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: item.url, outcome: outcomeKind, detail: { category: item.category, source_id: item.source_id, reason } });
+    await progress();
+  };
+
   try {
     {
-      for (const rawSeed of queue.slice(0, config.memory.max_queue_urls)) {
+      for (const item of workItems.slice(0, maxQueue)) {
+        if (item.kind === 'official') {
+          await executeOfficial(item);
+          continue;
+        }
+        const rawSeed = item.url;
         let seedUrl: string;
         try { seedUrl = canonicalUrl(rawSeed); } catch { blocked++; policyBlocked++; continue; }
         options.signal?.throwIfAborted();
         if (shouldDedupObservedSeed(memory, seedUrl, config, nowMs())) {
           dedupSkips++;
+          forgetPending(memory, seedUrl);
           memory.plan_notes.push(`dedup_observed_seed ${seedUrl}`);
           await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: seedUrl, outcome: 'duplicate_skip', detail: { reason: 'dedup_observed_seed' } });
           continue;
@@ -136,7 +363,9 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
         }
         cycleTouched.add(seedUrl);
         let pageUrl = seedUrl;
-        if (isPangpangListingUrl(seedUrl)) {
+        if (item.kind === 'search') {
+          coverage.searches.push({ url: seedUrl, catalog_product_id: item.product_id, category: item.category, term: item.term });
+        } else if (isPangpangListingUrl(seedUrl)) {
           const meta = memory.last_catalog_search?.url === seedUrl
             ? memory.last_catalog_search
             : searchMetaForUrl(catalog, seedUrl);
@@ -226,7 +455,12 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
           }
           if (isPangpangHost(host) && text) {
             let plan: ReturnType<typeof planPangpangPage>;
-            try { plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config); }
+            try {
+              plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config, {
+                categoryCursor: memory.rotation.category_cursor,
+                categoryOrder: categories,
+              });
+            }
             catch {
               report.candidate_pages_rejected!++;
               await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'candidate_rejected', detail: { reason: 'candidate_preparation_limit' } });
@@ -298,7 +532,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
                 });
               }
               if (!memory.observed_urls.includes(seedUrl)) memory.observed_urls.push(seedUrl);
-              memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
+              forgetPending(memory, seedUrl);
               cycleTouched.add(seedUrl);
               continue;
             }
@@ -311,7 +545,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
           if (!decision.accepted) {
             report.candidate_pages_rejected!++;
             await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'candidate_rejected', detail: { reason: decision.code } });
-            memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
+            forgetPending(memory, seedUrl);
             continue;
           }
           report.candidate_pages_accepted!++;
@@ -368,8 +602,10 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
             if (delivered.proposal) proposals++;
             await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: entry!.result.in_scope ? 'extracted' : 'out_of_scope' });
             memory.observed_urls = [...new Set([...memory.observed_urls, pageUrl])];
-            if (!delivered.deferred) memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl && u !== pageUrl);
-            else mergePending(memory, [pageUrl]);
+            if (!delivered.deferred) {
+              forgetPending(memory, seedUrl);
+              forgetPending(memory, pageUrl);
+            } else mergePending(memory, [pageUrl]);
             await progress();
             if (unknownUsage) { haltReason = 'usage_unknown'; break; }
           } catch (error) {
@@ -393,7 +629,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       }
     }
     const collectionStatus = resolveCollectionStatus({
-      queueLen: queue.length,
+      queueLen: new Set([...memory.pending_urls, ...explicit]).size,
       haltReason,
       extractions,
       listingEnqueued,
