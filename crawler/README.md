@@ -9,6 +9,8 @@
 - B-3. 건수 전송 전용 프로세스 → [건수 동기화](#건수-동기화). 과거 작업 기록은 [구현 기록 (참고용)](#구현-기록-참고용).
 - B-4. DeepSeek 공개 웹 전용 수집기(Instagram/Threads 자동화 없음) → [deepseek-web/README.md](deepseek-web/README.md), PM2 `agamajung-deepseek-web`.
 
+DeepSeek만의 crash supervision은 기존 `deepseek-web.ecosystem.config.cjs`를 사용합니다. scheduler의 `autorestart: false`와 Instagram `agamajung-crawler.service`는 유지합니다. 상태는 `${DEEPSEEK_WEB_STATE_DIR}/heartbeat.json`(기본 `<repository>/.local/deepseek-web/heartbeat.json`), 읽기 전용 확인은 `npm run deepseek-web -- status [--json]`입니다. 모델 402/429는 1/2/4/6시간 backoff로 프로세스 안에서 자동 재시도합니다. [부팅 등록·영속 상태·운영 가정·검증 한계](deepseek-web/README.md#supervision-heartbeat-and-recovery-linux-only)를 확인하세요.
+
 Instagram worker는 **Node.js 22 이상 + Playwright**로 본인 계정에서 접근이 허용된 콘텐츠를 수집해 `/api/v1/ingest`의 pending 검수 대기열로 보냅니다. 게시에는 관리자 승인이 필요합니다. 독립 수집함은 자체 SQLite에 저장하고, sync만 건수 스냅샷을 사이트에 보냅니다. **가격을 절대 만들어 내지 않습니다 (never invent prices).** 수집한 단서를 공식가나 공구가로 자동 승격하지 않습니다. Workers Cron은 로그 stub이며 Playwright/OCR을 실행하지 않습니다. 사이트는 로컬 레코드·근거를 가져오지 않습니다. `tools/dev-daemon`·PM2 `agamajung-dev-daemon`은 별도 개발 도구입니다.
 
 ## 설치와 환경변수

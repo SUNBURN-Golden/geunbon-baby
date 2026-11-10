@@ -63,7 +63,7 @@ export type DeepSeekWebConfig = {
   prohibited_hosts: string[];
   fetch: { min_interval_ms: number; jitter_ms: [number, number]; timeout_ms: number; max_bytes: number; user_agent_note: string };
   budget: { max_tokens_per_run: number; max_requests_per_run: number; max_completion_tokens: number; estimated_prompt_tokens: number };
-  memory: { heartbeat_max_age_ms: number; max_queue_urls: number };
+  memory: { max_queue_urls: number };
   selection: {
     max_pangpang_detail_per_cycle: number;
     listing_discovery_policy_version: number;
@@ -73,7 +73,11 @@ export type DeepSeekWebConfig = {
 };
 
 export type RunMemory = {
-  version: 2;
+  version: 3;
+  finalized_cycle_id: string | null;
+  terminal_summary: RunReport | null;
+  pending_audit: Record<string, unknown> | null;
+  active_cycle: { snapshot: RunReport; call: 'in_flight' | 'settled' | null } | null;
   updated_at: string;
   plan_notes: string[];
   observed_urls: string[];
@@ -112,14 +116,32 @@ export type CollectionStatus =
   | 'blocked';
 
 export type RunReport = {
+  schema_version: 1;
+  cycle_id: string;
+  cycle_interval_ms: number | null;
+  cycle_started_at_kst: string;
+  cycle_ended_at_kst: string | null;
+  interruption_observed_at_kst: string | null;
+  outcome: 'running' | 'completed' | 'failed' | 'interrupted' | 'backoff';
+  reason: string | null;
+  deepseek_calls_attempted: number;
+  deepseek_calls_succeeded: number;
+  deepseek_tokens_reported: number;
+  deepseek_tokens_used: number | null;
+  usage_complete: boolean;
+  counts_complete: boolean;
+  items_extracted: number;
+  items_sent_to_review: number;
+  backoff: ReturnType<typeof import('./backoff').backoffView>;
+  last_completed_cycle: RunReport | null;
   run_id: string;
   at: string;
   model: string;
   mode: 'once' | 'dry_run' | 'daemon_tick';
   cycle_token_spent: number;
   cycle_requests_spent: number;
-  lifetime_token_spent: number;
-  lifetime_cycles: number;
+  lifetime_token_spent: number | null;
+  lifetime_cycles: number | null;
   /** @deprecated use cycle_token_spent */
   token_spent: number;
   /** @deprecated use cycle_requests_spent */
@@ -127,7 +149,7 @@ export type RunReport = {
   extractions: number;
   proposals: number;
   blocked: number;
-  review_pending: number;
+  review_pending: number | null;
   listing_enqueued: number;
   listing_refresh_attempts: number;
   dedup_skips: number;
@@ -139,8 +161,15 @@ export type RunReport = {
   pid: number;
 };
 
-export type DeepSeekUsage = { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+export type DeepSeekUsage = { prompt_tokens: number | null; completion_tokens: number | null; total_tokens: number | null; total_source?: 'reported' | 'derived' | 'unknown' };
 
 export type DeepSeekClient = {
-  complete: (input: { system: string; user: string }) => Promise<{ content: string; usage: DeepSeekUsage; model: string }>;
+  complete: (input: { system: string; user: string; signal?: AbortSignal }) => Promise<{ content: string; usage: DeepSeekUsage; model: string }>;
 };
+
+/** A suppressed invocation references existing state; it is never a synthetic collection cycle. */
+export type ReadOnlyBackoffReport = Partial<RunReport> & {
+  outcome: 'backoff'; reason: string;
+  backoff: NonNullable<RunReport['backoff']>;
+};
+export type CollectionReport = RunReport | ReadOnlyBackoffReport;

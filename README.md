@@ -17,6 +17,8 @@
 | 독립 로컬 수집함 | `crawler/src/local-worker.ts`의 serve/discover, CLI `crawler/collector.mjs`, Chrome MV3 `tools/chrome-clipper/` · Linux, serve는 `127.0.0.1:4318` | `crawler/.cache/collector.sqlite`, 전용 `crawler/migrations/` | serve는 COLLECTOR_INTAKE_TOKEN·COLLECTOR_REVIEW_TOKEN·COLLECTOR_EXTENSION_ORIGIN, 확장은 인테이크 토큰, CLI는 검토 토큰. discover 자체에는 사이트·Instagram 자격 증명 불필요. 수집 자료를 사이트로 보내지 않음 |
 | 건수 동기화 | `npm run collector:worker -- sync` → `crawler/src/local-worker.ts`, `crawler/src/status-sync.ts` · Linux | 위 SQLite의 트랜잭션 outbox → 사이트 D1 건수 스냅샷 | COLLECTOR_SITE_URL(HTTPS)·전용 COLLECTOR_STATUS_TOKEN. `POST /api/v1/collector/status`에 건수·보조 집계·작업기 ID·버전·시각만 전송 |
 
+별도 Linux DeepSeek 공개 웹 앱 `agamajung-deepseek-web`은 [전용 supervision·heartbeat·backoff 안내](crawler/deepseek-web/README.md#supervision-heartbeat-and-recovery-linux-only)를 따릅니다. 기본 heartbeat는 `<repository>/.local/deepseek-web/heartbeat.json`이며 `npm run deepseek-web -- status`로 읽기 전용 확인합니다. 로컬 scheduler/watchdog·Instagram service·사이트 Workers와 별개입니다. 이번 복구 범위의 프로세스 신원은 저장소 근거에 따른 가정이며 과거 장애 원인을 확정하지 않습니다.
+
 **Workers Cron은 수집기를 실행하지 않는 로그 stub입니다. Playwright와 OCR은 Linux에서만 실행합니다.** 사이트는 로컬 수집 레코드·URL·원문·셀러·근거를 가져오지 않습니다. 로컬 `seller_candidates`를 사이트 판매자로 자동 등록하지도 않습니다. 수집함의 `ready_to_publish`는 사람의 공개 검토를 마친 로컬 상태이며 실제 게시 동작이 아닙니다. Instagram pending → 사이트 관리자 승인 → deals 경로와 별개입니다.
 
 Linux 수집 예약은 `npm run collector:worker -- schedule`의 상주 슬롯 관리로 실행합니다. KST 누락 슬롯 병합, 수동·예약 공통 실행, 상태 기록과 전환 절차는 [수집 일정 운영](docs/collector/scheduling.md)을 참고하세요. 운영 PM2 전환은 별도로 수행합니다. 추적되는 `crawler/local-worker.mjs`·`collector-scheduler.mjs`는 공통 시작/결과 NDJSON을 출력합니다. PM2 밖의 Linux systemd watchdog은 실제 PID 신원·인증된 readiness·SQLite 슬롯 이력을 감시하며, 소유자 부재가 확인된 앱만 영속 상한 안에서 복구합니다. PM2 online이나 최근 로그 하나는 수집 성공의 증거가 아닙니다.

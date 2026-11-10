@@ -12,9 +12,10 @@ module.exports = {
     exec_mode: 'fork',
     instances: 1,
     autorestart: true,
-    restart_delay: 15000,
+    restart_delay: 60000,
     max_restarts: 20,
-    min_uptime: 30000,
+    // Keep startup failures within PM2's min_uptime * max_restarts window even with a 60s delay.
+    min_uptime: 120000,
     watch: false,
     kill_timeout: 60000,
     time: true,

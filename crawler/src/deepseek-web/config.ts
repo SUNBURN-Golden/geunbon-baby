@@ -29,3 +29,10 @@ export function loadDeepSeekWebConfig(path = join(root, 'config.json')): DeepSee
 export function stateDir() {
   return process.env.DEEPSEEK_WEB_STATE_DIR ?? join(process.cwd(), '.local/deepseek-web');
 }
+
+export const DEFAULT_INTERVAL_MS = 600000;
+export function cycleInterval(value = process.env.DEEPSEEK_WEB_DAEMON_MS): number {
+  const interval = value === undefined ? DEFAULT_INTERVAL_MS : Number(value);
+  if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 86400000) throw new Error('invalid_cycle_interval');
+  return interval;
+}
