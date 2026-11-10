@@ -101,7 +101,7 @@ test('home image alt prefers the joined model name and falls back to the deal ti
     [{ model_joined_id: null }, 'today deal'],
     [{ model_name: null }, 'today deal'],
   ] as const) {
-    const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], nowMs }));
+    const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], totalCount: 1, nowMs }));
     expect(html).toContain(`alt="${name} 상품 이미지"`);
     expect(html.match(/<img /g)).toHaveLength(1);
     expect(html).not.toContain('/_next/image');
@@ -113,7 +113,7 @@ test.each([null, '', 'http://cdninstagram.com/chair.jpg', 'https://example.com/c
     const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
     const base = rows.find(deal => deal.id === 'today')!;
     for (const patch of [{}, { model_joined_id: null }]) {
-      const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch, image_url }], nowMs }));
+      const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch, image_url }], totalCount: 1, nowMs }));
       expect(html).not.toContain('class="active-deal-mark"');
       expect(html).not.toContain('<img');
       expect(html).toContain(base.title);
@@ -129,7 +129,7 @@ test('no active deals renders a zero count and one short empty line without card
   expect(html).toContain(`<p class="active-deal-empty">${dealsCopy.activeEmpty}</p></section>`);
   expect(detailLinks(html)).toEqual([]);
   expect(html).not.toContain('class="active-deal-row"');
-  const empty = renderToStaticMarkup(createElement(ActiveDeals, { deals: [], nowMs }));
+  const empty = renderToStaticMarkup(createElement(ActiveDeals, { deals: [], totalCount: 1, nowMs }));
   expect(empty).toContain(dealsCopy.activeEmpty);
   expect(empty).not.toContain('<ul');
 });
@@ -137,7 +137,7 @@ test('no active deals renders a zero count and one short empty line without card
 test('active cards preserve unknown prices, zero prices and comparison direction', async () => {
   const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
   const base = rows.find(deal => deal.id === 'soon')!;
-  const render = (patch: Partial<DealWithContext>) => renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], nowMs }));
+  const render = (patch: Partial<DealWithContext>) => renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, ...patch }], totalCount: 1, nowMs }));
   expect(render({ price: 600000 })).toContain('높아요');
   expect(render({ price: 500000 })).toContain(formatGap(priceGap(500000, 500000)!));
   expect(render({ price: 499999 })).toContain('낮아요');
@@ -163,7 +163,7 @@ test('active cards preserve unknown prices, zero prices and comparison direction
 test.each(['page_text', 'search_summary'])('home active cards hide %s prices and comparisons', async model_verify_level => {
   const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
   const base = rows.find(deal => deal.id === 'soon')!;
-  const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, model_verify_level }], nowMs }));
+  const html = renderToStaticMarkup(createElement(ActiveDeals, { deals: [{ ...base, model_verify_level }], totalCount: 1, nowMs }));
   expect(html).toContain(dealsCopy.unknownOfficial);
   expect(html).toContain('400,000');
   expect(html).not.toContain('500,000');

@@ -144,10 +144,10 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | --- | --- | --- |
 | GET | `/api/v1/brands` | 브랜드·모델 수 |
 | GET | `/api/v1/models` | 모델 목록. 선택 쿼리 `brand`, `category` |
-| GET | `/api/v1/models/:id` | 모델과 공식가·공구가 비교, 없으면 404 |
-| GET | `/api/v1/deals` | 검수 완료 공구 (예정·진행·종료 포함) |
+| GET | `/api/v1/models/:id` | 모델과 공식가·현재 공구가 요약·공구 이력 페이지, 없으면 404 |
+| GET | `/api/v1/deals` | 검수 완료 공구 이력 페이지 (예정·진행·종료·일정 미확인 포함) |
 | GET | `/api/v1/sellers` | 판매자 및 배지 증빙 URL |
-| GET | `/api/v1/calendar` | 시작일순 검수 완료 공구 |
+| GET | `/api/v1/calendar` | 시작일순 검수 완료 공구 이력 페이지 |
 | POST | `/api/v1/ingest` | INGEST_TOKEN. Instagram pending 접수 또는 쓰기 가능한 legacy 외부 후보 접수 |
 | POST | `/api/v1/collector/status` | COLLECTOR_STATUS_TOKEN. 건수 스냅샷만 접수 |
 | GET | `/api/v1/collector-status` | ADMIN_TOKEN 전용 관리용 호환 경로. `/api/v1/admin/collection-status`와 동일한 건수 현황 |
@@ -169,6 +169,72 @@ R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파�
 | GET | `/api/auth/callback/kakao` | 비활성. 코드·state 쿠키·기존 설정과 무관하게 항상 404·본문 `Not found`·no-store |
 
 v1 분기는 `lib/api.ts`, 이미지 라우트는 `app/api/v1/images/[key]/route.ts`, OAuth는 `app/api/auth/[[...path]]/route.ts`와 `lib/auth.ts`에 있습니다. OAuth는 v1 밖의 별도 경로입니다. 공개 공구 상세 GET API는 없으며 모델 비교나 공구 목록을 사용합니다. 관리자 행은 모두 ADMIN_TOKEN이 필요합니다.
+
+### 공개 공구 이력 페이지 계약 (호환성 변경)
+
+**기존 전체 이력 응답을 기본 20건의 페이지로 변경했습니다.** `/api/v1/deals`, `/api/v1/calendar`, `/api/v1/models/:id`는 `limit`(1–50, 기본 20)과 `cursor`를 받습니다. 클라이언트는 `next_cursor`가 null이 될 때까지 이어서 요청해야 오래된 공구를 모두 볼 수 있습니다. 전체 이력 건수에는 상한이 없습니다. 모든 조회·집계·페이지 문맥 조회는 `status = 'published'`만 대상으로 합니다.
+
+첫 요청과 이어서 요청하는 예시입니다. 반환한 커서를 수정하지 않고 URL 인코딩합니다. 같은 크기를 권장하지만 페이지 크기는 변경할 수 있습니다.
+
+```js
+const first = await fetch('/api/v1/deals?limit=20').then(r => r.json());
+if (first.next_cursor !== null) {
+  const next = await fetch('/api/v1/deals?' + new URLSearchParams({
+    limit: '20', cursor: first.next_cursor,
+  })).then(r => r.json());
+}
+// calendar: /api/v1/calendar?limit=20&cursor=<URL-encoded next_cursor>
+// model: /api/v1/models/model-1?limit=20&cursor=<URL-encoded next_cursor>
+```
+
+공구·달력 응답은 `{ data: Deal[], next_cursor: string | null }`입니다. 기존 공구 필드와 `advertisement: true`, `notice`는 유지합니다. 모델 응답은 기존 모델 필드 및 배열 위치를 유지하고 현재 가격 요약을 추가합니다.
+
+```text
+{
+  data: {
+    ...existingModelFields,
+    comparison: {
+      official: existingOfficialComparison,
+      gonggu: Deal[],
+      current: { active_count: number, lowest_price: number | null }
+    }
+  },
+  next_cursor: string | null
+}
+```
+
+`comparison.gonggu`의 광고 필드는 유지하며 공식가는 계속 `page_body`만 표시합니다. `lib/data.ts`의 순수 `comparison()` 자체는 `official`, `gonggu`만 반환합니다. `current`는 API 조립 시 추가하고, 조회한 이력 페이지와 무관하게 요청 시각의 전체 활성 공구에서 집계합니다. 활성 공구 없음은 count 0/minimum null, 활성 가격이 모두 null이면 양수 count/minimum null, 숫자와 null 혼합은 최저 숫자, 0원은 유효한 최저가입니다. 모델 카드는 각각 “진행 중인 공구 없음”, “정보 없음”, 최저가를 표시하며 네 항목 규칙을 유지합니다.
+
+마지막 페이지는 남은 항목만 반환하며, 정확히 limit개 남았더라도 `next_cursor: null`입니다. 빈 첫 페이지와 동시 변경으로 비어진 계속 위치 모두 API에서 아래처럼 응답합니다. 모델은 `comparison.gonggu: []`, 최상위 `next_cursor: null`이고 현재 요약은 별도로 유지합니다.
+
+```json
+{ "data": [], "next_cursor": null }
+```
+
+| 화면/API | 순서 및 평가 시각 |
+| --- | --- |
+| `/api/v1/deals`, `/api/v1/calendar`, 모델 상세 API/화면, `/calendar` | 저장된 `starts_at ASC, id ASC`. NULL 시작은 ID순 첫 구간, 빈 문자열·공백·잘못된 문자열은 비NULL 구간. 이력 정렬은 시각과 무관하며 상태/현재가는 요청 시각을 한 번 캡처 |
+| `/deals` | 진행 → 예정 → 종료 → 미확인. 진행은 정규화된 종료 오름차순, 예정은 시작 오름차순, 종료는 유효 종료 내림차순, 각 동률은 ID 오름차순. 미확인은 ID순 |
+| 홈 | 요청 시각의 진행 공구만 종료·ID 오름차순 최대 12개, 전체 활성 건수는 정확한 별도 집계 |
+| `/models` | 선택 모델의 현재 요약만 배치 집계, 활성 모델 우선·기존 필터/안정 순서 유지 |
+
+`/deals` 첫 페이지는 기준 시각 T0를 정하고 이후 커서가 T0를 유지합니다. 조회·건수·카드 상태·KST 날짜 문구·표시 기준 시각 모두 T0를 사용합니다. “처음부터 최신 정보로 보기” 링크는 커서를 제거하여 새 시각을 정합니다. 달력과 모델 이력은 각 요청 시각으로 상태를 표시합니다. 모델 상세의 현재가 요약은 이력 위치에 의존하지 않습니다.
+
+일정 SQL은 `parseTimestamp()`/`normalizeTimestamp()`와 같은 엄격한 달력·시간·1–3자리 소수초·명시 오프셋(최대 23:59)·UTC 4자리 연도를 검증하며 저장값은 변경하지 않습니다. `source_ended = 1`은 항상 종료, 유효 역전 구간은 미확인, 종료 < T이고 시작이 없거나 유효하면 종료, 시작 > T이면 예정, 유효한 비역전 두 끝점은 시작/종료 시각을 포함해 진행입니다. 나머지는 미확인입니다. NULL·빈 문자열은 부재, 공백은 존재하는 잘못된 값으로 취급합니다. 원문 종료이며 유효한 종료가 없으면 정렬에 Unix epoch를 사용합니다. 날짜 문구는 기존 KST 렌더러를 사용합니다.
+
+커서는 `[1, surface, ordering, model_scope, partition_or_phase, key, id, T0]`의 정규 UTF-8 base64url JSON이며 최대 2,048자입니다. endpoint/화면·순서·모델·NULL/비NULL 구간 또는 상태 구간에 묶입니다. ID/모델 ID는 비어 있지 않은 최대 200자(제어문자 제외), 역사 경계 문자열은 최대 256자로 빈 값·잘못된 legacy 문자열도 원형 보존합니다. 진행/예정/종료 키와 T0는 정규 UTC instant여야 하고 미확인 키는 null입니다. 시간순 커서의 T0는 null입니다. 모든 SQL 값은 바인딩하며 anchor 행을 다시 조회하지 않습니다. 커서는 공개 탐색 데이터이며 인증 수단·서명된 스냅샷이 아닙니다.
+
+- 중복·빈 값·범위 밖·소수·공백 등의 `limit`: D1 접근 전 HTTP 400 `{ "error": "invalid_limit" }`.
+- 중복·빈 값·잘못된 인코딩/튜플·다른 endpoint/모델 등의 `cursor`: D1 접근 전 HTTP 400 `{ "error": "invalid_cursor" }`.
+- 성공·오류 모두 `Cache-Control: no-store`. DB 오류는 빈 이력이나 0건 집계로 숨기지 않습니다. 화면은 잘못된 페이지에 복구 링크, 비어진 계속 위치에는 최신 목록 안내를 표시합니다.
+
+키셋은 마지막 **반환한** 항목의 배타적 경계에서 이어가며 한 건을 더 읽어 다음 페이지를 판단합니다. NULL 시작 구간을 다 읽으면 같은 페이지의 남은 공간을 비NULL 구간으로 채웁니다. 종료는 시간 DESC/ID ASC의 혼합 방향을 따로 비교합니다. 후보를 먼저 한정한 뒤 최대 limit개의 공개 문맥을 조인하고 원래 순서를 복원합니다. 이 조회는 DB 스냅샷이 아닙니다. 철회는 다음 읽기부터 즉시 제외되고 삭제/철회된 anchor 커서도 유효합니다. 정정·삽입·과거 시각으로 추가된 공구는 탐색 결과를 바꿀 수 있으며 처음부터 다시 조회하면 최신 위치를 볼 수 있습니다.
+
+사이트 D1의 추가 전용 `0014_public_deal_queries.sql`은 시간순·모델별 시간순·유효 구간·예정·종료·원문 종료·불완전 일정 전용 expression/partial 인덱스를 추가합니다. SQL 표현과 정적 published 조건은 `lib/deal-query-sql.ts`와 정확히 일치하며 동적 시간은 바인딩합니다. 미확인은 영구 미확인, 시작만 유효하면서 S ≤ T0, 시작 부재/종료 유효하면서 E ≥ T0의 세 겹치지 않는 스트림을 ID순 병합합니다. 만료된 종료-only 일정은 end 범위 탐색으로 제외합니다. 동적 미확인의 ID 정렬은 해당 불완전 일정 범위에 한정되며 완전한 과거 이력을 스캔하지 않습니다.
+
+전송 상한은 이력 후보 `limit + 1`, 상태별 여러 스트림을 포함한 `/deals` 전체 후보 최대 `8 × (limit + 1)`, 문맥 조회 최대 limit입니다. 건수는 한 행, 모델 요약은 요청 모델당 최대 한 행이며 80개씩 배치합니다. 정확한 건수·구간 집계는 적합한 인덱스 항목을 읽고 동적 미확인은 적합 범위를 정렬할 수 있으므로 DB 작업량이 상수라고 보장하지 않습니다. Linux 수집기 저장소·마이그레이션·예약에는 적용하지 않습니다.
+
+검증은 `npx vitest run tests/public-deal-pagination.test.ts`로 실행합니다. 전체 사이트 마이그레이션을 적용한 100,000개 이상의 합성 공구/100모델 fixture를 재사용하고 순회·경계·시간·집계·공개 필드·실패·실제 링크·결과 크기·EXPLAIN 계획을 검사합니다. Python SQLite progress handler로 10k/100k 완전 과거/만료 종료-only 일정에 대한 미확인 탐색의 VM 작업량도 비교합니다. 실제 데이터나 Linux SQLite를 사용하지 않습니다.
 
 ### 관리자 건수 현황 호환 API
 

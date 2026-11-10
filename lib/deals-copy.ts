@@ -2,6 +2,13 @@
 const publicDealDisclaimer = '아가마중은 직접 판매하지 않아요. 가격과 기간, 구성은 판매처에서 꼭 확인해 주세요.';
 
 export const dealsCopy = {
+  nextPage: '이전 공구 더 보기',
+  restart: '처음부터 최신 정보로 보기',
+  invalidPage: '목록 위치를 확인할 수 없어요. 처음부터 다시 살펴봐 주세요.',
+  emptyPosition: '이 위치에 표시할 공구가 없어요. 최신 목록을 살펴봐 주세요.',
+  referenceTime: '목록 기준 시각 (한국 시간)',
+  currentPrice: '현재 진행 중인 공구가',
+  noActive: '진행 중인 공구 없음',
   title: "공동구매 가격이에요",
   ad: '광고',
   good: '살 만한 가격이에요',

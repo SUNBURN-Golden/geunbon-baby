@@ -435,7 +435,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     ['seller_official_import_source', '정식수입', 'https://example.com/import'],
   ] as const;
 
-  test('list and detail render seller evidence with one joined read each and no evidence fetches', async () => {
+  test('bounded list and detail preserve seller evidence without evidence fetches', async () => {
     await memory.db.prepare('UPDATE sellers SET registration_source = ?, withdrawal_source = ?, official_import_source = ? WHERE id = ?')
       .bind(...evidence.map(([, , url]) => url), 'seller-1').run();
     // Observe executed reads as well as preparations, after all fixture writes.
@@ -449,9 +449,11 @@ describe('dynamic routes and LEFT JOIN projection', () => {
       expect(list.match(/class="deal-card"/g)).toHaveLength(2);
       expect(list.match(/class="badge verified"/g)).toHaveLength(3);
       expect(list.match(/· 미확인/g)).toHaveLength(3);
-      expect(prepare).toHaveBeenCalledExactlyOnceWith(DEAL_SELECT);
-      expect(readAll).toHaveBeenCalledTimes(1);
-      expect(readFirst).not.toHaveBeenCalled();
+      expect(prepare.mock.calls.some(([sql]) => sql.includes('COUNT(*) AS count'))).toBe(true);
+      expect(prepare.mock.calls.filter(([sql]) => sql.includes('SELECT id,')).every(([sql]) => sql.includes('LIMIT ?'))).toBe(true);
+      expect(prepare.mock.calls.some(([sql]) => sql.includes('d.id IN (?,?)'))).toBe(true);
+      expect([...list.matchAll(/href="\/deals\/([^"]+)"/g)].map(m => m[1])).toEqual(['deal-1', 'missing-joins']);
+      expect(readFirst).toHaveBeenCalledTimes(1);
       expect(fetch).not.toHaveBeenCalled();
 
       vi.clearAllMocks();
@@ -565,7 +567,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     const html = renderToStaticMarkup(await DealsPage());
     expect(html.match(/class="deal-card"/g)).toHaveLength(2);
     expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(2);
-    expect(html.endsWith('</article></div></main>')).toBe(true);
+    expect(html).toContain('</article></div><nav aria-label="공구 목록 페이지">');
   });
 
   test('awaits params, binds IDs literally, and calls notFound for missing records', async () => {

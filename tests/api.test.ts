@@ -123,7 +123,7 @@ test('public models expose only official/group-buy prices and never leak seed pr
   assert.ok(!('note' in list.data[0]));
   const response = await call('models/model-1');
   const payload = await response.json<{ data: Omit<Model, 'note'> & { comparison: Record<string, unknown> } }>();
-  assert.deepEqual(Object.keys(payload.data.comparison).sort(), ['gonggu', 'official']);
+  assert.deepEqual(Object.keys(payload.data.comparison).sort(), ['current', 'gonggu', 'official']);
   assert.equal(payload.data.official_price, null);
   for (const value of [list, payload]) {
     const serialized = JSON.stringify(value);
@@ -149,7 +149,7 @@ test('public model responses omit notes and overseas, used and FX prices', async
       assert.ok(!serialized.includes(forbidden), `${path} exposed ${forbidden}`);
     }
     if (rows[0].comparison) {
-      assert.deepEqual(Object.keys(rows[0].comparison).sort(), ['gonggu', 'official']);
+      assert.deepEqual(Object.keys(rows[0].comparison).sort(), ['current', 'gonggu', 'official']);
       assert.equal(rows[0].comparison.official.price, null);
       assert.deepEqual(Object.keys(rows[0].comparison.official).sort(), ['checked', 'price', 'source', 'verify_level']);
     }

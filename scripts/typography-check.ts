@@ -54,7 +54,7 @@ const deal: DealWithContext = {
   seller_registration_source: null, seller_withdrawal_source: null, seller_official_import_source: null,
 }; // Same isolated fixture values as tests/deals.test.ts; never persisted.
 corpus.push({ name: 'deal-detail-fixture', html: corpus[0].html.replace(/<main\b[\s\S]*?<\/main>/, renderToStaticMarkup(createElement(DealDetail, { deal, nowMs }))) });
-corpus.push({ name: 'home-populated-fixture', html: corpus[0].html.replace(/<section class="active-deals"[\s\S]*?<\/section>/, renderToStaticMarkup(createElement(ActiveDeals, { deals: [deal, { ...deal, id: 'deal-2' }, { ...deal, id: 'deal-3' }], nowMs }))) });
+corpus.push({ name: 'home-populated-fixture', html: corpus[0].html.replace(/<section class="active-deals"[\s\S]*?<\/section>/, renderToStaticMarkup(createElement(ActiveDeals, { deals: [deal, { ...deal, id: 'deal-2' }, { ...deal, id: 'deal-3' }], totalCount: 3, nowMs }))) });
 let css = '';
 for (const path of styles) css += await (await fetch(new URL(path, baseUrl))).text();
 // Verify captured Worker font URLs, including the exact preload CORS attributes.

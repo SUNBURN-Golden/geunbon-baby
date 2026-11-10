@@ -1,18 +1,24 @@
-import { DEAL_SELECT, type DealWithContext } from '../../../lib/deals';
+import { chronologicalDeals, modelDealSummaries, publicDealOptions, publicPageParams, PublicDealPaginationError, type DealWithContext } from '../../../lib/deals';
 import { notFound } from 'next/navigation';
-import { all, environment } from '../../../lib/db';
+import { environment } from '../../../lib/db';
 import { categories, displayableOfficialPrice, money, verificationLabel, type Model } from '../../../lib/data';
 import { siteCopy } from '../../../lib/site-copy';
 import { dealsCopy } from '../../../lib/deals-copy';
 import { DealList } from '../../deals/_components';
+import { DealPagination, InvalidDealPage, type DealPageSearch } from '../../deals/_pagination';
 export const dynamic = 'force-dynamic';
-export default async function Detail({ params }: { params: Promise<{ id: string }> }) {
+export default async function Detail({ params, searchParams = Promise.resolve({}) }: { params: Promise<{ id: string }>; searchParams?: Promise<DealPageSearch> }) {
   // eslint-disable-next-line react-hooks/purity -- Dynamic Server Component captures request time once for all deal statuses.
   const nowMs = Date.now();
   const { id } = await params; const db = environment().DB;
+  let options;
+  const path = `/models/${encodeURIComponent(id)}`;
+  try { options = publicDealOptions(publicPageParams(await searchParams), 'page-model', id); }
+  catch (error) { if (error instanceof PublicDealPaginationError) return <main className="page public-page"><InvalidDealPage path={path} /></main>; throw error; }
   const m = await db.prepare('SELECT * FROM models WHERE id = ?').bind(id).first<Model>();
   if (!m) notFound();
-  const deals = await all<DealWithContext>(db, `${DEAL_SELECT} AND d.model_id = ? ORDER BY d.starts_at, d.id`, id);
+  const [page, summaries] = await Promise.all([chronologicalDeals<DealWithContext>(db, options, true), modelDealSummaries(db, [id], nowMs)]);
+  const current = summaries.get(id)!;
   return (
     <main className="page public-page">
       <p className="eyebrow">{`${m.brand} / ${categories[m.category]}`}</p>
@@ -23,7 +29,9 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
         <section>
           <p className="eyebrow">01 / GROUP BUY</p>
           <h2>{dealsCopy.groupBuyPrice}</h2>
-          {deals.length ? <DealList deals={deals} nowMs={nowMs} /> : <p>{dealsCopy.modelEmpty}</p>}
+          <p>{dealsCopy.currentPrice}: {current.active_count ? money(current.lowest_price) : dealsCopy.noActive}</p>
+          {page.data.length ? <DealList deals={page.data} nowMs={nowMs} /> : <p>{options.cursor ? dealsCopy.emptyPosition : dealsCopy.modelEmpty}</p>}
+          <DealPagination path={path} limit={options.limit} nextCursor={page.next_cursor} continued={!!options.cursor} />
         </section>
         <section>
           <p className="eyebrow">02 / OFFICIAL</p>

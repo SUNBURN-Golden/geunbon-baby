@@ -23,7 +23,7 @@ export function batchGate(count: number, order = Array.from({ length: count }, (
     },
   };
 }
-type MemoryOptions = { serialize?: boolean; gate?: ReturnType<typeof batchGate>; failAfter?: { batch: number; statement: number } };
+type MemoryOptions = { onRead?: (sql: string, values: SQLInputValue[], count: number) => void; serialize?: boolean; gate?: ReturnType<typeof batchGate>; failAfter?: { batch: number; statement: number } };
 // Exercise real migrations/SQL entirely in memory, with no Miniflare HTTP listener.
 export function memoryD1(options: MemoryOptions = {}) {
   const sqlite = new DatabaseSync(':memory:');
@@ -40,8 +40,8 @@ export function memoryD1(options: MemoryOptions = {}) {
   class Statement {
     constructor(private sql: string, private values: SQLInputValue[] = []) {}
     bind(...values: SQLInputValue[]) { return new Statement(this.sql, values); }
-    async first() { return execute(() => sqlite.prepare(this.sql).get(...this.values) ?? null); }
-    async all() { return execute(() => ({ results: sqlite.prepare(this.sql).all(...this.values), success: true })); }
+    async first() { return execute(() => { const row = sqlite.prepare(this.sql).get(...this.values) ?? null; options.onRead?.(this.sql, this.values, row ? 1 : 0); return row; }); }
+    async all() { return execute(() => { const results = sqlite.prepare(this.sql).all(...this.values); options.onRead?.(this.sql, this.values, results.length); return { results, success: true }; }); }
     runRaw() { const result = sqlite.prepare(this.sql).run(...this.values); return { success: true, meta: { changes: Number(result.changes) } }; }
     async run() { return execute(() => this.runRaw()); }
   }
@@ -64,5 +64,14 @@ export function memoryD1(options: MemoryOptions = {}) {
       });
     },
   };
-  return { db: db as unknown as D1Database, close: () => sqlite.close() };
+  return {
+    db: db as unknown as D1Database,
+    // Offline fixtures reuse one prepared insert in a single transaction.
+    bulk(sql: string, rows: Iterable<SQLInputValue[]>) {
+      sqlite.exec('SAVEPOINT fixture_bulk');
+      try { const insert = sqlite.prepare(sql); for (const row of rows) insert.run(...row); sqlite.exec('RELEASE fixture_bulk'); }
+      catch (error) { sqlite.exec('ROLLBACK TO fixture_bulk'); sqlite.exec('RELEASE fixture_bulk'); throw error; }
+    },
+    close: () => sqlite.close(),
+  };
 }
