@@ -116,3 +116,32 @@ test('bundle rendering on deal detail', () => {
   expect(html).toContain(dealsCopy.externalDisclaimer);
   expect(html).toContain('/models/model-joy');
 });
+
+test.each(['helper','api'] as const)('%s promotion preserves omitted/null/value dates and rejects invalid supplied dates',async path=>{
+  const starts='2030-11-10T00:00:00+09:00',ends='2030-11-15T23:59:59+09:00';
+  const env={DB:memory.db,ADMIN_TOKEN:'fixture-admin-token-separation-0001',INGEST_TOKEN:'fixture-ingest-token-separation-0002',COLLECTOR_STATUS_TOKEN:'fixture-status-token-separation-0003'};
+  for(const mode of ['omitted','null','value','invalid'] as const){
+    const id=`tri-${path}-${mode}`;
+    await memory.db.prepare(`INSERT INTO external_candidates (id,source,source_url,title,text,price_hint,starts_at,ends_at,captured_at,last_seen_at) VALUES (?,'pangpang',?,'조이 카시트 공구','원문 확인',390000,?,?,?,?)`).bind(id,`https://09pangpang.com/post/${id}`,starts,ends,'2026-11-10T00:00:00.000Z','2026-11-10T00:00:00.000Z').run();
+    const dates=mode==='omitted'?{}:mode==='null'?{starts_at:null,ends_at:null}:mode==='invalid'?{starts_at:'invalid',ends_at:ends}:{starts_at:'2031-11-10T00:00:00+09:00',ends_at:'2031-11-15T23:59:59+09:00'};
+    let dealId:string|undefined;
+    if(path==='helper'){
+      const result=await promoteExternalCandidate(memory.db,{candidate_id:id,promoted_by:'test',request_id:`request-${id}`,...dates});
+      if(mode==='invalid'){expect(result).toMatchObject({ok:false,code:'invalid_schedule'});continue;}
+      expect(result.ok).toBe(true);if(result.ok)dealId=result.deal_id;
+    }else{
+      const res=await handleApi(new Request(`https://x/api/v1/admin/candidates/${id}`,{method:'POST',headers:{authorization:`Bearer ${env.ADMIN_TOKEN}`,'content-type':'application/json'},body:JSON.stringify({action:'promote',request_id:`request-${id}`,...dates})}),['admin','candidates',id],env as never);
+      if(mode==='invalid'){expect(res.status).toBe(400);continue;}
+      expect(res.status).toBe(200);dealId=(await res.json() as {data:{deal_id:string}}).data.deal_id;
+    }
+    const deal=await memory.db.prepare('SELECT starts_at,ends_at FROM deals WHERE id=?').bind(dealId).first<{starts_at:string|null;ends_at:string|null}>();
+    expect(deal?.starts_at).toBe(mode==='null'?null:mode==='value'?'2031-11-09T15:00:00.000Z':'2030-11-09T15:00:00.000Z');
+    expect(deal?.ends_at).toBe(mode==='null'?null:mode==='value'?'2031-11-15T14:59:59.000Z':'2030-11-15T14:59:59.000Z');
+  }
+});
+test('clearing a stale candidate end also clears date-derived source_ended',async()=>{
+  await memory.db.prepare("UPDATE external_candidates SET ends_at='2020-01-01T00:00:00Z' WHERE id='cand-1'").run();
+  const result=await promoteExternalCandidate(memory.db,{candidate_id:'cand-1',promoted_by:'test',request_id:'clear-stale-end',price:null,starts_at:null,ends_at:null});
+  expect(result.ok).toBe(true);if(!result.ok)return;
+  expect(await memory.db.prepare('SELECT price,starts_at,ends_at,source_ended FROM deals WHERE id=?').bind(result.deal_id).first()).toMatchObject({price:null,starts_at:null,ends_at:null,source_ended:0});
+});

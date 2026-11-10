@@ -6,9 +6,13 @@ export type GongguExtraction = {
   brand: string;
   model: string;
   category: ScopedCategory | typeof UNKNOWN;
-  gonggu_price: string;
-  regular_price: string;
+  gonggu_price: string | number | null;
+  regular_price: string | number | null;
   period: string;
+  start_date?: import('../../lib/deal-fact-check').CheckedDate | null;
+  end_date?: import('../../lib/deal-fact-check').CheckedDate | null;
+  fact_check?: import('../../lib/deal-fact-check').FactCheck;
+  needs_fact_check?: boolean;
   gifts: string;
   conditions: string;
   seller: string;
@@ -18,6 +22,14 @@ export type GongguExtraction = {
   catalog_product_id?: string;
   offer_ref?: string;
   notes?: string;
+};
+
+/** New durable facts: numbers/nulls and structured source dates, never raw candidates. */
+export type CheckedGongguExtraction = Omit<GongguExtraction, 'gonggu_price' | 'regular_price' | 'start_date' | 'end_date' | 'fact_check' | 'needs_fact_check'> & {
+  gonggu_price: number | null; regular_price: number | null;
+  start_date: import('../../lib/deal-fact-check').CheckedDate | null;
+  end_date: import('../../lib/deal-fact-check').CheckedDate | null;
+  fact_check: import('../../lib/deal-fact-check').FactCheck;
 };
 
 export type ReviewQueueItem = {

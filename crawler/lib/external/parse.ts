@@ -1,6 +1,8 @@
+import { checkExternalRegion, externalValues, sanitizedRegion } from './checked';
+import type { FactCheck } from '../deal-fact-check';
 // 외부 목록 HTML 파서. 의존성 없는 소형 태그 스캐너 + 단순 셀렉터 + 범용 휴리스틱.
 // 순수 함수라 합성 픽스처로만 검증한다. 이미지·미디어 URL은 아예 읽지 않는다.
-import { extractDates, extractPrices, type DateSuggestion } from '../extract';
+import { type DateSuggestion } from '../extract';
 import { decide } from './robots';
 import type { ParseBudget } from './parse-budget';
 const budgets = new WeakMap<El, ParseBudget>();
@@ -9,6 +11,7 @@ export type El = { tag: string; attrs: Record<string, string>; children: (El | s
 export type ParsedItem = {
   source_url: string; title: string; text: string; category_text: string;
   price: { value: number; raw: string } | null; dates: DateSuggestion | null;
+  fact_checks?: FactCheck[];
   seller_handle: string | null; seller_url: string | null;
 };
 
@@ -138,6 +141,12 @@ export function selectAll(root: El, selector: string): El[] {
   return out;
 }
 
+/** Remove unrelated descendants before establishing a product evidence scope. */
+export function pruneProductRegion(region: El): void {
+  region.children = region.children.filter(child => typeof child === 'string' || !['aside','nav','header','footer','form'].includes(child.tag) && !/(?:^|\s)(?:related|recommendations?|recommended|upsell|crosssell|navigation|menu|private|hidden)(?:$|[\s_-])|추천|관련상품/iu.test(`${child.attrs.id ?? ''} ${child.attrs.class ?? ''} ${child.attrs.role ?? ''}`) && !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(child.attrs.style ?? ''));
+  for (const child of region.children) if (typeof child !== 'string') pruneProductRegion(child);
+}
+
 // ── 항목 추출 ───────────────────────────────────────────────────────────────
 const SIGNAL = /\d[\d,]*\s*원|\d+(?:\.\d+)?\s*만\s*원|공구|공동\s*구매|오픈|마감|특가|\d{1,2}\s*[/월]\s*\d{1,2}/;
 const NOT_HANDLES = new Set(['p', 'reel', 'reels', 'stories', 'explore', 'accounts', 'tv', 'direct']);
@@ -162,7 +171,7 @@ function contains(ancestor: El, el: El) {
   return false;
 }
 
-export const EXTERNAL_PARSER_VERSION = 'generic-2';
+export const EXTERNAL_PARSER_VERSION = 'generic-3';
 export type CandidateOutcome = { candidate_index:number } & (
   { reason:'parsed'; item_index:number } | { reason:'no_text'|'no_allowed_link' }
 );
@@ -174,10 +183,13 @@ export function parseItemsDetailed(html: string, pageUrl: string, origin: string
   const outcomes:CandidateOutcome[]=[];
   const candidates=itemElements(root,selector);
   for (const [candidate_index,el] of candidates.entries()) {
+    pruneProductRegion(el);
     const lines = linesOf(el);
     if (!lines.length) {outcomes.push({candidate_index,reason:'no_text'});continue;}
-    const text = lines.join('\n');
+    const text = sanitizedRegion(lines.join('\n'));
     let sourceUrl: string | null = null;
+    let scopeTitle = lines[0];
+    const productLinks = new Set<string>(), productTitles = new Set<string>();
     let sellerHandle: string | null = null;
     let sellerUrl: string | null = null;
     for (const link of [...(el.tag === 'a' ? [el] : []), ...[...walk(el)].filter(child => child.tag === 'a')]) {
@@ -191,7 +203,11 @@ export function parseItemsDetailed(html: string, pageUrl: string, origin: string
         continue;
       }
       url.hash = '';
-      if (!sourceUrl && decide(url, origin).allowed) sourceUrl = url.href;
+      if (decide(url, origin).allowed) {
+        const label = sanitizedRegion(textOf(link));
+        productLinks.add(url.href); if (label) productTitles.add(label);
+        if (!sourceUrl) { sourceUrl = url.href; scopeTitle = label; }
+      }
     }
     // 같은 origin 링크가 없는 항목은 고유한 출처 URL이 없으므로 쓰지 않는다.
     if (!sourceUrl) {outcomes.push({candidate_index,reason:'no_allowed_link'});continue;}
@@ -199,27 +215,42 @@ export function parseItemsDetailed(html: string, pageUrl: string, origin: string
       const mention = /(?<![\w.])@([A-Za-z0-9._]{2,30})/.exec(text)?.[1].replace(/\.+$/, '');
       if (mention) { sellerHandle = mention.toLowerCase(); sellerUrl = `https://www.instagram.com/${sellerHandle}/`; }
     }
-    const price = extractPrices(text).primary;
+    const scoped = productLinks.size === 1 && productTitles.size <= 1 && selectAll(el,'h1,h2,h3,[itemprop=name]').length <= 1;
+    const fact_check = checkExternalRegion(text, pageUrl, now, scoped ? undefined : {gonggu_price:null,period:null}, scopeTitle);
+    const checked = externalValues([fact_check]);
     const category = [el, ...walk(el)].filter(child => /(^|[-_\s])(cate|category)/i.test(child.attrs.class ?? '') || 'data-category' in child.attrs)
       .map(child => child.attrs['data-category'] ?? textOf(child)).join(' ').replace(/\s+/g, ' ').trim();
     outcomes.push({candidate_index,reason:'parsed',item_index:items.length});
     items.push({
-      source_url: sourceUrl, title: lines[0], text: text.slice(0, 1000), category_text: category.slice(0, 100),
-      price: price ? { value: price.value, raw: price.raw } : null, dates: extractDates(text, now),
+      source_url: sourceUrl, title: sanitizedRegion(lines[0], 200), text, category_text: sanitizedRegion(category, 100),
+      ...checked, fact_checks: [fact_check],
       seller_handle: sellerHandle, seller_url: sellerUrl,
     });
   }
   return {items,selected:candidates.length,outcomes};
 }
 
-// Legacy callers retain the exact item array and selection/URL behavior.
+// The array API and URL selection remain compatible; facts use the checked contract.
 export function parseItems(html: string, pageUrl: string, origin: string, selector = '', now: Date = new Date()): ParsedItem[] {
   return parseItemsDetailed(html,pageUrl,origin,selector,now).items;
 }
 
 // 상세 페이지에서 목록에 없던 가격·일정만 보충한다(follow_detail_links).
-export function parseDetail(html: string, now: Date = new Date()): Pick<ParsedItem, 'price' | 'dates'> {
-  const text = linesOf(parseHtml(html)).join('\n').slice(0, 20000);
-  const price = extractPrices(text).primary;
-  return { price: price ? { value: price.value, raw: price.raw } : null, dates: extractDates(text, now) };
+export function parseDetail(html: string, now: Date = new Date(), source = 'https://detail.invalid/product', expectedTitle?: string): Pick<ParsedItem, 'price' | 'dates' | 'fact_checks'> {
+  const root = parseHtml(html);
+  const productRegions = selectAll(root, '[itemtype],article,main').filter(el => el.tag === 'article' || el.tag === 'main' || /(?:^|\/)Product$/.test(el.attrs.itemtype ?? ''));
+  // Nested main/article is a single scope only when it contains one identifying heading.
+  const leaves = productRegions.filter(el => !productRegions.some(other => other !== el && contains(el, other)));
+  if (leaves.length !== 1) return { price: null, dates: null, fact_checks: [] };
+  const region = leaves[0]; pruneProductRegion(region);
+  const headings = selectAll(region, 'h1,h2,h3,[itemprop=name]');
+  if (headings.length !== 1 || expectedTitle && sanitizedRegion(textOf(headings[0])) !== sanitizedRegion(expectedTitle)) return { price: null, dates: null, fact_checks: [] };
+  const text = sanitizedRegion(linesOf(region).join('\n'));
+  const check = checkExternalRegion(text, source, now, undefined, textOf(headings[0]));
+  return { ...externalValues([check]), fact_checks: [check] };
+}
+/** Preserve listing/detail source provenance and enrich each missing endpoint independently. */
+export function enrichDetail(item: ParsedItem, detail: ReturnType<typeof parseDetail>): ParsedItem {
+  const fact_checks = [...(item.fact_checks ?? []), ...(detail.fact_checks ?? [])];
+  return { ...item, ...externalValues(fact_checks), fact_checks };
 }

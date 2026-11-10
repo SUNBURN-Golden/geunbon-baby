@@ -268,3 +268,37 @@ test('legacy in-flight snapshots retain reservations/counters and migrate embedd
   expect(loaded.cycle).toEqual(m.cycle); expect(loaded.lifetime).toEqual(m.lifetime); expect(loaded.active_cycle?.call).toBe('in_flight');
   expect(loaded.active_cycle?.snapshot.deepseek_completion_tokens).toBeNull(); expect(loaded.active_cycle?.snapshot.last_completed_cycle?.candidate_pages_accepted).toBeNull();
 });
+
+test('verification failure is a successful acknowledged result with null facts, never another source price', async () => {
+  const s=setup();s.complete.mockResolvedValueOnce({...answer(),content:JSON.stringify({...extraction(),gonggu_price:'350,000원',period:'11/09 ~ 11/15'})});
+  const report=await s.run();expect(report.deepseek_calls_succeeded).toBe(1);
+  const e=rows(s.dir)[0].extraction;
+  expect(e).toMatchObject({gonggu_price:null,start_date:null,end_date:{year:null,month:11,day:15},fact_check:{version:'deal-facts@1'}});
+  const m=await loadMemory(s.dir);expect(m.pending_result).toBeNull();expect(m.lifetime.token_spent).toBe(15);
+  await s.run();expect(s.complete).toHaveBeenCalledTimes(1);
+});
+test('legacy cache/receipt remains readable and recoverable but cannot supply current reuse, proposals or review delivery',async()=>{
+  const {ExtractionCache,validEntry,validReceipt,representation}=await import('../crawler/src/deepseek-web/extraction-cache');
+  const {deliverCached}=await import('../crawler/src/deepseek-web/cache-delivery');
+  const {enqueueReview,enqueueReviewIfNew}=await import('../crawler/src/deepseek-web/review-queue');
+  const s=setup();await s.run();const path=cacheFiles(s.dir)[0],current=JSON.parse(readFileSync(path,'utf8'));
+  const legacy={...current,version:1,result:{...extraction(),url,checked_date:current.result.checked_date,catalog_product_id:current.result.catalog_product_id},pending_delivery:true};
+  const r={version:1 as const,entry:legacy,representation:representation(url,legacy.contract_hash,url,legacy.extracted_at,legacy)};
+  expect(validEntry(legacy)).toBe(true);expect(validReceipt(r)).toBe(true);
+  const cache=new ExtractionCache(s.dir);cache.promote(r);expect(cache.entry(legacy.cache_key)?.version).toBe(1);expect(cache.checkedEntry(legacy.cache_key)).toBeNull();expect(cache.prior(url,legacy.contract_hash)).toBeNull();
+  const before=readFileSync(join(s.dir,'review-queue.jsonl'));
+  expect(await deliverCached(cache,legacy,loadDeepSeekWebConfig(),s.f.store,new Date().toISOString())).toMatchObject({deferred:true,review:false,proposal:false});
+  await expect(enqueueReview(s.dir,legacy.result)).rejects.toThrow('extraction_result_invalid');
+  await expect(enqueueReviewIfNew(s.dir,legacy.result,legacy)).rejects.toThrow('extraction_result_invalid');
+  expect(readFileSync(join(s.dir,'review-queue.jsonl'))).toEqual(before);
+  const memory=await loadMemory(s.dir);memory.pending_result=r;await saveMemory(s.dir,memory);
+  await s.run();expect(s.complete).toHaveBeenCalledTimes(2);expect((await loadMemory(s.dir)).lifetime.token_spent).toBe(30);
+  expect(rows(s.dir)[0].status).toBe('pending');
+});
+test('checked meaning deduplicates date wording across URLs and a legacy row cannot suppress verified facts',async()=>{
+  const s=setup();await s.run();s.complete.mockResolvedValueOnce({...answer(),content:JSON.stringify({...extraction(),period:'11.10–11.15'})});
+  await s.run(['https://shop.example/product?id=2']);expect(rows(s.dir)).toHaveLength(1);
+  const legacy={...rows(s.dir)[0],id:'legacy',extraction:{...extraction(),url,checked_date:'2026-11-10'}};delete legacy.revision;
+  writeFileSync(join(s.dir,'review-queue.jsonl'),JSON.stringify(legacy)+'\n');
+  await s.run(['https://shop.example/product?id=3']);expect(rows(s.dir)).toHaveLength(2);
+});

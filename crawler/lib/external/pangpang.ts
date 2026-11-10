@@ -1,10 +1,10 @@
 // Linux collector pure extractor. No transport, persistence, or whole-page fallback.
 import type { ParseBudget } from './parse-budget';
 import { canonicalUrl, filterText } from '../../../shared/privacy-rules';
-import { extractDates } from '../extract';
-import { parseHtml, selectAll, textOf, type El, type ParsedItem } from './parse';
+import { checkExternalRegion, externalValues, sanitizedRegion } from './checked';
+import { parseHtml, selectAll, textOf, pruneProductRegion, type El, type ParsedItem } from './parse';
 
-export const PANGPANG_VERSION = 'pangpang@1';
+export const PANGPANG_VERSION = 'pangpang@2';
 export const isPangpang = (s: {id:string;origin:string}) => s.id === 'pangpang' && s.origin === 'https://09pangpang.com';
 export function pangpangPost(raw:string):string|null {
   try { const u=new URL(raw);return u.origin==='https://09pangpang.com'?/^\/post\/(\d+)\/?$/.exec(u.pathname)?.[1]??null:null; } catch { return null; }
@@ -40,18 +40,23 @@ const clean=(s:string,max=1000)=>filterText(s.replace(/https?:\/\/[^\s<>"']+/gi,
 const classes=(e:El)=> (e.attrs.class??'').split(/\s+/);
 const allLinks=(e:El)=>[...(e.tag==='a'&&e.attrs.href?[e]:[]),...selectAll(e,'a[href]')];
 function fields(scope:El,title:string,url:string,locator:string,linkIndex:number|null,now:Date):PangpangProduct {
+  pruneProductRegion(scope);
   const category=selectAll(scope,'.text-category').map(textOf).map(s=>clean(s,100)).join(' ');
   const times=selectAll(scope,'time').filter(e=>/\d{1,2}\/\d{1,2}/.test(textOf(e)));
   // Cards use a span; details use sibling time elements within a schedule span.
   const scheduleEl=times[0]?.parent??selectAll(scope,'span').find(e=>!selectAll(e,'span').length&&/\d{1,2}\/\d{1,2}/.test(textOf(e)));
   const schedule=clean(scheduleEl?textOf(scheduleEl):'',120);
-  const dates=extractDates(schedule.replace(/\s*\([월화수목금토일](?:요일)?\)/g,''),now);
-  if(dates)dates.raw=schedule;
   const sellerLink=allLinks(scope).find(e=>{try{return /^\/account\/\d+$/.test(new URL(e.attrs.href,url).pathname);}catch{return false;}});
   const seller=clean(sellerLink?selectAll(sellerLink,'p').map(textOf)[0]??'':selectAll(scope,'p.truncate').map(textOf)[0]??'',100);
   const handle=/^[A-Za-z0-9._]{1,30}$/.test(seller)?seller.toLowerCase():null;
-  return {source_url:url,title,text:[title,category,schedule,seller].filter(Boolean).join('\n'),category_text:category,
-    price:null,dates,seller_handle:handle,seller_name:seller||null,seller_url:handle?`https://www.instagram.com/${handle}/`:null,locator,link_index:linkIndex};
+  // Store exactly the sanitized text the check hashes: pre-storage re-hashes
+  // product.text and re-slices every evidence quote against it, so any
+  // divergence (whitespace runs, entities) would reject the whole product.
+  const text=sanitizedRegion([title,category,schedule,seller].filter(Boolean).join('\n'));
+  const fact_check=checkExternalRegion(text,url,now,{gonggu_price:null,period:schedule});
+  const checked=externalValues([fact_check]);
+  return {source_url:url,title,text,category_text:category,
+    ...checked,fact_checks:[fact_check],seller_handle:handle,seller_name:seller||null,seller_url:handle?`https://www.instagram.com/${handle}/`:null,locator,link_index:linkIndex};
 }
 // approve must validate the ORIGINAL resolved URL, then the canonical destination.
 export function extractPangpang(html:string,pageUrl:string,now:Date,allowed:(url:string)=>boolean,budget?:ParseBudget):PangpangPage {

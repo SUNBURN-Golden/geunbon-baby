@@ -1,3 +1,4 @@
+import { checkedExternalAssertions } from '../../lib/external/checked';
 import { randomUUID } from 'node:crypto';
 import { isPangpang, pangpangIdentityAllowed } from '../../lib/external/pangpang';
 import { eligibilityReason } from '../../lib/external/filter';
@@ -121,12 +122,11 @@ export class DiscoveryRunner {
               if(m.pangpang&&!m.pangpang.detail&&deferred.has(item.source_url))continue;
               let r;try{r=this.reservation(j,source,item.source_url,`listing:${index}`);}catch(e){if(m.pangpang&&failureCode(e)==='daily_limit'){deferred.add(item.source_url);continue;}if(itemRejection(e)){health.subrequestFailed(source.id,failureCode(e));continue;}throw e;}
               const payload:ClipPayload={title:item.title,seller_handle:item.seller_handle??undefined,target_model_id:legacy.suggestions.models.length===1?legacy.suggestions.models[0].model_id:null,assertions:[]};
-              if(item.price)payload.assertions.push({field:'clue_price',value:item.price.value,quote:item.price.raw,locator:'locator' in item?String(item.locator):source.selector||'listing'});
-              if(item.dates)payload.assertions.push({field:'group_buy_terms',value:item.dates.raw,quote:item.dates.raw,locator:'locator' in item?String(item.locator):source.selector||'listing'});
+              payload.assertions = checkedExternalAssertions(item.fact_checks ?? [], 'locator' in item ? String(item.locator) : source.selector || 'listing');
               this.store.submit('linux',r.id,payload);health.sent(source.id);submitted++;if(m.pangpang)this.log({...pangpangContext('discover',this.runRef,j.id),event:'progress',stage:'submitted',product_ref:digest(item.source_url)});
             }
             if(!m.pangpang){const root=parseHtml(response.body),region=source.selector?selectAll(root,source.selector)[0]:undefined;
-              this.store.submit('linux',reservation.id,{assertions:region?extractFacts(textOf(region),source.selector):[]});}
+              this.store.submit('linux',reservation.id,{assertions:region?extractFacts(textOf(region),source.selector).filter(a => source.kind !== 'event' || !['clue_price','official_msrp','group_buy_terms'].includes(a.field)):[]});}
           }
           } finally {if(m.pangpang){const summary=reportPangpang(m.pangpang,pangpangContext('discover',this.runRef,j.id),this.log,eligibilityReason,deferred,scheduled,submitted);Object.assign(m,{link_dispositions:summary.dispositions,unique_products:summary.unique_products,product_refs:m.pangpang.products.map(p=>digest(p.source_url)),scheduled,deferred:deferred.size});}}
           health.pageOk(source.id,m);

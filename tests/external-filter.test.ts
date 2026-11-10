@@ -23,7 +23,7 @@ test('baby keywords, category text and seed model matches pass', () => {
   const payload = buildPayload('pangpang', base(), now)!;
   expect(payload).toMatchObject({ kind: 'external_listing', source: 'pangpang', account: 'pangpang', model_match: true, price_hint: 390000, price_basis: 'external_listing', captured_at: '2026-10-22T00:30:00.000Z' });
   expect(payload.category).toBe('high_chair');
-  expect(payload.text).toBe('스토케 트립트랩 공구 / 기간 10/26~10/28 / 가격 390,000원 / 셀러 @seller');
+  expect(payload.text).toBe('스토케 트립트랩 공구 / 가격 390,000원 / 셀러 @seller');
   expect(payload.suggestions.models.length).toBeGreaterThan(0);
 });
 
@@ -103,16 +103,16 @@ test('title and category are independent matching spans with deterministic merge
   expect(both.suggestions.models.some(m => m.model_id === 'model-1')).toBe(true);
   expect(both.suggestions.models.some(m => m.model_id === 'model-7')).toBe(true);
   expect(both.suggestions.models).toHaveLength(8);
-  // Mean of model 0.80, primary price 0.90 and period 0.95, rounded.
-  expect(both.suggestions.confidence).toBe(0.88);
-  expect(categoryOnly.suggestions.confidence).toBe(0.88);
+  // Empty original product text supplies no price or date evidence.
+  expect(both.suggestions.confidence).toBe(both.suggestions.models[0].confidence);
+  expect(categoryOnly.suggestions.confidence).toBe(categoryOnly.suggestions.models[0].confidence);
 });
 
 test.each(['아기 실내 점프 트레이닝', '아기 폭스', '트립트랩'])(
   'model-like metadata cannot change title/category evidence for %s', title => {
     const item = base({title, text:'', seller_handle:null, seller_url:null});
     const original = buildPayload('pangpang', item, now)!;
-    expect(original.suggestions.confidence).toBe(title === '트립트랩' ? 0.88 : title === '아기 폭스' ? 0.78 : 0.93);
+    expect(original.suggestions.confidence).toBe(original.suggestions.models[0]?.confidence ?? 0);
     for (const metadata of [
       {seller_handle:'트립트랩', seller_name:'부가부 폭스5', seller_url:'https://example.test/priam'},
       {seller_handle:'부가부 폭스5', seller_name:'스토케', source_url:'https://example.test/tripptrapp'},

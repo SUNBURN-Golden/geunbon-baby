@@ -518,6 +518,9 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       const requestId = typeof b.request_id === 'string' ? b.request_id : '';
       const promotedBy = typeof b.promoted_by === 'string' ? b.promoted_by.trim() : 'admin';
       if (!/^[A-Za-z0-9-]{8,64}$/.test(requestId)) return json({ error: 'request_id 필요' }, 400);
+      for (const key of ['starts_at', 'ends_at']) {
+        if (b[key] !== undefined && b[key] !== null && (typeof b[key] !== 'string' || normalizeTimestamp(b[key]) === null)) return json({ error: 'invalid_schedule' }, 400);
+      }
       const bundle = Array.isArray(b.bundle_items) ? b.bundle_items : [];
       const { promoteExternalCandidate } = await import('./promote-external');
       const result = await promoteExternalCandidate(env.DB, {
@@ -529,8 +532,8 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
         model_id: b.model_id === null ? null : typeof b.model_id === 'string' ? b.model_id : null,
         title: typeof b.title === 'string' ? b.title : null,
         price: b.price === null ? null : Number.isSafeInteger(b.price) ? b.price as number : undefined,
-        starts_at: typeof b.starts_at === 'string' ? b.starts_at : null,
-        ends_at: typeof b.ends_at === 'string' ? b.ends_at : null,
+        starts_at: b.starts_at === undefined ? undefined : b.starts_at as string | null,
+        ends_at: b.ends_at === undefined ? undefined : b.ends_at as string | null,
         source_ended: b.source_ended === true ? true : b.source_ended === false ? false : undefined,
         brand_label: typeof b.brand_label === 'string' ? b.brand_label : null,
         category_label: typeof b.category_label === 'string' ? b.category_label : null,

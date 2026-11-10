@@ -1,3 +1,4 @@
+import { FACT_CHECK_VERSION, CHECKED_SCHEMA_VERSION, INTERPRETATION_POLICY, type FactCheck } from '../../lib/deal-fact-check';
 import { failureCode } from '../discovery/health';
 import { isPangpang, pangpangIdentityAllowed, PANGPANG_VERSION, type PangpangPage, type PangpangProduct } from '../../lib/external/pangpang';
 import { pangpangLog, pangpangContext, reportPangpang, type PangpangLog } from '../discovery/pangpang-diagnostics';
@@ -22,12 +23,12 @@ import { labelRules, type LabelId } from './labeler';
 import { AGAMAJUNG_LABELS, REQUIRED_FIELDS } from './vocab';
 import { claimSlots, conditionsKey, subjectRef } from './subject';
 type Capture={id:string;run_id:string;source_id:string;url_norm:string;content_hash:string;content_type:string;etag:string|null;last_modified:string|null;raw_ref:string|null;fetched_at:string;fetch_seq:number;byte_length:number|null;data:string};
-export type Parsed={inspection?:{version:string;complete:boolean;truncated:boolean;region:string;tool_status:string;locator_base:string;locator_space?:string;filter_changed?:boolean};text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[];pangpang?:PangpangPage};
+export type Parsed={inspection?:{version:string;complete:boolean;truncated:boolean;region:string;tool_status:string;locator_base:string;locator_space?:string;filter_changed?:boolean};text:string;eligible?:boolean;title?:string;document_origin?:string;assertions?:AssertionInput[];fact_checks?:FactCheck[];pangpang?:PangpangPage};
 type Labeled={labels:LabelId[];status:'labeled'|'ambiguous';method:'rule'|'model'};
 export type PipelineOptions={offline?:boolean;scheduler?:Scheduler;renderer?:RenderPort;tools?:ToolAdapter;model?:ModelPort;discoveryConfig?:DiscoveryConfig;fault?:(point:string)=>void;rng?:()=>number;health?:(code:string)=>void;linkLog?:PangpangLog};
 import { prepare, validatePrepared, requireMemoryRenderer, safeEtag, safeModified, PREPARATION_VERSION, type Prepared } from './pre-storage';
 const string=(data:Data,key:string)=>String(data[key]??'');
-export const collectionParseVersion=(store:CollectorStore,profile:Profile,options:PipelineOptions={})=>`parse@5:${PREPARATION_VERSION}:${PANGPANG_VERSION}:${profile.extractor_version}:${profile.labeler_version}:${digest([store.settings.sources,options.discoveryConfig??loadDiscoveryConfig(),options.renderer?.capability??null,options.tools?.memory?.capability??null,profile.domain_policy])}`;
+export const collectionParseVersion=(store:CollectorStore,profile:Profile,options:PipelineOptions={})=>`parse@6:${FACT_CHECK_VERSION}:${CHECKED_SCHEMA_VERSION}:${INTERPRETATION_POLICY}:${PREPARATION_VERSION}:${PANGPANG_VERSION}:${profile.extractor_version}:${profile.labeler_version}:${digest([store.settings.sources,options.discoveryConfig??loadDiscoveryConfig(),options.renderer?.capability??null,options.tools?.memory?.capability??null,profile.domain_policy])}`;
 export class AgamajungPipeline {
   readonly engine:JobEngine;
   readonly ledger:CostLedger;

@@ -1,0 +1,19 @@
+[
+  {"name":"missing source price","text":"스토케 트립트랩 공구\n11.10–11.15","candidate":{"gonggu_price":"390,000원","period":"11.10–11.15"},"price":null,"start":10,"end":15},
+  {"name":"mismatched price","text":"공구가 390,000원","candidate":{"gonggu_price":"350,000원"},"price":null},
+  {"name":"currency equivalent","text":"₩390,000","candidate":{"gonggu_price":"390000"},"price":390000},
+  {"name":"Korean units equivalent","text":"39만원","candidate":{"gonggu_price":"390,000원"},"price":390000},
+  {"name":"explicit Korean component units","text":"39만 5천원","candidate":{"gonggu_price":"395000"},"price":395000},
+  {"name":"larger complete monetary token","text":"1,390,000원","candidate":{"gonggu_price":"390,000원"},"price":null},
+  {"name":"malformed grouping","text":"39,00원","candidate":{"gonggu_price":"3900"},"price":null},
+  {"name":"URL numeric path","text":"https://shop.example/390000원","candidate":{"gonggu_price":"390000"},"price":null},
+  {"name":"model identifier","text":"모델 BM390000원","candidate":{"gonggu_price":"390000"},"price":null},
+  {"name":"ambiguous offer amounts","text":"옵션 A 공구가 390,000원\n옵션 B 공구가 400,000원","candidate":{"gonggu_price":"390000"},"price":null},
+  {"name":"bundle sum absent","text":"트립트랩 묶음 공구\n본체 300,000원\n트레이 90,000원","candidate":{"gonggu_price":"390000"},"price":null},
+  {"name":"wrong end only","text":"11.10–11.15","candidate":{"period":"11.10–11.14"},"price":null,"start":10,"end":null},
+  {"name":"wrong start only","text":"11.10–11.15","candidate":{"period":"11.09–11.15"},"price":null,"start":null,"end":15},
+  {"name":"future-week bundle","text":"조이 카시트 모음 공구\n11.30–12.04","candidate":{"period":"11.30–12.04","gonggu_price":"1000000원"},"price":null,"start":30,"end":4},
+  {"name":"regular price independent","text":"공구가 390,000원 정가 430,000원","candidate":{"gonggu_price":"390000","regular_price":"430000"},"price":390000,"regular":430000},
+  {"name":"regular price mismatch","text":"공구가 390,000원 정가 430,000원","candidate":{"gonggu_price":"390000","regular_price":"450000"},"price":390000,"regular":null},
+  {"name":"regular cannot establish group-buy price","text":"정가 430,000원","candidate":{"gonggu_price":"430000","regular_price":"430000"},"price":null,"regular":430000}
+]
