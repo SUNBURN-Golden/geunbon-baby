@@ -17,9 +17,11 @@ const mockClient = () => createDeepSeekClient({
 afterEach(async () => { for (const d of dirs) await rm(d, { recursive: true, force: true }); dirs.length = 0; vi.unstubAllEnvs(); });
 describe('deepseek-web CLI runtime wiring', () => {
   test('once without COLLECTOR_DB fails closed before fetch or model', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsw-no-db-'));
+    dirs.push(dir);
     vi.stubEnv('COLLECTOR_DB', '');
     const fetchSpy = vi.fn(() => { throw new Error('fetch_forbidden'); });
-    await expect(deepSeekWebCli(['once', 'https://www.stokke.com/KOR/'], { fetchImpl: fetchSpy, client: mockClient() }))
+    await expect(deepSeekWebCli(['once', 'https://www.stokke.com/KOR/'], { stateDir: dir, fetchImpl: fetchSpy, client: mockClient() }))
       .rejects.toThrow('collector_db_required');
     expect(fetchSpy).not.toHaveBeenCalled();
   });

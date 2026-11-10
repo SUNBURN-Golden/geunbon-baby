@@ -1,21 +1,20 @@
-import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { loadDeepSeekWebConfig, stateDir } from './config';
-import { evaluateUrlDomainPolicy, assertDomainPolicyReadable, isGlobalEmergencyStop } from './domain-policy';
+import { evaluateUrlDomainPolicy, assertDomainPolicyReadable } from './domain-policy';
 import { createDeepSeekClient } from './client';
 import { buildExtractionPrompt, normalizeExtractionWithCatalog, parseModelJson } from './extract';
 import { createPublicFetcher, fetchPublicText } from './public-fetch';
-import { loadMemory, newRunId, saveMemory } from './memory';
 import { maybeProposeParserFix } from './proposals';
 import { enqueueReviewIfNew, countPending, hasPendingUrl } from './review-queue';
-import { writeHeartbeat } from './heartbeat';
-import { beginCycle, cycleAdmit, cycleHold, cycleRelease, cycleSettle, finalizeCycle } from './budget-cycle';
+import { cycleAdmit } from './budget-cycle';
+import { cycleLifecycle, waitFor, type CycleContext } from './lifecycle';
+import type { WriterOwnership } from './writer-ownership';
+import type { DeepSeekWebConfig } from './types';
 import { logOutcome } from './outcomes';
 import { isPangpangHost, planPangpangPage } from './source-select';
 import { pickNextPublicSearchUrl, rememberSearchHints } from './search-query-plan';
 import { isPangpangListingUrl, listingDiscoveryDue, recordListingDiscovery, shouldDedupObservedSeed } from './listing-discovery';
 import { loadGeunbonCatalog, postIdFromUrl, searchMetaForUrl } from './catalog';
-import type { CollectionStatus, RunReport, ScopedCategory, TickCoverage } from './types';
+import type { CollectionReport, CollectionStatus, ScopedCategory, TickCoverage } from './types';
 import type { CollectorStore } from '../store';
 
 export type FetchPageResult = { ok: true; text: string; finalUrl: string } | { ok: false; reason: string };
@@ -28,6 +27,10 @@ export type RunnerOptions = {
   fetchImpl?: typeof fetch;
   fetchPage?: (url: string) => Promise<FetchPageResult>;
   now?: () => number;
+  signal?: AbortSignal;
+  fault?: (point: string) => void;
+  ownership?: WriterOwnership;
+  loadConfig?: () => DeepSeekWebConfig;
 };
 
 function mergePending(memory: { pending_urls: string[] }, urls: string[]) {
@@ -58,27 +61,16 @@ function resolveCollectionStatus(input: {
   return 'active';
 }
 
-export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport> {
-  const config = loadDeepSeekWebConfig();
-  const dir = options.stateDir ?? stateDir();
-  const runId = newRunId();
-  const cycleId = runId;
-  const nowMs = options.now ?? (() => Date.now());
-  const memory = beginCycle(await loadMemory(dir), cycleId);
-  const model = process.env.DEEPSEEK_MODEL ?? config.model.default_model;
-  if (options.mode === 'once' || options.mode === 'daemon_tick') {
-    if (!options.store) throw new Error('collector_db_required');
-    assertDomainPolicyReadable(options.store);
-    if (isGlobalEmergencyStop(options.store)) throw new Error('emergency_stop');
-  }
-  const client = options.client ?? createDeepSeekClient({
-    apiKey: options.mode === 'dry_run' ? 'mock' : (process.env.DEEPSEEK_API_KEY ?? ''),
-    model,
-    maxCompletionTokens: config.budget.max_completion_tokens,
-    fetchImpl: options.fetchImpl,
-    fixturePath: process.env.DEEPSEEK_WEB_FIXTURE,
-  });
-  const fetcher = createPublicFetcher(config, { fetch: options.fetchImpl });
+export async function runDeepSeekWeb(options: RunnerOptions): Promise<CollectionReport> {
+  return cycleLifecycle(options, ctx => executeCycle(options, ctx));
+}
+async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<void> {
+  const { config, dir, memory, report } = ctx;
+  const runId = report.run_id, cycleId = report.cycle_id;
+  options = { ...options, store: ctx.store };
+  const nowMs = options.now ?? Date.now;
+  const fetchImpl: typeof fetch = (url, init) => (options.fetchImpl ?? fetch)(url, { ...init, signal: options.signal ? AbortSignal.any([options.signal, ...(init?.signal ? [init.signal] : [])]) : init?.signal });
+  const fetcher = createPublicFetcher(config, { fetch: fetchImpl, sleep: async ms => { await waitFor(ms, options.signal); options.signal?.throwIfAborted(); } });
   const queue: string[] = [...memory.pending_urls];
   const explicit = options.urls?.length ? [...options.urls] : [];
   if (explicit.length) queue.push(...explicit);
@@ -122,302 +114,254 @@ export async function runDeepSeekWeb(options: RunnerOptions): Promise<RunReport>
   const catalog = loadGeunbonCatalog();
   memory.plan_notes.push(`${runId}: plan ${queue.length} url(s), mode=${options.mode}`);
   const cycleTouched = new Set<string>();
-  if (reserve.ok) {
-    for (const seedUrl of queue.slice(0, config.memory.max_queue_urls)) {
-      if (shouldDedupObservedSeed(memory, seedUrl, config, nowMs())) {
-        dedupSkips++;
-        memory.plan_notes.push(`dedup_observed_seed ${seedUrl}`);
-        await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: seedUrl, outcome: 'duplicate_skip', detail: { reason: 'dedup_observed_seed' } });
-        continue;
-      }
-      if (cycleTouched.has(seedUrl)) {
-        dedupSkips++;
-        await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: seedUrl, outcome: 'duplicate_skip', detail: { within_cycle: true } });
-        continue;
-      }
-      let pageUrl = seedUrl;
-      if (isPangpangListingUrl(seedUrl)) {
-        const meta = memory.last_catalog_search?.url === seedUrl
-          ? memory.last_catalog_search
-          : searchMetaForUrl(catalog, seedUrl);
-        coverage.searches.push({
-          url: seedUrl,
-          catalog_product_id: meta.product_id,
-          category: meta.category,
-          term: meta.term,
-        });
-      }
-      const initialPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
-      if (initialPolicy.blocked) {
-        blocked++;
-        policyBlocked++;
-        memory.plan_notes.push(`block ${pageUrl}: ${initialPolicy.reason}`);
-        haltReason = haltReason ?? initialPolicy.reason;
-        await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'fetch_blocked', detail: { stage: 'policy', reason: initialPolicy.reason } });
-        continue;
-      }
-      const host = new URL(pageUrl).hostname;
-      const listingRefresh = isPangpangListingUrl(seedUrl) && listingDiscoveryDue(memory, seedUrl, config, nowMs());
-      let text = '';
-      let fetched = false;
-      try {
-        if (host === 'fixture.example') {
-          const { readFile } = await import('node:fs/promises');
-          text = await readFile(join(process.cwd(), 'tests/fixtures/deepseek-web/sample-page.txt'), 'utf8');
-          pageUrl = seedUrl;
-          fetched = true;
-        } else if (options.mode === 'dry_run') {
-          if (listingRefresh) {
-            blocked++;
-            memory.plan_notes.push(`skip_live_fetch ${pageUrl}: dry_run_listing`);
-            continue;
-          }
-          blocked++;
-          memory.plan_notes.push(`skip_live_fetch ${pageUrl}: dry_run`);
+  const progress = async () => {
+    Object.assign(report, { extractions, items_sent_to_review: extractions, proposals, blocked, listing_enqueued: listingEnqueued, listing_refresh_attempts: listingRefreshAttempts, dedup_skips: dedupSkips, coverage });
+    await ctx.checkpoint();
+  };
+  try {
+    if (reserve.ok) {
+      for (const seedUrl of queue.slice(0, config.memory.max_queue_urls)) {
+        options.signal?.throwIfAborted();
+        if (shouldDedupObservedSeed(memory, seedUrl, config, nowMs())) {
+          dedupSkips++;
+          memory.plan_notes.push(`dedup_observed_seed ${seedUrl}`);
+          await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: seedUrl, outcome: 'duplicate_skip', detail: { reason: 'dedup_observed_seed' } });
           continue;
-        } else {
-          if (listingRefresh) listingRefreshAttempts++;
-          const page = options.fetchPage ? await options.fetchPage(pageUrl) : await fetchPublicText(fetcher, pageUrl);
-          if (!page.ok) {
-            blocked++;
-            memory.plan_notes.push(`fetch_block ${pageUrl}: ${page.reason}`);
-            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'fetch_blocked', detail: { stage: 'fetch', reason: page.reason } });
-            continue;
-          }
-          text = page.text;
-          pageUrl = page.finalUrl;
-          fetched = true;
-          const redirectPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
-          if (redirectPolicy.blocked) {
-            blocked++;
-            policyBlocked++;
-            memory.plan_notes.push(`block_redirect ${pageUrl}: ${redirectPolicy.reason}`);
-            haltReason = haltReason ?? redirectPolicy.reason;
-            continue;
-          }
         }
-        if (isPangpangHost(host) && text) {
-          const plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config);
-          if (plan.kind === 'listing') {
-            rememberSearchHints(memory, plan.suggested_searches);
-            const enqueueCount = plan.enqueue.length;
-            recordListingDiscovery(memory, seedUrl, config, enqueueCount, new Date(nowMs()));
-            for (const row of plan.enqueue_catalog) {
-              memory.pending_catalog_meta[row.url] = { catalog_product_id: row.catalog_product_id, category: row.category };
+        if (cycleTouched.has(seedUrl)) {
+          dedupSkips++;
+          await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: seedUrl, outcome: 'duplicate_skip', detail: { within_cycle: true } });
+          continue;
+        }
+        let pageUrl = seedUrl;
+        if (isPangpangListingUrl(seedUrl)) {
+          const meta = memory.last_catalog_search?.url === seedUrl
+            ? memory.last_catalog_search
+            : searchMetaForUrl(catalog, seedUrl);
+          coverage.searches.push({
+            url: seedUrl,
+            catalog_product_id: meta.product_id,
+            category: meta.category,
+            term: meta.term,
+          });
+        }
+        const initialPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
+        if (initialPolicy.blocked) {
+          blocked++;
+          policyBlocked++;
+          memory.plan_notes.push(`block ${pageUrl}: ${initialPolicy.reason}`);
+          haltReason = haltReason ?? initialPolicy.reason;
+          await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'fetch_blocked', detail: { stage: 'policy', reason: initialPolicy.reason } });
+          continue;
+        }
+        const host = new URL(pageUrl).hostname;
+        const listingRefresh = isPangpangListingUrl(seedUrl) && listingDiscoveryDue(memory, seedUrl, config, nowMs());
+        let text = '';
+        let fetched = false;
+        try {
+          if (host === 'fixture.example') {
+            const { readFile } = await import('node:fs/promises');
+            text = await readFile(join(process.cwd(), 'tests/fixtures/deepseek-web/sample-page.txt'), 'utf8');
+            pageUrl = seedUrl;
+            fetched = true;
+          } else if (options.mode === 'dry_run') {
+            if (listingRefresh) {
+              blocked++;
+              memory.plan_notes.push(`skip_live_fetch ${pageUrl}: dry_run_listing`);
+              continue;
             }
-            for (const [cat, n] of Object.entries(plan.scoped_by_category)) {
-              const key = cat as ScopedCategory;
-              const prev = coverage.listing[key] ?? { raw: 0, scoped: 0, enqueued: 0 };
-              coverage.listing[key] = {
-                raw: Math.max(prev.raw, plan.raw_product_count),
-                scoped: (prev.scoped ?? 0) + n,
-                enqueued: (prev.enqueued ?? 0) + plan.enqueue_catalog.filter(e => e.category === key).length,
-              };
+            blocked++;
+            memory.plan_notes.push(`skip_live_fetch ${pageUrl}: dry_run`);
+            continue;
+          } else {
+            if (listingRefresh) listingRefreshAttempts++;
+            const page = options.fetchPage ? await options.fetchPage(pageUrl) : await fetchPublicText(fetcher, pageUrl);
+            if (!page.ok) {
+              blocked++;
+              memory.plan_notes.push(`fetch_block ${pageUrl}: ${page.reason}`);
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'fetch_blocked', detail: { stage: 'fetch', reason: page.reason } });
+              continue;
             }
-            if (!Object.keys(plan.scoped_by_category).length && plan.raw_product_count) {
-              coverage.listing.unscoped = {
-                raw: plan.raw_product_count,
-                scoped: plan.scope_counts.core,
-                enqueued: enqueueCount,
-              };
+            text = page.text;
+            pageUrl = page.finalUrl;
+            fetched = true;
+            const redirectPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
+            if (redirectPolicy.blocked) {
+              blocked++;
+              policyBlocked++;
+              memory.plan_notes.push(`block_redirect ${pageUrl}: ${redirectPolicy.reason}`);
+              haltReason = haltReason ?? redirectPolicy.reason;
+              continue;
             }
-            if (enqueueCount) {
-              mergePending(memory, plan.enqueue);
-              listingEnqueued += enqueueCount;
-              await logOutcome(dir, {
-                run_id: runId,
-                cycle_id: cycleId,
-                url: pageUrl,
-                outcome: 'listing_enqueued',
-                detail: {
-                  enqueue: plan.enqueue,
-                  raw_product_count: plan.raw_product_count,
-                  scoped_candidate_count: plan.scoped_candidate_count,
-                  scope_counts: plan.scope_counts,
-                  migration_refresh: listingRefresh,
-                },
-              });
-            } else if (plan.zero_reason === 'parser_empty') {
-              listingNoCandidates++;
-              await logOutcome(dir, {
-                run_id: runId,
-                cycle_id: cycleId,
-                url: pageUrl,
-                outcome: 'listing_parser_empty',
-                detail: { parser_outcome_counts: plan.parser_outcome_counts, migration_refresh: listingRefresh },
-              });
+          }
+          if (isPangpangHost(host) && text) {
+            const plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config);
+            if (plan.kind === 'listing') {
+              rememberSearchHints(memory, plan.suggested_searches);
+              const enqueueCount = plan.enqueue.length;
+              recordListingDiscovery(memory, seedUrl, config, enqueueCount, new Date(nowMs()));
+              for (const row of plan.enqueue_catalog) {
+                memory.pending_catalog_meta[row.url] = { catalog_product_id: row.catalog_product_id, category: row.category };
+              }
+              for (const [cat, n] of Object.entries(plan.scoped_by_category)) {
+                const key = cat as ScopedCategory;
+                const prev = coverage.listing[key] ?? { raw: 0, scoped: 0, enqueued: 0 };
+                coverage.listing[key] = {
+                  raw: Math.max(prev.raw, plan.raw_product_count),
+                  scoped: (prev.scoped ?? 0) + n,
+                  enqueued: (prev.enqueued ?? 0) + plan.enqueue_catalog.filter(e => e.category === key).length,
+                };
+              }
+              if (!Object.keys(plan.scoped_by_category).length && plan.raw_product_count) {
+                coverage.listing.unscoped = {
+                  raw: plan.raw_product_count,
+                  scoped: plan.scope_counts.core,
+                  enqueued: enqueueCount,
+                };
+              }
+              if (enqueueCount) {
+                mergePending(memory, plan.enqueue);
+                listingEnqueued += enqueueCount;
+                await logOutcome(dir, {
+                  run_id: runId,
+                  cycle_id: cycleId,
+                  url: pageUrl,
+                  outcome: 'listing_enqueued',
+                  detail: {
+                    enqueue: plan.enqueue,
+                    raw_product_count: plan.raw_product_count,
+                    scoped_candidate_count: plan.scoped_candidate_count,
+                    scope_counts: plan.scope_counts,
+                    migration_refresh: listingRefresh,
+                  },
+                });
+              } else if (plan.zero_reason === 'parser_empty') {
+                listingNoCandidates++;
+                await logOutcome(dir, {
+                  run_id: runId,
+                  cycle_id: cycleId,
+                  url: pageUrl,
+                  outcome: 'listing_parser_empty',
+                  detail: { parser_outcome_counts: plan.parser_outcome_counts, migration_refresh: listingRefresh },
+                });
+              } else {
+                listingNoCandidates++;
+                await logOutcome(dir, {
+                  run_id: runId,
+                  cycle_id: cycleId,
+                  url: pageUrl,
+                  outcome: 'listing_scope_no_core',
+                  detail: {
+                    raw_product_count: plan.raw_product_count,
+                    scope_counts: plan.scope_counts,
+                    suggested_searches: plan.suggested_searches,
+                    migration_refresh: listingRefresh,
+                  },
+                });
+              }
+              if (!memory.observed_urls.includes(seedUrl)) memory.observed_urls.push(seedUrl);
+              memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
+              cycleTouched.add(seedUrl);
+              continue;
+            }
+          }
+          if (!fetched || !text) continue;
+          const modeledKey = pageUrl;
+          if (memory.modeled_post_urls.includes(modeledKey) || (await hasPendingUrl(dir, modeledKey))) {
+            dedupSkips++;
+            memory.plan_notes.push(`skip_modeled_post ${modeledKey}`);
+            memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
+            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'duplicate_skip', detail: { reason: 'already_modeled_or_pending' } });
+            continue;
+          }
+          const admission = cycleAdmit(memory, config);
+          if (!admission.ok) {
+            haltReason = admission.reason;
+            memory.plan_notes.push(`halt: ${admission.reason}`);
+            break;
+          }
+          try {
+            if (options.store) assertDomainPolicyReadable(options.store);
+            const preModelPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
+            if (preModelPolicy.blocked) {
+              blocked++;
+              policyBlocked++;
+              memory.plan_notes.push(`block_pre_model ${pageUrl}: ${preModelPolicy.reason}`);
+              haltReason = haltReason ?? preModelPolicy.reason;
+              continue;
+            }
+            const checked = new Date(nowMs()).toISOString().slice(0, 10);
+            await progress();
+            const completion = await ctx.complete({
+              system: '당신은 가격을 발명하지 않는 공개 웹 추출기다. JSON만 출력한다.',
+              user: buildExtractionPrompt(text, pageUrl),
+            }, admission.reserve);
+            cycleTouched.add(seedUrl);
+            const catalogHint = memory.pending_catalog_meta[seedUrl] ?? memory.pending_catalog_meta[pageUrl];
+            const offerRef = postIdFromUrl(pageUrl) ?? undefined;
+            const extraction = normalizeExtractionWithCatalog(parseModelJson(completion.content), pageUrl, checked, {
+              ...catalogHint,
+              offer_ref: offerRef,
+            });
+            if (!memory.modeled_post_urls.includes(modeledKey)) {
+              memory.modeled_post_urls = [...memory.modeled_post_urls, modeledKey].slice(-500);
+            }
+            if (extraction.in_scope) {
+              report.items_extracted++;
+              await progress();
+              const q = await enqueueReviewIfNew(dir, extraction);
+              if (q.enqueued) {
+                extractions++;
+                await progress();
+                const cat = (extraction.category !== '정보 없음' ? extraction.category : catalogHint?.category) as ScopedCategory | undefined;
+                if (cat) {
+                  coverage.extracted[cat] = (coverage.extracted[cat] ?? 0) + 1;
+                }
+                await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'extracted', detail: { catalog_product_id: extraction.catalog_product_id } });
+              } else {
+                dedupSkips++;
+                await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'duplicate_skip', detail: { reason: q.reason } });
+              }
             } else {
-              listingNoCandidates++;
-              await logOutcome(dir, {
-                run_id: runId,
-                cycle_id: cycleId,
-                url: pageUrl,
-                outcome: 'listing_scope_no_core',
-                detail: {
-                  raw_product_count: plan.raw_product_count,
-                  scope_counts: plan.scope_counts,
-                  suggested_searches: plan.suggested_searches,
-                  migration_refresh: listingRefresh,
-                },
-              });
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'out_of_scope' });
             }
+            const proposal = await maybeProposeParserFix(dir, pageUrl, text, extraction);
+            if (proposal) proposals++;
             if (!memory.observed_urls.includes(seedUrl)) memory.observed_urls.push(seedUrl);
             memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
-            cycleTouched.add(seedUrl);
-            continue;
+            await progress();
+            if (completion.usage.total_tokens === null) { haltReason = 'usage_unknown'; break; }
+          } catch (error) {
+            await logOutcome(dir, {
+              run_id: runId,
+              cycle_id: cycleId,
+              url: pageUrl,
+              outcome: 'model_failed',
+              detail: { reason: 'model_failed' },
+            });
+            throw error;
           }
-        }
-        if (!fetched || !text) continue;
-        const modeledKey = pageUrl;
-        if (memory.modeled_post_urls.includes(modeledKey) || (await hasPendingUrl(dir, modeledKey))) {
-          dedupSkips++;
-          memory.plan_notes.push(`skip_modeled_post ${modeledKey}`);
-          memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
-          await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'duplicate_skip', detail: { reason: 'already_modeled_or_pending' } });
-          continue;
-        }
-        const admission = cycleAdmit(memory, config);
-        if (!admission.ok) {
-          haltReason = admission.reason;
-          memory.plan_notes.push(`halt: ${admission.reason}`);
-          break;
-        }
-        cycleHold(memory, admission.reserve);
-        let settled = false;
-        try {
-          if (options.store) assertDomainPolicyReadable(options.store);
-          const preModelPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
-          if (preModelPolicy.blocked) {
-            blocked++;
-            policyBlocked++;
-            memory.plan_notes.push(`block_pre_model ${pageUrl}: ${preModelPolicy.reason}`);
-            haltReason = haltReason ?? preModelPolicy.reason;
-            cycleRelease(memory, admission.reserve);
-            continue;
-          }
-          const checked = new Date(nowMs()).toISOString().slice(0, 10);
-          const completion = await client.complete({
-            system: '당신은 가격을 발명하지 않는 공개 웹 추출기다. JSON만 출력한다.',
-            user: buildExtractionPrompt(text, pageUrl),
-          });
-          cycleSettle(memory, admission.reserve, completion.usage.total_tokens);
-          settled = true;
-          cycleTouched.add(seedUrl);
-          const catalogHint = memory.pending_catalog_meta[seedUrl] ?? memory.pending_catalog_meta[pageUrl];
-          const offerRef = postIdFromUrl(pageUrl) ?? undefined;
-          const extraction = normalizeExtractionWithCatalog(parseModelJson(completion.content), pageUrl, checked, {
-            ...catalogHint,
-            offer_ref: offerRef,
-          });
-          if (!memory.modeled_post_urls.includes(modeledKey)) {
-            memory.modeled_post_urls = [...memory.modeled_post_urls, modeledKey].slice(-500);
-          }
-          if (extraction.in_scope) {
-            const q = await enqueueReviewIfNew(dir, extraction);
-            if (q.enqueued) {
-              extractions++;
-              const cat = (extraction.category !== '정보 없음' ? extraction.category : catalogHint?.category) as ScopedCategory | undefined;
-              if (cat) {
-                coverage.extracted[cat] = (coverage.extracted[cat] ?? 0) + 1;
-              }
-              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'extracted', detail: { catalog_product_id: extraction.catalog_product_id } });
-            } else {
-              dedupSkips++;
-              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'duplicate_skip', detail: { reason: q.reason } });
-            }
-          } else {
-            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'out_of_scope' });
-          }
-          const proposal = await maybeProposeParserFix(dir, pageUrl, text, extraction);
-          if (proposal) proposals++;
-          if (!memory.observed_urls.includes(seedUrl)) memory.observed_urls.push(seedUrl);
-          memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
         } catch (error) {
-          if (!settled) cycleRelease(memory, admission.reserve);
-          await logOutcome(dir, {
-            run_id: runId,
-            cycle_id: cycleId,
-            url: pageUrl,
-            outcome: 'model_failed',
-            detail: { message: error instanceof Error ? error.message : String(error) },
-          });
+          if (error instanceof Error && error.message === 'model_should_not_run') throw error;
           throw error;
         }
-      } catch (error) {
-        if (error instanceof Error && error.message === 'model_should_not_run') throw error;
-        throw error;
       }
     }
+    const collectionStatus = resolveCollectionStatus({
+      queueLen: queue.length,
+      haltReason,
+      extractions,
+      listingEnqueued,
+      listingNoCandidates,
+      dedupSkips,
+      policyBlocked,
+    });
+    if (collectionStatus === 'idle_dedup' && !haltReason) haltReason = 'dedup_observed_seed';
+    memory.last_run_id = runId;
+    memory.last_collection_status = collectionStatus;
+    memory.output_counts = { extractions, proposals, blocked, review_pending: await countPending(dir) };
+    Object.assign(report, { collection_status: collectionStatus, halt_reason: haltReason, reason: haltReason, review_pending: memory.output_counts.review_pending });
+  } finally {
+    await progress();
   }
-  const collectionStatus = resolveCollectionStatus({
-    queueLen: queue.length,
-    haltReason,
-    extractions,
-    listingEnqueued,
-    listingNoCandidates,
-    dedupSkips,
-    policyBlocked,
-  });
-  if (collectionStatus === 'idle_dedup' && !haltReason) haltReason = 'dedup_observed_seed';
-  memory.last_run_id = runId;
-  memory.last_collection_status = collectionStatus;
-  memory.output_counts = { extractions, proposals, blocked, review_pending: await countPending(dir) };
-  const cycleTokenSpent = memory.cycle.token_spent;
-  const cycleRequestsSpent = memory.cycle.requests_spent;
-  const lifetimeTokenSpent = memory.lifetime.token_spent;
-  const lifetimeCycles = memory.lifetime.cycles;
-  await finalizeCycle(dir, memory, {
-    run_id: runId,
-    collection_status: collectionStatus,
-    halt_reason: haltReason,
-    listing_enqueued: listingEnqueued,
-    listing_refresh_attempts: listingRefreshAttempts,
-    dedup_skips: dedupSkips,
-    coverage,
-  });
-  const heartbeatAt = new Date(nowMs()).toISOString();
-  const report: RunReport = {
-    run_id: runId,
-    at: heartbeatAt,
-    model,
-    mode: options.mode,
-    cycle_token_spent: cycleTokenSpent,
-    cycle_requests_spent: cycleRequestsSpent,
-    lifetime_token_spent: lifetimeTokenSpent + cycleTokenSpent,
-    lifetime_cycles: lifetimeCycles + 1,
-    token_spent: cycleTokenSpent,
-    requests_spent: cycleRequestsSpent,
-    extractions,
-    proposals,
-    blocked,
-    review_pending: memory.output_counts.review_pending,
-    listing_enqueued: listingEnqueued,
-    listing_refresh_attempts: listingRefreshAttempts,
-    dedup_skips: dedupSkips,
-    coverage,
-    collection_status: collectionStatus,
-    halt_reason: haltReason,
-    heartbeat_fresh: false,
-    heartbeat_at: heartbeatAt,
-    pid: process.pid,
-  };
-  const fresh = await writeHeartbeat(dir, report, config.memory.heartbeat_max_age_ms, nowMs());
-  report.heartbeat_fresh = fresh;
-  memory.last_heartbeat_at = heartbeatAt;
-  await saveMemory(dir, memory);
-  await mkdir(dir, { recursive: true });
-  await writeFile(
-    join(dir, 'validation-artifact.json'),
-    `${JSON.stringify(
-      {
-        ...report,
-        validated_at: new Date(nowMs()).toISOString(),
-        profile: config.profile_id,
-        heartbeat_stale_warning: 'heartbeat_fresh reflects write-time only; re-check age before treating as live health',
-      },
-      null,
-      2,
-    )}\n`,
-  );
-  return report;
 }

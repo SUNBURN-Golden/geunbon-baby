@@ -60,7 +60,6 @@
     "estimated_prompt_tokens": 12000
   },
   "memory": {
-    "heartbeat_max_age_ms": 900000,
     "max_queue_urls": 50
   },
   "selection": {
