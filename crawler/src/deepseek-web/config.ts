@@ -1,29 +1,86 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { DeepSeekWebConfig, ScopedCategory } from './types';
+import { FACT_FIELDS } from '../../../shared/collection-schema';
+import { canonicalUrl } from '../../../shared/privacy-rules';
+import { loadRegistrySeed } from '../source-registry/seed';
+import { registryUrl, staticEntryReason } from '../source-registry/policy';
+import type { SourceRegistryEntry } from '../source-registry/types';
+import { isProhibitedUrl } from './guards';
+import type { DeepSeekWebConfig, OfficialSourceConfig, ScopedCategory } from './types';
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../deepseek-web');
 const allowed = new Set<ScopedCategory>(['stroller', 'high_chair', 'car_seat', 'play_gym', 'carrier', 'bouncer']);
+const HARD_FORBIDDEN = /(?:^|\.)(?:instagram\.com|threads\.net|facebook\.com|momcalendar\.com)$/i;
+const SOURCE_ID = /^[\w-]{1,80}$/;
+const BRAND = /^[\p{L}\p{N} .&+_-]{1,80}$/u;
+const MIN_OFFICIAL_RECHECK_MS = 3600000;
+
+function invalid(): never {
+  throw new Error('invalid_deepseek_web_config');
+}
+
+function validateOfficialSources(raw: DeepSeekWebConfig): OfficialSourceConfig[] {
+  const sources = raw.official_sources ?? [];
+  if (!Array.isArray(sources)) invalid();
+  const seed = new Map<string, SourceRegistryEntry>(loadRegistrySeed().map(e => [e.source_id, e]));
+  const ids = new Set<string>();
+  const urls = new Set<string>();
+  for (const source of sources) {
+    if (!source || typeof source !== 'object') invalid();
+    if (!SOURCE_ID.test(source.id) || ids.has(source.id)) invalid();
+    if (typeof source.brand !== 'string' || !BRAND.test(source.brand)) invalid();
+    if (!allowed.has(source.category)) invalid();
+    if (typeof source.enabled !== 'boolean') invalid();
+    if (!Array.isArray(source.fields) || source.fields.length < 1 || new Set(source.fields).size !== source.fields.length) invalid();
+    if (source.fields.some(f => typeof f !== 'string' || !(FACT_FIELDS as readonly string[]).includes(f))) invalid();
+    const recheck = source.recheck_ms ?? raw.selection.official_recheck_ms;
+    // The per-source override must respect the same floor as the global default.
+    if (!Number.isSafeInteger(recheck) || recheck < MIN_OFFICIAL_RECHECK_MS) invalid();
+    if (typeof source.url !== 'string' || source.url.length > 2048) invalid();
+    let parsed: URL;
+    try { parsed = new URL(source.url); } catch { invalid(); }
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || parsed.hash) invalid();
+    if (HARD_FORBIDDEN.test(parsed.hostname) || isProhibitedUrl(source.url, raw).blocked) invalid();
+    const entry = seed.get(source.registry_id);
+    if (!entry) invalid();
+    let registryTarget: URL;
+    try { registryTarget = registryUrl(source.url); } catch { invalid(); }
+    if (registryTarget.origin !== entry.origin) invalid();
+    if (staticEntryReason(entry, registryTarget, source.fields) !== undefined) invalid();
+    if (source.fields.some(f => !entry.collectable_fields.includes(f as typeof FACT_FIELDS[number]))) invalid();
+    try { canonicalUrl(source.url); } catch { invalid(); }
+    if (urls.has(source.url)) invalid();
+    ids.add(source.id);
+    urls.add(source.url);
+  }
+  return sources;
+}
+
 export function loadDeepSeekWebConfig(path = join(root, 'config.json')): DeepSeekWebConfig {
   const raw = JSON.parse(readFileSync(path, 'utf8')) as DeepSeekWebConfig;
-  if (raw.profile_id !== 'deepseek-web' || raw.profile_version !== 1) throw new Error('invalid_deepseek_web_config');
-  if (!Array.isArray(raw.prohibited_hosts) || raw.prohibited_hosts.length < 1) throw new Error('invalid_deepseek_web_config');
-  if (!raw.scope_categories.every(c => allowed.has(c.id))) throw new Error('invalid_deepseek_web_config');
+  if (raw.profile_id !== 'deepseek-web' || raw.profile_version !== 1) invalid();
+  if (!Array.isArray(raw.prohibited_hosts) || raw.prohibited_hosts.length < 1) invalid();
+  if (!raw.scope_categories.every(c => allowed.has(c.id))) invalid();
   for (const cap of [raw.budget.max_tokens_per_run, raw.budget.max_requests_per_run, raw.budget.max_completion_tokens, raw.budget.estimated_prompt_tokens]) {
-    if (!Number.isInteger(cap) || cap < 0) throw new Error('invalid_deepseek_web_config');
+    if (!Number.isInteger(cap) || cap < 0) invalid();
   }
-  if (raw.budget.estimated_prompt_tokens + raw.budget.max_completion_tokens > raw.budget.max_tokens_per_run) {
-    throw new Error('invalid_deepseek_web_config');
-  }
-  if (!raw.selection || !Number.isInteger(raw.selection.max_pangpang_detail_per_cycle) || raw.selection.max_pangpang_detail_per_cycle < 0) {
-    throw new Error('invalid_deepseek_web_config');
-  }
-  if (!Number.isInteger(raw.selection.listing_discovery_policy_version) || raw.selection.listing_discovery_policy_version < 1) {
-    throw new Error('invalid_deepseek_web_config');
-  }
-  if (!Number.isInteger(raw.selection.listing_refresh_min_ms) || raw.selection.listing_refresh_min_ms < 0) {
-    throw new Error('invalid_deepseek_web_config');
-  }
+  if (raw.budget.estimated_prompt_tokens + raw.budget.max_completion_tokens > raw.budget.max_tokens_per_run) invalid();
+  if (!raw.selection || !Number.isInteger(raw.selection.max_pangpang_detail_per_cycle) || raw.selection.max_pangpang_detail_per_cycle < 0) invalid();
+  if (!Number.isInteger(raw.selection.listing_discovery_policy_version) || raw.selection.listing_discovery_policy_version < 1) invalid();
+  if (!Number.isInteger(raw.selection.listing_refresh_min_ms) || raw.selection.listing_refresh_min_ms < 0) invalid();
+  const maxPages = raw.selection.max_pages_per_cycle ?? Math.min(raw.budget.max_requests_per_run, raw.memory.max_queue_urls);
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > raw.memory.max_queue_urls) invalid();
+  const quota = raw.selection.category_quota_per_cycle ?? 1;
+  if (!Number.isSafeInteger(quota) || quota < 1 || quota > maxPages) invalid();
+  const legacyBudget = raw.selection.legacy_budget_per_cycle ?? Math.min(1, maxPages - 1);
+  if (!Number.isSafeInteger(legacyBudget) || legacyBudget < 0 || legacyBudget > maxPages - 1) invalid();
+  const officialRecheck = raw.selection.official_recheck_ms ?? 21600000;
+  if (!Number.isSafeInteger(officialRecheck) || officialRecheck < MIN_OFFICIAL_RECHECK_MS) invalid();
+  raw.selection.max_pages_per_cycle = maxPages;
+  raw.selection.category_quota_per_cycle = quota;
+  raw.selection.legacy_budget_per_cycle = legacyBudget;
+  raw.selection.official_recheck_ms = officialRecheck;
+  raw.official_sources = validateOfficialSources(raw);
   return raw;
 }
 export function stateDir() {

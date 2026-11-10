@@ -20,33 +20,66 @@
   "scope_categories": [
     {
       "id": "stroller",
-      "ko": ["유모차"],
-      "examples": ["Bugaboo", "Cybex", "Nuna"]
+      "ko": [
+        "유모차"
+      ],
+      "examples": [
+        "Bugaboo",
+        "Cybex",
+        "Nuna"
+      ]
     },
     {
       "id": "high_chair",
-      "ko": ["하이체어", "트립트랩"],
-      "examples": ["Stokke Tripp Trapp"]
+      "ko": [
+        "하이체어",
+        "트립트랩"
+      ],
+      "examples": [
+        "Stokke Tripp Trapp"
+      ]
     },
     {
       "id": "car_seat",
-      "ko": ["카시트"],
-      "examples": ["Cybex", "Nuna", "Britax"]
+      "ko": [
+        "카시트"
+      ],
+      "examples": [
+        "Cybex",
+        "Nuna",
+        "Britax"
+      ]
     },
     {
       "id": "play_gym",
-      "ko": ["플레이짐", "모빌"],
-      "examples": ["하베브릭스"]
+      "ko": [
+        "플레이짐",
+        "모빌"
+      ],
+      "examples": [
+        "하베브릭스"
+      ]
     },
     {
       "id": "carrier",
-      "ko": ["아기띠"],
-      "examples": ["아티포페", "Ergobaby", "BabyBjorn"]
+      "ko": [
+        "아기띠"
+      ],
+      "examples": [
+        "아티포페",
+        "Ergobaby",
+        "BabyBjorn"
+      ]
     },
     {
       "id": "bouncer",
-      "ko": ["바운서"],
-      "examples": ["BabyBjorn", "베이비뵨"]
+      "ko": [
+        "바운서"
+      ],
+      "examples": [
+        "BabyBjorn",
+        "베이비뵨"
+      ]
     }
   ],
   "prohibited_hosts": [
@@ -55,11 +88,15 @@
     "threads.net",
     "facebook.com",
     "fbcdn.net",
-    "gonggumoa.com"
+    "gonggumoa.com",
+    "momcalendar.com"
   ],
   "fetch": {
     "min_interval_ms": 8000,
-    "jitter_ms": [500, 2500],
+    "jitter_ms": [
+      500,
+      2500
+    ],
     "timeout_ms": 30000,
     "max_bytes": 1048576,
     "user_agent_note": "PoliteFetcher USER_AGENT; 로그인·쿠키·CAPTCHA 우회 없음"
@@ -76,7 +113,167 @@
   "selection": {
     "max_pangpang_detail_per_cycle": 3,
     "listing_discovery_policy_version": 1,
-    "listing_refresh_min_ms": 600000
+    "listing_refresh_min_ms": 600000,
+    "max_pages_per_cycle": 12,
+    "category_quota_per_cycle": 1,
+    "legacy_budget_per_cycle": 1,
+    "official_recheck_ms": 21600000
   },
-  "seed_urls": []
+  "seed_urls": [],
+  "official_sources": [
+    {
+      "id": "stokke-tripp-trapp-1001",
+      "registry_id": "official:stokke:www.stokke.com",
+      "url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/1001.html",
+      "brand": "Stokke",
+      "category": "high_chair",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "stokke-tripp-trapp-4952",
+      "registry_id": "official:stokke:www.stokke.com",
+      "url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/4952.html",
+      "brand": "Stokke",
+      "category": "high_chair",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "stokke-tripp-trapp-newborn-complete",
+      "registry_id": "official:stokke:www.stokke.com",
+      "url": "https://www.stokke.com/KOR/ko-kr/하이체어/트립트랩/tripp-trapp-newborn-complete-sk.html",
+      "brand": "Stokke",
+      "category": "high_chair",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "stokke-yoyo3-frame-last-chance",
+      "registry_id": "official:stokke:www.stokke.com",
+      "url": "https://www.stokke.com/KOR/ko-kr/last-chance/yoyo-strollers-last-chance/6773.html",
+      "brand": "Stokke",
+      "category": "stroller",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "bugaboo-fox-5-renew",
+      "registry_id": "official:bugaboo:www.bugaboo.com",
+      "url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-fox-5-renew/부가부-폭스-5-리뉴-디럭스-스트롤러-PM007564.html",
+      "brand": "Bugaboo",
+      "category": "stroller",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "bugaboo-butterfly-2",
+      "registry_id": "official:bugaboo:www.bugaboo.com",
+      "url": "https://www.bugaboo.com/kr-ko/스트롤러/bugaboo-butterfly-2/부가부-버터플라이-2-휴대용-스트롤러-범퍼바-포함-PM007649.html",
+      "brand": "Bugaboo",
+      "category": "stroller",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "babybjorn-bouncer-bliss",
+      "registry_id": "official:babybjorn:www.babybjorn.kr",
+      "url": "https://www.babybjorn.kr/products/baby-bouncers/bouncer-bliss/",
+      "brand": "BabyBjorn",
+      "category": "bouncer",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "babybjorn-bouncer-balance-soft",
+      "registry_id": "official:babybjorn:www.babybjorn.kr",
+      "url": "https://www.babybjorn.kr/products/baby-bouncers/bouncer-balance-soft/",
+      "brand": "BabyBjorn",
+      "category": "bouncer",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "babybjorn-carrier-harmony",
+      "registry_id": "official:babybjorn:www.babybjorn.kr",
+      "url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-harmony/",
+      "brand": "BabyBjorn",
+      "category": "carrier",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "babybjorn-carrier-one-air",
+      "registry_id": "official:babybjorn:www.babybjorn.kr",
+      "url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-one-air/",
+      "brand": "BabyBjorn",
+      "category": "carrier",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    },
+    {
+      "id": "babybjorn-carrier-mini",
+      "registry_id": "official:babybjorn:www.babybjorn.kr",
+      "url": "https://www.babybjorn.kr/products/baby-carriers/baby-carrier-mini/",
+      "brand": "BabyBjorn",
+      "category": "carrier",
+      "fields": [
+        "official_msrp",
+        "bundle_components",
+        "manual_url"
+      ],
+      "enabled": false,
+      "recheck_ms": 21600000
+    }
+  ]
 }

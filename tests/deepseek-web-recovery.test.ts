@@ -69,7 +69,7 @@ test('legacy v2 nonzero cycle requires an unambiguous matching lifetime audit', 
   await expect(loadMemory(dir)).rejects.toThrow('memory_unavailable');
   raw.lifetime = { token_spent: 10, requests: 1, cycles: 1, model_calls: 1 };
   writeFileSync(join(dir, 'memory.json'), JSON.stringify(raw));
-  const migrated = await loadMemory(dir); expect(migrated.version).toBe(4); expect(migrated.lifetime.token_spent).toBe(10); expect(migrated.cycle.token_spent).toBe(0);
+  const migrated = await loadMemory(dir); expect(migrated.version).toBe(5); expect(migrated.lifetime.token_spent).toBe(10); expect(migrated.cycle.token_spent).toBe(0);
   await saveMemory(dir, migrated);
 });
 

@@ -68,6 +68,41 @@ export type LifetimeAudit = {
   model_calls: number;
 };
 
+/** Approved manufacturer/importer page visited for coverage only (never model-extracted). */
+export type OfficialSourceConfig = {
+  id: string;
+  registry_id: string;
+  /** Raw fetch URL, kept byte-for-byte so registry path patterns (trailing slash) still match. */
+  url: string;
+  brand: string;
+  category: ScopedCategory;
+  fields: string[];
+  enabled: boolean;
+  recheck_ms?: number;
+};
+
+export type OfficialVisitOutcome = 'fetched' | 'registry_denied' | 'domain_blocked' | 'robots_blocked' | 'redirect_blocked' | 'fetch_failed';
+
+export type RotationState = {
+  policy_version: 1;
+  category_digest: string;
+  category_cursor: number;
+  /** Rotates the reserved/leftover legacy work slots so one URL cannot monopolise them. */
+  legacy_cursor: number;
+  search_cursor: Partial<Record<ScopedCategory, number>>;
+  official_cursor: Partial<Record<ScopedCategory, number>>;
+  official_visits: Record<string, {
+    source_id: string;
+    url: string;
+    canonical_url: string;
+    last_at: string;
+    next_due_at: string;
+    outcome: OfficialVisitOutcome;
+    reason: string | null;
+  }>;
+  last_cycle: { categories: ScopedCategory[]; official: number; pages: number } | null;
+};
+
 export type DeepSeekWebConfig = {
   profile_id: string;
   profile_version: number;
@@ -81,12 +116,17 @@ export type DeepSeekWebConfig = {
     max_pangpang_detail_per_cycle: number;
     listing_discovery_policy_version: number;
     listing_refresh_min_ms: number;
+    max_pages_per_cycle: number;
+    category_quota_per_cycle: number;
+    legacy_budget_per_cycle: number;
+    official_recheck_ms: number;
   };
+  official_sources: OfficialSourceConfig[];
   seed_urls: string[];
 };
 
 export type RunMemory = {
-  version: 4;
+  version: 5;
   pending_result: import('./extraction-cache').PendingResult | null;
   finalized_cycle_id: string | null;
   terminal_summary: RunReport | null;
@@ -112,6 +152,7 @@ export type RunMemory = {
   last_catalog_search: { product_id: string; category: ScopedCategory; term: string; url: string } | null;
   modeled_post_urls: string[];
   pending_catalog_meta: Record<string, { catalog_product_id: string; category: ScopedCategory }>;
+  rotation: RotationState;
   output_counts: { extractions: number; proposals: number; blocked: number; review_pending: number };
 };
 
@@ -119,6 +160,24 @@ export type TickCoverage = {
   searches: { url: string; catalog_product_id: string | null; category: ScopedCategory | null; term: string | null }[];
   listing: Partial<Record<ScopedCategory | 'unscoped', { raw: number; scoped: number; enqueued: number }>>;
   extracted: Partial<Record<ScopedCategory, number>>;
+  rotation: {
+    cursor_before: number;
+    cursor_after: number;
+    scheduled: ScopedCategory[];
+    served: ScopedCategory[];
+    planned_pages: number;
+    skipped_pending: number;
+  };
+  official: Partial<Record<ScopedCategory, {
+    due: number;
+    attempted: number;
+    fetched: number;
+    registry_denied: number;
+    domain_blocked: number;
+    robots_blocked: number;
+    redirect_blocked: number;
+    fetch_failed: number;
+  }>>;
 };
 
 export type CollectionStatus =

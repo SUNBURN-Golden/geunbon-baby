@@ -14,7 +14,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 | 파일 | 설명 |
 |------|------|
-| `memory.json` | v4: `cycle`(틱별 예산)·`lifetime`(누적)·`observed_urls`/`pending_urls` |
+| `memory.json` | v5: `cycle`(틱별 예산)·`lifetime`(누적)·`observed_urls`/`pending_urls`·`rotation`(카테고리 공정 로테이션·공식 페이지 방문 기록) |
 | `cycle-audit.jsonl` | 틱 종료 시 cycle↔lifetime 감사 로그 (기존 파일 이어쓰기) |
 | `outcomes.jsonl` | 추출·차단·중복·리스팅 enqueue 등 zero/부분 결과 사유 |
 | `review-queue.jsonl` | `pending` 검수 큐 |
@@ -28,13 +28,29 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 **실패 메커니즘(2026-11-08 육아템 검색 증거):** HTML 30카드인데 `productCount:0`이었던 이유는 listing용 `?pid=&source=search` 링크가 `canonicalUrl`에서 거부돼 파서가 전부 `policy_block` 처리했기 때문이며, 스코프 필터 문제가 아니었다. 수정 후 동일 fixture에서 `raw_product_count:30`, `scoped_candidate_count:0`(액세서리·광의 육아용품만) → `listing_scope_no_core` + 허용된 핵심 검색 URL 제안.
 
-**근본템 카탈로그:** `crawler/deepseek-web/geunbon-catalog.json` — 카테고리·브랜드·별칭·공개 검색어. daemon은 `catalog_search_cursor`로 `/search/r/` URL을 라운드로빈. 틱 리포트 `coverage`에 검색·listing·extracted 카운트.
+**근본템 카탈로그:** `crawler/deepseek-web/geunbon-catalog.json` — 카테고리·브랜드·별칭·공개 검색어. daemon은 `rotation.search_cursor`로 **카테고리별** `/search/r/` URL을 라운드로빈. 틱 리포트 `coverage`에 검색·listing·extracted·rotation·official 카운트.
 
 **09pangpang (운영):** `listing_discovery`는 URL별 정책 버전·마지막 시도를 기록한다. **마이그레이션·정책 버전 미기록 observed listing**은 한 번 listing fetch/discovery를 허용한다(누적 `lifetime`·`observed_urls` 유지). 캐드 내 재시도는 `listing_refresh_min_ms`(기본 10분). 그 외 observed listing은 모델·불필요 fetch 없이 `idle_dedup` / `halt_reason: dedup_observed_seed`로 보고한다(`blocked` 아님).
 
+## 카테고리 로테이션과 공식 페이지 레인
+
+**공정성:** `config.json`의 `selection.max_pages_per_cycle`(기본 12), `category_quota_per_cycle`(기본 1), `legacy_budget_per_cycle`(기본 1)로 틱 작업량을 제한한다. 순수 플래너 `rotation.ts`가 두 단계로 고른다.
+
+1. **공식 방문:** due 공식 페이지를 카테고리 라운드로빈으로 가장 먼저 선택한다. 방문 전용·저빈도(기본 6시간)라 카탈로그 쿼터를 소비하지 않는다.
+2. **혼합 로테이션:** 카테고리마다 틱당 최대 `category_quota_per_cycle`개의 pending 상세를 고르고, 작업이 없는 카테고리는 검색 1건을 고른다. 검색이 같은 로테이션 윈도우에 참여하므로 한 카테고리의 backlog가 모든 슬롯을 차지해 검색 전용 카테고리를 굶길 수 없다. 남은 pending은 다음 틱으로 넘어간다.
+3. **Legacy:** `legacy_budget_per_cycle`을 예약하고 남는 슬롯은 미분류 작업에 쓴다. 시작점은 `rotation.legacy_cursor`로 회전해 한 URL이 예약 슬롯을 독점하지 못한다.
+
+카테고리 순서는 `rotation.category_cursor`로 틱마다 회전한다. 매 틱 전체 pending 큐를 처리하지 않으며, 공정성 보장은 `categoryCap = max_pages_per_cycle - min(legacy_budget_per_cycle, legacy_work)`, `categoriesPerCycle = max(1, floor(categoryCap / category_quota_per_cycle))`, `N = ceil(C / min(categoriesPerCycle, categoryCap))`이다(예: 6개 카테고리, 2페이지, quota 1 → 3틱; 1페이지 → 6틱). 공식 방문이 예산을 모두 쓰는 틱은 이 N 계산에서 제외하고 다음 틱에 카테고리가 이어진다. 카테고리/쿼터/예산 정책이 바뀌면 `rotation.category_digest`가 달라져 커서만 초기화되고 `official_visits` 이력은 유지된다. 운영자 명시 URL과 `dry_run`은 플래너를 우회하며 커서를 전진시키지 않는다. `scope_categories`에서 제거된 카테고리의 pending 상세는 legacy 작업으로 취급해 큐에 영구히 남지 않는다.
+
+**공식 페이지 레인(방문 전용):** `official_sources` 11건은 `seed/models.json`에서 파생했고 모두 `enabled:false`다. 활성화된 항목은 `SourceRegistryStore.decide()`가 허용할 때만 방문하며, 승인·시드·권한 변경은 하지 않는다. `PoliteFetcher`가 robots.txt를 실시간 확인하고, 리다이렉트를 포함한 **매 요청 직전**에 도메인 정책과 레지스트리 범위를 다시 검사한다. 방문 결과는 `official_visits`와 `coverage.official`에만 기록하고, HTML은 `candidateDecision`·모델 추출·추출 캐시·`pending_urls`/`observed_urls`로 절대 전달하지 않는다. 재방문 주기는 `official_recheck_ms`(기본 6시간)이며 실패 시 15분 뒤 재시도한다.
+
+- D.THRONE는 `https://www.dthrone.com/102/?idx=58`의 `idx`를 `canonicalUrl`이 지원하지 않아 11건에서 제외했다.
+- BabyBjörn URL은 레지스트리 경로 정규식이 요구하는 **끝 슬래시를 유지한 raw URL**로 fetch하고, 식별자 비교에만 슬래시가 제거된 `canonicalUrl`을 쓴다.
+- `momcalendar.com`은 `prohibited_hosts`에 포함되어 공식 레인에서도 차단된다.
+
 ## 상태 보존 업그레이드
 
-운영자는 아래 supervision 안내에 따라 절대 경로 state와 호스트 시크릿을 보존한다. v1 누적 예산과 v2/v3 업무 상태는 v4로 이행한다. 상태 파일을 삭제해 재시작하지 않는다. 브랜치 전환·게시·운영 재시작은 이 구현 작업에서 수행하지 않는다.
+운영자는 아래 supervision 안내에 따라 절대 경로 state와 호스트 시크릿을 보존한다. v1 누적 예산과 v2/v3/v4 업무 상태는 v5로 이행한다. 상태 파일을 삭제해 재시작하지 않는다. 브랜치 전환·게시·운영 재시작은 이 구현 작업에서 수행하지 않는다.
 
 **`once`·`daemon`은 `COLLECTOR_DB` 필수**(없거나 읽을 수 없으면 `collector_db_required` / `collector_db_unavailable` / `domain_state_unavailable`). 정책은 **fetch 직전·리다이렉트 후·모델 직전**마다 재확인한다.
 
@@ -124,7 +140,7 @@ Only typed **DeepSeek model API** HTTP 402/429 triggers persisted backoff, never
 
 A successful completion response clears the sequence durably before more model work, even if later parsing/enqueueing fails. No-call policy/DB/emergency-stop/budget/empty/dedup cycles and other network/model failures neither increment nor clear it. An expired deadline with no call waits one normal interval; there is no busy loop. Current-cycle `reason` and unresolved `backoff` are separate. Corrupt or unwritable control state fails closed and retries initialization at normal cadence.
 
-`memory.json` **v4** is the accounting checkpoint. It persists cycle/call intent before invocation, checkpoints acknowledged usage together with a bounded validated result receipt before cache promotion or review appends, and stores a terminal checkpoint. One atomic replacement folds lifetime totals, sets `finalized_cycle_id`, retains a terminal summary/pending audit row, and clears the active budget. Recovery finishes the pending `cycle-audit.jsonl` append once, verifies duplicate IDs/content, repairs only a matching incomplete trailing append, fsyncs, and clears the intent before another cycle. Conflicting audit rows fail closed. v1 totals and v2 business state are retained; nonzero v2 active counters require matching existing audit/lifetime totals or explicit reconciliation.
+`memory.json` **v5** is the accounting checkpoint. It persists cycle/call intent before invocation, checkpoints acknowledged usage together with a bounded validated result receipt before cache promotion or review appends, and stores a terminal checkpoint. One atomic replacement folds lifetime totals, sets `finalized_cycle_id`, retains a terminal summary/pending audit row, and clears the active budget. Recovery finishes the pending `cycle-audit.jsonl` append once, verifies duplicate IDs/content, repairs only a matching incomplete trailing append, fsyncs, and clears the intent before another cycle. Conflicting audit rows fail closed. v1 totals and v2 business state are retained; nonzero v2 active counters require matching existing audit/lifetime totals or explicit reconciliation.
 
 Missing, negative, fractional or unreported token counts are unknown, never zero. Totals may be explicitly derived from both valid components. `deepseek_tokens_reported` is the known subtotal; `deepseek_tokens_used` is `null` if any call lacks accounting. A successful response with unknown usage keeps its reservation and stops the cycle with `usage_unknown`; reservations are not billed totals. A response lost before its durable settlement cannot prove exact provider billing. In-flight uncertainty survives recovery. Cap values, admission/reservation arithmetic and known-usage settlement rules remain unchanged; caps are per cycle and lifetime totals are cumulative audit values. The separate collector cost ledger is unchanged.
 
@@ -201,7 +217,7 @@ Every request has the same immutable system instructions followed by immutable u
 
 Only strictly schema-valid, privacy-safe results (including `in_scope:false`) enter the cache. Empty, malformed, truncated, schema-invalid and transport/HTTP failures remain retryable. Source URL and observation date are collector metadata. Acknowledged usage is settled even if validation fails.
 
-Memory v4 holds one bounded pending-result receipt alongside the existing call/accounting checkpoint; it adds no billing ledger. Recovery under writer ownership promotes that receipt before beginning another cycle. The cache then owns pending delivery, and deferred pages return through current source/robots/candidate checks. Failure to promote blocks model work. Finalization preserves the receipt. A result lost before acknowledgement remains uncertain; exactly-once provider billing is not claimed.
+Memory v5 holds one bounded pending-result receipt alongside the existing call/accounting checkpoint; it adds no billing ledger. Recovery under writer ownership promotes that receipt before beginning another cycle. The cache then owns pending delivery, and deferred pages return through current source/robots/candidate checks. Failure to promote blocks model work. Finalization preserves the receipt. A result lost before acknowledgement remains uncertain; exactly-once provider billing is not claimed.
 
 Review rows carry content/contract hashes, deterministic delivery ID, predecessor, change reason and extraction/observation times. The same effective revision adds nothing. Changed content and historical-content returns append new pending transitions; approved/rejected and legacy rows remain intact. Pending counts resolve the latest revision per canonical URL. A valid out-of-scope transition after an existing deal is visible for human review. Proposals use cache key plus proposal-rule version, so delivery retries add no duplicate files. Nothing publishes or changes a human decision automatically.
 
@@ -209,7 +225,7 @@ Review rows carry content/contract hashes, deterministic delivery ID, predecesso
 
 Heartbeat schema 2, validation artifacts, audit snapshots and read-only status add `deepseek_prompt_cache_hit_tokens`, `deepseek_prompt_cache_miss_tokens`, `deepseek_completion_tokens`, `cache_usage_complete`, `extraction_cache_hits`, `extraction_cache_misses`, `candidate_pages_accepted` and `candidate_pages_rejected`. Provider cache-hit and cache-miss counts must be nonnegative safe integers summing to valid prompt tokens. Missing/inconsistent breakdowns are unknown (`null`); completion and existing total-usage completeness remain independent. Zero-call cycles report zero tokens. Local reuse does not add prior call usage, and provider-cached input still consumes the existing caps without a billing discount.
 
-Schema-1 heartbeats and validated memory versions 1–3 remain readable. Missing historical metrics become unknown, including embedded active/terminal/last-cycle snapshots. Existing pending audit rows are replayed byte-for-byte without enrichment; totals and recovery controls remain authoritative. New diagnostics expose fixed codes for cache, receipt, profile, result, review, proposal and source-response failures, never raw exceptions or provider/cache contents.
+Schema-1 heartbeats and validated memory versions 1–4 remain readable. Missing historical metrics become unknown, including embedded active/terminal/last-cycle snapshots. Existing pending audit rows are replayed byte-for-byte without enrichment; totals and recovery controls remain authoritative. New diagnostics expose fixed codes for cache, receipt, profile, result, review, proposal and source-response failures, never raw exceptions or provider/cache contents.
 
 The offline acceptance suite uses injected clients/responses/clocks and temporary state. SIGKILL tests cover acknowledgement, entry/index writes, review/proposal delivery, receipt clearing and prior accounting/audit windows. No operational queue edits or live API requests are part of verification.
 

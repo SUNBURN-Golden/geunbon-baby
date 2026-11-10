@@ -31,7 +31,7 @@ function countOutcomes(outcomes: { reason: LinkReason }[]) {
   }, {});
 }
 
-export function planPangpangPage(html: string, pageUrl: string, now: Date, config: DeepSeekWebConfig): PangpangPlan {
+export function planPangpangPage(html: string, pageUrl: string, now: Date, config: DeepSeekWebConfig, options?: { categoryCursor?: number; categoryOrder?: readonly ScopedCategory[] }): PangpangPlan {
   const catalog = loadGeunbonCatalog();
   const listingContext = !pangpangPost(pageUrl);
   const allowed = (url: string) => {
@@ -48,7 +48,7 @@ export function planPangpangPage(html: string, pageUrl: string, now: Date, confi
   const page = extractPangpang(html, pageUrl, now, allowed, new ParseBudget());
   if (page.detail) return { kind: 'detail', productCount: page.products.length };
   const parser_outcome_counts = countOutcomes(page.outcomes);
-  const ranked = rankListingCandidates(page.products, catalog, config.selection.max_pangpang_detail_per_cycle, pageUrl);
+  const ranked = rankListingCandidates(page.products, catalog, config.selection.max_pangpang_detail_per_cycle, pageUrl, { categoryCursor: options?.categoryCursor, categoryOrder: options?.categoryOrder });
   const enqueue_catalog = ranked.enqueue.map(e => ({
     url: (() => { try { return canonicalUrl(new URL(e.url, pageUrl).href); } catch { return e.url; } })(),
     catalog_product_id: e.catalog_product_id,

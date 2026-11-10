@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { loadGeunbonCatalog, matchCatalogProduct, nextCatalogSearch, classifyCatalogScope } from '../crawler/src/deepseek-web/catalog';
+import { loadGeunbonCatalog, matchCatalogProduct, nextCatalogSearch, rankListingCandidates, classifyCatalogScope } from '../crawler/src/deepseek-web/catalog';
 import { planPangpangPage } from '../crawler/src/deepseek-web/source-select';
 import { loadDeepSeekWebConfig } from '../crawler/src/deepseek-web/config';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { PangpangProduct } from '../crawler/lib/external/pangpang';
 
 describe('geunbon catalog', () => {
   const catalog = loadGeunbonCatalog();
@@ -17,6 +18,35 @@ describe('geunbon catalog', () => {
     const b = nextCatalogSearch(catalog, a!.next_cursor);
     expect(a!.url).not.toBe(b!.url);
     expect(a!.url).toMatch(/^https:\/\/09pangpang\.com\/search\/r\//);
+  });
+  test('listing detail rotation follows the configured category order and cursor', () => {
+    const item = (title: string, index: number): PangpangProduct => ({
+      source_url: `https://09pangpang.com/post/${920000 + index}`,
+      title, text: '', category_text: '키즈 > 유아용품', price: null, dates: null,
+      seller_handle: null, seller_url: null, seller_name: null, locator: '', link_index: null,
+    });
+    const products = [item('부가부 폭스 유모차', 0), item('아티포페 아기띠', 1)];
+    const categoryOrder = ['carrier', 'stroller', 'high_chair', 'car_seat', 'play_gym', 'bouncer'] as const;
+    const first = rankListingCandidates(products, catalog, 2, 'https://09pangpang.com/search/r/fixture', { categoryCursor: 0, categoryOrder: [...categoryOrder] });
+    expect(first.enqueue.map(row => row.category)).toEqual(['carrier', 'stroller']);
+    const second = rankListingCandidates(products, catalog, 2, 'https://09pangpang.com/search/r/fixture', { categoryCursor: 1, categoryOrder: [...categoryOrder] });
+    expect(second.enqueue.map(row => row.category)).toEqual(['stroller', 'carrier']);
+  });
+  test('listing detail scheduling round-robins categories instead of draining strollers first', () => {
+    const item = (title: string, index: number): PangpangProduct => ({
+      source_url: `https://09pangpang.com/post/${900000 + index}`,
+      title, text: '', category_text: '키즈 > 유아용품', price: null, dates: null,
+      seller_handle: null, seller_url: null, seller_name: null, locator: '', link_index: null,
+    });
+    const products = [
+      item('부가부 폭스 유모차', 0), item('부가부 폭스 유모차', 1), item('부가부 폭스 유모차', 2), item('부가부 폭스 유모차', 3),
+      item('아티포페 아기띠', 4), item('아티포페 아기띠', 5), item('베이비뵨 블리스 바운서', 6),
+    ];
+    const plan = rankListingCandidates(products, catalog, 3, 'https://09pangpang.com/search/r/fixture');
+    expect(plan.enqueue).toHaveLength(3);
+    expect(new Set(plan.enqueue.map(row => row.category)).size).toBe(3);
+    expect(plan.rollup.scoped).toBe(7);
+    expect(plan.by_category.stroller).toBe(4);
   });
   test('matches Artipoppe carrier title; excludes accessory mock', () => {
     const carrier = matchCatalogProduct({ title: '아티포페 제이트가이스트 아기띠', category_text: '키즈 > 육아용품', text: '' }, catalog);

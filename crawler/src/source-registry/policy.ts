@@ -61,12 +61,21 @@ export function scopeReason(s: RegistryScope,u: URL): Reason|undefined {
     seen.add(k);
   }
 }
-export function entryReason(e: SourceRegistryEntry,u: URL,fields: readonly string[],now: number): Reason|undefined {
+/**
+ * Static admission shared by config-time validation and runtime `decide()`.
+ * Deliberately excludes permissions, approvals and reevaluation deadlines:
+ * those remain runtime checks in `entryReason()`.
+ */
+export function staticEntryReason(e: SourceRegistryEntry,u: URL,fields: readonly string[]): Reason|undefined {
   if(e.status!=='registered')return 'inactive';
   if(e.blocked_paths.some(p=>u.pathname.includes(p)))return 'blocked_path';
   if(e.unsupported.some(s=>s.scope==='*'||s.scope.startsWith('/')&&pathMatches(u.pathname,s.scope)||fields.includes(s.scope)))return 'unsupported';
   const scope=scopeReason(e,u);if(scope)return scope;
   if(fields.some(f=>!e.collectable_fields.includes(f as typeof FACT_FIELDS[number])))return 'field_denied';
+  return undefined;
+}
+export function entryReason(e: SourceRegistryEntry,u: URL,fields: readonly string[],now: number): Reason|undefined {
+  const staticReason=staticEntryReason(e,u,fields);if(staticReason)return staticReason;
   const permissions=[e.permission.robots,e.permission.terms];
   if(permissions.some(p=>p.status==='disallowed'))return 'permission_denied';
   if(permissions.some(p=>p.status!=='allowed'||!validTime(p.checked_at)||Date.parse(p.checked_at)>now||!p.evidence))return 'permission_unknown';

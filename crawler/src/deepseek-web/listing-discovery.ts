@@ -31,7 +31,7 @@ export function listingDiscoveryDue(memory: RunMemory, url: string, config: Deep
   const version = listingPolicyVersion(config);
   const rec = memory.listing_discovery?.[url];
   if (!rec || rec.policy_version < version) return true;
-  if (memory.pending_urls.length > 0) return false;
+  // A persistent detail backlog must not starve listing refresh.
   return now - Date.parse(rec.last_at) >= listingRefreshMinMs(config);
 }
 
