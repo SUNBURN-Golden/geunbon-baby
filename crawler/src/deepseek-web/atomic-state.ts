@@ -30,13 +30,15 @@ export function syncDirectory(dir: string) {
   const fd = openSync(safePath(dir, true), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   try { fsyncSync(fd); } finally { closeSync(fd); }
 }
-export function atomicState(path: string, value: unknown) {
+export function atomicState(path: string, value: unknown, fault?: { hook: (point: string) => void; point: string }) {
   const dir = prepareStateDir(dirname(path));
   safePath(path);
   const tmp = join(dir, `.${randomUUID()}.tmp`);
   const fd = openSync(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try {
     try { writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`); fsyncSync(fd); } finally { closeSync(fd); }
+    // Fault injection window between the durable temp write and the atomic rename.
+    fault?.hook(fault.point);
     safePath(path);
     renameSync(tmp, path);
     syncDirectory(dir);

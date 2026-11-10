@@ -1,3 +1,4 @@
+import { validReceipt } from './extraction-cache';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { migrateMemory } from './memory-schema';
@@ -11,7 +12,7 @@ export function emptyMemory(now = new Date().toISOString()): RunMemory {
 }
 function validate(raw: RunMemory & { version: number }) {
   const count = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
-  if (!raw || ![1, 2, 3].includes(raw.version)) throw new Error();
+  if (!raw || ![1, 2, 3, 4].includes(raw.version)) throw new Error();
   for (const field of ['plan_notes', 'observed_urls', 'pending_urls'] as const) if (!Array.isArray(raw[field]) || !raw[field].every(v => typeof v === 'string')) throw new Error();
   const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
   for (const field of ['next_search_hints', 'modeled_post_urls'] as const) if (raw[field] !== undefined && (!Array.isArray(raw[field]) || !raw[field].every(v => typeof v === 'string'))) throw new Error();
@@ -22,11 +23,15 @@ function validate(raw: RunMemory & { version: number }) {
   if (raw.pending_catalog_meta !== undefined && (!record(raw.pending_catalog_meta) || Object.values(raw.pending_catalog_meta).some(v => !record(v) || typeof v.catalog_product_id !== 'string' || typeof v.category !== 'string' || !categories.has(v.category)))) throw new Error();
   const search = raw.last_catalog_search;
   if (search !== undefined && search !== null && (!record(search) || typeof search.product_id !== 'string' || typeof search.term !== 'string' || typeof search.url !== 'string' || !categories.has(search.category))) throw new Error();
+  if (raw.lifetime !== undefined && (!record(raw.lifetime) || ![raw.lifetime.token_spent, raw.lifetime.requests, raw.lifetime.cycles, raw.lifetime.model_calls].every(count))) throw new Error();
+  if (raw.active_cycle != null && (!validHeartbeat(raw.active_cycle.snapshot) || !raw.cycle || raw.active_cycle.snapshot.cycle_id !== raw.cycle.cycle_id || !['in_flight', 'settled', null].includes(raw.active_cycle.call))) throw new Error();
+  if (raw.terminal_summary != null && (!validHeartbeat(raw.terminal_summary) || raw.terminal_summary.cycle_id !== raw.finalized_cycle_id || raw.terminal_summary.outcome === 'running')) throw new Error();
+  if (raw.pending_audit != null && (!record(raw.pending_audit) || raw.pending_audit.cycle_id !== raw.finalized_cycle_id || raw.pending_audit.lifetime_token_spent !== raw.lifetime?.token_spent || raw.pending_audit.lifetime_cycles !== raw.lifetime?.cycles)) throw new Error();
   if (raw.version >= 2) {
     if (!raw.cycle || typeof raw.cycle.cycle_id !== 'string' || !raw.lifetime) throw new Error();
     if (![raw.cycle.token_spent, raw.cycle.requests_spent, raw.cycle.tokens_reserved, raw.cycle.requests_reserved, raw.lifetime.token_spent, raw.lifetime.requests, raw.lifetime.cycles, raw.lifetime.model_calls].every(count)) throw new Error();
   } else if (![raw.token_spent ?? 0, raw.requests_spent ?? 0].every(count)) throw new Error();
-  if (raw.version === 3) {
+  if (raw.version >= 3) {
     if (raw.active_cycle && (!validHeartbeat(raw.active_cycle.snapshot) || !raw.active_cycle.snapshot || raw.active_cycle.snapshot.cycle_id !== raw.cycle.cycle_id || !['in_flight', 'settled', null].includes(raw.active_cycle.call))) throw new Error();
     if (!raw.active_cycle && (raw.cycle.token_spent || raw.cycle.requests_spent || raw.cycle.tokens_reserved || raw.cycle.requests_reserved)) throw new Error();
     if (raw.terminal_summary !== null && (!validHeartbeat(raw.terminal_summary) || raw.terminal_summary.cycle_id !== raw.finalized_cycle_id || raw.terminal_summary.outcome === 'running')) throw new Error();
@@ -38,6 +43,7 @@ export async function loadMemory(dir: string): Promise<RunMemory> {
   try {
     const parsed = JSON.parse(readState(join(dir, 'memory.json')));
     validate(parsed);
+    if ((parsed.version === 4 || parsed.pending_result !== undefined) && parsed.pending_result !== null && !validReceipt(parsed.pending_result)) throw new Error('pending_result_unavailable');
     if (parsed.version === 2 && [parsed.cycle.token_spent, parsed.cycle.requests_spent, parsed.cycle.tokens_reserved, parsed.cycle.requests_reserved].some(n => n > 0)) {
       // v2 sometimes folded the same cycle before saving its reset. Never guess.
       const rows = readState(join(dir, 'cycle-audit.jsonl')).split('\n').filter(Boolean).map(l => JSON.parse(l));
@@ -46,6 +52,7 @@ export async function loadMemory(dir: string): Promise<RunMemory> {
     }
     return migrateMemory(parsed, parsed.cycle?.cycle_id ?? randomUUID());
   } catch (e) {
+    if (e instanceof Error && e.message === 'pending_result_unavailable') throw e;
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
       // Only a missing memory file is a new installation; a missing reconciliation audit is not.
       try { readState(join(dir, 'memory.json')); } catch (again) { if ((again as NodeJS.ErrnoException).code === 'ENOENT') return emptyMemory(); }

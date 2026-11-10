@@ -1,10 +1,18 @@
+import { pangpangIdentityAllowed, pangpangPost } from '../../lib/external/pangpang';
 import { join } from 'node:path';
 import { evaluateUrlDomainPolicy, assertDomainPolicyReadable } from './domain-policy';
 import { createDeepSeekClient } from './client';
-import { buildExtractionPrompt, normalizeExtractionWithCatalog, parseModelJson } from './extract';
+import { buildExtractionPrompt, SYSTEM_INSTRUCTIONS, validateExtraction } from './extract';
 import { createPublicFetcher, fetchPublicText } from './public-fetch';
-import { maybeProposeParserFix } from './proposals';
-import { enqueueReviewIfNew, countPending, hasPendingUrl } from './review-queue';
+import { buildParserProposal } from './proposals';
+import { canonicalUrl } from '../../../shared/privacy-rules';
+import { modelProfile } from './config';
+import { preparePage } from './page-content';
+import { candidateDecision } from './candidate-filter';
+import { ExtractionCache, contractHash, cacheKey, representation, type CacheEntry } from './extraction-cache';
+import { deliverCached } from './cache-delivery';
+import type { ConditionalRequest } from '../../lib/external/fetch';
+import { countPending } from './review-queue';
 import { cycleAdmit } from './budget-cycle';
 import { cycleLifecycle, waitFor, type CycleContext } from './lifecycle';
 import type { WriterOwnership } from './writer-ownership';
@@ -17,7 +25,7 @@ import { loadGeunbonCatalog, postIdFromUrl, searchMetaForUrl } from './catalog';
 import type { CollectionReport, CollectionStatus, ScopedCategory, TickCoverage } from './types';
 import type { CollectorStore } from '../store';
 
-export type FetchPageResult = { ok: true; text: string; finalUrl: string } | { ok: false; reason: string };
+export type FetchPageResult = { ok: true; text: string; finalUrl: string; status?: number; etag?: string | null; last_modified?: string | null } | { ok: false; reason: string };
 export type RunnerOptions = {
   mode: 'once' | 'dry_run' | 'daemon_tick';
   urls?: string[];
@@ -25,7 +33,7 @@ export type RunnerOptions = {
   store?: CollectorStore;
   client?: ReturnType<typeof createDeepSeekClient>;
   fetchImpl?: typeof fetch;
-  fetchPage?: (url: string) => Promise<FetchPageResult>;
+  fetchPage?: (url: string, conditional?: ConditionalRequest) => Promise<FetchPageResult>;
   now?: () => number;
   signal?: AbortSignal;
   fault?: (point: string) => void;
@@ -89,21 +97,11 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
   if (!queue.length && options.mode === 'dry_run') {
     queue.push('https://fixture.example/deepseek-web-sample');
   }
-  const reserve = cycleAdmit(memory, config);
+  const cache = new ExtractionCache(dir);
+  const contract = contractHash(config, loadGeunbonCatalog(), modelProfile(config));
   let haltReason: string | null = null;
-  if (!reserve.ok && queue.length) {
-    haltReason = reserve.reason;
-    memory.plan_notes.push(`halt: ${reserve.reason}`);
-    await logOutcome(dir, {
-      run_id: runId,
-      cycle_id: cycleId,
-      url: queue[0],
-      outcome: 'fetch_blocked',
-      detail: { budget_gate: reserve.reason, note: 'no_cycle_spend' },
-    });
-  }
-  let extractions = 0;
-  let proposals = 0;
+  let extractions = report.extractions;
+  let proposals = report.proposals;
   let blocked = 0;
   let listingEnqueued = 0;
   let listingRefreshAttempts = 0;
@@ -119,8 +117,10 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
     await ctx.checkpoint();
   };
   try {
-    if (reserve.ok) {
-      for (const seedUrl of queue.slice(0, config.memory.max_queue_urls)) {
+    {
+      for (const rawSeed of queue.slice(0, config.memory.max_queue_urls)) {
+        let seedUrl: string;
+        try { seedUrl = canonicalUrl(rawSeed); } catch { blocked++; policyBlocked++; continue; }
         options.signal?.throwIfAborted();
         if (shouldDedupObservedSeed(memory, seedUrl, config, nowMs())) {
           dedupSkips++;
@@ -133,6 +133,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
           await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: seedUrl, outcome: 'duplicate_skip', detail: { within_cycle: true } });
           continue;
         }
+        cycleTouched.add(seedUrl);
         let pageUrl = seedUrl;
         if (isPangpangListingUrl(seedUrl)) {
           const meta = memory.last_catalog_search?.url === seedUrl
@@ -158,13 +159,16 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
         const listingRefresh = isPangpangListingUrl(seedUrl) && listingDiscoveryDue(memory, seedUrl, config, nowMs());
         let text = '';
         let fetched = false;
+        let reused: CacheEntry | null = null;
+        let fetchUrl = pageUrl;
+        let etag: string | null | undefined, modified: string | null | undefined;
         try {
-          if (host === 'fixture.example') {
+          if (host === 'fixture.example' && !options.fetchPage) {
             const { readFile } = await import('node:fs/promises');
             text = await readFile(join(process.cwd(), 'tests/fixtures/deepseek-web/sample-page.txt'), 'utf8');
             pageUrl = seedUrl;
             fetched = true;
-          } else if (options.mode === 'dry_run') {
+          } else if (options.mode === 'dry_run' && !options.fetchPage) {
             if (listingRefresh) {
               blocked++;
               memory.plan_notes.push(`skip_live_fetch ${pageUrl}: dry_run_listing`);
@@ -175,15 +179,40 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
             continue;
           } else {
             if (listingRefresh) listingRefreshAttempts++;
-            const page = options.fetchPage ? await options.fetchPage(pageUrl) : await fetchPublicText(fetcher, pageUrl);
+            const prior = cache.prior(pageUrl, contract);
+            const conditional = prior && prior.representation.fetch_url === pageUrl && (prior.representation.etag || prior.representation.last_modified) ? { fetch_url: prior.representation.fetch_url, etag: prior.representation.etag, last_modified: prior.representation.last_modified } : undefined;
+            const checkPolicy = (url: string) => {
+              if (pangpangPost(seedUrl) && new URL(url).pathname !== '/robots.txt' && !pangpangIdentityAllowed(seedUrl, url)) throw new Error('source_response_invalid');
+              if (options.store) assertDomainPolicyReadable(options.store);
+              const policy = evaluateUrlDomainPolicy(options.store, url, config);
+              if (policy.blocked) throw new Error(policy.reason!);
+            };
+            const getPage = (condition?: ConditionalRequest) => {
+              checkPolicy(pageUrl);
+              return options.fetchPage ? options.fetchPage(pageUrl, condition) : fetchPublicText(fetcher, pageUrl, condition, checkPolicy);
+            };
+            let page = await getPage(conditional);
+            if (page.ok && page.status === 304) {
+              if (prior && conditional && page.finalUrl === prior.representation.fetch_url && canonicalUrl(page.finalUrl) === pageUrl) reused = prior.entry;
+              else {
+                page = await getPage(); // Exactly one unconditional fallback.
+                if (page.ok && page.status === 304) throw new Error('source_response_invalid');
+              }
+            }
             if (!page.ok) {
               blocked++;
-              memory.plan_notes.push(`fetch_block ${pageUrl}: ${page.reason}`);
-              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'fetch_blocked', detail: { stage: 'fetch', reason: page.reason } });
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'fetch_blocked', detail: { reason: page.reason } });
               continue;
             }
+            if (page.status !== undefined && page.status !== 200 && page.status !== 304) throw new Error('source_response_invalid');
             text = page.text;
-            pageUrl = page.finalUrl;
+            if (pangpangPost(seedUrl) && !pangpangIdentityAllowed(seedUrl, page.finalUrl)) throw new Error('source_response_invalid');
+            fetchUrl = page.finalUrl;
+            pageUrl = canonicalUrl(page.finalUrl);
+            etag = page.etag; modified = page.last_modified;
+            if (cycleTouched.has(pageUrl) && pageUrl !== seedUrl) { dedupSkips++; continue; }
+            cycleTouched.add(pageUrl);
+            if (!reused) cache.observe(representation(pageUrl, contract, fetchUrl, new Date(nowMs()).toISOString(), null));
             fetched = true;
             const redirectPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
             if (redirectPolicy.blocked) {
@@ -195,8 +224,16 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
             }
           }
           if (isPangpangHost(host) && text) {
-            const plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config);
+            let plan: ReturnType<typeof planPangpangPage>;
+            try { plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config); }
+            catch {
+              report.candidate_pages_rejected!++;
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'candidate_rejected', detail: { reason: 'candidate_preparation_limit' } });
+              continue;
+            }
             if (plan.kind === 'listing') {
+              report.candidate_pages_rejected!++;
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'candidate_rejected', detail: { reason: 'candidate_listing' } });
               rememberSearchHints(memory, plan.suggested_searches);
               const enqueueCount = plan.enqueue.length;
               recordListingDiscovery(memory, seedUrl, config, enqueueCount, new Date(nowMs()));
@@ -265,21 +302,22 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
               continue;
             }
           }
-          if (!fetched || !text) continue;
-          const modeledKey = pageUrl;
-          if (memory.modeled_post_urls.includes(modeledKey) || (await hasPendingUrl(dir, modeledKey))) {
-            dedupSkips++;
-            memory.plan_notes.push(`skip_modeled_post ${modeledKey}`);
+          if (!fetched) continue;
+          const at = new Date(nowMs()).toISOString();
+          const prepared = reused ? null : preparePage(text, pageUrl);
+          const decision = reused ? reused.candidate : candidateDecision(prepared!, catalog, config);
+          if (prepared?.truncated) await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'preparation_truncated' });
+          if (!decision.accepted) {
+            report.candidate_pages_rejected!++;
+            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'candidate_rejected', detail: { reason: decision.code } });
             memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
-            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'duplicate_skip', detail: { reason: 'already_modeled_or_pending' } });
             continue;
           }
-          const admission = cycleAdmit(memory, config);
-          if (!admission.ok) {
-            haltReason = admission.reason;
-            memory.plan_notes.push(`halt: ${admission.reason}`);
-            break;
-          }
+          report.candidate_pages_accepted!++;
+          const key = reused?.cache_key ?? cacheKey(pageUrl, prepared!.content_hash, contract);
+          let entry = reused ?? cache.entry(key);
+          if (entry) report.extraction_cache_hits!++;
+          else report.extraction_cache_misses!++;
           try {
             if (options.store) assertDomainPolicyReadable(options.store);
             const preModelPolicy = evaluateUrlDomainPolicy(options.store, pageUrl, config);
@@ -290,47 +328,48 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
               haltReason = haltReason ?? preModelPolicy.reason;
               continue;
             }
-            const checked = new Date(nowMs()).toISOString().slice(0, 10);
-            await progress();
-            const completion = await ctx.complete({
-              system: '당신은 가격을 발명하지 않는 공개 웹 추출기다. JSON만 출력한다.',
-              user: buildExtractionPrompt(text, pageUrl),
-            }, admission.reserve);
-            cycleTouched.add(seedUrl);
-            const catalogHint = memory.pending_catalog_meta[seedUrl] ?? memory.pending_catalog_meta[pageUrl];
-            const offerRef = postIdFromUrl(pageUrl) ?? undefined;
-            const extraction = normalizeExtractionWithCatalog(parseModelJson(completion.content), pageUrl, checked, {
-              ...catalogHint,
-              offer_ref: offerRef,
-            });
-            if (!memory.modeled_post_urls.includes(modeledKey)) {
-              memory.modeled_post_urls = [...memory.modeled_post_urls, modeledKey].slice(-500);
-            }
-            if (extraction.in_scope) {
-              report.items_extracted++;
-              await progress();
-              const q = await enqueueReviewIfNew(dir, extraction);
-              if (q.enqueued) {
-                extractions++;
-                await progress();
-                const cat = (extraction.category !== '정보 없음' ? extraction.category : catalogHint?.category) as ScopedCategory | undefined;
-                if (cat) {
-                  coverage.extracted[cat] = (coverage.extracted[cat] ?? 0) + 1;
-                }
-                await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'extracted', detail: { catalog_product_id: extraction.catalog_product_id } });
-              } else {
-                dedupSkips++;
-                await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'duplicate_skip', detail: { reason: q.reason } });
+            let unknownUsage = false;
+            if (!entry) {
+              const admission = cycleAdmit(memory, config);
+              if (!admission.ok) {
+                haltReason = admission.reason;
+                mergePending(memory, [pageUrl]);
+                continue; // Discovery and cached results still progress within the bounded queue.
               }
+              mergePending(memory, [pageUrl]);
+              await progress();
+              const completion = await ctx.complete({ system: SYSTEM_INSTRUCTIONS, user: buildExtractionPrompt(prepared!) }, admission.reserve, result => {
+                const extraction = validateExtraction(result.content, pageUrl, at.slice(0, 10), result.finish_reason);
+                extraction.catalog_product_id = decision.match!.product_id;
+                const offerRef = postIdFromUrl(pageUrl);
+                if (offerRef) extraction.offer_ref = offerRef;
+                entry = { version: 1, cache_key: key, canonical_url: pageUrl, content_hash: prepared!.content_hash, contract_hash: contract,
+                  candidate: decision, result: extraction, extracted_at: at, proposal: buildParserProposal(pageUrl, prepared!.text, extraction, at), pending_delivery: true };
+                return { version: 1, entry, representation: representation(pageUrl, contract, fetchUrl, at, entry, etag, modified) };
+              });
+              unknownUsage = completion.usage.total_tokens === null;
+              if (entry!.result.in_scope) report.items_extracted++;
+              cache.promote(memory.pending_result!, options.fault);
+              memory.pending_result = null;
+              await ctx.checkpoint();
+              options.fault?.('receipt_cleared');
             } else {
-              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'out_of_scope' });
+              cache.observe(representation(pageUrl, contract, fetchUrl, at, entry, etag ?? (reused ? cache.prior(pageUrl, contract)?.representation.etag : null), modified ?? (reused ? cache.prior(pageUrl, contract)?.representation.last_modified : null)));
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'extraction_cache_hit' });
             }
-            const proposal = await maybeProposeParserFix(dir, pageUrl, text, extraction);
-            if (proposal) proposals++;
-            if (!memory.observed_urls.includes(seedUrl)) memory.observed_urls.push(seedUrl);
-            memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl);
+            const delivered = await deliverCached(cache, entry!, config, options.store, at, options.fault);
+            if (delivered.review) {
+              extractions++;
+              const cat = entry!.result.category;
+              if (cat !== '정보 없음') coverage.extracted[cat] = (coverage.extracted[cat] ?? 0) + 1;
+            }
+            if (delivered.proposal) proposals++;
+            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: entry!.result.in_scope ? 'extracted' : 'out_of_scope' });
+            memory.observed_urls = [...new Set([...memory.observed_urls, pageUrl])];
+            if (!delivered.deferred) memory.pending_urls = memory.pending_urls.filter(u => u !== seedUrl && u !== pageUrl);
+            else mergePending(memory, [pageUrl]);
             await progress();
-            if (completion.usage.total_tokens === null) { haltReason = 'usage_unknown'; break; }
+            if (unknownUsage) { haltReason = 'usage_unknown'; break; }
           } catch (error) {
             await logOutcome(dir, {
               run_id: runId,
@@ -342,7 +381,11 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
             throw error;
           }
         } catch (error) {
-          if (error instanceof Error && error.message === 'model_should_not_run') throw error;
+          if (error instanceof Error && ['domain_stopped', 'prohibited_domain', 'unsafe_url'].includes(error.message)) {
+            blocked++; policyBlocked++; haltReason = haltReason ?? error.message;
+            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: seedUrl, outcome: 'fetch_blocked', detail: { reason: error.message } });
+            continue;
+          }
           throw error;
         }
       }

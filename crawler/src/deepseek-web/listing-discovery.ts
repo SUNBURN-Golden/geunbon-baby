@@ -37,6 +37,7 @@ export function listingDiscoveryDue(memory: RunMemory, url: string, config: Deep
 
 /** Skip entire work item (no fetch, no model). */
 export function shouldDedupObservedSeed(memory: RunMemory, url: string, config: DeepSeekWebConfig, now = Date.now()) {
+  if (!isPangpangListingUrl(url)) return false;
   if (!memory.observed_urls.includes(url)) return false;
   if (memory.pending_urls.includes(url)) return false;
   if (listingDiscoveryDue(memory, url, config, now)) return false;

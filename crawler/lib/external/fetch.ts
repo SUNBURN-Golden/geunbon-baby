@@ -1,3 +1,4 @@
+import { safeEtag, safeModified } from '../../src/agamajung/http-validators';
 // 외부 사이트용 공손한 HTTP 클라이언트: 호스트별 직렬 큐로 요청 간격을 보장하고,
 // 모든 GET 직전에 robots.txt와 하드 금지 경로 판정(decide)을 거친다. 쿠키·로그인·Instagram 세션을 쓰지 않는다.
 import { ALLOW_ALL, DENY_ALL, decide, parseRobots, USER_AGENT, type DecisionReason, type Robots } from './robots';
@@ -6,7 +7,10 @@ export class ExternalFetchError extends Error {}
 export type PoliteOptions = { min_interval_ms: number; jitter_ms: [number, number]; timeout_ms: number; max_bytes?: number; max_redirects?: number };
 export type FetcherDeps = { fetch: typeof fetch; sleep: (ms: number) => Promise<void>; now: () => number; random: () => number };
 export type BlockInfo = { source: string; reason: DecisionReason | 'websocket'; resource_type: string; path: string };
-export type FetchResult = { status: number; url: string; text: string };
+export type ConditionalRequest = { fetch_url: string; etag: string | null; last_modified: string | null };
+export type FetchContext = { origin: string; source: string; conditional?: ConditionalRequest; allowNotModified?: boolean; beforeRequest?: (url: string) => void };
+export type FetchResult = { status: number; url: string; text: string; etag?: string | null; last_modified?: string | null };
+export const REQUEST_REPRESENTATION = JSON.stringify({ user_agent: USER_AGENT, accept: 'text/html,text/plain;q=0.9,*/*;q=0.1', language: 'ko-KR,ko;q=0.9', version: 1 });
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 
@@ -32,17 +36,17 @@ export class PoliteFetcher {
     return run;
   }
 
-  robotsFor(origin: string): Promise<Robots> {
+  robotsFor(origin: string, beforeRequest?: (url: string) => void): Promise<Robots> {
     let cached = this.robots.get(origin);
     if (!cached) {
-      cached = this.loadRobots(origin);
+      cached = this.loadRobots(origin, beforeRequest);
       this.robots.set(origin, cached);
     }
     return cached;
   }
-  private async loadRobots(origin: string): Promise<Robots> {
+  private async loadRobots(origin: string, beforeRequest?: (url: string) => void): Promise<Robots> {
     try {
-      const result = await this.follow(new URL('/robots.txt', origin).href, origin, 'robots', null, true);
+      const result = await this.follow(new URL('/robots.txt', origin).href, origin, 'robots', null, true, { origin, source: 'robots', beforeRequest });
       if (!result) return DENY_ALL;
       if (result.status === 404 || result.status === 410) return ALLOW_ALL;
       if (result.status >= 200 && result.status < 300) return parseRobots(result.text);
@@ -51,11 +55,12 @@ export class PoliteFetcher {
   }
 
   // 차단되면 요청 없이 null. 전송·상태 오류는 ExternalFetchError.
-  async get(target: string, ctx: { origin: string; source: string }): Promise<FetchResult | null> {
+  async get(target: string, ctx: FetchContext): Promise<FetchResult | null> {
     if (!decide(target, ctx.origin).allowed) return this.blocked(target, ctx.origin, ctx.source);
-    const robots = await this.robotsFor(ctx.origin);
-    const result = await this.follow(target, ctx.origin, ctx.source, robots, false);
-    if (result && (result.status < 200 || result.status >= 300)) throw new ExternalFetchError(`외부 사이트 응답 오류(${result.status})`);
+    ctx.beforeRequest?.(new URL('/robots.txt', ctx.origin).href);
+    const robots = await this.robotsFor(ctx.origin, ctx.beforeRequest);
+    const result = await this.follow(target, ctx.origin, ctx.source, robots, false, ctx);
+    if (result && (result.status < 200 || result.status >= 300 && !(ctx.allowNotModified && result.status === 304))) throw new ExternalFetchError(`외부 사이트 응답 오류(${result.status})`);
     return result;
   }
 
@@ -67,40 +72,44 @@ export class PoliteFetcher {
     return null;
   }
 
-  private async follow(start: string, origin: string, source: string, robots: Robots | null, allowStatus: boolean): Promise<FetchResult | null> {
+  private async follow(start: string, origin: string, source: string, robots: Robots | null, allowStatus: boolean, ctx?: FetchContext): Promise<FetchResult | null> {
     let current = start;
     for (let hop = 0; hop <= (this.options.max_redirects ?? MAX_REDIRECTS); hop++) {
       if (!decide(current, origin, robots).allowed) return this.blocked(current, origin, source, robots);
-      const response = await this.request(new URL(current));
+      ctx?.beforeRequest?.(current);
+      const conditional = hop === 0 && current === ctx?.conditional?.fetch_url ? ctx.conditional : undefined;
+      const response = await this.request(new URL(current), conditional, ctx?.beforeRequest);
       if (response.location !== null) {
         try { current = new URL(response.location, current).href; } catch { throw new ExternalFetchError('잘못된 리디렉트'); }
         continue;
       }
-      if (!allowStatus && response.status >= 300 && response.status < 400) throw new ExternalFetchError('리디렉트 응답 오류');
-      return { status: response.status, url: current, text: response.text };
+      if (!allowStatus && !(ctx?.allowNotModified && response.status === 304) && response.status >= 300 && response.status < 400) throw new ExternalFetchError('리디렉트 응답 오류');
+      return { status: response.status, url: current, text: response.text, etag: response.etag, last_modified: response.last_modified };
     }
     throw new ExternalFetchError('리디렉트 횟수 초과');
   }
 
-  private request(url: URL): Promise<{ status: number; location: string | null; text: string }> {
+  private request(url: URL, conditional?: ConditionalRequest, beforeRequest?: (url: string) => void): Promise<{ status: number; location: string | null; text: string; etag: string | null; last_modified: string | null }> {
     return this.pace(url.host, async () => {
+      beforeRequest?.(url.href);
       let response: Response;
       try {
         response = await this.deps.fetch(url.href, {
           method: 'GET',
           redirect: 'manual',
-          headers: { 'user-agent': USER_AGENT, accept: 'text/html,text/plain;q=0.9,*/*;q=0.1', 'accept-language': 'ko-KR,ko;q=0.9' },
+          headers: { ...(conditional && url.pathname !== '/robots.txt' ? { ...(safeEtag(conditional.etag) ? { 'if-none-match': conditional.etag! } : {}), ...(safeModified(conditional.last_modified) ? { 'if-modified-since': conditional.last_modified! } : {}) } : {}), 'user-agent': USER_AGENT, accept: 'text/html,text/plain;q=0.9,*/*;q=0.1', 'accept-language': 'ko-KR,ko;q=0.9' },
           signal: AbortSignal.timeout(this.options.timeout_ms),
         });
       } catch { throw new ExternalFetchError('외부 사이트 네트워크 오류'); }
-      const location = response.status >= 300 && response.status < 400 ? response.headers.get('location') : null;
+      const location = response.status !== 304 && response.status >= 300 && response.status < 400 ? response.headers.get('location') : null;
+      const validators = { etag: safeEtag(response.headers.get('etag')), last_modified: safeModified(response.headers.get('last-modified')) };
       const type = response.headers.get('content-type') ?? '';
       if (location !== null || response.status < 200 || response.status >= 300 || !response.body) {
         await response.body?.cancel().catch(() => {});
-        return { status: response.status, location, text: '' };
+        return { status: response.status, location, text: '', ...validators };
       }
       if (type && !/text|html|xml/i.test(type)) { await response.body.cancel().catch(() => {}); throw new ExternalFetchError('텍스트가 아닌 응답'); }
-      return { status: response.status, location: null, text: await this.read(response) };
+      return { status: response.status, location: null, text: await this.read(response), ...validators };
     });
   }
   private async read(response: Response): Promise<string> {

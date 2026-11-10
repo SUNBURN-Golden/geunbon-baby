@@ -3,8 +3,19 @@
   "profile_version": 1,
   "model": {
     "provider": "deepseek",
-    "default_model": "deepseek-chat",
-    "reasoning_note": "운영 시 DEEPSEEK_MODEL로 Flash/Reasoner 모델을 지정한다. API 키는 박스 환경변수만 사용한다."
+    "default_model": "deepseek-flash",
+    "reasoning_note": "Operator must verify provider ID on the target host before activation. Legacy deepseek-chat is not a Flash alias.",
+    "profiles": [
+      {
+        "id": "flash",
+        "provider_model": "deepseek-flash",
+        "aliases": [],
+        "thinking": {
+          "type": "disabled"
+        },
+        "max_completion_tokens": 2048
+      }
+    ]
   },
   "scope_categories": [
     {

@@ -1,3 +1,4 @@
+import { ParseBudget } from '../../lib/external/parse-budget';
 import { extractPangpang, pangpangIdentityAllowed, pangpangPost, pangpangQueryAllowed } from '../../lib/external/pangpang';
 import type { LinkReason } from '../../lib/external/pangpang';
 import { canonicalUrl } from '../../../shared/privacy-rules';
@@ -44,7 +45,7 @@ export function planPangpangPage(html: string, pageUrl: string, now: Date, confi
       return pangpangIdentityAllowed(pageUrl, target) || canonicalUrl(pageUrl) === target;
     } catch { return false; }
   };
-  const page = extractPangpang(html, pageUrl, now, allowed);
+  const page = extractPangpang(html, pageUrl, now, allowed, new ParseBudget());
   if (page.detail) return { kind: 'detail', productCount: page.products.length };
   const parser_outcome_counts = countOutcomes(page.outcomes);
   const ranked = rankListingCandidates(page.products, catalog, config.selection.max_pangpang_detail_per_cycle, pageUrl);

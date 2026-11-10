@@ -1,3 +1,4 @@
+import { ExtractionCache, validReceipt, type PendingResult } from './extraction-cache';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -5,7 +6,7 @@ import { atomicState } from './atomic-state';
 import { backoffDelay, backoffView, failBackoff, readBackoff, saveBackoff, type BackoffState } from './backoff';
 import { beginCycle, cycleHold, cycleSettle, finalizeCycle, flushPendingAudit } from './budget-cycle';
 import { createDeepSeekClient, DeepSeekHttpError, usageFrom } from './client';
-import { cycleInterval, loadDeepSeekWebConfig, stateDir } from './config';
+import { cycleInterval, loadDeepSeekWebConfig, stateDir, modelProfile } from './config';
 import { assertDomainPolicyReadable, isGlobalEmergencyStop } from './domain-policy';
 import { kst, readHeartbeat, validHeartbeat, writeHeartbeat } from './heartbeat';
 import { loadMemory, newRunId, saveMemory } from './memory';
@@ -15,17 +16,17 @@ import type { RunnerOptions } from './runner';
 import type { CollectionReport, DeepSeekClient, DeepSeekWebConfig, RunMemory, RunReport } from './types';
 import type { CollectorStore } from '../store';
 
-const fixedReasons = new Set(['collector_db_required', 'collector_db_unavailable', 'domain_state_unavailable', 'emergency_stop', 'invalid_deepseek_web_config', 'invalid_cycle_interval', 'memory_unavailable', 'backoff_state_unavailable', 'deepseek_api_key_missing', 'deepseek_http_failed', 'deepseek_empty', 'audit_conflict', 'audit_unavailable', 'accounting_recovery_required', 'usage_unknown']);
+const fixedReasons = new Set(['extraction_cache_unavailable', 'pending_result_unavailable', 'deepseek_model_profile_unverified', 'extraction_result_invalid', 'review_state_unavailable', 'proposal_state_unavailable', 'source_response_invalid', 'collector_db_required', 'collector_db_unavailable', 'domain_state_unavailable', 'emergency_stop', 'invalid_deepseek_web_config', 'invalid_cycle_interval', 'memory_unavailable', 'backoff_state_unavailable', 'deepseek_api_key_missing', 'deepseek_http_failed', 'deepseek_empty', 'audit_conflict', 'audit_unavailable', 'accounting_recovery_required', 'usage_unknown']);
 export function fixedReason(error: unknown) {
   if (error instanceof DeepSeekHttpError) return error.reason;
   return error instanceof Error && fixedReasons.has(error.message) ? error.message : 'cycle_failed';
 }
 export function initialReport(mode: RunReport['mode'], now: number): RunReport {
   const id = newRunId(), at = new Date(now).toISOString();
-  return { schema_version: 1, cycle_id: id, run_id: id, at, model: 'unknown', mode, pid: process.pid,
+  return { schema_version: 2, cycle_id: id, run_id: id, at, model: 'unknown', mode, pid: process.pid,
     heartbeat_at: at, heartbeat_fresh: true, cycle_interval_ms: null, cycle_started_at_kst: kst(now), cycle_ended_at_kst: null,
     interruption_observed_at_kst: null, outcome: 'running', reason: null, deepseek_calls_attempted: 0, deepseek_calls_succeeded: 0,
-    deepseek_tokens_reported: 0, deepseek_tokens_used: 0, usage_complete: true, counts_complete: true,
+    deepseek_prompt_cache_hit_tokens: 0, deepseek_prompt_cache_miss_tokens: 0, deepseek_completion_tokens: 0, cache_usage_complete: true, extraction_cache_hits: 0, extraction_cache_misses: 0, candidate_pages_accepted: 0, candidate_pages_rejected: 0, deepseek_tokens_reported: 0, deepseek_tokens_used: 0, usage_complete: true, counts_complete: true,
     items_extracted: 0, items_sent_to_review: 0, backoff: null, last_completed_cycle: null,
     cycle_token_spent: 0, cycle_requests_spent: 0, lifetime_token_spent: null, lifetime_cycles: null, token_spent: 0, requests_spent: 0,
     extractions: 0, proposals: 0, blocked: 0, review_pending: null, listing_enqueued: 0, listing_refresh_attempts: 0, dedup_skips: 0,
@@ -34,7 +35,7 @@ export function initialReport(mode: RunReport['mode'], now: number): RunReport {
 export type CycleContext = {
   dir: string; config: DeepSeekWebConfig; memory: RunMemory; report: RunReport;
   client: DeepSeekClient; store?: CollectorStore; checkpoint: () => Promise<void>;
-  complete: (input: { system: string; user: string }, reserve: number) => ReturnType<DeepSeekClient['complete']>;
+  complete: (input: { system: string; user: string }, reserve: number, acknowledge?: (completion: Awaited<ReturnType<DeepSeekClient['complete']>>) => PendingResult) => ReturnType<DeepSeekClient['complete']>;
 };
 async function publishTerminal(dir: string, report: RunReport, now: number) {
   await writeHeartbeat(dir, report, 0, now);
@@ -47,7 +48,7 @@ async function recover(dir: string, memory: RunMemory, now: number, backoff: Bac
     if (r.outcome === 'running') {
       r.outcome = 'interrupted'; r.reason = 'owner_gone'; r.cycle_ended_at_kst = null;
       r.interruption_observed_at_kst = kst(now); r.counts_complete = false;
-      if (memory.active_cycle.call === 'in_flight') { r.usage_complete = false; r.deepseek_tokens_used = null; }
+      if (memory.active_cycle.call === 'in_flight') { r.usage_complete = false; r.deepseek_tokens_used = null; r.cache_usage_complete = false; r.deepseek_prompt_cache_hit_tokens = r.deepseek_prompt_cache_miss_tokens = r.deepseek_completion_tokens = null; }
     }
     r.backoff = backoffView(backoff, now);
     r.heartbeat_at = new Date(now).toISOString();
@@ -131,12 +132,27 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
       const recovered = memory.terminal_summary;
       if (recovered) return { ...recovered, outcome: 'backoff', reason: backoff.reason, backoff: backoffView(backoff, now()) };
     }
+    const store = options.store ?? (options.mode !== 'dry_run' ? ownedStore = openRuntimeCollectorStore() : undefined);
+    if (store) {
+      assertDomainPolicyReadable(store);
+      if (isGlobalEmergencyStop(store)) throw new Error('emergency_stop');
+    }
+    const profile = modelProfile(config);
+    const cache = new ExtractionCache(dir);
+    if (memory.pending_result) {
+      cache.promote(memory.pending_result, options.fault);
+      memory.pending_result = null;
+      await saveMemory(dir, memory);
+      options.fault?.('receipt_cleared');
+    }
+    // Revalidate deferred representations through the normal robots/source gate before delivery.
+    memory.pending_urls = [...new Set([...memory.pending_urls, ...cache.pending(config.memory.max_queue_urls).map(entry => entry.canonical_url)])];
     beginCycle(memory, report.cycle_id);
     memory.active_cycle = { snapshot: report, call: null };
     accountingSafe = true;
     report.lifetime_token_spent = memory.lifetime.token_spent;
     report.lifetime_cycles = memory.lifetime.cycles;
-    report.model = process.env.DEEPSEEK_MODEL ?? config.model.default_model;
+    report.model = profile.provider_model;
     const checkpoint = async () => {
       report.cycle_token_spent = report.token_spent = memory!.cycle.token_spent;
       report.cycle_requests_spent = report.requests_spent = memory!.cycle.requests_spent;
@@ -144,19 +160,17 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
       await saveMemory(dir, memory!);
     };
     await checkpoint();
-    const store = options.store ?? (options.mode !== 'dry_run' ? ownedStore = openRuntimeCollectorStore() : undefined);
-    if (store) {
-      assertDomainPolicyReadable(store);
-      if (isGlobalEmergencyStop(store)) throw new Error('emergency_stop');
-    }
-    const client = options.client ?? createDeepSeekClient({ apiKey: options.mode === 'dry_run' ? 'mock' : process.env.DEEPSEEK_API_KEY ?? '', model: report.model, maxCompletionTokens: config.budget.max_completion_tokens, fetchImpl: options.fetchImpl, fixturePath: process.env.DEEPSEEK_WEB_FIXTURE });
+    const client = options.client ?? createDeepSeekClient({ apiKey: options.mode === 'dry_run' ? 'mock' : process.env.DEEPSEEK_API_KEY ?? '', model: report.model, thinking: profile.thinking, maxCompletionTokens: config.budget.max_completion_tokens, fetchImpl: options.fetchImpl, fixturePath: process.env.DEEPSEEK_WEB_FIXTURE });
     const ctx: CycleContext = { dir, config, memory, report, store, client, checkpoint,
-      async complete(input, reserve) {
+      async complete(input, reserve, acknowledge) {
         options.signal?.throwIfAborted();
+        if (memory!.pending_result) throw new Error('pending_result_unavailable');
+        const priorHit = report.deepseek_prompt_cache_hit_tokens, priorMiss = report.deepseek_prompt_cache_miss_tokens, priorCompletion = report.deepseek_completion_tokens;
         cycleHold(memory!, reserve);
         report.deepseek_calls_attempted++;
         memory!.active_cycle!.call = 'in_flight';
         report.usage_complete = false; report.deepseek_tokens_used = null;
+        report.cache_usage_complete = false; report.deepseek_prompt_cache_hit_tokens = report.deepseek_prompt_cache_miss_tokens = report.deepseek_completion_tokens = null;
         await checkpoint(); // Invocation intent is durable before sending the request.
         options.fault?.('call_intent');
         let completion;
@@ -188,11 +202,26 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
         }
         report.usage_complete = usage.total_tokens !== null && !priorUnknown;
         report.deepseek_tokens_used = report.usage_complete ? report.deepseek_tokens_reported : null;
+        report.deepseek_prompt_cache_hit_tokens = priorHit !== null && usage.prompt_cache_hit_tokens != null ? priorHit + usage.prompt_cache_hit_tokens : null;
+        report.deepseek_prompt_cache_miss_tokens = priorMiss !== null && usage.prompt_cache_miss_tokens != null ? priorMiss + usage.prompt_cache_miss_tokens : null;
+        report.cache_usage_complete = report.deepseek_prompt_cache_hit_tokens !== null && report.deepseek_prompt_cache_miss_tokens !== null;
+        report.deepseek_completion_tokens = priorCompletion !== null && usage.completion_tokens !== null ? priorCompletion + usage.completion_tokens : null;
+        let validationFailed = false;
+        if (acknowledge) {
+          try {
+            const receipt = acknowledge(completion);
+            if (!validReceipt(receipt)) throw new Error('extraction_result_invalid');
+            memory!.pending_result = receipt;
+          }
+          catch { validationFailed = true; }
+        }
         memory!.active_cycle!.call = 'settled';
+        if (validationFailed) report.reason = 'extraction_result_invalid';
         await checkpoint(); // Acknowledged settlement precedes parsing or queue appends.
         options.fault?.('call_settled');
         if (backoff) { saveBackoff(dir, null); backoff = null; }
         await checkpoint();
+        if (validationFailed) throw new Error('extraction_result_invalid');
         return { ...completion, usage };
       },
     };

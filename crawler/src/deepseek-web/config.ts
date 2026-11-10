@@ -36,3 +36,14 @@ export function cycleInterval(value = process.env.DEEPSEEK_WEB_DAEMON_MS): numbe
   if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 86400000) throw new Error('invalid_cycle_interval');
   return interval;
 }
+
+/** No legacy model name is assumed to be Flash. Operators register verified aliases. */
+export function modelProfile(config: DeepSeekWebConfig, selector = process.env.DEEPSEEK_MODEL ?? config.model.default_model) {
+  const profiles = config.model?.profiles;
+  const id = (v: unknown) => typeof v === 'string' && /^[a-zA-Z0-9_.-]{1,80}$/.test(v);
+  if (config.model?.provider !== 'deepseek' || !Array.isArray(profiles) || profiles.length < 1 || profiles.some(p => !p || !id(p.id) || !id(p.provider_model) || !Array.isArray(p.aliases) || !p.aliases.every(id) || p.thinking?.type !== 'disabled' || p.max_completion_tokens !== config.budget.max_completion_tokens)) throw new Error('deepseek_model_profile_unverified');
+  const matches = profiles.filter(p => p.id === selector || p.provider_model === selector || p.aliases.includes(selector));
+  const p = matches[0];
+  if (matches.length !== 1 || !p) throw new Error('deepseek_model_profile_unverified');
+  return Object.freeze({ ...p, thinking: Object.freeze({ type: 'disabled' as const }) });
+}

@@ -69,7 +69,7 @@ test('legacy v2 nonzero cycle requires an unambiguous matching lifetime audit', 
   await expect(loadMemory(dir)).rejects.toThrow('memory_unavailable');
   raw.lifetime = { token_spent: 10, requests: 1, cycles: 1, model_calls: 1 };
   writeFileSync(join(dir, 'memory.json'), JSON.stringify(raw));
-  const migrated = await loadMemory(dir); expect(migrated.version).toBe(3); expect(migrated.lifetime.token_spent).toBe(10); expect(migrated.cycle.token_spent).toBe(0);
+  const migrated = await loadMemory(dir); expect(migrated.version).toBe(4); expect(migrated.lifetime.token_spent).toBe(10); expect(migrated.cycle.token_spent).toBe(0);
   await saveMemory(dir, migrated);
 });
 
@@ -121,3 +121,25 @@ test('a durable completion checkpoint clears unresolved backoff on recovery', as
   expect(JSON.parse(readFileSync(join(dir, 'backoff.json'), 'utf8'))).toBeNull();
   expect((await loadMemory(dir)).lifetime.token_spent).toBe(15);
 });
+
+
+test.each(['call_settled', 'cache_entry_written', 'cache_entry_temp_written', 'cache_index_published', 'review_delivered', 'proposal_delivered', 'receipt_cleared'])('result receipt survives SIGKILL at %s without a repeated provider call or delivery', async point => {
+  const dir = temp(); expect(child('crash-result', dir, point).signal).toBe('SIGKILL'); ageOwner(dir);
+  const first = child('recover-result', dir); expect(first.status, first.stderr).toBe(0);
+  const second = child('recover-result', dir); expect(second.status, second.stderr).toBe(0);
+  expect(readFileSync(join(dir, 'provider-calls'), 'utf8').trim().split('\n')).toHaveLength(1);
+  expect(readFileSync(join(dir, 'review-queue.jsonl'), 'utf8').trim().split('\n')).toHaveLength(1);
+  expect(readdirSync(join(dir, 'proposals'))).toHaveLength(1);
+  const m = await loadMemory(dir); expect(m.pending_result).toBeNull(); expect(m.lifetime.token_spent).toBe(15);
+  expect(m.observed_urls).toEqual(['https://fixture.example/crash']);
+}, 15000);
+
+test('a temp file stranded before rename is cleaned rather than bricking the cache', async () => {
+  const dir = temp(); expect(child('crash-result', dir, 'cache_entry_temp_written').signal).toBe('SIGKILL'); ageOwner(dir);
+  const entries = join(dir, 'extraction-cache', 'entries');
+  expect(readdirSync(entries).filter(n => n.endsWith('.tmp'))).toHaveLength(1);
+  const recovered = child('recover-result', dir); expect(recovered.status, recovered.stderr).toBe(0);
+  expect(readdirSync(entries).filter(n => n.endsWith('.tmp'))).toHaveLength(0);
+  expect(readFileSync(join(dir, 'provider-calls'), 'utf8').trim().split('\n')).toHaveLength(1);
+  expect(readFileSync(join(dir, 'review-queue.jsonl'), 'utf8').trim().split('\n')).toHaveLength(1);
+}, 15000);

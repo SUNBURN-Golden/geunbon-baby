@@ -1,3 +1,5 @@
+import { canonicalUrl } from '../../../shared/privacy-rules';
+import { upgradeReport } from './heartbeat';
 import type { CycleBudget, LifetimeAudit, RunMemory } from './types';
 
 /**
@@ -10,6 +12,7 @@ export function emptyCycle(cycleId: string): CycleBudget {
 export function emptyLifetime(): LifetimeAudit {
   return { token_spent: 0, requests: 0, cycles: 0, model_calls: 0 };
 }
+const canonicalSet = (urls: string[]) => [...new Set(urls.map(url => { try { return canonicalUrl(url); } catch { return url; } }))];
 export function migrateMemory(raw: Omit<Partial<RunMemory>, 'version'> & { version?: number }, cycleId: string): RunMemory {
   const lifetime = raw.lifetime ?? emptyLifetime();
   if (raw.version === 1) {
@@ -20,17 +23,18 @@ export function migrateMemory(raw: Omit<Partial<RunMemory>, 'version'> & { versi
     lifetime.model_calls += legacyRequests;
     lifetime.cycles = lifetime.cycles || 0;
   }
-  const cycle = raw.version === 3 && raw.cycle ? raw.cycle : emptyCycle(cycleId);
+  const cycle = (raw.version === 3 || raw.version === 4) && raw.cycle ? raw.cycle : emptyCycle(cycleId);
   return {
-    version: 3,
+    version: 4,
+    pending_result: raw.pending_result ?? null,
     finalized_cycle_id: raw.finalized_cycle_id ?? null,
-    terminal_summary: raw.terminal_summary ?? null,
+    terminal_summary: raw.terminal_summary ? upgradeReport(raw.terminal_summary) : null,
     pending_audit: raw.pending_audit ?? null,
-    active_cycle: raw.active_cycle ?? null,
+    active_cycle: raw.active_cycle ? { ...raw.active_cycle, snapshot: upgradeReport(raw.active_cycle.snapshot) } : null,
     updated_at: raw.updated_at ?? new Date().toISOString(),
     plan_notes: raw.plan_notes ?? [],
-    observed_urls: raw.observed_urls ?? [],
-    pending_urls: raw.pending_urls ?? [],
+    observed_urls: canonicalSet(raw.observed_urls ?? []),
+    pending_urls: canonicalSet(raw.pending_urls ?? []),
     token_spent: 0,
     tokens_reserved: 0,
     requests_spent: 0,

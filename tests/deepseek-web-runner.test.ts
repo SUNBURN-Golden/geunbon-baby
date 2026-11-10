@@ -64,7 +64,7 @@ describe('deepseek-web offline runner', () => {
         complete: async () => {
           calls.push(1);
           return {
-            content: '{"brand":"A","model":"B","in_scope":false}',
+            content: '{"brand":"A","model":"B","category":"정보 없음","gonggu_price":"정보 없음","regular_price":"정보 없음","period":"정보 없음","gifts":"정보 없음","conditions":"정보 없음","seller":"정보 없음","url":"정보 없음","checked_date":"정보 없음","in_scope":false}',
             usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: config.budget.max_tokens_per_run },
             model: 'deepseek-chat',
           };
