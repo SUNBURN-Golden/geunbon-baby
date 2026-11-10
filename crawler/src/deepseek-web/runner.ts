@@ -2,7 +2,8 @@ import { pangpangIdentityAllowed, pangpangPost } from '../../lib/external/pangpa
 import { join } from 'node:path';
 import { evaluateUrlDomainPolicy, assertDomainPolicyReadable } from './domain-policy';
 import { createDeepSeekClient } from './client';
-import { buildExtractionPrompt, SYSTEM_INSTRUCTIONS, validateExtraction } from './extract';
+import { kstDate } from '../../lib/kst';
+import { buildExtractionPrompt, SYSTEM_INSTRUCTIONS, validateExtraction, checkExtraction } from './extract';
 import { createPublicFetcher, fetchPublicText } from './public-fetch';
 import { buildParserProposal } from './proposals';
 import { canonicalUrl } from '../../../shared/privacy-rules';
@@ -315,7 +316,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
           }
           report.candidate_pages_accepted!++;
           const key = reused?.cache_key ?? cacheKey(pageUrl, prepared!.content_hash, contract);
-          let entry = reused ?? cache.entry(key);
+          let entry = reused ?? cache.checkedEntry(key);
           if (entry) report.extraction_cache_hits!++;
           else report.extraction_cache_misses!++;
           try {
@@ -339,13 +340,14 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
               mergePending(memory, [pageUrl]);
               await progress();
               const completion = await ctx.complete({ system: SYSTEM_INSTRUCTIONS, user: buildExtractionPrompt(prepared!) }, admission.reserve, result => {
-                const extraction = validateExtraction(result.content, pageUrl, at.slice(0, 10), result.finish_reason);
+                const raw = validateExtraction(result.content, pageUrl, kstDate(at), result.finish_reason);
+                const extraction = checkExtraction(raw, prepared!, at);
                 extraction.catalog_product_id = decision.match!.product_id;
                 const offerRef = postIdFromUrl(pageUrl);
                 if (offerRef) extraction.offer_ref = offerRef;
-                entry = { version: 1, cache_key: key, canonical_url: pageUrl, content_hash: prepared!.content_hash, contract_hash: contract,
+                entry = { version: 2, cache_key: key, canonical_url: pageUrl, content_hash: prepared!.content_hash, contract_hash: contract,
                   candidate: decision, result: extraction, extracted_at: at, proposal: buildParserProposal(pageUrl, prepared!.text, extraction, at), pending_delivery: true };
-                return { version: 1, entry, representation: representation(pageUrl, contract, fetchUrl, at, entry, etag, modified) };
+                return { version: 2, entry, representation: representation(pageUrl, contract, fetchUrl, at, entry, etag, modified) };
               });
               unknownUsage = completion.usage.total_tokens === null;
               if (entry!.result.in_scope) report.items_extracted++;

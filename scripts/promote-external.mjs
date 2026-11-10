@@ -20,12 +20,16 @@ if (!token) {
 }
 
 let candidateId = args['candidate-id'];
+let reviewFacts;
 if (args['from-review-queue']) {
   const path = args['from-review-queue'];
   const line = Number(args.line ?? 0);
   const rows = readFileSync(path, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
   const item = rows[line];
   if (!item?.extraction?.url) throw new Error('review queue line missing extraction.url');
+  const { tsImport } = await import('tsx/esm/api');
+  const { reviewPromotionFacts } = await tsImport('./review-facts.ts', import.meta.url);
+  reviewFacts = reviewPromotionFacts(item.extraction);
   const ingest = await fetch(`${origin}/api/v1/ingest`, {
     method: 'POST',
     headers: { authorization: `Bearer ${process.env.INGEST_TOKEN ?? token}`, 'content-type': 'application/json' },
@@ -34,19 +38,18 @@ if (args['from-review-queue']) {
       source: 'pangpang',
       source_url: item.extraction.url,
       title: `${item.extraction.brand} ${item.extraction.model}`.trim().slice(0, 200) || 'DeepSeek 추출 공구',
-      text: item.extraction.notes ?? item.extraction.url,
-      seller_handle: item.extraction.seller?.replace(/^@/, '') ?? null,
-      price_hint: null,
-      price_raw: item.extraction.gonggu_price === '정보 없음' ? null : item.extraction.gonggu_price,
+      text: item.extraction.url,
+      seller_handle: /^[A-Za-z0-9._]{1,30}$/.test(item.extraction.seller?.replace(/^@/, '') ?? '') ? item.extraction.seller.replace(/^@/, '') : null,
+      price_hint: reviewFacts.price,
+      price_raw: reviewFacts.price === null ? null : String(reviewFacts.price),
+      starts_at: reviewFacts.starts_at,
+      ends_at: reviewFacts.ends_at,
       captured_at: new Date().toISOString(),
     }),
   });
   const ingested = await ingest.json();
   candidateId = ingested?.data?.id;
-  if (!candidateId) {
-    const listed = await fetch(`${origin}/api/v1/admin/candidates?limit=1`, { headers: { authorization: `Bearer ${token}` } }).then(r => r.json());
-    candidateId = listed?.data?.[0]?.id;
-  }
+  if (!ingest.ok || typeof candidateId !== 'string' || !candidateId.trim()) throw new Error('review_candidate_ingest_failed');
 }
 
 if (!candidateId) {
@@ -56,6 +59,7 @@ if (!candidateId) {
 
 const body = {
   action: 'promote',
+  ...(reviewFacts ?? {}),
   request_id: args['request-id'] ?? randomUUID(),
   promoted_by: args['promoted-by'] ?? 'cli',
   seller_id: args['seller-id'] || null,

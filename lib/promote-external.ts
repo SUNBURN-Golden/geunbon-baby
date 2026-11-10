@@ -56,6 +56,9 @@ function sellerLabel(candidate: ExternalCandidate) {
 }
 
 export async function promoteExternalCandidate(db: D1Database, input: PromoteExternalInput): Promise<PromoteExternalResult> {
+  for (const value of [input.starts_at, input.ends_at]) {
+    if (value !== undefined && value !== null && normalizeTimestamp(value) === null) return { ok: false, code: 'invalid_schedule', status: 400 };
+  }
   const candidate = await db.prepare('SELECT * FROM external_candidates WHERE id = ?').bind(input.candidate_id).first<ExternalCandidate>();
   if (!candidate) return { ok: false, code: 'candidate_not_found', status: 404 };
   const existingPromotion = await db.prepare(
@@ -78,10 +81,13 @@ export async function promoteExternalCandidate(db: D1Database, input: PromoteExt
   if (!(price === null || price === undefined || (Number.isSafeInteger(price) && price >= 0))) {
     return { ok: false, code: 'invalid_price', status: 400 };
   }
-  const startsAt = normalizeTimestamp(input.starts_at ?? candidate.starts_at ?? null);
-  const endsAt = normalizeTimestamp(input.ends_at ?? candidate.ends_at ?? null);
+  const selectedStart = input.starts_at !== undefined ? input.starts_at : candidate.starts_at;
+  const selectedEnd = input.ends_at !== undefined ? input.ends_at : candidate.ends_at;
+  const startsAt = normalizeTimestamp(selectedStart ?? null);
+  const endsAt = normalizeTimestamp(selectedEnd ?? null);
+  if (selectedStart != null && (typeof selectedStart !== 'string' || startsAt === null) || selectedEnd != null && (typeof selectedEnd !== 'string' || endsAt === null)) return { ok: false, code: 'invalid_schedule', status: 400 };
   if (startsAt !== null && endsAt !== null && endsAt <= startsAt) return { ok: false, code: 'invalid_schedule', status: 400 };
-  const sourceEnded = detectSourceEnded(candidate, input.source_ended);
+  const sourceEnded = detectSourceEnded({ ...candidate, ends_at: endsAt }, input.source_ended);
   let sellerId = input.seller_id ?? null;
   if (sellerId) {
     if (!await db.prepare('SELECT id FROM sellers WHERE id = ?').bind(sellerId).first()) {

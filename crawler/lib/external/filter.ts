@@ -1,6 +1,8 @@
+import { checkExternalRegion, externalValues } from './checked';
+import { validFactCheck, type FactCheck } from '../deal-fact-check';
 // 유아용품 판정, 개인정보 마스킹, 전송 페이로드 조립. 이미지 URL·페이지 전체 덤프는 다루지 않는다.
 import { models as seedModels } from '../../../seed/models.json';
-import { extract, extractModels, extractionConfidence, rankModels, toSuggestions, type ModelSuggestion, type Suggestions } from '../extract';
+import { extractLinks, extractModels, extractionConfidence, rankModels, toSuggestions, type Extraction, type ModelSuggestion, type Suggestions } from '../extract';
 import type { ParsedItem } from './parse';
 
 const BABY = /육아|유아|아기|아가|신생아|출산|임산부|베이비|유모차|카시트|아기띠|힙시트|바운서|하이체어|식탁의자|보행기|쏘서|젖병|이유식|아기침대|범보|속싸개|모빌|놀이매트|baby|stroller/i;
@@ -28,7 +30,7 @@ export type ExternalPayload = {
   seller_handle: string | null; seller_name: string | null; seller_url: string | null;
   price_hint: number | null; price_raw: string | null; price_basis: 'external_listing';
   starts_at: string | null; ends_at: string | null; dates_raw: string | null;
-  category: string | null; model_match: boolean; captured_at: string; suggestions: Suggestions;
+  category: string | null; model_match: boolean; captured_at: string; suggestions: Suggestions; fact_checks: FactCheck[];
 };
 
 export type EligibilitySignals = {
@@ -76,20 +78,22 @@ export function evaluatePayload(source: string, item: ParsedItem, capturedAt: Da
   if (assessment.reason) return {accepted:false,reason:assessment.reason};
   const title = maskPersonal(item.title).trim().slice(0, TITLE_MAX);
   if (!title) return {accepted:false,reason:'empty_title'};
-  const dates = item.dates?.starts_at && (!item.dates.ends_at || Date.parse(item.dates.ends_at) > Date.parse(item.dates.starts_at)) ? item.dates : null;
-  const datesRaw = item.dates?.raw ? maskPersonal(item.dates.raw).slice(0, 60) : null;
-  const priceRaw = item.price ? maskPersonal(item.price.raw).slice(0, 60) : null;
+  const checks = item.fact_checks ?? [checkExternalRegion(item.text, item.source_url, capturedAt, { gonggu_price: item.price?.raw ?? null, period: item.dates?.raw ?? null })];
+  if (checks.some(c => !validFactCheck(c))) throw new Error('extraction_result_invalid');
+  const checked = externalValues(checks), dates = checked.dates;
+  const datesRaw = dates?.raw ? maskPersonal(dates.raw).slice(0, 100) : null;
+  const priceRaw = checked.price ? maskPersonal(checked.price.raw).slice(0, 60) : null;
   const text = maskPersonal([title, datesRaw && `기간 ${datesRaw}`, priceRaw && `가격 ${priceRaw}`, item.seller_handle && `셀러 @${item.seller_handle}`].filter(Boolean).join(' / ')).slice(0, TEXT_MAX);
-  const extraction = extract(text, { now: capturedAt });
-  extraction.models = assessment.models;
+  const price = checked.price ? { ...checked.price, confidence: 1, source_line: checked.price.raw } : null;
+  const extraction: Extraction = { models: assessment.models, price, prices: price ? [price] : [], dates, links: extractLinks(text), confidence: 0 };
   extraction.confidence = extractionConfidence(extraction);
   return {accepted:true,payload:{
     kind: 'external_listing', source, source_url: item.source_url, account: source, title, text,
     seller_handle: item.seller_handle, seller_name: 'seller_name' in item ? String(item.seller_name ?? '') || null : null, seller_url: item.seller_url,
-    price_hint: item.price && Number.isSafeInteger(item.price.value) ? item.price.value : null, price_raw: priceRaw, price_basis: 'external_listing',
+    price_hint: checked.price?.value ?? null, price_raw: priceRaw, price_basis: 'external_listing',
     starts_at: dates?.starts_at ?? null, ends_at: dates?.ends_at ?? null, dates_raw: datesRaw,
     category: assessment.category, model_match: assessment.modelMatch,
-    captured_at: capturedAt.toISOString(), suggestions: toSuggestions(extraction),
+    captured_at: capturedAt.toISOString(), suggestions: toSuggestions(extraction), fact_checks: checks,
   }};
 }
 export function buildPayload(source: string, item: ParsedItem, capturedAt: Date): ExternalPayload | null {

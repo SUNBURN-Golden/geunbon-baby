@@ -1,3 +1,4 @@
+import { weeklyReview, validateWeeklyArguments } from './weekly-review';
 import type { CollectorStore } from '../store';
 import type { CollectionReport, DeepSeekClient } from './types';
 import { cycleInterval, DEFAULT_INTERVAL_MS, stateDir } from './config';
@@ -12,13 +13,15 @@ export type DeepSeekWebCliDeps = {
   wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
 };
+export function deepSeekWebCli(args: ['weekly-review', ...string[]], deps?: DeepSeekWebCliDeps): ReturnType<typeof weeklyReview>;
 export function deepSeekWebCli(args: ['status', ...string[]], deps?: DeepSeekWebCliDeps): ReturnType<typeof heartbeatStatus>;
 export function deepSeekWebCli(args: string[], deps?: DeepSeekWebCliDeps): Promise<CollectionReport>;
 export async function deepSeekWebCli(args: string[], deps: DeepSeekWebCliDeps = {}) {
   const [command, ...rest] = args;
-  // No runner, store or SQLite runtime import on the status path.
+  // No runner, store or SQLite runtime import on either read-only path.
+  if (command === 'weekly-review') { validateWeeklyArguments(rest); return weeklyReview(deps.stateDir ?? stateDir(), deps.now?.()); }
   if (command === 'status') return heartbeatStatus(deps.stateDir ?? stateDir(), deps.now?.());
-  if (!['once', 'dry-run', 'daemon'].includes(command)) throw new Error('usage: once [url...] | dry-run [url...] | daemon | status [--json]');
+  if (!['once', 'dry-run', 'daemon'].includes(command)) throw new Error('usage: once [url...] | dry-run [url...] | daemon | status [--json] | weekly-review [--json]');
   const { runDeepSeekWeb } = await import('./runner');
   if (command !== 'daemon') return runDeepSeekWeb({ ...deps, mode: command === 'once' ? 'once' : 'dry_run', urls: rest.length ? rest : undefined });
   const { acquireWriter } = await import('./writer-ownership');

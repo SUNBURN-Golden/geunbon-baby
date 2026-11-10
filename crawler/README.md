@@ -373,7 +373,7 @@ and network dry-run emit local `snapup_eligibility` JSON lines. Events are
 `run_summary` at finalization (also for an enabled idle source). References are
 opaque hashes, with distinct references for page attempts. Context records the
 Git HEAD revision (or fixed `unavailable` if Git is inaccessible), parser version
-`generic-2`, diagnostic version, policy version, acquisition mode `server_html`,
+`generic-3`, diagnostic version, policy version, acquisition mode `server_html`,
 capture timestamp and whether the configured selector equals `main`. A revision
 identifies the checkout base; it does not attest that a working tree is clean.
 No environment/config dump or response body is logged.
@@ -503,3 +503,23 @@ quarantined row requires explicit identity review outside this update. It is nev
 silently upgraded. Exact historical committed receipts remain available for lost
 ACK recovery only. These local metadata changes require no site migration and add
 no status-sync fields.
+
+
+## External deal checked facts (Linux only)
+
+Generic listing/detail extraction (`generic-3`) and Pangpang (`pangpang@2`) verify
+prices and schedule endpoints against the privacy-filtered original product region.
+Detail enrichment requires one identifying product heading and keeps listing/detail
+source identities separately. Unknown or ambiguous facts stay null; generated payloads
+and suggestions cannot recover facts by parsing their own text. An end-only deadline
+survives independently of a missing start.
+
+Local pre-storage preparation is `prepared@3`, with bounded checked metadata and
+assertions derived from the final sanitized evidence. The `parse@6` identity includes
+`deal-facts@1`, checked schema 1 and `kst-observation-year@1`; old derivatives require
+fresh authorized acquisition. This is separate from DeepSeek text preparation version 1.
+Yearless dates remain month/day evidence, without stored inferred schedule timestamps.
+Instagram caption/OCR extraction and its existing year-roll policy are unchanged.
+
+See [DeepSeek checked results and weekly review](deepseek-web/README.md#checked-facts-and-weekly-review)
+for the read-only packet. Collection, fact checking and packet generation never publish.

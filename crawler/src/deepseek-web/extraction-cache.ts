@@ -1,3 +1,4 @@
+import { FACT_CHECK_VERSION, CHECKED_SCHEMA_VERSION, INTERPRETATION_POLICY } from '../../lib/deal-fact-check';
 import { lstatSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalUrl, filterChanged, filterText, PRIVACY_VERSION, URL_IDENTITY_VERSION } from '../../../shared/privacy-rules';
@@ -5,31 +6,26 @@ import { safeEtag, safeModified } from '../agamajung/http-validators';
 import { atomicState, readState, safePath } from './atomic-state';
 import { sha256, PREPARATION_VERSION } from './page-content';
 import { CANDIDATE_FILTER_VERSION, type CandidateDecision } from './candidate-filter';
-import { PROMPT_VERSION, SYSTEM_INSTRUCTIONS, OUTPUT_SCHEMA, VALIDATION_VERSION, validateExtraction } from './extract';
+import { PROMPT_VERSION, SYSTEM_INSTRUCTIONS, OUTPUT_SCHEMA, VALIDATION_VERSION, validateLegacyExtraction, validateCheckedExtraction, isCheckedExtraction } from './extract';
 import type { GeunbonCatalog } from './catalog';
 import type { DeepSeekWebConfig, GongguExtraction, ModelProfile, ParserFixProposal } from './types';
 import { REQUEST_REPRESENTATION } from '../../lib/external/fetch';
-export const CACHE_VERSION = 1;
-const codepoint = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
-export function stableSerialize(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => codepoint(a, b)).map(([k, v]) => `${JSON.stringify(k)}:${stableSerialize(v)}`).join(',')}}`;
-  return JSON.stringify(value);
-}
+export const CACHE_VERSION = 2;
+export { stableSerialize, cacheKey } from './cache-identity';
+import { stableSerialize, cacheKey } from './cache-identity';
 export function contractHash(config: DeepSeekWebConfig, catalog: GeunbonCatalog, profile: ModelProfile) {
   return sha256(stableSerialize({ provider: config.model.provider, profile, response_format: 'json_object', system: SYSTEM_INSTRUCTIONS, schema: OUTPUT_SCHEMA,
     prompt: PROMPT_VERSION, preparation: PREPARATION_VERSION, privacy: PRIVACY_VERSION, identity: URL_IDENTITY_VERSION,
-    filter: CANDIDATE_FILTER_VERSION, catalog, scope: config.scope_categories, validation: VALIDATION_VERSION }));
+    filter: CANDIDATE_FILTER_VERSION, catalog, scope: config.scope_categories, validation: VALIDATION_VERSION, fact_check: FACT_CHECK_VERSION, checked_schema: CHECKED_SCHEMA_VERSION, interpretation: INTERPRETATION_POLICY }));
 }
-export const cacheKey = (url: string, content: string, contract: string) => sha256(stableSerialize([url, content, contract]));
 export const urlContractKey = (url: string, contract: string) => sha256(stableSerialize([url, contract, REQUEST_REPRESENTATION]));
 export type CacheEntry = {
-  version: 1; cache_key: string; canonical_url: string; content_hash: string; contract_hash: string;
+  version: 1 | 2; cache_key: string; canonical_url: string; content_hash: string; contract_hash: string;
   candidate: CandidateDecision; result: GongguExtraction; extracted_at: string;
   proposal: ParserFixProposal | null; pending_delivery: boolean;
 };
 export type Representation = { version: 1; canonical_url: string; contract_hash: string; representation: string; fetch_url: string; entry_key: string | null; content_hash: string | null; etag: string | null; last_modified: string | null; revalidated_at: string };
-export type PendingResult = { version: 1; entry: CacheEntry; representation: Representation };
+export type PendingResult = { version: 1 | 2; entry: CacheEntry; representation: Representation };
 const hex = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const time = (v: unknown): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
 const fail = () => new Error('extraction_cache_unavailable');
@@ -47,15 +43,22 @@ function read<T>(path: string): T | null {
 }
 export function validEntry(e: CacheEntry): boolean {
   try {
-    if (!e || e.version !== 1 || !hex(e.cache_key) || !hex(e.content_hash) || !hex(e.contract_hash) || canonicalUrl(e.canonical_url) !== e.canonical_url || e.cache_key !== cacheKey(e.canonical_url, e.content_hash, e.contract_hash) || !time(e.extracted_at) || typeof e.pending_delivery !== 'boolean') return false;
+    if (!e || ![1, 2].includes(e.version) || !hex(e.cache_key) || !hex(e.content_hash) || !hex(e.contract_hash) || canonicalUrl(e.canonical_url) !== e.canonical_url || e.cache_key !== cacheKey(e.canonical_url, e.content_hash, e.contract_hash) || !time(e.extracted_at) || typeof e.pending_delivery !== 'boolean') return false;
     if (Buffer.byteLength(JSON.stringify(e), 'utf8') > 48000 || Object.keys(e).some(k => !['version', 'cache_key', 'canonical_url', 'content_hash', 'contract_hash', 'candidate', 'result', 'extracted_at', 'proposal', 'pending_delivery'].includes(k))) return false;
     if (!e.candidate?.accepted || !['candidate_pangpang_deal', 'candidate_text_deal'].includes(e.candidate.code) || !e.candidate.match || typeof e.candidate.match.product_id !== 'string') return false;
-    if (Object.keys(e.candidate).some(k => !['accepted', 'code', 'match'].includes(k)) || Object.keys(e.result).some(k => !['brand', 'model', 'category', 'gonggu_price', 'regular_price', 'period', 'gifts', 'conditions', 'seller', 'url', 'checked_date', 'in_scope', 'notes', 'catalog_product_id', 'offer_ref'].includes(k))) return false;
+    if (Object.keys(e.candidate).some(k => !['accepted', 'code', 'match'].includes(k)) || Object.keys(e.result).some(k => !['brand', 'model', 'category', 'gonggu_price', 'regular_price', 'period', 'gifts', 'conditions', 'seller', 'url', 'checked_date', 'in_scope', 'notes', 'catalog_product_id', 'offer_ref', ...(e.version === 2 ? ['start_date', 'end_date', 'fact_check'] : [])].includes(k))) return false;
     const match = e.candidate.match;
     if (!['stroller', 'high_chair', 'car_seat', 'play_gym', 'carrier', 'bouncer'].includes(match.category) || ![match.product_id, match.brand, match.product_line].every(v => typeof v === 'string' && v.length > 0 && v.length <= 100 && !filterChanged(v)) || !Number.isSafeInteger(match.score) || match.score < 1) return false;
     if (e.result.offer_ref !== undefined && (typeof e.result.offer_ref !== 'string' || !/^\d{1,40}$/.test(e.result.offer_ref))) return false;
-    const validated = validateExtraction(JSON.stringify(e.result), e.canonical_url, e.result.checked_date);
-    if (validated.url !== e.result.url || e.result.catalog_product_id !== e.candidate.match.product_id) return false;
+    if (e.version === 2) {
+      validateCheckedExtraction(e.result);
+      if (e.result.fact_check!.source_hash !== e.content_hash || e.result.fact_check!.observed_at !== e.extracted_at) return false;
+    } else {
+      const validated = validateLegacyExtraction(JSON.stringify(e.result), e.canonical_url, e.result.checked_date);
+      if (validated.url !== e.result.url) return false;
+    }
+    if (e.result.url !== e.canonical_url || e.result.catalog_product_id !== e.candidate.match.product_id) return false;
+    if (e.version === 2 && e.proposal && ![e.result.fact_check!.fields.gonggu_price,e.result.fact_check!.fields.regular_price].some(f => f.value !== null && f.evidence.quote === e.proposal!.evidence_quote)) return false;
     if (e.proposal && Object.values(e.proposal).some(v => typeof v === 'string' && filterChanged(v))) return false;
     if (e.proposal !== null && (!e.proposal || e.proposal.kind !== 'parser_fix_proposal' || e.proposal.self_edit !== false || e.proposal.url !== e.canonical_url || JSON.stringify(e.proposal).length > 4000)) return false;
     return true;
@@ -69,7 +72,7 @@ export function validRepresentation(r: Representation): boolean {
   } catch { return false; }
 }
 export function validReceipt(r: PendingResult): boolean {
-  return !!r && Object.keys(r).every(k => ['version', 'entry', 'representation'].includes(k)) && r.version === 1 && validEntry(r.entry) && validRepresentation(r.representation) &&
+  return !!r && Object.keys(r).every(k => ['version', 'entry', 'representation'].includes(k)) && [1, 2].includes(r.version) && r.version === r.entry?.version && validEntry(r.entry) && validRepresentation(r.representation) &&
     r.representation.entry_key === r.entry.cache_key && r.representation.canonical_url === r.entry.canonical_url && r.representation.content_hash === r.entry.content_hash &&
     r.representation.contract_hash === r.entry.contract_hash && Buffer.byteLength(JSON.stringify(r), 'utf8') <= 48000;
 }
@@ -82,6 +85,7 @@ export class ExtractionCache {
     if (e && (!validEntry(e) || e.cache_key !== key)) throw fail();
     return e;
   }
+  checkedEntry(key: string) { const e = this.entry(key); return e && e.version === 2 && isCheckedExtraction(e.result) ? e : null; }
   private index(url: string, contract: string): Representation | null {
     const r = read<Representation>(this.indexPath(url, contract));
     if (!r) return null;
@@ -91,7 +95,7 @@ export class ExtractionCache {
   prior(url: string, contract: string): { representation: Representation; entry: CacheEntry } | null {
     const r = this.index(url, contract);
     if (!r || !r.entry_key) return null;
-    const e = this.entry(r.entry_key);
+    const e = this.checkedEntry(r.entry_key);
     return e ? { representation: r, entry: e } : null;
   }
   observe(r: Representation) {
@@ -135,7 +139,7 @@ export class ExtractionCache {
       }
       const current: CacheEntry[] = [];
       for (const e of all) {
-        if (!e.pending_delivery) continue;
+        if (!e.pending_delivery || e.version !== 2) continue;
         // The URL index points at the latest observed representation. A pending
         // entry the index no longer references is superseded: retrying its
         // delivery is impossible, and leaving it pending pins the URL forever.

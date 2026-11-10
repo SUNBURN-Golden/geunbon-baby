@@ -35,7 +35,7 @@ function privacy(events:EligibilityEvent[],health:unknown){
     const safe=serializeEligibilityEvent(e);
     expect(safe.run_ref).toMatch(/^[a-f0-9]{64}$/);expect(safe.page_ref).toMatch(/^[a-f0-9]{64}$/);expect(safe.attempt_ref).toMatch(/^[a-f0-9]{64}$/);
     expect(safe.execution_revision).toMatch(/^(?:[a-f0-9]{40,64}|unavailable)$/);
-    expect(safe.parser_version).toBe('generic-2');expect(safe.extraction_mode).toBe('server_html');
+    expect(safe.parser_version).toBe('generic-3');expect(safe.extraction_mode).toBe('server_html');
   }
 }
 async function run(dry:boolean,body:string,options:{selector?:string;depth?:number;entries?:string[];maxPages?:number;failSubmit?:boolean;failTransport?:boolean;failScheduling?:boolean;bodyFor?:(url:URL)=>string}={}){
@@ -88,7 +88,9 @@ test.each([false,true])('shipped main selection exposes heading collapse and con
     expect(h.eligibility_diagnostics).toMatchObject({selected:1,examined:1,rejected:1,rejection_reason_counts:{[reason]:1}});
     const item=events.find(e=>e.event==='item');
     expect(item).toMatchObject({reason,has_title:true,has_category:false,has_price:false,has_period:false,configured_selector_is_main:true});
-    if(file==='contamination')expect(item).toMatchObject({excluded_title:true,excluded_category:false,excluded_text:true});
+    // Page-level nav is pruned before the product scope, so the contaminated
+    // nav no longer becomes the title; the remaining card text still exposes it.
+    if(file==='contamination')expect(item).toMatchObject({excluded_title:false,excluded_category:false,excluded_text:true});
     // Comparing synthetic card scopes demonstrates the mechanism, not real Snapup DOM.
     const scoped=measured(load(file),{...source,selector:'.card'});
     expect(scoped.eligible).toBe(file==='heading-collapse'?5:1);

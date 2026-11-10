@@ -212,3 +212,87 @@ Heartbeat schema 2, validation artifacts, audit snapshots and read-only status a
 Schema-1 heartbeats and validated memory versions 1–3 remain readable. Missing historical metrics become unknown, including embedded active/terminal/last-cycle snapshots. Existing pending audit rows are replayed byte-for-byte without enrichment; totals and recovery controls remain authoritative. New diagnostics expose fixed codes for cache, receipt, profile, result, review, proposal and source-response failures, never raw exceptions or provider/cache contents.
 
 The offline acceptance suite uses injected clients/responses/clocks and temporary state. SIGKILL tests cover acknowledgement, entry/index writes, review/proposal delivery, receipt clearing and prior accounting/audit windows. No operational queue edits or live API requests are part of verification.
+
+
+## Checked facts and weekly review
+
+All new results run the pure Linux `crawler/lib/deal-fact-check.ts` pass against the
+exact bounded `preparePage().text` supplied to Flash. Text beyond `PAGE_TEXT_LIMIT`,
+model quotations/notes and discovery hints cannot verify facts. Normalized, complete
+monetary tokens support safe integer KRW amounts; missing, mismatched, ambiguous or
+invalid facts become actual JSON nulls. The checker does not replace a failed amount,
+sum components or calculate a discount. Regular prices remain seller evidence and
+never establish official MSRP authority.
+
+Checked dates retain written year/month/day and day/hour/minute/second precision.
+Yearless dates keep `year:null`. A year can propagate only across an unambiguous
+written range, and an unsupported model year fails. Independently verified endpoints
+survive a mismatch in the other endpoint. Contradictory ranges retain a diagnostic
+quote and null schedules. The existing Instagram `extractDates` year-roll behavior
+is separate and unchanged.
+
+`deal-facts@1` / checked schema 1 records source URL, exact-text SHA-256, observation
+instant, KST observation year, truncation, and bounded sanitized quotations with
+UTF-16 offsets into that exact text. Every field has a value or a fixed failure
+reason (`missing`, `not_found`, `ambiguous`, `invalid`, `contradictory_range`). A valid
+envelope records that checking ran even when all fields are null. Source HTML and
+provider responses are never included. Receipt/cache limits remain 48,000 bytes.
+
+Raw validation precedes checking, checked validation and proposal construction,
+then receipt version 2 is assigned and checkpointed with acknowledged usage. Cache
+entry version 2 is required for reuse/304, proposals and checked review delivery.
+Contract hashes include the checker/schema/interpretation versions. Memory v4 accepts
+both receipt versions through separate original/checked validators. Recovery validates
+the durable receipt; it does not re-run source verification without source text.
+
+Version-1 entries/receipts remain readable and recoverable with accounting intact.
+They cannot supply checked cache hits, conditional reuse or new review/proposal
+outputs. An authorized revisit requires a fresh fetch and model call. Existing review
+rows and human decisions remain untouched; read projections expose null facts and
+`needs_fact_check`. Substantive comparison uses checked amounts/date components and
+precision, including checked-versus-legacy status, without raw period wording or
+quotation formatting. Source-content transitions and historical returns retain their
+revision provenance and delivery IDs.
+
+```sh
+npm run deepseek-web -- weekly-review
+npm run deepseek-web -- weekly-review --json
+```
+
+This command reads one validated `review-queue.jsonl` snapshot before runner/runtime
+initialization. It needs no credentials, SQLite, writer ownership, writable state,
+network, model, recovery or delivery operations. A missing queue is an empty packet
+without directory creation; corrupt/incomplete JSONL fails without repair or partial
+output. Exit 0 includes an empty packet; exit 2 uses `weekly_review_invalid_arguments`
+or `weekly_review_unavailable`.
+
+The packet captures one generation clock and uses Monday 00:00 KST through next
+Monday exclusively. It resolves the latest revision per canonical URL first, omits
+approved/rejected/out-of-scope revisions, and excludes `future_week` starts or `ended`
+deadlines even when another fact is missing. Open-ended starts older than seven KST
+calendar days remain reviewable with `possibly_ended`. Date-only ends remain valid
+through their KST day, and explicit times expire once passed. Yearless screening uses
+the recorded observation year without changing facts; cross-year and adjacent-year
+December/January interpretations produce `year_ambiguous` and cannot screen on their
+uncertain endpoints. Eligibility ages on every invocation without a model call.
+
+JSON and human output include the captured time/week bounds, checked facts, missing
+fields, warnings, exclusions, unique excluded-record counts, overlapping reason counts,
+and separate decision/out-of-scope omissions. Legacy facts are never described as
+rechecked. The existing October sample-page/mock-completion pair verifies positively
+but is excluded as ended against the November 10 acceptance clock.
+
+Manual `scripts/promote-external.mjs --from-review-queue=...` passes checked price and
+schedule values, including explicit nulls, to candidate ingest and promotion using
+only the exact ingest acknowledgement ID. Yearless or legacy facts promote as null.
+Fully dated facts without a source time map to KST start-of-day or inclusive end-of-day
+(`23:59:59.999`); local evidence retains original precision. Omitted promotion dates
+keep candidate fallback, null clears it, valid timestamps replace it, and invalid
+supplied values fail. A cleared candidate deadline cannot drive date-derived
+`source_ended`. Publication remains an explicitly invoked human operation.
+
+New offline regression suites: `deal-fact-check`, `deepseek-web-weekly-review`,
+`external-checked-facts`, `review-promotion-facts`, plus the cache/recovery and
+promotion/API suites. The weekly subprocess guard forbids runtime/cache/store loading,
+network and state writes, and compares directory entries and queue bytes. The daemon
+owns execution of these suites and repository validation/build checks.

@@ -15,8 +15,10 @@ test('pangpang: title, price, dates, seller and same-origin links; scripts and c
   const first = items.find(item => item.source_url.includes('/deal/101'))!;
   expect(first.title).toContain('스토케 트립트랩 공구');
   expect(first.price).toMatchObject({ value: 390000 });
-  expect(first.dates?.starts_at).toMatch(/^2026-10-26T00:00:00\+09:00$/);
-  expect(first.dates?.ends_at).toMatch(/^2026-10-28T23:59:59\+09:00$/);
+  expect(first.dates?.starts_at).toBeNull();
+  expect(first.fact_checks?.[0].fields.start_date.value).toMatchObject({year:null,month:10,day:26});
+  expect(first.dates?.ends_at).toBeNull();
+  expect(first.fact_checks?.[0].fields.end_date.value).toMatchObject({year:null,month:10,day:28});
   expect(first.seller_handle).toBe('synthetic_seller');
   expect(first.seller_url).toBe('https://www.instagram.com/synthetic_seller/');
   expect(first.category_text).toContain('하이체어');
@@ -32,8 +34,10 @@ test('momcalendar articles parse with a month-day range', () => {
   const items = parseItems(fixture('momcalendar.html'), 'https://momcalendar.com/', 'https://momcalendar.com', '', now);
   const hit = items.find(item => item.source_url === 'https://momcalendar.com/events/55/')!;
   expect(hit.price?.value).toBe(549000);
-  expect(hit.dates?.starts_at).toBe('2026-10-26T00:00:00+09:00');
-  expect(hit.dates?.ends_at).toBe('2026-10-28T23:59:59+09:00');
+  expect(hit.dates?.starts_at).toBeNull();
+  expect(hit.fact_checks?.[0].fields.start_date.value).toMatchObject({year:null,month:10,day:26});
+  expect(hit.dates?.ends_at).toBeNull();
+  expect(hit.fact_checks?.[0].fields.end_date.value).toMatchObject({year:null,month:10,day:28});
 });
 
 test('snapup table rows parse; a row without a numeric price keeps price null', () => {
