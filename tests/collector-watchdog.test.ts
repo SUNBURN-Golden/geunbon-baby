@@ -2,7 +2,8 @@ import { expect, test, vi } from 'vitest';
 import { readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { APPS, initialWatchdogState, validState, watchdog, type Observation, type WatchdogAdapters, type WatchdogState } from '../crawler/src/collector-watchdog';
 import { readPrivate, writePrivate } from '../crawler/src/private-state';
-import { identity, inspectIdentity } from '../crawler/src/process-identity';
+import { identity, inspectIdentity, serviceProcesses, type ProcScan } from '../crawler/src/process-identity';
+import type { ProcReader } from '../crawler/src/run-lock';
 import { linuxAdapters, parsePm2, type LinuxOverrides } from '../crawler/src/watchdog-linux';
 import { ScheduleWorker } from '../crawler/src/schedule-worker';
 import { loadSchedule } from '../crawler/src/collection-schedule';
@@ -92,6 +93,35 @@ test('shared process identity distinguishes zombie, reused PID and inspection fa
   expect(inspectIdentity(own,()=>{throw new Error();},()=>{})).toBe('unknown');
   expect(inspectIdentity(own,()=>boot,()=>{throw Object.assign(new Error(),{code:'EPERM'});})).toBe('unknown');
   expect(validState({...initialWatchdogState(1),attempts:[{secret:'private-secret'}]},2)).toBe(false);
+});
+test('service scan skips verifiably foreign-root services and keeps failing closed elsewhere',()=>{
+  // Hermetic /proc view: no real processes are spawned or inspected.
+  const decoy=4194000,statLine=`123 (worker ) name) R ${Array(18).fill('0').join(' ')} 22`;
+  const harness=(cwd:string,args:string[],override?:Partial<ProcScan>)=>{
+    const read:ProcReader=path=>path==='/proc/sys/kernel/random/boot_id'?boot
+      :path===`/proc/${decoy}/cmdline`?[...args,''].join('\0')
+      :path===`/proc/${decoy}/stat`?statLine
+      :(()=>{throw Object.assign(new Error(),{code:'ENOENT'});})();
+    const scan:ProcScan={readdir:()=>[String(decoy)],uid:()=>process.getuid!(),
+      realpath:path=>path===`/proc/${decoy}/cwd`?cwd:path,...override};
+    return {read,scan};
+  };
+  // Foreign-root decoys (relative or absolute script) are another checkout's
+  // services: skipped, never a service_identity_mismatch for this root.
+  for(const args of [['node','crawler/collector-scheduler.mjs','schedule'],['node','/foreign/crawler/collector-scheduler.mjs','schedule'],['node','crawler/local-worker.mjs','serve']]){
+    const h=harness('/foreign',args);
+    expect(serviceProcesses('/fixture-root',h.read,h.scan)).toEqual([]);
+  }
+  // A same-root scheduler decoy is this root's service and is classified.
+  const ownRoot=harness('/fixture-root',['node','crawler/collector-scheduler.mjs','schedule']);
+  const found=serviceProcesses('/fixture-root',ownRoot.read,ownRoot.scan);
+  expect(found.map(f=>[f.identity.pid,f.service])).toEqual([[decoy,'scheduler']]);
+  // Unresolvable caller root still fails closed.
+  const brokenRoot=harness('/fixture-root',['node','crawler/collector-scheduler.mjs','schedule'],{realpath:path=>{if(path==='/fixture-root')throw Object.assign(new Error(),{code:'ENOENT'});return path;}});
+  expect(()=>serviceProcesses('/fixture-root',brokenRoot.read,brokenRoot.scan)).toThrow('process_unverifiable');
+  // A non-ENOENT /proc stat failure on a candidate owner fails closed.
+  const unreadable=harness('/fixture-root',['node','crawler/local-worker.mjs','serve'],{uid:()=>{throw Object.assign(new Error(),{code:'EPERM'});}});
+  expect(()=>serviceProcesses('/fixture-root',unreadable.read,unreadable.scan)).toThrow('process_unverifiable');
 });
 test('scheduler recovery confirmation succeeds while the first due run is still in progress',async()=>{
   const f=fixture();try{

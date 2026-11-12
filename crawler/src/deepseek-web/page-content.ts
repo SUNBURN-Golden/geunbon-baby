@@ -4,7 +4,7 @@ import { parseHtml, selectAll, decodeEntities, type El } from '../../lib/externa
 import { ParseBudget } from '../../lib/external/parse-budget';
 import { pangpangPost } from '../../lib/external/pangpang';
 
-export const PREPARATION_VERSION = 2;
+export const PREPARATION_VERSION = 3;
 export const PAGE_TEXT_LIMIT = 12000;
 const BUNDLE_PREAMBLE_LIMIT = 2000;
 const BUNDLE_BODY_LIMIT = 1200;
@@ -15,11 +15,17 @@ export const BUNDLE_HINT = /(?:모음전|묶음전|패키지(?:\s*구성)?|여�
 const excludedTags = new Set(['nav', 'header', 'footer', 'aside', 'form', 'title']);
 const excludedTokens = /(?:^|[\s_-])(?:related|recommendations?|recommended|upsell|crosssell|navigation|menu|private|sr-only|hidden)(?:$|[\s_-])|추천|관련상품/iu;
 const excluded = (e: El) => excludedTags.has(e.tag) || excludedTokens.test(`${e.attrs.id ?? ''} ${e.attrs.class ?? ''} ${e.attrs.role ?? ''}`) || /display\s*:\s*none|visibility\s*:\s*hidden/i.test(e.attrs.style ?? '');
+// The source's own status badge (text-status-*) is volatile run-state wording:
+// it never enters prepared text or the content hash, only deal_status. It stays
+// in the tree (prune keeps it) so dealStatus can still read it.
+const statusBadge = (e: El) => (e.attrs.class ?? '').includes('text-status');
 export type PreparedBundleRegion = { index: number; title: string; start: number; end: number };
 export type PreparedBundle = { hint: string; title: string; regions: PreparedBundleRegion[] };
+export type DealStatus = 'ended' | 'scheduled' | 'open' | null;
 export type PreparedPage = Readonly<{
   url: string; text: string; content_hash: string; title: string; category: string;
   description: string; identity_description: string; deal_text: string; seller: string; schedule: string;
+  deal_status: DealStatus;
   pangpang: boolean; truncated: boolean; bundle: PreparedBundle | null;
   failure: 'candidate_listing' | 'candidate_empty' | 'candidate_ambiguous_product' | 'candidate_evidence_unavailable' | 'candidate_preparation_limit' | 'candidate_bundle_unsupported' | null;
 }>;
@@ -27,7 +33,7 @@ export const sha256 = (text: string) => createHash('sha256').update(text, 'utf8'
 // Keep line boundaries until privacy/injection inspection, including literal newlines in text nodes.
 function regionText(node: El | string): string {
   if (typeof node === 'string') return decodeEntities(node);
-  if (excluded(node)) return '';
+  if (excluded(node) || statusBadge(node)) return '';
   const inner = node.children.map(regionText).join('');
   return /^(?:article|main|div|p|section|h[1-6]|li|tr|td|dt|dd|br)$/.test(node.tag) ? `\n${inner}\n` : inner;
 }
@@ -45,24 +51,42 @@ function isInside(node: El, ancestor: El): boolean {
   return false;
 }
 type BundlePlan =
-  | { kind: 'bundle'; title: string; hint: string; text: string; regions: PreparedBundleRegion[]; category: string; seller: string; schedule: string; description: string; identity_description: string; deal_text: string }
+  | { kind: 'bundle'; title: string; hint: string; text: string; regions: PreparedBundleRegion[]; category: string; seller: string; schedule: string; deal_status: DealStatus; description: string; identity_description: string; deal_text: string }
   | { kind: 'failure'; failure: 'candidate_bundle_unsupported' | 'candidate_preparation_limit' | 'candidate_evidence_unavailable' };
 
-function bundleMeta(scope: El, url: string): { category: string; seller: string; schedule: string } {
+// Deal status comes only from the source's own status badge, classified by its
+// text (never the class suffix or page-wide 마감 wording: "마감 2026-11-15" is a
+// date label, not a status). Ended wins over any scheduled/open wording so a
+// closed deal can never be queued. Badges are skipped by every text walk, so
+// their labels are read through a raw walk of the still-attached node.
+const rawText = (node: El | string): string => typeof node === 'string' ? decodeEntities(node) : node.children.map(rawText).join('');
+function dealStatus(scope: El): DealStatus {
+  const labels = selectAll(scope, 'span')
+    .filter(e => (e.attrs.class ?? '').includes('text-status'))
+    .map(e => normalizePageText(rawText(e)).replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (!labels.length) return null;
+  if (labels.some(label => /종료/.test(label) || label === '마감')) return 'ended';
+  if (labels.some(label => /예정/.test(label))) return 'scheduled';
+  if (labels.some(label => /오픈/.test(label))) return 'open';
+  return null;
+}
+
+function bundleMeta(scope: El, url: string): { category: string; seller: string; schedule: string; deal_status: DealStatus } {
   const category = normalizePageText(selectAll(scope, '.text-category,[itemprop=category],[data-category]').map(e => e.attrs['data-category'] ?? regionText(e)).join('\n'));
   const sellerLink = selectAll(scope, 'a[href]').find(e => { try { return /^\/account\/\d+$/.test(new URL(e.attrs.href, url).pathname); } catch { return false; } });
   const seller = normalizePageText(sellerLink ? selectAll(sellerLink, 'p').map(regionText)[0] ?? '' : selectAll(scope, 'p.truncate').map(regionText)[0] ?? '');
   const times = selectAll(scope, 'time').filter(e => /\d{1,2}\/\d{1,2}/.test(regionText(e)));
   const scheduleEl = times[0]?.parent ?? selectAll(scope, 'span').find(e => !selectAll(e, 'span').length && /\d{1,2}\/\d{1,2}/.test(regionText(e)));
   const schedule = normalizePageText(scheduleEl ? regionText(scheduleEl) : '');
-  return { category, seller, schedule };
+  return { category, seller, schedule, deal_status: dealStatus(scope) };
 }
 
 function identityDescription(scope: El, url: string): string {
   const sellerLink = selectAll(scope, 'a[href]').find(e => { try { return /^\/account\/\d+$/.test(new URL(e.attrs.href, url).pathname); } catch { return false; } });
   const identityText = (node: El | string): string => {
     if (typeof node === 'string') return decodeEntities(node);
-    if (node === sellerLink || /^(?:seller|brand)$/.test(node.attrs.itemprop ?? '') || /(?:^|[\s_-])seller(?:$|[\s_-])/.test(node.attrs.class ?? '') || 'data-seller' in node.attrs || node.tag === 'p' && (node.attrs.class ?? '').split(/\s+/).includes('truncate')) return '';
+    if (statusBadge(node) || node === sellerLink || /^(?:seller|brand)$/.test(node.attrs.itemprop ?? '') || /(?:^|[\s_-])seller(?:$|[\s_-])/.test(node.attrs.class ?? '') || 'data-seller' in node.attrs || node.tag === 'p' && (node.attrs.class ?? '').split(/\s+/).includes('truncate')) return '';
     const content = node.children.map(identityText).join('');
     return /^(?:article|main|div|p|section|h[1-6]|li|tr|td|dt|dd|br)$/.test(node.tag) ? `\n${content}\n` : content;
   };
@@ -80,7 +104,7 @@ function partition(scope: El, regionBlocks: El[] | null, itemHeadings: El[]): { 
   const emit = (text: string) => { if (current < 0) preambleParts.push(text); else bodyParts[current].push(text); };
   const visit = (node: El | string): void => {
     if (typeof node === 'string') { emit(decodeEntities(node)); return; }
-    if (excluded(node)) return;
+    if (excluded(node) || statusBadge(node)) return;
     if (regionBlocks && regionBlocks.includes(node)) {
       current = -1;
       for (const child of node.children) visit(child);
@@ -117,7 +141,7 @@ function buildBundle(scope: El, regionBlocks: El[] | null, itemHeadings: El[], h
   if (text.length > PAGE_TEXT_LIMIT) return { kind: 'failure', failure: 'candidate_preparation_limit' };
   const meta = bundleMeta(scope, url);
   return {
-    kind: 'bundle', title, hint, text, regions, category: meta.category, seller: meta.seller, schedule: meta.schedule,
+    kind: 'bundle', title, hint, text, regions, category: meta.category, seller: meta.seller, schedule: meta.schedule, deal_status: meta.deal_status,
     description: normalizePageText(bodies.join('\n')),
     identity_description: identityDescription(scope, url),
     deal_text: normalizePageText([title, ...bodies].filter(Boolean).join('\n')),
@@ -129,6 +153,7 @@ function headingText(heading: El) { return normalizePageText(regionText(heading)
 export function preparePage(html: string, rawUrl: string): PreparedPage {
   const url = canonicalUrl(rawUrl), pangpang = !!pangpangPost(url);
   let title = '', category = '', description = '', deal_text = '', seller = '', schedule = '';
+  let deal_status: DealStatus = null;
   let identity_description = '';
   let failure: PreparedPage['failure'] = null;
   let bundleText: string | null = null, bundle: PreparedBundle | null = null, bundleAttempted = false;
@@ -170,7 +195,7 @@ export function preparePage(html: string, rawUrl: string): PreparedPage {
             const plan = buildBundle(root, regions, itemHeadings, pageHint || headingText(itemHeadings[0]), pageHint || headingText(itemHeadings[0]), url);
             if (plan.kind === 'failure') failure = plan.failure;
             else {
-              ({ title, category, seller, schedule, description, identity_description, deal_text } = plan);
+              ({ title, category, seller, schedule, deal_status, description, identity_description, deal_text } = plan);
               bundle = { hint: plan.hint, title: plan.title, regions: plan.regions };
               bundleText = plan.text;
             }
@@ -190,12 +215,13 @@ export function preparePage(html: string, rawUrl: string): PreparedPage {
           const times = selectAll(region, 'time').filter(e => /\d{1,2}\/\d{1,2}/.test(regionText(e)));
           const scheduleEl = times[0]?.parent ?? selectAll(region, 'span').find(e => !selectAll(e, 'span').length && /\d{1,2}\/\d{1,2}/.test(regionText(e)));
           schedule = normalizePageText(scheduleEl ? regionText(scheduleEl) : '');
+          deal_status = dealStatus(region);
           const blocks = selectAll(region, '[itemprop=offers],.offer,.offers,.schedule,.conditions,[data-offer],[data-schedule],[data-conditions]');
           deal_text = normalizePageText([title, ...blocks.map(regionText)].join('\n'));
           description = normalizePageText(regionText(region));
           const identityText = (node: El | string): string => {
             if (typeof node === 'string') return decodeEntities(node);
-            if (node === sellerLink || /^(?:seller|brand)$/.test(node.attrs.itemprop ?? '') || /(?:^|[\s_-])seller(?:$|[\s_-])/.test(node.attrs.class ?? '') || 'data-seller' in node.attrs || node.tag === 'p' && (node.attrs.class ?? '').split(/\s+/).includes('truncate')) return '';
+            if (statusBadge(node) || node === sellerLink || /^(?:seller|brand)$/.test(node.attrs.itemprop ?? '') || /(?:^|[\s_-])seller(?:$|[\s_-])/.test(node.attrs.class ?? '') || 'data-seller' in node.attrs || node.tag === 'p' && (node.attrs.class ?? '').split(/\s+/).includes('truncate')) return '';
             const content = node.children.map(identityText).join('');
             return /^(?:article|main|div|p|section|h[1-6]|li|tr|td|dt|dd|br)$/.test(node.tag) ? `\n${content}\n` : content;
           };
@@ -221,7 +247,7 @@ export function preparePage(html: string, rawUrl: string): PreparedPage {
           const plan = buildBundle(region, null, itemHeadings, pageHint || bundleTitle, bundleTitle, url);
           if (plan.kind === 'failure') failure = plan.failure;
           else {
-            ({ title, category, seller, schedule, description, identity_description, deal_text } = plan);
+            ({ title, category, seller, schedule, deal_status, description, identity_description, deal_text } = plan);
             bundle = { hint: plan.hint, title: plan.title, regions: plan.regions };
             bundleText = plan.text;
           }
@@ -235,5 +261,5 @@ export function preparePage(html: string, rawUrl: string): PreparedPage {
   const text = bundleText ?? normalized.slice(0, PAGE_TEXT_LIMIT);
   // Bundle preparation never truncates: it fails closed above the caps instead.
   const truncated = bundleAttempted ? false : normalized.length > PAGE_TEXT_LIMIT;
-  return Object.freeze({ url, text, content_hash: sha256(text), title, category, description, identity_description, deal_text, seller, schedule, pangpang, truncated, bundle, failure });
+  return Object.freeze({ url, text, content_hash: sha256(text), title, category, description, identity_description, deal_text, seller, schedule, deal_status, pangpang, truncated, bundle, failure });
 }

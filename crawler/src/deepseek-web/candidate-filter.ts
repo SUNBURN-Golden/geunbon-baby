@@ -1,8 +1,8 @@
-import { matchCatalogProduct, type CatalogMatch, type GeunbonCatalog } from './catalog';
+import { categoryScopeBlocked, matchCatalogProduct, type CatalogMatch, type GeunbonCatalog } from './catalog';
 import type { PreparedPage } from './page-content';
 import type { DeepSeekWebConfig } from './types';
-export const CANDIDATE_FILTER_VERSION = 2;
-export type CandidateCode = 'candidate_pangpang_deal' | 'candidate_text_deal' | 'candidate_bundle_deal' | 'candidate_listing' | 'candidate_ambiguous_product' | 'candidate_bundle_unsupported' | 'candidate_excluded_category' | 'candidate_accessory' | 'candidate_no_catalog_match' | 'candidate_no_deal_evidence' | 'candidate_empty' | 'candidate_evidence_unavailable' | 'candidate_preparation_limit';
+export const CANDIDATE_FILTER_VERSION = 3;
+export type CandidateCode = 'candidate_pangpang_deal' | 'candidate_text_deal' | 'candidate_bundle_deal' | 'candidate_listing' | 'candidate_ambiguous_product' | 'candidate_bundle_unsupported' | 'candidate_excluded_category' | 'candidate_accessory' | 'candidate_no_catalog_match' | 'candidate_no_deal_evidence' | 'candidate_ended' | 'candidate_empty' | 'candidate_evidence_unavailable' | 'candidate_preparation_limit';
 export type CandidateDecision = { accepted: boolean; code: CandidateCode; match: CatalogMatch | null };
 const deal = /공구|공동\s*구매/;
 const negative = /(?:공구|공동\s*구매)(?:가)?\s*(?:아님|아니|없음|없다)/;
@@ -13,8 +13,11 @@ export function candidateDecision(page: PreparedPage, catalog: GeunbonCatalog, c
   // Only product content can establish identity, never URL/seller/discovery hints.
   const identity = `${page.title}\n${page.category}\n${page.identity_description}`;
   if (/기저귀|분유|diapers?|infant\s*formula/i.test(identity)) return reject('candidate_excluded_category');
+  // Ended deals never reach the model or the review queue, whatever else the page says.
+  if (page.deal_status === 'ended') return reject('candidate_ended');
   if (/(?:쿠션|트레이|시트라이너|레인커버|컵홀더|어댑터|발판|커버|전용\s*가방)/i.test(page.title) && !/세트|번들|본품\s*포함/.test(page.title)) return reject('candidate_accessory');
   if (catalog.accessory_exclude_patterns.some(p => `${page.title}\n${page.category}`.includes(p))) return reject('candidate_accessory');
+  if (categoryScopeBlocked(page.category, catalog)) return reject('candidate_excluded_category');
   const match = matchCatalogProduct({ title: page.title, category_text: page.category, text: page.identity_description }, catalog);
   if (!match) return reject('candidate_no_catalog_match');
   if (!config.scope_categories.some(c => c.id === match.category)) return reject('candidate_excluded_category');
