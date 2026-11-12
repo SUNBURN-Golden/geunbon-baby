@@ -18,21 +18,30 @@ export function inspectIdentity(owner:Identity,read:ProcReader=procRead,check=(p
     const state=processState(stat);return state==='Z'?'zombie':/^[RSDTtWIXPK]$/.test(state)?'alive':'unknown';
   }catch{return 'unknown';}
 }
+// Injectable /proc view so service identity stays testable without live processes.
+export type ProcScan={readdir(path:string):string[];uid(pid:number):number;realpath(path:string):string};
+export const realProcScan:ProcScan={readdir:path=>readdirSync(path),uid:pid=>statSync(`/proc/${pid}`).uid,realpath:path=>realpathSync(path)};
 // Scan all visible same-user processes. Failure to inspect any potential owner fails closed.
 // Watchdog must run in the same host/PID namespace as PM2 and these services.
-export function serviceProcesses(root:string,read:ProcReader=procRead){
+export function serviceProcesses(root:string,read:ProcReader=procRead,scan:ProcScan=realProcScan){
   const found:{identity:Identity;service:'local'|'scheduler'|'job';state:ProcessStatus}[]=[];
-  for(const name of readdirSync('/proc').filter(s=>/^\d+$/.test(s))){
+  // An unresolvable caller root can prove nothing about service ownership.
+  let rootReal:string;
+  try{rootReal=scan.realpath(root);}catch{throw new Error('process_unverifiable');}
+  for(const name of scan.readdir('/proc').filter(s=>/^\d+$/.test(s))){
     const pid=Number(name);let uid:number;
-    try{uid=statSync(`/proc/${pid}`).uid;}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')continue;throw new Error('process_unverifiable');}
+    try{uid=scan.uid(pid);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')continue;throw new Error('process_unverifiable');}
     if(uid!==process.getuid!())continue;
     try{
       const args=read(`/proc/${pid}/cmdline`).split('\0');
       const script=args.find(s=>/(?:^|\/)(?:local-worker\.(?:mjs|ts)|collector-scheduler\.mjs)$/.test(s));
       if(!script)continue;
-      const cwd=realpathSync(`/proc/${pid}/cwd`);
-      const absolute=script.startsWith('/')?script:`${cwd}/${script}`;
-      if(!absolute.startsWith(root+'/'))throw new Error('service_identity_mismatch');
+      const cwd=scan.realpath(`/proc/${pid}/cwd`);
+      const absolute=scan.realpath(script.startsWith('/')?script:`${cwd}/${script}`);
+      // Each checkout root owns its own DB, run locks and root-scoped PM2 apps
+      // (parsePm2 is root/db scoped), so a collector service that provably
+      // lives under a different canonical root is not this root's service.
+      if(absolute!==rootReal&&!absolute.startsWith(rootReal+'/'))continue;
       const service=args.includes('schedule')||script.endsWith('collector-scheduler.mjs')?'scheduler':args.some(a=>['discover','collect','discover-sources','backfill-engine'].includes(a))?'job':'local';
       const own=identity(pid,read);found.push({identity:own,service,state:inspectIdentity(own,read)});
     }catch(e){if(['ENOENT','ESRCH'].includes((e as NodeJS.ErrnoException).code??''))continue;throw new Error('process_unverifiable');}

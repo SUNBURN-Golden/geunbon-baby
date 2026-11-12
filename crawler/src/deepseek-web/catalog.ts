@@ -9,6 +9,7 @@ export type GeunbonProduct = {
   category: ScopedCategory;
   brand: string;
   product_line: string;
+  brand_aliases: string[];
   ko_aliases: string[];
   en_aliases: string[];
   search_terms: string[];
@@ -18,6 +19,7 @@ export type GeunbonCatalog = {
   catalog_version: number;
   notes?: string;
   accessory_exclude_patterns: string[];
+  category_rules: { blocked_first_segments: string[]; blocked_leaf_segments: string[] };
   products: GeunbonProduct[];
 };
 
@@ -38,7 +40,11 @@ const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), '../../deepseek-we
 
 export function loadGeunbonCatalog(path = process.env.DEEPSEEK_GEUNBON_CATALOG ?? join(pkgRoot, 'geunbon-catalog.json')): GeunbonCatalog {
   const raw = JSON.parse(readFileSync(path, 'utf8')) as GeunbonCatalog;
-  if (raw.catalog_version !== 1 || !Array.isArray(raw.products) || raw.products.length < 1) {
+  if (
+    raw.catalog_version !== 2 || !Array.isArray(raw.products) || raw.products.length < 1
+    || !raw.category_rules || !Array.isArray(raw.category_rules.blocked_first_segments) || !Array.isArray(raw.category_rules.blocked_leaf_segments)
+    || raw.products.some(p => !Array.isArray(p.brand_aliases) || p.brand_aliases.length < 1)
+  ) {
     throw new Error('invalid_geunbon_catalog');
   }
   return raw;
@@ -76,6 +82,18 @@ function accessoryHit(blob: string, catalog: GeunbonCatalog) {
   return patterns.some(p => blob.includes(p));
 }
 
+// Neutral-by-default category gate: only explicitly blocked breadcrumb segments are
+// rejected. Neutral parenting labels (유아용품, 육아용품, 유모차/카시트, empty) pass
+// through to brand/model matching.
+export function categoryScopeBlocked(category_text: string, catalog: GeunbonCatalog): boolean {
+  const segments = category_text.normalize('NFKC').split('>').map(s => s.trim()).filter(Boolean);
+  if (!segments.length) return false;
+  const { blocked_first_segments, blocked_leaf_segments } = catalog.category_rules;
+  if (blocked_first_segments.includes(segments[0])) return true;
+  if (segments[0] === '키즈') return segments.slice(1).some(s => blocked_leaf_segments.includes(s));
+  return segments.length === 1 && blocked_leaf_segments.includes(segments[0]);
+}
+
 function scoreProduct(blob: string, p: GeunbonProduct): number {
   let score = 0;
   for (const a of [...p.ko_aliases, ...p.en_aliases]) {
@@ -88,9 +106,14 @@ function scoreProduct(blob: string, p: GeunbonProduct): number {
 export function matchCatalogProduct(product: Pick<PangpangProduct, 'title' | 'category_text' | 'text'>, catalog: GeunbonCatalog): CatalogMatch | null {
   const blob = `${product.title}\n${product.category_text}\n${product.text}`.normalize('NFKC');
   if (accessoryHit(blob, catalog)) return null;
+  const lower = blob.toLowerCase();
   let best: CatalogMatch | null = null;
   for (const p of catalog.products) {
-    const score = scoreProduct(blob, p);
+    // A catalog mapping requires the brand itself. Generic line words (플레이짐, 믹스…)
+    // and brand words inside seller handles (@the_ergo_official) are not brand evidence.
+    const brandHits = p.brand_aliases.filter(a => a.length >= 2 && lower.includes(a.toLowerCase()));
+    if (!brandHits.length) continue;
+    const score = scoreProduct(blob, p) + brandHits.length * 2;
     if (score < 2) continue;
     const m: CatalogMatch = { product_id: p.id, category: p.category, brand: p.brand, product_line: p.product_line, score };
     if (!best || m.score > best.score) best = m;
@@ -99,9 +122,12 @@ export function matchCatalogProduct(product: Pick<PangpangProduct, 'title' | 'ca
 }
 
 export function classifyCatalogScope(product: Pick<PangpangProduct, 'title' | 'category_text' | 'text'>, catalog: GeunbonCatalog): ScopeVerdict {
+  if (categoryScopeBlocked(product.category_text, catalog)) return { kind: 'outside_scope' };
   const blob = `${product.title}\n${product.category_text}`;
   if (accessoryHit(blob, catalog)) return { kind: 'accessory_or_broad' };
-  const match = matchCatalogProduct(product, catalog);
+  // Listing body text embeds seller handles and promo copy; only the card's own
+  // title/category may establish a brand, so the body is deliberately dropped.
+  const match = matchCatalogProduct({ title: product.title, category_text: product.category_text, text: '' }, catalog);
   if (match) return { kind: 'catalog_match', match };
   return { kind: 'outside_scope' };
 }

@@ -51,15 +51,30 @@ export async function enqueueReview(dir: string, extraction: GongguExtraction) {
   const item: ReviewQueueItem = { id: randomUUID(), status: 'pending', created_at: new Date().toISOString(), extraction, source_kind: 'public_web', verify_level: 'model_extract' };
   await append(dir, item); return item;
 }
-function substantive(e: GongguExtraction) {
+// One source offer = product identity + seller + window + prices + bundle lines.
+// Raw wording must not hide the same offer behind a different phrasing: the
+// 2026-11-11 review saw the same 하베브릭스 deal queued three times under
+// different model punctuation, seller suffixes and period spacing.
+const offerToken = (text: string) => text.normalize('NFKC').toLowerCase().replace(/[&,·/…]+/g, ' ').replace(/\s+/g, ' ').trim();
+// A seller is its handle, not its decoration: @somda.park, somda.park and
+// "@somda.park (인스타그램)" are one seller. Non-handle names stay verbatim so
+// distinct Korean-only seller strings never collide.
+const sellerToken = (seller: string) => {
+  const handle = /@?[A-Za-z0-9][A-Za-z0-9._]{1,29}/.exec(seller);
+  return handle ? handle[0].replace(/^@/, '').toLowerCase() : seller.replace(/\s+/g, ' ').trim();
+};
+const dayToken = (d: NonNullable<GongguExtraction['start_date']>) => `${d.year ?? ''}-${d.month ?? ''}-${d.day ?? ''}`;
+function offerKey(e: GongguExtraction) {
   const p = projectExtraction(e);
-  const date = (d: GongguExtraction['start_date']) => d ? [d.year,d.month,d.day,d.hour,d.minute,d.second,d.precision] : null;
-  // An item name/option/price/model change is substantive: it must not be hidden
-  // by duplicate_offer against a different URL.
+  // Checked rows key on canonical date components; legacy rows keep their
+  // whitespace-stripped period so well-formed strings still collide.
+  const window = p.start_date || p.end_date ? `${p.start_date ? dayToken(p.start_date) : ''}~${p.end_date ? dayToken(p.end_date) : ''}` : p.period.replace(/\s+/g, '');
+  // An item name/option/price change is substantive: it must not be hidden by
+  // duplicate_offer against a different URL.
   const bundle = p.bundle_items?.map(item => 'price_fact' in item
-    ? [item.region_index, item.brand, item.product_name, item.option_text, item.category, item.price_fact.value, item.model_match?.model_id ?? null]
-    : [item.region_index, item.source_brand, item.product_name, item.option_text, item.category, item.gonggu_price]) ?? null;
-  return JSON.stringify([isCheckedExtraction(e), p.catalog_product_id, p.brand, p.model, p.category, p.in_scope, p.seller, p.gonggu_price, p.regular_price, date(p.start_date), date(p.end_date), p.gifts, p.conditions, bundle]);
+    ? JSON.stringify([item.brand, offerToken(item.product_name), offerToken(item.option_text ?? ''), item.price_fact.value, item.model_match?.model_id ?? null])
+    : JSON.stringify([item.source_brand, offerToken(item.product_name), offerToken(item.option_text ?? ''), item.gonggu_price])).sort() ?? null;
+  return JSON.stringify([isCheckedExtraction(e), p.catalog_product_id ?? offerToken(`${p.brand} ${p.model}`), sellerToken(p.seller), window, p.gonggu_price, p.regular_price, bundle]);
 }
 export async function enqueueReviewIfNew(dir: string, extraction: GongguExtraction, entry?: CacheEntry, observedAt = new Date().toISOString()): Promise<{ enqueued: boolean; reason?: string }> {
   if (!isCheckedExtraction(extraction) || entry && (entry.version !== 2 || !isCheckedExtraction(entry.result) || JSON.stringify(entry.result) !== JSON.stringify(extraction) || entry.canonical_url !== canonicalUrl(extraction.url) || entry.content_hash !== extraction.fact_check.source_hash || entry.cache_key !== cacheKey(entry.canonical_url,entry.content_hash,entry.contract_hash))) throw new Error('extraction_result_invalid');
@@ -69,7 +84,7 @@ export async function enqueueReviewIfNew(dir: string, extraction: GongguExtracti
   if (entry) {
     if (prior?.revision?.cache_key === entry.cache_key) return { enqueued: false, reason: 'duplicate_revision' };
     if (!prior && !extraction.in_scope) return { enqueued: false, reason: 'out_of_scope' };
-    if (!prior && existing.some(row => canonicalUrl(row.extraction.url) !== url && substantive(row.extraction) === substantive(extraction))) return { enqueued: false, reason: 'duplicate_offer' };
+    if (!prior && existing.some(row => canonicalUrl(row.extraction.url) !== url && offerKey(row.extraction) === offerKey(extraction))) return { enqueued: false, reason: 'duplicate_offer' };
     // Same-URL transitions always reach review, including a return to historical content.
     const returned = existing.some(r => r.revision?.cache_key === entry.cache_key);
     const delivery = sha256(JSON.stringify(['review@1', prior?.id ?? null, entry.cache_key]));
@@ -79,7 +94,7 @@ export async function enqueueReviewIfNew(dir: string, extraction: GongguExtracti
     await append(dir, item); return { enqueued: true };
   }
   if (prior) return { enqueued: false, reason: 'duplicate_url' };
-  if (existing.some(row => substantive(row.extraction) === substantive(extraction))) return { enqueued: false, reason: 'duplicate_offer' };
+  if (existing.some(row => offerKey(row.extraction) === offerKey(extraction))) return { enqueued: false, reason: 'duplicate_offer' };
   await enqueueReview(dir, extraction); return { enqueued: true };
 }
 export async function countPending(dir: string) {
