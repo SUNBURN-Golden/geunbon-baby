@@ -14,6 +14,7 @@ import { usageFrom } from '../crawler/src/deepseek-web/client';
 import { loadMemory, saveMemory } from '../crawler/src/deepseek-web/memory';
 import { countPending } from '../crawler/src/deepseek-web/review-queue';
 import { heartbeatStatus, validHeartbeat } from '../crawler/src/deepseek-web/heartbeat';
+import { ExtractionCache } from '../crawler/src/deepseek-web/extraction-cache';
 const url = 'https://shop.example/product?id=1';
 const html = (price = '390,000원', period = '11/10 ~ 11/15', conditions = '정식수입') => `<article><h1>스토케 트립트랩 하이체어 공구</h1><div class="offer">공구가 ${price}</div><div class="schedule">${period}</div><div class="conditions">${conditions}</div></article>`;
 const extraction = () => ({ brand: 'Stokke', model: 'Tripp Trapp', category: 'high_chair', gonggu_price: '390,000원', regular_price: '정보 없음', period: '11/10 ~ 11/15', gifts: '정보 없음', conditions: '정식수입', seller: 'test_seller', url: 'https://untrusted.example/model-url', checked_date: '2000-01-01', in_scope: true });
@@ -207,6 +208,32 @@ test('deferred receipt delivery rechecks robots and domain policy before exposin
   await s.run(); expect(s.complete).toHaveBeenCalledTimes(1); expect(() => rows(s.dir)).toThrow();
   s.f.store.put('domain_state', 'shop.example', { stopped: false, next_at: 0 });
   await s.run(); expect(rows(s.dir)).toHaveLength(1); expect(s.complete).toHaveBeenCalledTimes(1);
+});
+
+test('gone deferred entries do not consume the recovery limit', async () => {
+  const s = setup();
+  for (const target of [url, 'https://other.example/deal']) {
+    await expect(runDeepSeekWeb({
+      mode: 'once', stateDir: s.dir, store: s.f.store, urls: [target], client: { complete: s.complete }, fetchPage: s.fetchPage,
+      fault: point => { if (point === 'receipt_cleared') throw new Error('injected-crash'); },
+    })).rejects.toThrow('cycle_failed');
+  }
+  const deferred = new ExtractionCache(s.dir).pending(2);
+  expect(deferred).toHaveLength(2);
+  const [gone, live] = deferred.map(entry => entry.canonical_url);
+  const memory = await loadMemory(s.dir);
+  memory.pending_urls = [];
+  memory.gone_urls[gone] = 410;
+  await saveMemory(s.dir, memory);
+
+  const config = loadDeepSeekWebConfig();
+  config.memory.max_queue_urls = 1;
+  s.fetchPage.mockClear();
+  await runDeepSeekWeb({ mode: 'once', stateDir: s.dir, store: s.f.store, urls: [gone], loadConfig: () => config, client: { complete: s.complete }, fetchPage: s.fetchPage });
+  expect(s.fetchPage.mock.calls.map(([target]) => target)).toEqual([live]);
+  expect(s.complete).toHaveBeenCalledTimes(2);
+  expect(rows(s.dir).map(row => row.extraction.url)).toEqual([live]);
+  expect((await loadMemory(s.dir)).pending_urls).toEqual([]);
 });
 
 test('a superseded pending delivery is cleared and no longer starves listing discovery', async () => {

@@ -12,7 +12,8 @@ export function emptyCycle(cycleId: string): CycleBudget {
 export function emptyLifetime(): LifetimeAudit {
   return { token_spent: 0, requests: 0, cycles: 0, model_calls: 0 };
 }
-const canonicalSet = (urls: string[]) => [...new Set(urls.map(url => { try { return canonicalUrl(url); } catch { return url; } }))];
+const canonicalOrRaw = (url: string) => { try { return canonicalUrl(url); } catch { return url; } };
+const canonicalSet = (urls: string[]) => [...new Set(urls.map(canonicalOrRaw))];
 export function emptyRotation(): RotationState {
   return {
     policy_version: 1,
@@ -36,6 +37,7 @@ export function migrateMemory(raw: Omit<Partial<RunMemory>, 'version'> & { versi
     lifetime.cycles = lifetime.cycles || 0;
   }
   const cycle = ([3, 4, 5].includes(raw.version ?? 0) && raw.cycle) ? raw.cycle : emptyCycle(cycleId);
+  const gone = raw.gone_urls ?? {};
   return {
     version: 5,
     pending_result: raw.pending_result ?? null,
@@ -46,7 +48,9 @@ export function migrateMemory(raw: Omit<Partial<RunMemory>, 'version'> & { versi
     updated_at: raw.updated_at ?? new Date().toISOString(),
     plan_notes: raw.plan_notes ?? [],
     observed_urls: canonicalSet(raw.observed_urls ?? []),
-    pending_urls: canonicalSet(raw.pending_urls ?? []),
+    pending_urls: canonicalSet(raw.pending_urls ?? []).filter(url => !Object.hasOwn(gone, url)),
+    gone_urls: gone,
+    fetch_retry_after: raw.fetch_retry_after ?? {},
     token_spent: 0,
     tokens_reserved: 0,
     requests_spent: 0,
@@ -61,7 +65,7 @@ export function migrateMemory(raw: Omit<Partial<RunMemory>, 'version'> & { versi
     catalog_search_cursor: raw.catalog_search_cursor ?? 0,
     last_catalog_search: raw.last_catalog_search ?? null,
     modeled_post_urls: raw.modeled_post_urls ?? [],
-    pending_catalog_meta: raw.pending_catalog_meta ?? {},
+    pending_catalog_meta: Object.fromEntries(Object.entries(raw.pending_catalog_meta ?? {}).filter(([url]) => !Object.hasOwn(gone, canonicalOrRaw(url)))),
     rotation: { ...emptyRotation(), ...(raw.rotation ?? {}) },
     output_counts: raw.output_counts ?? { extractions: 0, proposals: 0, blocked: 0, review_pending: 0 },
   };

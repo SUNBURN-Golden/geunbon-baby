@@ -1,6 +1,6 @@
 import { weeklyReview, validateWeeklyArguments } from './weekly-review';
 import type { CollectorStore } from '../store';
-import type { CollectionReport, DeepSeekClient } from './types';
+import type { CollectionReport, DeepSeekClient, DeepSeekWebConfig } from './types';
 import { cycleInterval, DEFAULT_INTERVAL_MS, stateDir } from './config';
 import { heartbeatStatus } from './heartbeat';
 export type DeepSeekWebCliDeps = {
@@ -12,6 +12,7 @@ export type DeepSeekWebCliDeps = {
   now?: () => number;
   wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
+  loadConfig?: () => DeepSeekWebConfig;
 };
 export function deepSeekWebCli(args: ['weekly-review', ...string[]], deps?: DeepSeekWebCliDeps): ReturnType<typeof weeklyReview>;
 export function deepSeekWebCli(args: ['status', ...string[]], deps?: DeepSeekWebCliDeps): ReturnType<typeof heartbeatStatus>;

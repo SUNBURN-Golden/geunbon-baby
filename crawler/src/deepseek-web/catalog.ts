@@ -137,7 +137,7 @@ export function rankListingCandidates(
   catalog: GeunbonCatalog,
   maxDetail: number,
   _pageUrl: string,
-  options?: { categoryCursor?: number; categoryOrder?: readonly ScopedCategory[] },
+  options?: { categoryCursor?: number; categoryOrder?: readonly ScopedCategory[]; isGone?: (url: string) => boolean },
 ) {
   const groups: Partial<Record<ScopedCategory, { product: PangpangProduct; match: CatalogMatch }[]>> = {};
   const rollup = { raw: products.length, scoped: 0, accessory_or_broad: 0, outside_scope: 0 };
@@ -149,7 +149,7 @@ export function rankListingCandidates(
     else {
       rollup.scoped++;
       byCategory[v.match.category] = (byCategory[v.match.category] ?? 0) + 1;
-      (groups[v.match.category] ??= []).push({ product: p, match: v.match });
+      if (!options?.isGone?.(p.source_url)) (groups[v.match.category] ??= []).push({ product: p, match: v.match });
     }
   }
   for (const rows of Object.values(groups)) rows.sort((a, b) => b.match.score - a.match.score || a.product.title.localeCompare(b.product.title));

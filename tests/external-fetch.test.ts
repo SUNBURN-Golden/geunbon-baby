@@ -19,7 +19,7 @@ function harness(routes: Record<string, () => Response>, options: { min_interval
     { fetch: fetchMock as unknown as typeof fetch, sleep: async ms => { clock += ms; }, now: () => clock, random: () => 0.5 },
     info => blocks.push(info),
   );
-  return { fetcher, calls, blocks, fetchMock, clock: () => clock };
+  return { fetcher, calls, blocks, fetchMock, clock: () => clock, advance: (ms: number) => { clock += ms; } };
 }
 const html = (body = '<p>ok</p>') => () => new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
 const robotsTxt = (body = 'User-agent: *\nDisallow: /private/') => () => new Response(body, { status: 200, headers: { 'content-type': 'text/plain' } });
@@ -64,15 +64,52 @@ test('disallowed and hard-blocked paths make no request and are reported', async
   expect(h.blocks.every(block => block.source === 'pangpang' && block.resource_type === 'document')).toBe(true);
 });
 
-test('robots.txt 404 allows, 5xx and network errors deny the whole host', async () => {
-  const missing = harness({ [`${ORIGIN}/robots.txt`]: () => new Response('', { status: 404 }), [`${ORIGIN}/a`]: html() });
+test.each([404, 410])('robots.txt %i allows', async status => {
+  const missing = harness({ [`${ORIGIN}/robots.txt`]: () => new Response('', { status }), [`${ORIGIN}/a`]: html() });
   expect((await missing.fetcher.get(`${ORIGIN}/a`, { origin: ORIGIN, source: 'pangpang' }))?.text).toBe('<p>ok</p>');
+});
+
+test('robots 403/429, 5xx and network errors deny for shared fetcher callers', async () => {
+  for (const status of [403, 429]) {
+    const h = harness({ [`${ORIGIN}/robots.txt`]: () => new Response(null, { status }) });
+    expect(await h.fetcher.get(`${ORIGIN}/a`, { origin: ORIGIN, source: 'pangpang' })).toBeNull();
+    expect(h.calls.map(call => call.url)).toEqual([`${ORIGIN}/robots.txt`]);
+  }
   const broken = harness({ [`${ORIGIN}/robots.txt`]: () => new Response('', { status: 503 }), [`${ORIGIN}/a`]: html() });
   expect(await broken.fetcher.get(`${ORIGIN}/a`, { origin: ORIGIN, source: 'pangpang' })).toBeNull();
   expect(broken.blocks[0].reason).toBe('robots');
   expect(broken.calls.some(call => call.url.endsWith('/a'))).toBe(false);
   const offline = harness({});
   expect(await offline.fetcher.get(`${ORIGIN}/a`, { origin: ORIGIN, source: 'pangpang' })).toBeNull();
+});
+
+test('concurrent callers share one expired robots lookup and receive its new deadline', async () => {
+  const robotsUrl = `${ORIGIN}/robots.txt`;
+  const responses = [
+    new Response(null, { status: 403 }),
+    new Response(null, { status: 429, headers: { 'retry-after': '2' } }),
+    robotsTxt()(),
+  ];
+  const h = harness({ [robotsUrl]: () => responses.shift()!, [`${ORIGIN}/a`]: html() }, { min_interval_ms: 0 });
+  const ctx = { origin: ORIGIN, source: 'deepseek-web', reportRobotsFailure: true };
+  const get = (path: string) => h.fetcher.get(`${ORIGIN}${path}`, ctx);
+  const firstDeadline = h.clock() + 600_000;
+  await expect(get('/a')).rejects.toMatchObject({ failure: { stage: 'robots', status: 403, retryAt: firstDeadline } });
+  h.advance(599_999);
+  await expect(get('/b')).rejects.toMatchObject({ failure: { retryAt: firstDeadline } });
+  expect(h.calls.map(call => call.url)).toEqual([robotsUrl]);
+
+  h.advance(1);
+  expect(await h.fetcher.get(`${ORIGIN}/a`, { origin: ORIGIN, source: 'pangpang' })).toBeNull();
+  const secondDeadline = h.clock() + 2_000;
+  await Promise.all(['/a', '/b'].map(path => expect(get(path)).rejects.toMatchObject({
+    failure: { stage: 'robots', status: 429, retryAt: secondDeadline },
+  })));
+  expect(h.calls.map(call => call.url)).toEqual([robotsUrl, robotsUrl]);
+
+  h.advance(2_000);
+  expect(await get('/a')).toMatchObject({ status: 200, text: '<p>ok</p>' });
+  expect(h.calls.map(call => call.url)).toEqual([robotsUrl, robotsUrl, robotsUrl, `${ORIGIN}/a`]);
 });
 
 test('same-origin redirects are re-checked against robots and cross-origin redirects are refused', async () => {

@@ -198,6 +198,47 @@ describe('official registry admission', () => {
 describe('official lane in the runner', () => {
   const fixedNow = () => Date.parse('2026-10-23T01:00:00Z');
 
+  test.each([410, 429])('official HTTP %i applies URL/host state and lets another host finish', async status => {
+    const f = fixture();
+    stores.push(f);
+    const config = testConfig(['stokke-tripp-trapp-1001', 'babybjorn-bouncer-bliss'], { max_pages_per_cycle: 2 });
+    const registry = approvedRegistry(f, config);
+    const dir = stateDir();
+    const source = sourceById(config, 'stokke-tripp-trapp-1001');
+    const dead = canonicalUrl(source.url);
+    let at = fixedNow();
+    const visited: string[] = [];
+    const complete = vi.fn();
+    const run = () => runDeepSeekWeb({
+      mode: 'once', stateDir: dir, store: f.store, registry, loadConfig: () => config, now: () => at,
+      client: { complete },
+      fetchImpl: stubFetch(url => {
+        if (!url.endsWith('/robots.txt')) visited.push(url);
+        if (canonicalUrl(url) === dead) return new Response('fixture-private-body', { status, headers: { 'retry-after': '60' } });
+        return allowRobots(url);
+      }),
+    });
+    const report = await run();
+    const reason = status === 410 ? 'http_gone' : 'http_host_backoff';
+    expect(report).toMatchObject({
+      outcome: 'completed', backoff: null, deepseek_calls_attempted: 0,
+      coverage: { official: { high_chair: { fetch_failed: 1 }, bouncer: { fetched: 1 } } },
+    });
+    expect(outcomeRows(dir)).toContainEqual(expect.objectContaining({
+      outcome: 'official_fetch_failed', detail: expect.objectContaining({ reason, status, stage: 'page' }),
+    }));
+    const memory = await loadMemory(dir);
+    expect(memory.rotation.official_visits[source.id]).toMatchObject({ outcome: 'fetch_failed', reason });
+    expect(memory.gone_urls).toEqual(status === 410 ? { [dead]: 410 } : {});
+    expect(memory.fetch_retry_after).toEqual(status === 429 ? { 'www.stokke.com': at + 60_000 } : {});
+    expect(visited.filter(url => canonicalUrl(url) === dead)).toHaveLength(1);
+
+    at += status === 410 ? 16 * 60_000 : 60_000;
+    await run();
+    expect(visited.filter(url => canonicalUrl(url) === dead)).toHaveLength(status === 410 ? 1 : 2);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
   test('fetches every approved due page, then discards it without model extraction or queueing', async () => {
     const f = fixture();
     stores.push(f);

@@ -9,7 +9,7 @@ import { createDeepSeekClient, DeepSeekHttpError, usageFrom } from './client';
 import { cycleInterval, loadDeepSeekWebConfig, stateDir, modelProfile } from './config';
 import { assertDomainPolicyReadable, isGlobalEmergencyStop } from './domain-policy';
 import { kst, readHeartbeat, validHeartbeat, writeHeartbeat } from './heartbeat';
-import { loadMemory, newRunId, saveMemory } from './memory';
+import { fetchEligible, loadMemory, newRunId, saveMemory } from './memory';
 import { openRuntimeCollectorStore } from './runtime-store';
 import { acquireWriter, type WriterOwnership } from './writer-ownership';
 import type { RunnerOptions } from './runner';
@@ -146,7 +146,12 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
       options.fault?.('receipt_cleared');
     }
     // Revalidate deferred representations through the normal robots/source gate before delivery.
-    memory.pending_urls = [...new Set([...memory.pending_urls, ...cache.pending(config.memory.max_queue_urls).map(entry => entry.canonical_url)])];
+    const planAt = now();
+    for (const [host, deadline] of Object.entries(memory.fetch_retry_after)) {
+      if (deadline <= planAt) delete memory.fetch_retry_after[host];
+    }
+    const deferred = cache.pending(config.memory.max_queue_urls, url => fetchEligible(memory!, url, planAt));
+    memory.pending_urls = [...new Set([...memory.pending_urls, ...deferred.map(entry => entry.canonical_url)])];
     beginCycle(memory, report.cycle_id);
     memory.active_cycle = { snapshot: report, call: null };
     accountingSafe = true;

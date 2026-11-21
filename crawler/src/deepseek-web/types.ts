@@ -187,6 +187,8 @@ export type RunMemory = {
   plan_notes: string[];
   observed_urls: string[];
   pending_urls: string[];
+  gone_urls: Record<string, 404 | 410>;
+  fetch_retry_after: Record<string, number>;
   /** @deprecated tick-local mirror; prefer cycle */
   token_spent: number;
   tokens_reserved: number;

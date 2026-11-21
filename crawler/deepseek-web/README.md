@@ -14,7 +14,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 | 파일 | 설명 |
 |------|------|
-| `memory.json` | v5: `cycle`(틱별 예산)·`lifetime`(누적)·`observed_urls`/`pending_urls`·`rotation`(카테고리 공정 로테이션·공식 페이지 방문 기록) |
+| `memory.json` | v5: `cycle`(틱별 예산)·`lifetime`(누적)·`observed_urls`/`pending_urls`·`gone_urls`(404/410 URL)·`fetch_retry_after`(호스트별 재시도 시각)·`rotation`(카테고리 공정 로테이션·공식 페이지 방문 기록) |
 | `cycle-audit.jsonl` | 틱 종료 시 cycle↔lifetime 감사 로그 (기존 파일 이어쓰기) |
 | `outcomes.jsonl` | 추출·차단·중복·리스팅 enqueue 등 zero/부분 결과 사유 |
 | `review-queue.jsonl` | `pending` 검수 큐 |
@@ -22,7 +22,9 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 | `validation-artifact.json` | 마지막 틱 스냅샷 — `heartbeat_fresh=true`만으로 **현재 라이브 상태를 증명하지 않음** |
 | `proposals/*.json` | 파서 수정 제안 |
 
-**예산(하드 캡 유지):** `config.json`의 `budget.max_tokens_per_run`(기본 32k)과 `max_requests_per_run`은 **daemon 틱마다** `cycle`에만 적용된다. `lifetime`은 감사용 누적이며 캡을 다시 소진하지 않는다. v1 `memory.json`의 `token_spent`/`requests_spent`는 마이그레이션 시 `lifetime`으로 이전되고, 다음 틱부터 `budget_tokens`로 영구 정지하지 않는다.
+**예산과 수집 한도** — `budget.max_tokens_per_run`은 틱당 2,000,000토큰, `budget.max_requests_per_run`은 틱당 1,000회, `budget.max_completion_tokens`는 호출당 8,192토큰이다. `memory.max_queue_urls`는 5,000, `selection.max_pangpang_detail_per_cycle`은 200, `fetch.min_interval_ms`는 2,000이다. `lifetime`에는 감사용 누적 사용량을 기록한다. v1 `memory.json`의 `token_spent`와 `requests_spent`는 `lifetime`으로 이전된다.
+
+공개 페이지의 404/410은 정규화된 URL을 `gone_urls`에 기록하고 대기열과 카테고리 정보에서 제거한다. 재발견·캐시 복구 시 해당 URL을 건너뛴다. 페이지 또는 robots.txt의 403/429는 응답 호스트의 유효한 `Retry-After`까지 요청을 보류하며, 헤더가 없거나 유효하지 않으면 응답 수신 시점부터 10분 뒤 재시도한다. robots.txt의 보류가 끝나면 같은 틱에서도 해당 origin의 다음 URL을 처리하기 전에 robots.txt를 다시 조회한다. robots.txt의 404/410은 페이지 접근을 허용한다. 다른 HTTP 오류와 요청·본문 타임아웃은 재시도 가능한 URL 결과로 기록한다. 실패한 URL은 모델을 호출하지 않으며 같은 틱에서 다음 URL을 처리한다.
 
 **09pangpang:** 검색·홈 리스팅 HTML은 모델 호출 없이 **설정 범위(유모차·하이체어·카시트·플레이짐·아기띠)에 맞는** `/post/` 만 `pending_urls`에 넣는다. `/post/...?pid=&source=search` 추적 파라미터는 canonical 시 제거한다. `outcomes.jsonl`은 `raw_product_count`와 `scope_counts`를 분리 기록한다.
 
@@ -42,7 +44,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 카테고리 순서는 `rotation.category_cursor`로 틱마다 회전한다. 매 틱 전체 pending 큐를 처리하지 않으며, 공정성 보장은 `categoryCap = max_pages_per_cycle - min(legacy_budget_per_cycle, legacy_work)`, `categoriesPerCycle = max(1, floor(categoryCap / category_quota_per_cycle))`, `N = ceil(C / min(categoriesPerCycle, categoryCap))`이다(예: 6개 카테고리, 2페이지, quota 1 → 3틱; 1페이지 → 6틱). 공식 방문이 예산을 모두 쓰는 틱은 이 N 계산에서 제외하고 다음 틱에 카테고리가 이어진다. 카테고리/쿼터/예산 정책이 바뀌면 `rotation.category_digest`가 달라져 커서만 초기화되고 `official_visits` 이력은 유지된다. 운영자 명시 URL과 `dry_run`은 플래너를 우회하며 커서를 전진시키지 않는다. `scope_categories`에서 제거된 카테고리의 pending 상세는 legacy 작업으로 취급해 큐에 영구히 남지 않는다.
 
-**공식 페이지 레인(방문 전용):** `official_sources` 11건은 `seed/models.json`에서 파생했고 모두 `enabled:false`다. 활성화된 항목은 `SourceRegistryStore.decide()`가 허용할 때만 방문하며, 승인·시드·권한 변경은 하지 않는다. `PoliteFetcher`가 robots.txt를 실시간 확인하고, 리다이렉트를 포함한 **매 요청 직전**에 도메인 정책과 레지스트리 범위를 다시 검사한다. 방문 결과는 `official_visits`와 `coverage.official`에만 기록하고, HTML은 `candidateDecision`·모델 추출·추출 캐시·`pending_urls`/`observed_urls`로 절대 전달하지 않는다. 재방문 주기는 `official_recheck_ms`(기본 6시간)이며 실패 시 15분 뒤 재시도한다.
+**공식 페이지 레인(방문 전용):** `official_sources` 11건은 `seed/models.json`에서 파생했고 모두 `enabled:false`다. 활성화된 항목은 `SourceRegistryStore.decide()`가 허용할 때만 방문하며, 승인·시드·권한 변경은 하지 않는다. `PoliteFetcher`가 robots.txt를 실시간 확인하고, 리다이렉트를 포함한 **매 요청 직전**에 도메인 정책과 레지스트리 범위를 다시 검사한다. 방문 결과는 `official_visits`, `coverage.official`, `outcomes.jsonl`에 기록한다. HTML은 `candidateDecision`·모델 추출·추출 캐시·`pending_urls`/`observed_urls`로 절대 전달하지 않는다. 재방문 주기는 `official_recheck_ms`(기본 6시간)다. 공식 방문에도 404/410 제외와 403/429 호스트 보류를 적용하며, 다른 실패는 15분 뒤 재시도한다.
 
 - D.THRONE는 `https://www.dthrone.com/102/?idx=58`의 `idx`를 `canonicalUrl`이 지원하지 않아 11건에서 제외했다.
 - BabyBjörn URL은 레지스트리 경로 정규식이 요구하는 **끝 슬래시를 유지한 raw URL**로 fetch하고, 식별자 비교에만 슬래시가 제거된 `canonicalUrl`을 쓴다.
@@ -207,7 +209,7 @@ Safe validators are transmitted unchanged only for a reusable result and its exa
 
 ### Model profile migration and stable prefix
 
-The checked-in `flash` profile selects provider ID `deepseek-flash`, disabled thinking, JSON-object output and the existing 2,048-token completion limit. `DEEPSEEK_MODEL` selects a configured profile ID, provider ID or approved alias. An unregistered override, including legacy `deepseek-chat`, fails with `deepseek_model_profile_unverified` before requests; it is never silently mapped to Flash.
+The checked-in `flash` profile selects provider ID `deepseek-flash`, disabled thinking, JSON-object output and an 8,192-token completion limit. `DEEPSEEK_MODEL` selects a configured profile ID, provider ID or approved alias. An unregistered override, including legacy `deepseek-chat`, fails with `deepseek_model_profile_unverified` before requests; it is never silently mapped to Flash.
 
 Before operational activation, the operator must verify the target account/gateway's model ID and supported parameters using its provider documentation/model inventory and dashboard. Register that verified ID in `config.json` under `model.profiles` with a unique profile ID, explicit aliases, `thinking: {"type":"disabled"}` and the unchanged completion limit, then set the selector through the host environment. Keep secrets in the host secret mechanism. If an existing `deepseek-chat` override is present, replace it with a verified selector or register it only after the host confirms that exact alias serves the approved Flash profile. This implementation performs no live completion, operational restart or activation.
 

@@ -31,7 +31,7 @@ function countOutcomes(outcomes: { reason: LinkReason }[]) {
   }, {});
 }
 
-export function planPangpangPage(html: string, pageUrl: string, now: Date, config: DeepSeekWebConfig, options?: { categoryCursor?: number; categoryOrder?: readonly ScopedCategory[] }): PangpangPlan {
+export function planPangpangPage(html: string, pageUrl: string, now: Date, config: DeepSeekWebConfig, options?: { categoryCursor?: number; categoryOrder?: readonly ScopedCategory[]; isGone?: (url: string) => boolean }): PangpangPlan {
   const catalog = loadGeunbonCatalog();
   const listingContext = !pangpangPost(pageUrl);
   const allowed = (url: string) => {
@@ -48,14 +48,14 @@ export function planPangpangPage(html: string, pageUrl: string, now: Date, confi
   const page = extractPangpang(html, pageUrl, now, allowed, new ParseBudget());
   if (page.detail) return { kind: 'detail', productCount: page.products.length };
   const parser_outcome_counts = countOutcomes(page.outcomes);
-  const ranked = rankListingCandidates(page.products, catalog, config.selection.max_pangpang_detail_per_cycle, pageUrl, { categoryCursor: options?.categoryCursor, categoryOrder: options?.categoryOrder });
+  const ranked = rankListingCandidates(page.products, catalog, config.selection.max_pangpang_detail_per_cycle, pageUrl, options);
   const enqueue_catalog = ranked.enqueue.map(e => ({
     url: (() => { try { return canonicalUrl(new URL(e.url, pageUrl).href); } catch { return e.url; } })(),
     catalog_product_id: e.catalog_product_id,
     category: e.category,
   }));
   const enqueue = enqueue_catalog.map(e => e.url);
-  const suggested_searches = [...new Set(catalogSearchUrls(catalog).map(r => r.url))].slice(0, 12);
+  const suggested_searches = [...new Set(catalogSearchUrls(catalog).map(r => r.url))].filter(url => !options?.isGone?.(url)).slice(0, 12);
   let zero_reason: PangpangListingDiagnosis['zero_reason'] = null;
   if (page.products.length === 0) zero_reason = 'parser_empty';
   else if (enqueue.length === 0) zero_reason = 'scope_no_core';
