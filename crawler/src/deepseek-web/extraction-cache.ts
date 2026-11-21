@@ -112,7 +112,7 @@ export class ExtractionCache {
     this.put(r.entry, fault, 'cache_entry_temp_written'); fault?.('cache_entry_written');
     this.observe(r.representation); fault?.('cache_index_published');
   }
-  pending(limit: number) {
+  pending(limit: number, eligible: (url: string) => boolean = () => true) {
     try {
       const dir = safePath(join(this.dir, 'extraction-cache', 'entries'), true);
       let names: string[];
@@ -140,7 +140,7 @@ export class ExtractionCache {
       }
       const current: CacheEntry[] = [];
       for (const e of all) {
-        if (!e.pending_delivery || e.version !== 2) continue;
+        if (!e.pending_delivery || e.version !== 2 || !eligible(e.canonical_url)) continue;
         // The URL index points at the latest observed representation. A pending
         // entry the index no longer references is superseded: retrying its
         // delivery is impossible, and leaving it pending pins the URL forever.

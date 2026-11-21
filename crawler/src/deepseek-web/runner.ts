@@ -4,7 +4,7 @@ import { evaluateUrlDomainPolicy, assertDomainPolicyReadable } from './domain-po
 import { createDeepSeekClient } from './client';
 import { kstDate } from '../../lib/kst';
 import { buildExtractionPrompt, SYSTEM_INSTRUCTIONS, validateExtraction, checkExtraction } from './extract';
-import { createPublicFetcher, fetchPublicText } from './public-fetch';
+import { createPublicFetcher, fetchPublicText, type FetchPageResult } from './public-fetch';
 import { buildParserProposal } from './proposals';
 import { canonicalUrl } from '../../../shared/privacy-rules';
 import { digest } from '../../engine/util';
@@ -13,13 +13,14 @@ import { preparePage } from './page-content';
 import { candidateDecision } from './candidate-filter';
 import { ExtractionCache, contractHash, cacheKey, representation, type CacheEntry } from './extraction-cache';
 import { deliverCached } from './cache-delivery';
-import type { ConditionalRequest } from '../../lib/external/fetch';
+import type { ConditionalRequest, FetchFailure, RequestStage } from '../../lib/external/fetch';
 import { countPending } from './review-queue';
 import { cycleAdmit } from './budget-cycle';
 import { cycleLifecycle, waitFor, type CycleContext } from './lifecycle';
 import type { WriterOwnership } from './writer-ownership';
 import type { DeepSeekWebConfig, OfficialSourceConfig, OfficialVisitOutcome, RunMemory, ScopedCategory } from './types';
-import { logOutcome } from './outcomes';
+import { fetchFailureDetail, logOutcome } from './outcomes';
+import { fetchEligible, isGoneUrl } from './memory';
 import { isPangpangHost, planPangpangPage } from './source-select';
 import { rememberSearchHints } from './search-query-plan';
 import { isPangpangListingUrl, listingDiscoveryDue, recordListingDiscovery, shouldDedupObservedSeed } from './listing-discovery';
@@ -31,7 +32,7 @@ import { loadRegistrySeed } from '../source-registry/seed';
 import type { CollectionReport, CollectionStatus, TickCoverage } from './types';
 import type { CollectorStore } from '../store';
 
-export type FetchPageResult = { ok: true; text: string; finalUrl: string; status?: number; etag?: string | null; last_modified?: string | null } | { ok: false; reason: string };
+export type { FetchPageResult } from './public-fetch';
 export type RunnerOptions = {
   mode: 'once' | 'dry_run' | 'daemon_tick';
   urls?: string[];
@@ -126,8 +127,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
   const runId = report.run_id, cycleId = report.cycle_id;
   options = { ...options, store: ctx.store };
   const nowMs = options.now ?? Date.now;
-  const fetchImpl: typeof fetch = (url, init) => (options.fetchImpl ?? fetch)(url, { ...init, signal: options.signal ? AbortSignal.any([options.signal, ...(init?.signal ? [init.signal] : [])]) : init?.signal });
-  const fetcher = createPublicFetcher(config, { fetch: fetchImpl, sleep: async ms => { await waitFor(ms, options.signal); options.signal?.throwIfAborted(); } });
+  const fetcher = createPublicFetcher(config, { fetch: options.fetchImpl, now: nowMs, sleep: ms => waitFor(ms, options.signal) });
   const explicit = options.urls?.length ? [...options.urls] : [];
   const cache = new ExtractionCache(dir);
   const contract = contractHash(config, loadGeunbonCatalog(), modelProfile(config));
@@ -157,7 +157,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
   const sourcesById = new Map(enabledOfficial.map(source => [source.id, source]));
   const cycleTouched = new Set<string>();
 
-  const recordOfficialVisit = (source: OfficialSourceConfig, outcome: OfficialVisitOutcome, reason: string | null, at: number) => {
+  const recordOfficialVisit = (source: OfficialSourceConfig, outcome: OfficialVisitOutcome, reason: string | null, at: number, retryAfter?: string) => {
     const recheck = outcome === 'fetched' ? effectiveRecheckMs(source, config) : Math.min(effectiveRecheckMs(source, config), 900000);
     let canonical = source.url;
     try { canonical = canonicalUrl(source.url); } catch { /* keep the raw fetch URL as identity fallback */ }
@@ -166,27 +166,51 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       url: source.url,
       canonical_url: canonical,
       last_at: new Date(at).toISOString(),
-      next_due_at: new Date(at + recheck).toISOString(),
+      next_due_at: retryAfter ?? new Date(at + recheck).toISOString(),
       outcome,
       reason,
     };
   };
 
+  const isGone = (url: string) => isGoneUrl(memory, url);
+  const recordFetchFailure = (url: string, failure: FetchFailure) => {
+    const detail = fetchFailureDetail(failure);
+    if (detail.reason === 'http_gone') {
+      const gone = (canonical: string) => {
+        memory.gone_urls[canonical] = detail.status;
+        forgetPending(memory, canonical);
+      };
+      const requestedUrl = canonicalUrl(url);
+      gone(requestedUrl);
+      // A same-origin redirect can identify both the dead page and its alias.
+      let respondingUrl: string | undefined;
+      try { respondingUrl = canonicalUrl(failure.url); } catch { /* Do not retain an unsafe redirect URL. */ }
+      if (respondingUrl && respondingUrl !== requestedUrl) gone(respondingUrl);
+    } else if (failure.kind === 'http' && failure.retryAt !== null) {
+      memory.fetch_retry_after[failure.hostname] = failure.retryAt;
+    }
+    return detail;
+  };
+
   // Build this cycle's bounded work list.
+  const planAt = nowMs();
+  const eligibleAtPlan = (url: string) => fetchEligible(memory, url, planAt);
+  const eligiblePending = memory.pending_urls.filter(eligibleAtPlan);
+  const pendingUrls = new Set(memory.pending_urls);
   const rotationBefore = memory.rotation.category_cursor;
   let workItems: WorkItem[] = [];
   let scheduled: ScopedCategory[] = [];
   let served: ScopedCategory[] = [];
   if (explicit.length) {
     // Operator diagnostics bypass rotation entirely and never advance cursors.
-    workItems = explicit.map(url => ({ kind: 'explicit', tier: -1, url } as WorkItem));
-    for (const url of memory.pending_urls) {
+    workItems = explicit.filter(eligibleAtPlan).map(url => ({ kind: 'explicit', tier: -1, url } as WorkItem));
+    for (const url of eligiblePending) {
       if (!explicit.includes(url)) workItems.push({ kind: 'legacy', tier: 4, url, operation: memory.observed_urls.includes(url) ? 'recheck' : 'discovery' });
     }
   } else if (options.mode === 'dry_run') {
     // Fixture/seed dry runs never plan or advance rotation state.
     const urls = memory.pending_urls.length ? [...memory.pending_urls] : config.seed_urls.length ? [...config.seed_urls] : ['https://fixture.example/deepseek-web-sample'];
-    workItems = urls.map(url => ({ kind: 'legacy', tier: 4, url, operation: 'discovery' } as WorkItem));
+    workItems = urls.filter(eligibleAtPlan).map(url => ({ kind: 'legacy', tier: 4, url, operation: 'discovery' } as WorkItem));
   } else {
     const nextDigest = categoryPolicyDigest(config);
     memory.rotation = normalizeRotationForDigest(memory.rotation, nextDigest);
@@ -194,7 +218,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
     const legacy: LegacyItem[] = [];
     const legacyUrls = new Set<string>();
     const scopedCategories = new Set(categories);
-    for (const url of memory.pending_urls) {
+    for (const url of eligiblePending) {
       const meta = memory.pending_catalog_meta[url];
       const operation = memory.observed_urls.includes(url) ? 'recheck' as const : 'discovery' as const;
       // A removed scope category used to strand its queued details forever. Treat
@@ -204,10 +228,10 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       else if (!legacyUrls.has(url)) { legacy.push({ url, operation }); legacyUrls.add(url); }
     }
     for (const url of config.seed_urls) {
-      if (!legacyUrls.has(url) && !memory.pending_urls.includes(url)) { legacy.push({ url, operation: 'discovery' }); legacyUrls.add(url); }
+      if (eligibleAtPlan(url) && !legacyUrls.has(url) && !pendingUrls.has(url)) { legacy.push({ url, operation: 'discovery' }); legacyUrls.add(url); }
     }
     for (const url of memory.observed_urls) {
-      if (isPangpangListingUrl(url) && listingDiscoveryDue(memory, url, config, nowMs()) && !memory.pending_urls.includes(url) && !legacyUrls.has(url)) {
+      if (isPangpangListingUrl(url) && !pendingUrls.has(url) && !legacyUrls.has(url) && eligibleAtPlan(url) && listingDiscoveryDue(memory, url, config, planAt)) {
         legacy.push({ url, operation: 'discovery' });
         legacyUrls.add(url);
       }
@@ -218,7 +242,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       memory.plan_notes.push(`${runId}: official lane skipped: registry_unavailable`);
     } else if (registry) {
       for (const source of enabledOfficial) {
-        if (!officialDue(memory.rotation, source, nowMs())) continue;
+        if (!eligibleAtPlan(source.url) || !officialDue(memory.rotation, source, planAt)) continue;
         const cov = coverage.official[source.category] ??= emptyOfficialCoverage();
         cov.due++;
         const decision = admitOfficial(registry, source);
@@ -235,7 +259,9 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
     }
 
     const searchRows: Partial<Record<ScopedCategory, SearchRow[]>> = {};
-    for (const row of catalogSearchUrls(catalog)) (searchRows[row.category] ??= []).push(row);
+    for (const row of catalogSearchUrls(catalog)) {
+      if (eligibleAtPlan(row.url)) (searchRows[row.category] ??= []).push(row);
+    }
     const plan = planRotation({
       categories,
       categoryQuota: config.selection.category_quota_per_cycle,
@@ -245,7 +271,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       legacy,
       official,
       searchRows: searchRows as Record<ScopedCategory, SearchRow[]>,
-      pendingUrls: new Set(memory.pending_urls),
+      pendingUrls,
       rotation: memory.rotation,
       categoryDigest: nextDigest,
     });
@@ -283,23 +309,27 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
     options.signal?.throwIfAborted();
     let outcome: OfficialVisitOutcome;
     let reason: string | null = null;
+    let failureDetail: ReturnType<typeof recordFetchFailure> | undefined;
     try {
       // Defense in depth: verify current authority immediately before fetching.
       const pre = evaluateUrlDomainPolicy(options.store, item.url, config);
       if (pre.blocked) throw new OfficialDomainBlocked(pre.reason!);
       const readmit = admitOfficial(registry, source);
       if (!readmit.allowed) throw new OfficialRegistryBlocked('initial', readmit.reason);
-      const checkPolicy = (raw: string) => {
+      const checkPolicy = (raw: string, stage: RequestStage) => {
         const policy = evaluateUrlDomainPolicy(options.store, raw, config);
         if (policy.blocked) throw new OfficialDomainBlocked(policy.reason!);
-        if (new URL(raw).pathname === '/robots.txt') return;
+        if (stage === 'robots' || new URL(raw).pathname === '/robots.txt') return;
         const decision = registry!.decide(item.registry_id, registryCheckUrl(raw), item.fields);
         if (!decision.allowed) throw new OfficialRegistryBlocked(raw === item.url ? 'initial' : 'redirect', decision.reason);
       };
-      fetcher.lastBlock = null;
-      const page = await fetchPublicText(fetcher, item.url, undefined, checkPolicy);
-      if (!page.ok) {
-        const block = page.block ?? fetcher.lastBlock;
+      const page = await fetchPublicText(fetcher, item.url, { beforeRequest: checkPolicy, signal: options.signal });
+      if (!page.ok && page.failure) {
+        outcome = 'fetch_failed';
+        failureDetail = recordFetchFailure(item.url, page.failure);
+        reason = failureDetail.reason;
+      } else if (!page.ok) {
+        const block = page.block;
         if (block?.reason === 'robots') { outcome = 'robots_blocked'; reason = 'robots'; }
         else if (block && ['cross_origin', 'scheme', 'hard_block', 'denylist'].includes(block.reason)) { outcome = 'redirect_blocked'; reason = block.reason; }
         else { outcome = 'fetch_failed'; reason = 'robots_or_policy'; }
@@ -315,13 +345,10 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       } else if (error instanceof OfficialDomainBlocked) {
         outcome = 'domain_blocked';
         reason = error.policyReason;
-      } else {
-        outcome = 'fetch_failed';
-        reason = error instanceof Error ? error.message : 'official_fetch_failed';
-      }
+      } else throw error;
     }
     const at = nowMs();
-    recordOfficialVisit(source, outcome, reason, at);
+    recordOfficialVisit(source, outcome, reason, at, failureDetail?.reason === 'http_host_backoff' ? failureDetail.retry_after : undefined);
     if (outcome === 'fetched') cov.fetched++;
     else if (outcome === 'registry_denied') cov.registry_denied++;
     else if (outcome === 'domain_blocked') cov.domain_blocked++;
@@ -334,13 +361,15 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       : outcome === 'robots_blocked' ? 'official_robots_blocked'
       : outcome === 'redirect_blocked' ? 'official_redirect_blocked'
       : 'official_fetch_failed';
-    await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: item.url, outcome: outcomeKind, detail: { category: item.category, source_id: item.source_id, reason } });
+    await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: item.url, outcome: outcomeKind, detail: { category: item.category, source_id: item.source_id, reason, ...failureDetail } });
     await progress();
   };
 
   try {
     {
       for (const item of workItems.slice(0, maxQueue)) {
+        options.signal?.throwIfAborted();
+        if (!fetchEligible(memory, item.url, nowMs())) continue;
         if (item.kind === 'official') {
           await executeOfficial(item);
           continue;
@@ -348,7 +377,6 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
         const rawSeed = item.url;
         let seedUrl: string;
         try { seedUrl = canonicalUrl(rawSeed); } catch { blocked++; policyBlocked++; continue; }
-        options.signal?.throwIfAborted();
         if (shouldDedupObservedSeed(memory, seedUrl, config, nowMs())) {
           dedupSkips++;
           forgetPending(memory, seedUrl);
@@ -411,15 +439,15 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
             if (listingRefresh) listingRefreshAttempts++;
             const prior = cache.prior(pageUrl, contract);
             const conditional = prior && prior.representation.fetch_url === pageUrl && (prior.representation.etag || prior.representation.last_modified) ? { fetch_url: prior.representation.fetch_url, etag: prior.representation.etag, last_modified: prior.representation.last_modified } : undefined;
-            const checkPolicy = (url: string) => {
-              if (pangpangPost(seedUrl) && new URL(url).pathname !== '/robots.txt' && !pangpangIdentityAllowed(seedUrl, url)) throw new Error('source_response_invalid');
+            const checkPolicy = (url: string, stage: RequestStage = 'page') => {
+              if (stage === 'page' && pangpangPost(seedUrl) && new URL(url).pathname !== '/robots.txt' && !pangpangIdentityAllowed(seedUrl, url)) throw new Error('source_response_invalid');
               if (options.store) assertDomainPolicyReadable(options.store);
               const policy = evaluateUrlDomainPolicy(options.store, url, config);
               if (policy.blocked) throw new Error(policy.reason!);
             };
             const getPage = (condition?: ConditionalRequest) => {
               checkPolicy(pageUrl);
-              return options.fetchPage ? options.fetchPage(pageUrl, condition) : fetchPublicText(fetcher, pageUrl, condition, checkPolicy);
+              return options.fetchPage ? options.fetchPage(pageUrl, condition) : fetchPublicText(fetcher, pageUrl, { conditional: condition, beforeRequest: checkPolicy, signal: options.signal });
             };
             let page = await getPage(conditional);
             if (page.ok && page.status === 304) {
@@ -428,6 +456,12 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
                 page = await getPage(); // Exactly one unconditional fallback.
                 if (page.ok && page.status === 304) throw new Error('source_response_invalid');
               }
+            }
+            if (!page.ok && page.failure) {
+              const detail = recordFetchFailure(seedUrl, page.failure);
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: seedUrl, outcome: 'fetch_failed', detail });
+              await progress();
+              continue;
             }
             if (!page.ok) {
               blocked++;
@@ -459,6 +493,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
               plan = planPangpangPage(text, pageUrl, new Date(nowMs()), config, {
                 categoryCursor: memory.rotation.category_cursor,
                 categoryOrder: categories,
+                isGone,
               });
             }
             catch {
@@ -629,7 +664,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       }
     }
     const collectionStatus = resolveCollectionStatus({
-      queueLen: new Set([...memory.pending_urls, ...explicit]).size,
+      queueLen: new Set([...memory.pending_urls, ...explicit.filter(url => !isGone(url))]).size,
       haltReason,
       extractions,
       listingEnqueued,

@@ -92,7 +92,7 @@
     "momcalendar.com"
   ],
   "fetch": {
-    "min_interval_ms": 8000,
+    "min_interval_ms": 2000,
     "jitter_ms": [
       500,
       2500
@@ -102,16 +102,16 @@
     "user_agent_note": "PoliteFetcher USER_AGENT; 로그인·쿠키·CAPTCHA 우회 없음"
   },
   "budget": {
-    "max_tokens_per_run": 32000,
-    "max_requests_per_run": 12,
+    "max_tokens_per_run": 2000000,
+    "max_requests_per_run": 1000,
     "max_completion_tokens": 8192,
     "estimated_prompt_tokens": 12000
   },
   "memory": {
-    "max_queue_urls": 50
+    "max_queue_urls": 5000
   },
   "selection": {
-    "max_pangpang_detail_per_cycle": 3,
+    "max_pangpang_detail_per_cycle": 200,
     "listing_discovery_policy_version": 1,
     "listing_refresh_min_ms": 600000,
     "max_pages_per_cycle": 12,

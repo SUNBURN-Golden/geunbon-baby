@@ -1,5 +1,10 @@
-import { PoliteFetcher, type BlockInfo, type ConditionalRequest } from '../../lib/external/fetch';
+import { ExternalFetchError, PoliteFetcher, type BlockInfo, type FetchContext, type FetchFailure } from '../../lib/external/fetch';
 import type { DeepSeekWebConfig } from './types';
+
+export type FetchPageResult =
+  | { ok: true; text: string; finalUrl: string; status?: number; etag?: string | null; last_modified?: string | null }
+  | { ok: false; reason: string; block?: BlockInfo | null; failure?: FetchFailure };
+
 export function createPublicFetcher(config: DeepSeekWebConfig, deps?: { fetch?: typeof fetch; sleep?: (ms: number) => Promise<void>; now?: () => number; random?: () => number }, onBlock?: (info: BlockInfo) => void) {
   const now = deps?.now ?? Date.now;
   return new PoliteFetcher(
@@ -8,9 +13,16 @@ export function createPublicFetcher(config: DeepSeekWebConfig, deps?: { fetch?: 
     onBlock,
   );
 }
-export async function fetchPublicText(fetcher: PoliteFetcher, url: string, conditional?: ConditionalRequest, beforeRequest?: (url: string) => void) {
+export async function fetchPublicText(fetcher: PoliteFetcher, url: string, options: Pick<FetchContext, 'conditional' | 'beforeRequest' | 'signal'>): Promise<FetchPageResult> {
   const origin = new URL(url).origin;
-  const result = await fetcher.get(url, { origin, source: 'deepseek-web', conditional, allowNotModified: true, beforeRequest });
-  if (!result) return { ok: false as const, reason: 'robots_or_policy' as const, block: fetcher.lastBlock };
-  return { ok: true as const, text: result.text, finalUrl: result.url, status: result.status, etag: result.etag, last_modified: result.last_modified };
+  fetcher.lastBlock = null;
+  try {
+    const result = await fetcher.get(url, { ...options, origin, source: 'deepseek-web', allowNotModified: true, reportRobotsFailure: true });
+    if (!result) return { ok: false, reason: 'robots_or_policy', block: fetcher.lastBlock };
+    return { ok: true, text: result.text, finalUrl: result.url, status: result.status, etag: result.etag, last_modified: result.last_modified };
+  } catch (error) {
+    options.signal?.throwIfAborted();
+    if (!(error instanceof ExternalFetchError)) throw error;
+    return { ok: false, reason: 'external_fetch_failed', failure: error.failure };
+  }
 }

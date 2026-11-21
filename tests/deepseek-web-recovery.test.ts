@@ -18,6 +18,26 @@ function ageOwner(dir: string) {
   db.prepare('UPDATE owner SET value=?').run(JSON.stringify(o)); db.close();
 }
 
+test('the same daemon completes two ticks after a 410 and filters rediscovery before the listing limit', async () => {
+  const dir = temp();
+  const result = child('daemon-fetch-gone', dir);
+  expect(result.status, result.stderr).toBe(0);
+  const { pid, requests, ticks } = JSON.parse(result.stdout);
+  expect(requests).toEqual([
+    'https://09pangpang.com/robots.txt', 'https://09pangpang.com/post/900001',
+    'https://shop.example/robots.txt', 'https://shop.example/deal',
+    'https://09pangpang.com/robots.txt', 'https://09pangpang.com/',
+  ]);
+  expect(ticks).toHaveLength(2);
+  expect(ticks[0]).toMatchObject({ pid, outcome: 'completed', deepseek_calls_attempted: 1, items_sent_to_review: 1, backoff: null });
+  expect(ticks[1]).toMatchObject({ pid, outcome: 'completed', deepseek_calls_attempted: 0, listing_enqueued: 1, backoff: null });
+  expect(ticks[0].cycle_id).not.toBe(ticks[1].cycle_id);
+  const memory = await loadMemory(dir);
+  expect(memory.gone_urls).toEqual({ 'https://09pangpang.com/post/900001': 410 });
+  expect(memory.pending_urls).toEqual(['https://09pangpang.com/post/900002']);
+  expect(Object.keys(memory.pending_catalog_meta)).toEqual(memory.pending_urls);
+}, 15000);
+
 test.each(['call_intent', 'model_responded', 'call_settled', 'terminal_checkpoint', 'lifetime_folded', 'audit_appended', 'audit_cleared'])('SIGKILL after %s preserves durable accounting exactly once', async point => {
   const dir = temp(), result = child('crash', dir, point);
   expect(result.signal, result.stderr).toBe('SIGKILL');

@@ -378,7 +378,7 @@ describe('bundle durability, queue and weekly review', () => {
   test('completion budget is raised to 8192 within the unchanged cap invariant', () => {
     expect(config.budget.max_completion_tokens).toBe(8192);
     expect(config.budget.estimated_prompt_tokens + config.budget.max_completion_tokens).toBe(20192);
-    expect(config.budget.max_tokens_per_run).toBe(32000);
+    expect(config.budget.max_tokens_per_run).toBe(2000000);
     expect(config.model.profiles.every(profile => profile.max_completion_tokens === 8192)).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { migrateMemory } from './memory-schema';
 import { validHeartbeat } from './heartbeat';
 import { atomicState, readState } from './atomic-state';
+import { canonicalUrl } from '../../../shared/privacy-rules';
 import type { RunMemory } from './types';
 export function emptyMemory(now = new Date().toISOString()): RunMemory {
   return migrateMemory({ version: 3, updated_at: now, plan_notes: [], observed_urls: [], pending_urls: [],
@@ -15,6 +16,8 @@ function validate(raw: RunMemory & { version: number }) {
   if (!raw || ![1, 2, 3, 4, 5].includes(raw.version)) throw new Error();
   for (const field of ['plan_notes', 'observed_urls', 'pending_urls'] as const) if (!Array.isArray(raw[field]) || !raw[field].every(v => typeof v === 'string')) throw new Error();
   const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  if (raw.gone_urls !== undefined && (!record(raw.gone_urls) || Object.entries(raw.gone_urls).some(([url, status]) => canonicalUrl(url) !== url || status !== 404 && status !== 410))) throw new Error();
+  if (raw.fetch_retry_after !== undefined && (!record(raw.fetch_retry_after) || Object.entries(raw.fetch_retry_after).some(([host, at]) => new URL(canonicalUrl(`https://${host}/`)).hostname !== host || typeof at !== 'number' || !Number.isSafeInteger(at) || at <= 0 || at > 8.64e15))) throw new Error();
   for (const field of ['next_search_hints', 'modeled_post_urls'] as const) if (raw[field] !== undefined && (!Array.isArray(raw[field]) || !raw[field].every(v => typeof v === 'string'))) throw new Error();
   if (raw.output_counts !== undefined && (!record(raw.output_counts) || ![raw.output_counts.extractions, raw.output_counts.proposals, raw.output_counts.blocked, raw.output_counts.review_pending].every(count))) throw new Error();
   if (raw.catalog_search_cursor !== undefined && !count(raw.catalog_search_cursor)) throw new Error();
@@ -80,3 +83,14 @@ export async function saveMemory(dir: string, memory: RunMemory) {
   try { atomicState(join(dir, 'memory.json'), memory); } catch { throw new Error('memory_unavailable'); }
 }
 export function newRunId() { return randomUUID(); }
+
+export function isGoneUrl(memory: RunMemory, url: string): boolean {
+  try { return Object.hasOwn(memory.gone_urls, canonicalUrl(url)); } catch { return false; }
+}
+
+export function fetchEligible(memory: RunMemory, url: string, now: number): boolean {
+  let canonical: string;
+  try { canonical = canonicalUrl(url); } catch { return true; } // Leave invalid URLs to source policy.
+  const { hostname } = new URL(canonical);
+  return !Object.hasOwn(memory.gone_urls, canonical) && !(memory.fetch_retry_after[hostname] > now);
+}
