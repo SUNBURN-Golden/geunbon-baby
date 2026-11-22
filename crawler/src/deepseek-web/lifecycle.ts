@@ -95,6 +95,7 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
     if (backoff && Date.parse(backoff.next_attempt_at) > now()) {
       const old = await readHeartbeat(dir);
       if (options.mode === 'once' || old?.outcome !== 'running') {
+        options.onReady?.();
         return { ...(old ?? {}), outcome: 'backoff', reason: backoff.reason, backoff: backoffView(backoff, now())! };
       }
     }
@@ -130,7 +131,10 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
     if (backoff && Date.parse(backoff.next_attempt_at) > now()) {
       // Recovery may have finalized a killed running cycle; do not start work before the deadline.
       const recovered = memory.terminal_summary;
-      if (recovered) return { ...recovered, outcome: 'backoff', reason: backoff.reason, backoff: backoffView(backoff, now()) };
+      if (recovered) {
+        options.onReady?.();
+        return { ...recovered, outcome: 'backoff', reason: backoff.reason, backoff: backoffView(backoff, now()) };
+      }
     }
     const store = options.store ?? (options.mode !== 'dry_run' ? ownedStore = openRuntimeCollectorStore() : undefined);
     if (store) {
@@ -230,6 +234,7 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
         return { ...completion, usage };
       },
     };
+    options.onReady?.();
     await execute(ctx);
     report.outcome = 'completed';
   } catch (error) {

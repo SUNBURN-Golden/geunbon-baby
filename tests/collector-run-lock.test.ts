@@ -52,6 +52,22 @@ test('an old live owner survives all 21 attempts and the 2 second wait unchanged
   }finally{f.close();}
 });
 
+test('a cron wait is interruptible and leaves the current owner in place', async () => {
+  const f = fixture(), c = clock(f), lock = existing(f);
+  try {
+    const stop = new AbortController();
+    const waiting = f.store.waitForRunLock('crawl', { ...c.options, cronSignal: stop.signal });
+    expect(c.checkPid).toHaveBeenCalledOnce();
+    stop.abort();
+    await expect(waiting).rejects.toMatchObject({ code: 'shutdown' });
+    expect(readFileSync(lock.path, 'utf8')).toBe(lock.bytes);
+    c.checkPid.mockImplementation(() => { throw errno('EPERM'); });
+    await expect(f.store.waitForRunLock('crawl', { ...c.options, cronSignal: new AbortController().signal }))
+      .resolves.toMatchObject({ acquired: false, reason: 'run_lock_unverifiable', attempts: 1 });
+    expect(readFileSync(lock.path, 'utf8')).toBe(lock.bytes);
+  } finally { f.close(); }
+});
+
 test('ESRCH permits reclaiming a lock at least 30 seconds old',async()=>{
   const f=fixture(),c=clock(f),lock=existing(f);c.checkPid.mockImplementation(()=>{throw errno('ESRCH');});
   try {

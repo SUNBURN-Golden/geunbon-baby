@@ -21,7 +21,7 @@
 
 **Workers Cron은 수집기를 실행하지 않는 로그 stub입니다. Playwright와 OCR은 Linux에서만 실행합니다.** 사이트는 로컬 수집 레코드·URL·원문·셀러·근거를 가져오지 않습니다. 로컬 `seller_candidates`를 사이트 판매자로 자동 등록하지도 않습니다. 수집함의 `ready_to_publish`는 사람의 공개 검토를 마친 로컬 상태이며 실제 게시 동작이 아닙니다. Instagram pending → 사이트 관리자 승인 → deals 경로와 별개입니다.
 
-Linux 수집 예약은 `npm run collector:worker -- schedule`의 상주 슬롯 관리로 실행합니다. KST 누락 슬롯 병합, 수동·예약 공통 실행, 상태 기록과 전환 절차는 [수집 일정 운영](docs/collector/scheduling.md)을 참고하세요. 운영 PM2 전환은 별도로 수행합니다. 추적되는 `crawler/local-worker.mjs`·`collector-scheduler.mjs`는 공통 시작/결과 NDJSON을 출력합니다. PM2 밖의 Linux systemd watchdog은 실제 PID 신원·인증된 readiness·SQLite 슬롯 이력을 감시하며, 소유자 부재가 확인된 앱만 영속 상한 안에서 복구합니다. PM2 online이나 최근 로그 하나는 수집 성공의 증거가 아닙니다.
+이 운영 호스트의 Linux 수집 예약은 [PM2 cron](docs/collector/scheduling.md)으로 실행합니다. 상주 슬롯 스케줄러와 systemd watchdog은 별도 운영 모델입니다. PM2 online이나 최근 로그 하나는 수집 성공의 증거가 아닙니다.
 
 3경로는 자동 RSS/API/사이트맵/링크 발견(`auto_discovery`), 승인된 공개 브라우저 추출(`browser_extract`), Chrome 수동 담기(`manual_clip`)입니다. 저장 전·AI 전달 전 공통 개인정보 필터(`shared/privacy-rules.ts`)를 적용하고 자료를 `untrusted_source_data`로 격리합니다. AI는 필수가 아니며 자료 속 지시로 도구 실행·상태 승격·게시를 하지 않습니다.
 
@@ -76,7 +76,7 @@ npm run db:seed
 npm run dev
 ```
 
-`npm run db:migrate`와 `npm run db:seed`는 모두 D1 `--local`만 사용합니다. `npm run dev`는 `build:worker`로 OpenNext 빌드 후 `wrangler dev --local`로 로컬 workerd/Miniflare만 실행합니다. 기본 접속 주소는 `http://localhost:8787`입니다. Next.js 자체 개발 서버는 사용하지 않습니다. 배포 스크립트는 제공하지 않으며 이 절차는 원격 리소스를 만들거나 배포하지 않습니다. 소스 수정 후 빌드를 다시 실행하세요. 시드는 `.local/seed.sql`로 생성되며 재실행해도 기존 검수·수집 데이터는 지우지 않습니다. 데이터 구조 변경은 `/migrations`에 추가합니다.
+`npm run db:migrate`와 `npm run db:seed`는 모두 D1 `--local`만 사용합니다. `npm run dev`는 `build:worker`로 OpenNext 빌드 후 `wrangler dev --local`로 로컬 workerd/Miniflare만 실행합니다. 기본 접속 주소는 `http://localhost:8787`입니다. Next.js 자체 개발 서버는 사용하지 않습니다. 이 로컬 절차는 원격 리소스를 만들거나 배포하지 않습니다. 소스 수정 후 빌드를 다시 실행하세요. 시드는 `.local/seed.sql`로 생성되며 재실행해도 기존 검수·수집 데이터는 지우지 않습니다. 데이터 구조 변경은 `/migrations`에 추가합니다.
 
 ## Cloudflare 설정 (`wrangler.jsonc`)
 
@@ -93,9 +93,33 @@ npm run dev
 | Cron | `0 */6 * * *` · `worker.ts`의 로그 stub |
 | 호환·관측 | `nodejs_compat`, `global_fetch_strictly_public`, `observability.enabled: true` |
 
-저장소는 이 값들이 가리키는 리소스의 존재·상태를 검증하거나 생성하지 않습니다. 운영 D1 마이그레이션·비밀 바인딩·배포는 운영자가 별도로 수행합니다.
+운영 자동 배포는 아래 절차로 기존 Worker와 D1을 사용합니다. 사이트의 비밀 바인딩은 Cloudflare에서 관리합니다.
 
 R2 읽기는 `/api/v1/images/:key`에서 `public/` 아래 허용 이미지 파일만 제공합니다. 시드에 사진이 없어 제품 사진을 만들거나 임의 외부 이미지를 가져오지 않습니다. Instagram ingest는 R2 업로드를 지원하지 않습니다.
+
+## 운영 자동 배포
+
+운영 Linux 호스트에서 Node 22와 KST로 실행되는 기존 PM2를 사용합니다. 설치 스크립트는 체크아웃의 revision이 로컬 `origin/main`에 포함되는지 확인하고 해당 커밋의 추적 파일과 잠긴 의존성을 `/workspace/agamajung/auto-deploy/controllers/<sha>`에 설치합니다. 같은 revision으로 다시 실행하면 정상 서비스의 PID를 유지하고 PM2 등록을 저장합니다. 컨트롤러 자체를 갱신할 때는 검증된 새 revision에서 설치를 다시 실행합니다. `--dry-run`은 설치 계획만 출력합니다.
+
+```sh
+tools/auto-deploy/install.sh --dry-run
+tools/auto-deploy/install.sh
+```
+
+`agamajung-auto-deploy`는 flock으로 한 인스턴스만 실행하며 5분마다 `origin/main`을 가져옵니다. 폴링 사이의 여러 병합은 최신 SHA에 함께 반영됩니다. 개발 데몬이 병합을 담당하고 Git 폴링이 배포를 시작합니다. 후보는 별도 detached worktree에서 `npm ci --include=dev`, 타입 검사, 테스트, OpenNext 빌드, Wrangler dry-run 번들 검사를 통과해야 합니다. 타입 검사·테스트·빌드·번들 실패 SHA는 main이 이동할 때까지 보류하고 일시적 장애는 backoff 후 재시도합니다.
+
+첫 운영 전환 전 기존 PM2 상주 스케줄러와 systemd watchdog을 사용 중이라면 운영자가 수집 스케줄의 소유권을 한 번 정리해야 합니다. 컨트롤러는 D1 적용 전에 실행 중인 PM2 등록, 저장본, 관련 watchdog 상태를 검사합니다. 경쟁 서비스가 있는 동안에는 보류 사유를 기록하며, 정리 후 다음 재시도에서 자동으로 진행합니다. [첫 전환 절차](docs/collector/scheduling.md#운영-호스트의-pm2-cron)
+
+- **사이트**는 새 빌드가 검증되면 원격 `agamajung` D1 마이그레이션을 적용하고 Wrangler 버전 업로드 결과에 기록된 ID만 100% 승격합니다. 적용 전 대기 SQL 파일과 `DROP`/`ALTER` 표시를 기록합니다. 마이그레이션은 현재 Worker와 새 Worker가 모두 사용할 수 있어야 합니다. Worker 롤백이나 이후 마이그레이션·업로드 실패에도 이미 적용된 D1 변경은 남습니다. [Cloudflare Worker 롤백](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)
+- **사이트 상태 확인**은 JSON을 요청한 홈페이지 `{"ok":true}`와 `/api/v1/deals?limit=5`의 JSON 응답, 후보 버전 100%를 확인합니다. 일반 브라우저 요청에는 HTML을 제공하며, `Accept: application/json` 요청은 실제 홈페이지의 HTTP 200 HTML 응답이 끝까지 정상 렌더링된 뒤에만 성공합니다. 실패 시 이전 버전을 명시해 롤백하고, 이전 버전 100%와 HTML 홈페이지·공구 JSON을 다시 확인합니다. 예상 밖의 버전이나 확인되지 않은 롤백은 복구가 끝날 때까지 새 승격을 보류합니다.
+- **Linux 수집기**는 사이트 확인 후 일회성 작업이 끝나면 `/workspace/agamajung/runtime/current`를 원자적으로 전환하고 `crawler/ecosystem.all.config.cjs`의 관리 앱을 다시 등록합니다. 로컬 인증 readiness, 새 PID의 DeepSeek heartbeat, cron 등록, PM2 저장을 검증합니다. 장애 시 이전 링크와 등록을 복구하고 정상 Worker를 유지합니다. 부분 배포는 수집기 단계만 재시도하며 복구 완료 후 더 최신 main이 대체할 수 있습니다. 현재와 직전 세 개의 성공한 수집기 런타임을 보존합니다. [Linux 수집기 운영](crawler/README.md#운영-pm2-런타임)
+- 사이트 인증은 인증된 Wrangler 명령에만 `/home/box/.secrets/agamajung_cf_token`을 읽어서 전달합니다. Linux 수집기는 시작할 때 각 자식 프로세스에서 `/home/box/.secrets/agamajung_crawler.env`를 읽습니다. 소유자 전용 `0600` 파일의 `KEY=value` 설정이 상속값보다 우선합니다. PM2 등록과 저장본에는 이 값이 들어가지 않습니다.
+
+`/workspace/agamajung/auto-deploy/state.json`에 단계별 상태와 복구 정보를, `deploys.jsonl`에 시도별 결과를 저장합니다. 결과의 `status`가 `partial`이면 사이트는 정상이며 Linux 수집기가 복구 또는 재시도 중입니다. `COPY_REVIEW.md`에는 정상 확인된 사이트 SHA 사이의 `lib/copy/**`, `lib/site-copy.ts`, `lib/deals-copy.ts`, `lib/auth-copy.ts` 변경 문구를 추가합니다. 첫 기록은 이전 SHA 없는 스냅샷이며 문구 검토는 배포와 독립적으로 진행합니다.
+
+후보의 crawler 인벤토리는 앱 이름으로 비교합니다. 여섯 앱의 선언이 같으면 순서를 바꿔도 통과합니다. 누락·중복 또는 승인된 실행 경로, 인수, preload, 일정, 실행 설정의 변경은 D1 적용 전에 `crawler_ecosystem_mismatch`로 보류합니다. 컨트롤러는 설치된 revision의 인벤토리에서 PM2 등록을 생성합니다. 의도적으로 운영 인벤토리를 변경할 때는 변경을 승인한 revision에 맞춰 컨트롤러도 갱신합니다.
+
+현장 전환 시 운영 Worker 버전과 두 공개 응답, 로컬 인증 readiness와 DeepSeek heartbeat, 다음 도래 cron의 결과를 확인합니다. PM2 저장과 부활 테스트는 별도 PM2 홈과 fixture 설정으로 재현할 수 있습니다.
 
 ## 화면
 
@@ -352,11 +376,11 @@ Linux 수집기의 `seller_candidates`는 사이트 판매자가 아니며 사�
 | Instagram 직접 연속 모드 | 알림·홈 스토리 트레이 1–2분 지터, 프로필 재확인 최소 90분·스토리 최소 30분, 태그 발견 최소 6시간 간격. 작업 시간·행동 한도·휴식에 따라 지연 | `crawler/config/settings.json`, `crawler/index.ts` |
 | Instagram systemd 대안 | 연속 모드, 실패 시 600초 뒤 재시작. `RestartPreventExitStatus=75`로 차단·챌린지 시 자동 재시작 금지 | `crawler/agamajung-crawler.service`. PM2와 동시 실행 금지 |
 | Workers Cron | `0 */6 * * *`(UTC, 6시간 간격), 로그만 기록 | `wrangler.jsonc`, `worker.ts`. Linux 수집을 호출하지 않음 |
-| 독립 discover/collect | Linux 상주 `schedule`: KST 09:20·15:20·21:20 / 09:40·15:40·21:40, 누락 병합 | `crawler/config/schedule.json`, `crawler/collector-scheduler.ecosystem.config.cjs`. 수집은 crawl 잠금으로 1개. [슬롯 운영](docs/collector/scheduling.md). [동시 실행과 잠금](crawler/README.md#동시-실행과-잠금) |
+| 독립 수집 PM2 cron | KST discover 09:20·15:20·21:20, collect 09:40·15:40·21:40, discover-sources 10:05, backfill-engine 03:30 | `crawler/ecosystem.all.config.cjs`. 예약 호출은 이전 작업의 crawl 잠금을 기다림. [수집 일정](docs/collector/scheduling.md) |
 | 건수 sync | heartbeat 15분(`STATUS_HEARTBEAT_MS`). sync 호출 때 새 스냅샷 필요 여부 확인, 내장 timer 없음. 운영자는 15분 이하 간격으로 실행(같은 sync 중복은 자동 거부) | `crawler/src/status-sync.ts`, [동기화 운영](crawler/README.md#건수-동기화) |
 | 사이트 현황 | 스냅샷 **생성** 후 60분 초과 시 동기화 지연 | `lib/collection-status.ts`. 수신 시각 기준이 아님 |
 
-`pm2 start crawler/ecosystem.config.cjs`는 등록 즉시 한 번 실행합니다. 예약만 등록하는 절차와 보안 중단 후 수동 확인은 수집기 운영 문서를 따르세요. discover/collect는 별도 상주 스케줄러 정의를 제공하며 sync 타이머는 운영자가 관리합니다.
+`pm2 start crawler/ecosystem.config.cjs`는 등록 즉시 한 번 실행합니다. 예약만 등록하는 절차와 보안 중단 후 수동 확인은 수집기 운영 문서를 따르세요. 이 호스트의 수집기 등록과 전환은 자동 배포 서비스가 관리하며 sync 타이머는 운영자가 관리합니다.
 
 사이트 현황의 **읽기 실패**와 Linux 전송의 **동기화 지연**은 점검 경로가 다릅니다. 읽기 실패는 사이트 D1·바인딩·마이그레이션·저장 스냅샷을, 지연은 Linux sync 실행 간격·outbox를 확인합니다. 구체적인 상태 구분은 [사이트에 표시하는 수집 현황](#사이트에-표시하는-수집-현황)을 따릅니다.
 

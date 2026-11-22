@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as wait } from 'node:timers/promises';
 import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { CollectorError, type CollectorStore } from './store';
 
@@ -11,6 +12,7 @@ export type RunLockOptions = {
   monotonicNow?: () => number;
   sleep?: (ms: number) => Promise<void>;
   checkPid?: (pid: number) => void;
+  cronSignal?: AbortSignal;
 };
 export type RunLockSkipReason = 'run_locked'|'run_lock_busy'|'run_lock_unreadable'|'run_lock_unverifiable';
 export type RunLockResult = { attempts: number; waitedMs: number } & (
@@ -80,7 +82,7 @@ function assertStale(owner: Owner, boot: string, proc: ProcReader, check: (pid: 
     catch {
       if (pidState(owner.pid,check)!=='dead') throw new CollectorError('run_locked',409,{...detail,verify:'unavailable'});
     }
-    if (ticks===owner.start_ticks&&!zombie) throw new CollectorError('run_locked',409,detail);
+    if (ticks===owner.start_ticks&&!zombie) throw new CollectorError('run_locked',409,{...detail,verify:'alive'});
   }
   const age=now()-Date.parse(owner.started_at);
   if (!Number.isFinite(age) || age<STALE_MS) throw new CollectorError('run_locked',409,{...detail,verify:'not_stale'});
@@ -137,11 +139,14 @@ export function acquireRunLock(store: CollectorStore, kind: RunKind, options: Ru
 export async function acquireRunLockWithRetry(store: CollectorStore, kind: RunKind, options: RunLockOptions = {}): Promise<RunLockResult> {
   const {monotonicNow=()=>performance.now(),sleep=ms=>new Promise<void>(resolve=>setTimeout(resolve,ms))}=options;
   const start=monotonicNow(),elapsed=()=>Math.max(0,monotonicNow()-start);
+  const { cronSignal } = options;
   let attempts=0,reason: RunLockSkipReason='run_locked';
   const skipped=(): RunLockResult=>({acquired:false,reason,attempts,waitedMs:Math.floor(elapsed())});
   for (;;) {
-    if (attempts && elapsed()>WAIT_MS) return skipped();
+    if (cronSignal?.aborted) throw new CollectorError('shutdown', 409);
+    if (!cronSignal && attempts && elapsed()>WAIT_MS) return skipped();
     attempts++;
+    let liveOwner = false;
     try { return {acquired:true,lock:acquireRunLock(store,kind,options),attempts,waitedMs:Math.floor(elapsed())}; }
     catch(e) {
       if (!(e instanceof CollectorError)) throw e;
@@ -149,9 +154,17 @@ export async function acquireRunLockWithRetry(store: CollectorStore, kind: RunKi
         reason=e.code;return skipped();
       }
       if(e.code!=='run_locked'&&e.code!=='database_busy')throw e;
+      if (cronSignal && e.detail?.verify === 'unavailable') { reason = 'run_lock_unverifiable'; return skipped(); }
+      liveOwner = e.code === 'run_locked' && e.detail?.verify === 'alive';
       reason=e.code==='database_busy'?'run_lock_busy':'run_locked';
     }
     const remaining=WAIT_MS-elapsed();
+    if (cronSignal && (liveOwner || attempts < MAX_ATTEMPTS && remaining > 0)) {
+      await wait(liveOwner ? 1000 : Math.min(RETRY_MS, remaining), undefined, { signal: cronSignal }).catch(error => {
+        if (!cronSignal.aborted) throw error;
+      });
+      continue;
+    }
     if (attempts>=MAX_ATTEMPTS || remaining<=0) return skipped();
     // No transaction is held while yielding to the current owner.
     await sleep(Math.min(RETRY_MS,remaining));

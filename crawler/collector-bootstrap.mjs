@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import schedule from './pm2-cron.cjs';
 // This module deliberately imports no configuration, database or TypeScript code.
 export const outcomes = new Set(['succeeded','disabled','skipped','partial_failure','halted','exhausted','pending','interrupted','already_completed','dry_run','failed']);
 export const reasons = new Set(['started','completed','no_work','quality_review','sources_disabled','schedule_disabled','already_completed','existing_engine','preview','transport_failed','checkpoint_failed','policy_skipped','checkpoint_wait','cost_wait','halted','exhausted','next_day_required','legacy_unassigned','owner_gone','execution_error','lock_error','run_locked','run_lock_busy','run_lock_unreadable','run_lock_unverifiable','internal_error','initialization_failed','result_publish_failed','summary_write_failed','call_history_unavailable','counts_negative_delta','shutdown','ready','slot_waiting_active_run','slot_waiting_lock']);
@@ -16,7 +17,7 @@ export function publish(event, write = line => console.log(line)) {
   catch { try { console.error(JSON.stringify({schema_version:1,event:'diagnostic',generated_at:new Date().toISOString(),reason:'result_publish_failed'})); } catch {} return false; }
 }
 export async function bootstrap(args = process.argv.slice(2), load = () => import('./src/local-worker.ts')) {
-  const context = invocation(args[0] ?? 'serve');
+  const context = invocation(args[0] ?? 'serve', schedule.isPm2CollectorJob(args[0]) ? 'scheduled' : 'manual');
   const service = ['serve','schedule'].includes(context.job);
   const observed = service || context.job !== 'unknown';
   if (observed) publish(envelope(context, service ? 'service_start' : 'start', Date.now()));

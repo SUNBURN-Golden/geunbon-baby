@@ -1,10 +1,24 @@
-# Linux 수집 슬롯과 따라잡기
+# Linux 수집 일정
+
+## 운영 호스트의 PM2 cron
+
+운영 인벤토리는 [`crawler/ecosystem.all.config.cjs`](../../crawler/ecosystem.all.config.cjs)이며 PM2 데몬의 시간대는 Asia/Seoul입니다. discover는 09:20·15:20·21:20, collect는 09:40·15:40·21:40, discover-sources는 10:05, backfill-engine은 03:30에 시작합니다. 수집 스케줄과 출처 활성화는 각각 설정합니다.
+
+설치된 PM2는 cron 재시작에도 `autostart`를 적용합니다. 예약 앱은 `autostart: true`, `autorestart: false`로 등록하며 자식의 시간 확인이 예약 시각과 다음 1분에만 실행을 허용합니다. 등록이나 부활이 예약 시간 밖에서 일어나면 수집 진입점에 도달하기 전에 종료합니다. 예약 호출은 확인 가능한 crawl 잠금 경합이 끝날 때까지 종료 신호를 받을 수 있는 상태로 대기합니다. 일반 CLI 호출은 짧은 대기 제한을 유지합니다.
+
+PM2 cron 호출이 예약 시각보다 1분 넘게 지연되면 자식의 시간 확인이 해당 호출을 건너뛰며, 이 PM2 cron 모델에는 따라잡기가 없습니다. 따라잡기는 아래 대안 상주 스케줄러 모델만 제공합니다. 예약 시간 밖에서 종료한 예약 앱은 설치된 PM2가 `restart_delay` 설정 때문에 `stopped` 대신 pid 0의 `waiting restart`로 보고합니다. `autorestart: false`이므로 재시작은 예약되지 않으며, 자동 배포는 이 상태를 정상 휴면으로 검증합니다.
+
+상주 스케줄러와 watchdog을 운영하던 호스트는 최초 전환 전에 스케줄 소유권을 정리합니다. 진행 중인 수집 작업을 마친 뒤 `agamajung-collector-scheduler`가 실행되거나 부활하지 않도록 라이브 등록과 저장본을 정리하고, 관련 시스템·사용자 watchdog 타이머와 서비스를 중지·비활성화합니다. 기존 SQLite의 슬롯 기록은 보존합니다. 자동 배포는 D1 적용 전에 `crawler_competing_scheduler` 또는 `crawler_competing_watchdog`를 기록하고, 이 조건이 해소되면 다음 재시도에서 진행합니다.
+
+배포 또는 부활 후 PM2 등록은 예약 시각과 시작 preload를 함께 확인합니다. 저장된 슬롯 watermark는 완료된 호출의 중복 실행을 막습니다. 전환 검증에 실패하면 이전 링크와 등록을 복원하고 수집기 전환만 재시도합니다. 후보 인벤토리는 이름별로 검증하며 같은 선언의 순서 변경을 허용합니다. [컨트롤러 설치와 갱신](../../README.md#운영-자동-배포)
+
+## 대안 운영 모델의 슬롯 따라잡기
 
 `npm run collector:worker -- schedule`은 Linux 상주 프로세스다. 시작 즉시 검사하고, 각 검사 종료 후 60초 뒤 현재 벽시각으로 다시 판단한다. 별도 60초 평가 타이머는 긴 실행 중에도 heartbeat·작업별 평가·대기 호출을 기록한다. 시작 직후와 긴 실행을 시작하기 전에도 평가 시각을 `scheduler.json`에 먼저 게시하므로 watchdog 복구 확인이 실행 완료를 기다리지 않는다. 도래 슬롯도 진행 중 실행도 없는 유휴 검사는 `already_completed` 호출 행을 만들지 않고 평가 시각만 갱신한다. runner는 중복 호출하지 않고 수집은 직렬로 유지한다. 절전 중에는 실행할 수 없지만 깨어난 뒤 최신 도래 슬롯까지 한 번으로 합친다. Node는 저장소의 고정 22.22.3 런타임을 사용한다. HTTP `serve`와 수명이 분리되며 사이트·Workers Cron·D1·Instagram 세션을 사용하지 않는다. 기존 `src/scheduler.ts`는 요청 간격·robots·도메인 냉각 담당이다.
 
 ## 일정과 수동 호출
 
-일정의 유일한 설정은 `crawler/config/schedule.json`이다. 모든 시각은 호스트 시간대와 관계없이 KST로 계산한다.
+상주 스케줄러의 슬롯 설정은 `crawler/config/schedule.json`이다. 모든 시각은 호스트 시간대와 관계없이 KST로 계산한다.
 
 | 작업 | KST | 기본 예약 |
 | --- | --- | --- |
@@ -122,9 +136,9 @@ PM2의 online/PID 파일만 믿지 않고 실제 `/proc` 신원·실행 경로·
 
 watchdog 전체 검사·상태 변경·복구는 영구 `${db}.watchdog.flock` inode에 대한 Linux flock으로 직렬화한다. 경합 호출은 작업 없이 종료한다. 락 파일을 지워 경합을 풀지 않는다. `.mjs`를 직접 실행하지 않고 shell 진입점을 사용한다. 최초 `--init`은 DB의 watchdog_initialized 표식을 먼저 남기므로 상태 유실 후 같은 명령으로 상한을 초기화할 수 없다. 실패한 설치나 상태 유실은 운영자가 기존 기록/백업을 확인해 복구해야 한다.
 
-## 운영 전환과 검증
+## 상주 스케줄러와 watchdog 전환 및 검증
 
-다음은 별도 운영 전환 절차이며 코드 수정 작업에서는 실행하지 않는다. 구현 완료와 운영 복구 완료를 구분한다.
+다음은 대안 운영 모델의 전환 절차다. 구현 완료와 운영 복구 완료를 구분한다.
 
 1. 검증된 revision으로 운영 체크아웃을 갱신하고 추적되는 JS/TS 진입점이 존재하는지 확인한다. 진행 수집은 정상 종료를 기다리고 일관된 DB 백업을 보존한다. lease/일일 상한/attempts/domain_stopped를 초기화하지 않는다.
 2. 기존 discover/collect 일회성 cron과 sources/backfill 중복 재시작 등록을 제거한다. 비밀 환경 전체나 PM2 dump를 출력하지 않는다.

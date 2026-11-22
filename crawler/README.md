@@ -9,9 +9,19 @@
 - B-3. 건수 전송 전용 프로세스 → [건수 동기화](#건수-동기화). 과거 작업 기록은 [구현 기록 (참고용)](#구현-기록-참고용).
 - B-4. DeepSeek 공개 웹 전용 수집기(Instagram/Threads 자동화 없음) → [deepseek-web/README.md](deepseek-web/README.md), PM2 `agamajung-deepseek-web`.
 
-DeepSeek만의 crash supervision은 기존 `deepseek-web.ecosystem.config.cjs`를 사용합니다. scheduler의 `autorestart: false`와 Instagram `agamajung-crawler.service`는 유지합니다. 상태는 `${DEEPSEEK_WEB_STATE_DIR}/heartbeat.json`(기본 `<repository>/.local/deepseek-web/heartbeat.json`), 읽기 전용 확인은 `npm run deepseek-web -- status [--json]`입니다. 모델 402/429는 1/2/4/6시간 backoff로 프로세스 안에서 자동 재시도합니다. [부팅 등록·영속 상태·운영 가정·검증 한계](deepseek-web/README.md#supervision-heartbeat-and-recovery-linux-only)를 확인하세요.
+운영 DeepSeek 앱은 [통합 PM2 등록](#운영-pm2-런타임)을 사용합니다. 수집 주기 상태는 `${DEEPSEEK_WEB_STATE_DIR}/heartbeat.json`이며 읽기 전용 확인은 `npm run deepseek-web -- status [--json]`입니다. 모델 402/429는 1/2/4/6시간 backoff로 프로세스 안에서 자동 재시도합니다. [DeepSeek 상태와 복구](deepseek-web/README.md#supervision-heartbeat-and-recovery-linux-only)를 확인하세요.
 
 Instagram worker는 **Node.js 22 이상 + Playwright**로 본인 계정에서 접근이 허용된 콘텐츠를 수집해 `/api/v1/ingest`의 pending 검수 대기열로 보냅니다. 게시에는 관리자 승인이 필요합니다. 독립 수집함은 자체 SQLite에 저장하고, sync만 건수 스냅샷을 사이트에 보냅니다. **가격을 절대 만들어 내지 않습니다 (never invent prices).** 수집한 단서를 공식가나 공구가로 자동 승격하지 않습니다. Workers Cron은 로그 stub이며 Playwright/OCR을 실행하지 않습니다. 사이트는 로컬 레코드·근거를 가져오지 않습니다. `tools/dev-daemon`·PM2 `agamajung-dev-daemon`은 별도 개발 도구입니다.
+
+## 운영 PM2 런타임
+
+[자동 배포 서비스](../README.md#운영-자동-배포)가 `crawler/ecosystem.all.config.cjs`의 앱을 `/workspace/agamajung/runtime/current`와 해당 릴리스의 Node 22로 실행합니다. `agamajung-local-worker`와 `agamajung-deepseek-web`은 상주하며 PM2가 재시작합니다. 다른 네 작업은 KST [PM2 cron](../docs/collector/scheduling.md)에 맞춰 한 번씩 실행합니다. Instagram PM2 앱은 기존 등록이 저장소의 정확한 진입점과 일치하는 경우에만 이관하고 세션과 캐시를 보존합니다.
+
+수집 앱은 시작할 때 서비스 계정 소유의 `/home/box/.secrets/agamajung_crawler.env`(일반 파일, `0600`)를 읽습니다. 줄 단위 `KEY=value`를 데이터로 처리하고 상속된 환경보다 이 파일의 값을 우선합니다. `COLLECTOR_DB`, `COLLECTOR_RAW_DIR`, `DEEPSEEK_WEB_STATE_DIR`은 런타임 디렉터리 밖의 절대 경로를 유지합니다. PM2 재시작과 부활도 같은 파일을 사용합니다. 파일에 `COLLECTOR_DB`가 없으면 저장소를 열기 전에 `collector_db_required`로 종료합니다.
+
+배포 서비스는 진행 중인 일회성 작업을 기다린 뒤 링크와 등록을 바꾸고, loopback 인증 readiness와 `${DEEPSEEK_WEB_STATE_DIR}/daemon-heartbeat.json`의 PID·신원·최신 시각을 확인합니다. 이 파일은 모델 backoff 중에도 상주 프로세스의 생존 상태를 표시합니다. PM2 저장 후 다음 예약 호출의 결과와 SQLite 이력을 대조하면 전환 후 실제 실행을 확인할 수 있습니다. 상주 스케줄러나 watchdog이 활성화된 경우 배포가 이관을 보류합니다.
+
+컨트롤러는 설치한 revision에 고정됩니다. 후보의 여섯 앱을 이름으로 찾아 실행 경로, 인수, preload, 일정과 실행 설정을 검증합니다. 같은 선언을 재정렬해도 통과합니다. 실제 PM2 등록은 컨트롤러의 승인된 인벤토리에서 생성하며 누락된 등록도 복구합니다. 전환이 실패하면 이전 링크와 등록을 복원한 뒤 수집기 단계만 재시도합니다. [컨트롤러 설치와 갱신](../README.md#운영-자동-배포)
 
 ## 설치와 환경변수
 
@@ -267,6 +277,7 @@ DB 디렉터리는 0700, DB/WAL/SHM/journal은 0600이고 심볼릭 링크·잘�
 - `${db}.{serve|crawl|sync|schedule}.lock`에는 PID·Linux `/proc` 시작 ticks·boot ID·생성 시각·소유 토큰을 권한 0600으로 기록합니다. fsync한 임시 파일을 hard link로 게시합니다. serve는 `serve`, discover(dry-run 포함)·collect·discover-sources·explore-missing(별칭 explore-missing-fields 포함)·failures retry는 `crawl`, sync는 `sync`를 잡습니다. backfill-engine도 공통 `crawl` 잠금을 잡고, 상주 스케줄러는 별도 `schedule` 잠금을 잡습니다. 조회 명령·dedup-audit에는 실행 잠금이 없습니다.
 - 즉시 1회 시도하고 100ms 간격으로 비동기 재시도합니다. 단조 시계 기준 2초 또는 총 21회 중 먼저 소진되는 상한을 적용하며, 대기 중 트랜잭션을 유지하지 않습니다. 이 상한은 **DB 초기화 이후 실행 잠금 획득 단계**에 적용됩니다. 회수 트랜잭션에만 SQLite busy timeout·내부 재시도를 0으로 설정해 경합을 외부 대기로 돌리고, `finally`에서 기존 timeout을 복원합니다. 일반 DB 쓰기는 위 busy 정책을 유지합니다.
 - **생성 후 30초 이상이며 기존 소유자가 종료됐다는 근거가 있는 잠금만** 회수합니다. PID 확인은 `ESRCH`만 사망으로 인정하고, PID 재사용·이전 부팅은 시작 ticks·boot ID로 확인합니다. 동일 신원의 `/proc` 상태가 `Z`이면 두 번 재확인한 뒤 실행 불가능한 소유자로 취급하며, 나이·파일 재확인 규칙은 그대로 적용합니다. 동일 소유자가 살아 있거나 PID 확인이 `EPERM`·확인 불가이면 나이와 무관하게 보존합니다. 죽었어도 최근 30초 이내·미래 시각이면 보존합니다. 트랜잭션 안에서 소유자·나이를 확인하고 inode·device·내용이 동일한 경우에만 삭제합니다. close/정상 종료·실패 정리는 자기 소유 토큰만 삭제합니다. SIGKILL 뒤에는 30초 조건을 만족하는 다음 실행에서 회수할 수 있습니다.
+- 운영 PM2 cron으로 시작한 네 작업은 확인 가능한 crawl 잠금 점유자가 있으면 종료 신호를 받을 때까지 기다렸다가 잠금이 풀리면 실행합니다. 일반 CLI 호출은 기존 2초 제한을 사용합니다. 잠금 판독·검증 실패 보호는 두 경로에 모두 적용됩니다.
 - 대기 소진은 `run_locked`, 회수 트랜잭션 경합 소진은 `run_lock_busy` 사유로 건너뜁니다. `run_lock_unreadable`(빈 파일·잘못된 JSON·읽기 권한 부족 포함)·`run_lock_unverifiable`(새 소유자의 `/proc` 확인 불가)은 즉시 건너뜁니다. 자동 삭제하지 않으며 운영자가 잠금과 실제 프로세스를 대조하고 **해당 작업의 점유 프로세스가 없음을 확인한 뒤에만** 해당 실행 잠금 파일을 수동 삭제하세요. 기존 `${db}.lock`은 읽거나 지우지 않고 `collector_warning legacy_lock_present` 경고만 냅니다.
 - 건너뛴 CLI 호출은 DB를 닫고 **종료코드 0**, discover/collect/discover-sources/backfill-engine은 stdout에 `generated_at`이 있는 공통 start/result NDJSON과 KST `collector_start`·`collector_end … outcome=skipped reason=run_locked`를 남기고 호출 이력을 SQLite에 저장합니다. 나머지 명령은 기존 `collector_skipped` 한 줄을 유지합니다. 실제 시도 횟수·경과 시간은 스케줄링에 따라 달라집니다. runner·HTTP listen·수집/동기화 네트워크 호출은 시작하지 않습니다. 중복 serve 호출도 새 호출만 종료하며 기존 서버는 유지합니다. 로그에는 허용된 명령·고정 사유·종류·숫자만 포함하고 토큰·파일 원문·환경변수·원래 예외를 출력하지 않습니다. DB 손상·인증 설정 오류·안전하지 않은 파일·쓰기 실패는 기존 실패 처리(종료코드 1)를 유지합니다.
 - serve와 discover는 같은 `COLLECTOR_CONFIG`를 사용해야 합니다. `policy_version`을 바꾸면 serve를 재시작하세요. `backfill-engine`과 `dedup-audit --apply`는 실행 중 serve의 쓰기를 지연시킬 수 있습니다.

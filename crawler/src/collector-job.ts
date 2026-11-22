@@ -26,7 +26,12 @@ export async function runCollectorJob(store:CollectorStore,schedule:JobSchedule,
   let lock;
   let logical:LogicalRun|undefined,called=false;
   try{lock=await acquireRunLockWithRetry(store,'crawl',options.lock);}
-  catch(error){publishResult('failed','lock_error');options.onCall?.(null);emit('end','failed','lock_error');throw error;}
+  catch(error){
+    if (options.lock?.cronSignal?.aborted) {
+      publishResult('interrupted', 'shutdown');options.onCall?.(null);emit('end','interrupted','shutdown');
+      return {outcome:'interrupted',reason:'shutdown'};
+    }
+    publishResult('failed','lock_error');options.onCall?.(null);emit('end','failed','lock_error');throw error;}
   if(!lock.acquired){try{state.call(callId,schedule.job,source,'skip',started,undefined,expected);state.endCall(callId,'skipped',lock.reason);called=true;}catch{publishResult('failed','call_history_unavailable');options.onCall?.(null);throw new Error('call_history_unavailable');}publishResult('skipped',lock.reason);options.onCall?.(null);emit('end','skipped',lock.reason);return {outcome:'skipped',reason:lock.reason};}
   const call=(action:'new'|'resume'|'skip'|'dry_run')=>{
     if(called)store.transaction(()=>store.db.prepare('UPDATE collection_schedule_calls SET run_id=?,action=? WHERE id=?').run(logical?.id??null,action,callId));
