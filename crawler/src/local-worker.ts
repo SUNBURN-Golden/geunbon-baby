@@ -1,4 +1,5 @@
 import { bootstrap, envelope, publish } from '../collector-bootstrap.mjs';
+import cronSchedule from '../pm2-cron.cjs';
 import type { Invocation } from './collector-events';
 import { identity, serviceProcesses } from './process-identity';
 import { validateArtifact } from './agamajung/pre-storage';
@@ -46,11 +47,24 @@ export async function main(context?:Invocation){
     finally{process.removeListener('SIGTERM',stop);process.removeListener('SIGINT',stop);store.close();}return;
   }
   if(JOBS.includes(command as CollectionJob)){
+    const cron = cronSchedule.isPm2CollectorJob(command);
+    const controller = new AbortController();
+    const stop = () => controller.abort();
+    if (cron) { process.once('SIGTERM', stop); process.once('SIGINT', stop); }
     try{
       const index=args.indexOf('--resume');if(index>=0)requireThat(args[index+1],'run_id_required');
-      const result=await runCollectorJob(store,loadSchedule().find(s=>s.job===command)!,jobDefinition(store,command as CollectionJob,trusted),{context,resumeId:index>=0?args[index+1]:undefined,dryRun:args.includes('--dry-run')});
+      const job = command as CollectionJob;
+      const schedule = cron ? { job, enabled: true, times: cronSchedule.collectorSlotTimes() } : loadSchedule().find(s => s.job === job)!;
+      const result = await runCollectorJob(store, schedule, jobDefinition(store, job, trusted), {
+        context, ...(cron ? { source: 'scheduled' as const, lock: { cronSignal: controller.signal } } : {}),
+        resumeId: index >= 0 ? args[index + 1] : undefined, dryRun: args.includes('--dry-run'),
+      });
       if(result.outcome==='halted')process.exitCode=75;
-    }finally{store.close();}return;
+    } finally {
+      if (cron) { process.removeListener('SIGTERM', stop); process.removeListener('SIGINT', stop); }
+      store.close();
+    }
+    return;
   }
   try {
     const kind=command==='serve'?'serve':command==='sync'?'sync':command==='explore-missing'||command==='failures'&&args[1]==='retry'?'crawl':undefined;

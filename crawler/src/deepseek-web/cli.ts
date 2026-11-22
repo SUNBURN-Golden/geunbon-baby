@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { identity } from '../process-identity';
+import { atomicState } from './atomic-state';
 import { weeklyReview, validateWeeklyArguments } from './weekly-review';
 import type { CollectorStore } from '../store';
 import type { CollectionReport, DeepSeekClient, DeepSeekWebConfig } from './types';
@@ -33,10 +36,21 @@ export async function deepSeekWebCli(args: string[], deps: DeepSeekWebCliDeps = 
   const signal = deps.signal ? AbortSignal.any([controller.signal, deps.signal]) : controller.signal;
   process.on('SIGTERM', stop); process.on('SIGINT', stop);
   let last: CollectionReport | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const onReady = process.env.AGAMAJUNG_PM2_DEEPSEEK === '1' ? () => {
+    if (heartbeat) return;
+    const owner = identity();
+    const publish = () => atomicState(join(ownership.dir, 'daemon-heartbeat.json'), { identity: owner, at: Date.now() });
+    publish();
+    heartbeat = setInterval(() => {
+      try { publish(); } catch { console.error('deepseek_web_state_unavailable'); }
+    }, 15_000);
+    heartbeat.unref();
+  } : undefined;
   try {
     while (!signal.aborted) {
       try {
-        last = await runDeepSeekWeb({ ...deps, stateDir: ownership.dir, ownership, signal, mode: 'daemon_tick' });
+        last = await runDeepSeekWeb({ ...deps, stateDir: ownership.dir, ownership, signal, onReady, mode: 'daemon_tick' });
         console.error(JSON.stringify({ event: 'deepseek_web_tick', ...last }));
       } catch {
         // Storage/ownership write failures cannot guarantee a heartbeat. Never leak raw errors.
@@ -50,6 +64,7 @@ export async function deepSeekWebCli(args: string[], deps: DeepSeekWebCliDeps = 
       await (deps.wait ?? waitFor)(deadline > now ? deadline - now : interval, signal);
     }
   } finally {
+    clearInterval(heartbeat);
     process.off('SIGTERM', stop); process.off('SIGINT', stop);
     ownership.release();
   }

@@ -47,6 +47,7 @@ export type RunnerOptions = {
   fault?: (point: string) => void;
   ownership?: WriterOwnership;
   loadConfig?: () => DeepSeekWebConfig;
+  onReady?: () => void;
 };
 
 class OfficialRegistryBlocked extends Error {
