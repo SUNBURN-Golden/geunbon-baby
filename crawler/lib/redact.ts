@@ -6,6 +6,9 @@ export function redactionRules(): RedactionRule[] {
   const secrets = Object.entries(process.env)
     .filter(([key, value]) => /password|token|secret|api[_-]?key|cookie|session/i.test(key) && value)
     .flatMap(([, value]) => [value!, encodeURIComponent(value!), new URLSearchParams({ v: value! }).toString().slice(2)])
+    // Single-character values are host-environment noise (e.g. "1"); redacting them
+    // corrupts unrelated text such as opaque tokens instead of protecting a secret.
+    .filter(value => value.length >= 4)
     .sort((a, b) => b.length - a.length);
   return [
     ...[...new Set(secrets)].map(secret => ({ source: secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags: 'g', replacement: '[redacted]' })),

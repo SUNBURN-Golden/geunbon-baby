@@ -1,6 +1,6 @@
 import { assessPriceEvidence, digest, identityToken, instant, isOfficialPriceScope, type PriceEvidence } from '../shared/deal-price-evidence';
 
-export function officialPriceGuard(evidence: PriceEvidence | null) {
+export function officialPriceGuard(evidence: PriceEvidence | null, now = Date.now()) {
   if (!evidence?.official) return { sql: '1', values: [] };
   if (!evidence.official_approval) return { sql: '0', values: [] };
   const { id, revision } = evidence.official_approval;
@@ -15,7 +15,7 @@ export function officialPriceGuard(evidence: PriceEvidence | null) {
        AND json_extract(s.value,'$.expires_at') > ?
        AND json_extract(s.value,'$.expires_at') > ?
        ${config ? "AND json_extract(s.value,'$.brand') = ? AND json_extract(s.value,'$.model') = ?" : ''})`,
-    values: [url, id, revision, evidence.official_approval.variant ? JSON.stringify(evidence.official_approval.variant) : null, observed_at, observed_at, new Date(Date.now()).toISOString(), ...(config ? [identityToken(config.brand), identityToken(config.model)] : [])],
+    values: [url, id, revision, evidence.official_approval.variant ? JSON.stringify(evidence.official_approval.variant) : null, observed_at, observed_at, new Date(now).toISOString(), ...(config ? [identityToken(config.brand), identityToken(config.model)] : [])],
   };
 }
 
@@ -27,12 +27,24 @@ export async function officialPriceAllowed(db: D1Database, evidence: PriceEviden
 
 export async function syncOfficialPriceScopes(db: D1Database, input: unknown) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return 'invalid_source_approvals';
-  const { observed_at, scopes } = input as Record<string, unknown>;
+  const { observed_at, scopes, revoke_at_revision } = input as Record<string, unknown>;
   if (!instant(observed_at) || Date.parse(observed_at) > Date.now() + 60_000 || !Array.isArray(scopes) || scopes.length > 100 ||
-      !scopes.every(scope => isOfficialPriceScope(scope) && scope.approved_at <= observed_at &&
+      (revoke_at_revision === undefined ? !scopes.length : !instant(revoke_at_revision) || revoke_at_revision >= observed_at) ||
+      !scopes.every(scope => isOfficialPriceScope(scope) && scope.approved_at <= observed_at && scope.expires_at > observed_at &&
         scope.brand === identityToken(scope.brand) && scope.model === identityToken(scope.model)) ||
       new Set(scopes.map(scope => JSON.stringify([scope.url, scope.variant?.id]))).size !== scopes.length) return 'invalid_source_approvals';
   const body = JSON.stringify(scopes);
+  if (revoke_at_revision !== undefined) {
+    const previous = await db.prepare('SELECT scopes FROM official_price_approvals WHERE id=1 AND observed_at=?')
+      .bind(revoke_at_revision).first<{ scopes: string }>();
+    if (!previous || !scopes.every(scope => (JSON.parse(previous.scopes) as unknown[]).some(old => JSON.stringify(scope) === JSON.stringify(old)))) {
+      const already = await db.prepare('SELECT 1 FROM official_price_approvals WHERE id=1 AND observed_at=? AND scopes=?').bind(observed_at,body).first();
+      return already ? null : 'stale_source_approvals';
+    }
+    const changed = await db.prepare('UPDATE official_price_approvals SET observed_at=?,scopes=? WHERE id=1 AND observed_at=?')
+      .bind(observed_at,body,revoke_at_revision).run();
+    return changed.meta.changes ? null : 'stale_source_approvals';
+  }
   const result = await db.prepare(`INSERT INTO official_price_approvals (id,observed_at,scopes) VALUES (1,?,?)
     ON CONFLICT(id) DO UPDATE SET observed_at=excluded.observed_at, scopes=excluded.scopes
     WHERE excluded.observed_at > official_price_approvals.observed_at`).bind(observed_at, body).run();

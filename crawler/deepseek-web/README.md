@@ -48,7 +48,7 @@ Instagram·Threads **로그인/팔로/스크래핑 없음**. 기존 `PoliteFetch
 
 - D.THRONE는 `https://www.dthrone.com/102/?idx=58`의 `idx`를 `canonicalUrl`이 지원하지 않아 11건에서 제외했다.
 - BabyBjörn URL은 레지스트리 경로 정규식이 요구하는 **끝 슬래시를 유지한 raw URL**로 fetch하고, 식별자 비교에만 슬래시가 제거된 `canonicalUrl`을 쓴다.
-- `momcalendar.com`은 `prohibited_hosts`에 포함되어 공식 레인에서도 차단된다.
+- 공식 정가는 registry에서 승인된 공식 상품 페이지에서 확인한다.
 
 ## 상태 보존 업그레이드
 
@@ -321,7 +321,7 @@ owns execution of these suites and repository validation/build checks.
 
 With `DEAL_PRICE_VERIFICATION=1`, the Linux runner verifies prices alongside metadata delivery. It captures the product region once, filters it for privacy, then sends the same bounded text independently to direct DeepSeek Flash and `qwen4-max-preview`. Price, deadline precision, and configuration must be present in the corresponding labeled source spans. The regular list price requires a separate authorized product page and two independent readings of that page. Usage settlement covers every attempted completion, including unusable output after a successful response. The workflow retains fixed outcomes and filtered evidence.
 
-An official comparison requires one matching `price_variants` entry for an enabled product page. Each entry has a variant ID, catalog ID, exact configuration and optional source-visible SKUs. The catalog supplies brand and model aliases. Selected option rows and product headings must support the configuration and the whole-item price. Match the actual product path against the manufacturer/importer registry rules and approve the `official_msrp` field for that scope and expiry. The eleven existing configured official sources start disabled. Authorization is checked before every comparison fetch and every redirected request. Cache reuse requires a current authorized fetch and matching approval, verifier, model IDs, and source URLs and hashes.
+An official comparison requires one matching `price_variants` entry for an enabled product page. Each entry has a variant ID, catalog ID, exact configuration and optional source-visible SKUs. The catalog supplies brand and model aliases. Selected option rows and product headings must support the configuration and the whole-item price. Match the actual product path against the manufacturer/importer registry rules and approve the `official_msrp` field for that scope and expiry. The configured standalone beech and oak Tripp Trapp variants require current registry approval before use. Authorization is checked before every comparison fetch and every redirected request. Cache reuse requires a current authorized fetch and matching approval, verifier, model IDs, and source URLs and hashes.
 
 Price sidecars bind to the queue revision and its prepared source hash. The manual promotion CLI accepts the current queue line and rechecks the official approval against `COLLECTOR_DB` before sending its evidence and before promotion. Regenerate older sidecars under the current verifier. For manual promotion by candidate ID, pass the reviewed ID with `--price-evidence-id` and its revision with `--expected-revision`. After changing official-source approval, sync the current registry scopes to the site. [Price-source synchronization](../README.md#검증-가격-수집과-일회성-백필)
 
@@ -329,9 +329,9 @@ With `AGAMAJUNG_API_URL` and `INGEST_TOKEN` configured, scheduled price-verifica
 
 Alibaba documents the Singapore Token Plan endpoint and `qwen4-max-preview` for interactive coding tools. The Linux host owner must verify account availability and permission for automated use before activation. The Qwen credential is read at runtime on Linux. No credential or raw provider response belongs in the sidecar. [Qwen model configuration](https://www.alibabacloud.com/help/en/model-studio/qwen-code)
 
-Missing official coverage and price disagreements are review outcomes. A retryable provider failure retains the last evidence and leaves the source available for a later cycle, subject to existing request and token caps. Recover with the same state directory and current source approvals. Public-web collection blocks social domains. Threads uses an exact-permalink adapter with its own registry approval and live access check. [Threads and backfill operations](../README.md#검증-가격-수집과-일회성-백필)
+Missing official coverage and price disagreements are review outcomes. A retryable provider failure retains the last evidence and leaves the source available for a later cycle, subject to existing request and token caps. Recover with the same state directory and current source approvals. The continuous collector uses direct social readers and checks the exact Threads permalink and author. [Threads and backfill operations](../README.md#검증-가격-수집과-일회성-백필)
 
-The checked-in registry contains no approved comparison configurations. The configured product pages currently awaiting an exact variant mapping and authority are listed below. The synchronization command reports any remaining entries individually after mappings are configured.
+The checked-in configuration maps the standalone Stokke chairs below. The live registry supplies approval, and the other product pages still need exact variant mappings. The synchronization command reports any remaining entries individually after mappings are configured.
 
 - `stokke-tripp-trapp-1001`
 - `stokke-tripp-trapp-4952`
@@ -344,3 +344,13 @@ The checked-in registry contains no approved comparison configurations. The conf
 - `babybjorn-carrier-harmony`
 - `babybjorn-carrier-one-air`
 - `babybjorn-carrier-mini`
+
+## 연속 수집과 게시
+
+`npm run deepseek-web -- daemon`은 SQLite에서 due URL을 하나씩 claim하고 상품 cursor를 이어서 처리합니다. `once [url...]`는 같은 코드로 한 번 처리합니다. 스케줄의 등록값 `DEEPSEEK_WEB_DAEMON_MS=600000`은 배포 호환을 위해 유지합니다. 실제 유휴 대기 시간은 `offers.json`의 `idle_tick_ms`이며 기본값은 1000입니다. `status --json`의 `offer_idle_tick_ms`를 확인합니다.
+
+`offers.json`에서 `null`과 생략은 무제한, 0은 해당 범위 작업 중지입니다. `source_limits`는 기본값보다 우선합니다. 페이지 및 상품 건수는 source와 KST 시간별 cycle에 귀속됩니다. 모델 호출은 run, cycle, KST 날짜, 누적 범위에 귀속됩니다. 응답 크기, 출력 토큰, 전송 타임아웃은 개별 요청에 적용합니다.
+
+상품마다 공구가, 승인된 공식 페이지의 정가, KST 마감일, 카탈로그 구성, 원문, 모델 판독 일치를 확인합니다. 두 판독은 같은 개인정보 필터링 원문을 독립적으로 읽습니다. 보류 코드는 `missing_offer_price`, `missing_deadline`, `configuration_mismatch`, `missing_official_coverage`, `source_unavailable`, `qwen_disagrees`와 가격 표시 제외 코드입니다. `model-1` 너도밤나무와 `model-2` 오크는 별도의 공식 경로와 구성으로 묶습니다. 현재 Linux registry 승인 및 사이트의 비어 있지 않은 동기화 영수증이 필요합니다. 접수된 근거가 무효화되면 사이트가 해당 가격 바인딩을 해제합니다.
+
+Linux에서 수집과 관리 토큰을 각자의 비밀 파일에서 읽고, HTTPS 사이트의 해당 API 경로로만 보냅니다. 시간별 `metrics-hourly.jsonl`은 완료된 KST 시간대의 조회와 제품·게이트·영수증·모델 사용량을 집계합니다. 사용량이나 비용을 확인할 수 없는 호출은 별도로 집계합니다. Instagram 429, checkpoint, 본인 확인, 2FA 경보는 즉시 같은 파일에 기록됩니다.

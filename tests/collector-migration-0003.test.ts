@@ -25,7 +25,7 @@ test('v2 synthetic 518 records and all legacy data survive 0003, with private ba
   const quarantined=before.map(row=>({...row,data:JSON.stringify({...JSON.parse(String(row.data)),record_version:2,identity_quarantined:true})}));
   chmodSync(file,0o600);
   const store=new CollectorStore(file);try{
-   expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:8});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(quarantined);
+   expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({user_version:9});expect(store.db.prepare('SELECT * FROM collection_records ORDER BY id').all()).toEqual(quarantined);
    const migratedGroups=store.db.prepare('SELECT * FROM dedup_groups ORDER BY id').all();
    expect(migratedGroups).toEqual(groups.map(row=>({...row,data:expect.any(String)})));
    for(const [index,row] of migratedGroups.entries())expect(JSON.parse(String(row.data))).toMatchObject({...JSON.parse(String(groups[index].data)),group_version:1,evidence_version:1,review_scope_digest:expect.any(String)});

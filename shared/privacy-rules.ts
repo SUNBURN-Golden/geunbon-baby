@@ -21,14 +21,15 @@ export function filterChanged(value: string): boolean {
   const normalized = value.normalize('NFKC').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
   return filterText(value, Number.MAX_SAFE_INTEGER) !== normalized;
 }
-export function canonicalUrl(raw: string): string {
+export function canonicalUrl(raw: string, offer = false): string {
   if (typeof raw !== 'string' || raw.length > 2048) throw new Error('unsafe_url');
   let u: URL;
   try { u = new URL(raw); } catch { throw new Error('unsafe_url'); }
-  if (u.protocol !== 'https:' || u.username || u.password || u.port || !u.hostname.includes('.') || /(?:^|\.)(?:localhost|local|internal)$/.test(u.hostname) || /^[\d.]+$/.test(u.hostname) || u.hostname.includes(':') || /(?:^|\.)gonggumoa\.com$/.test(u.hostname)) throw new Error('unsafe_url');
+  if (u.protocol !== 'https:' || u.username || u.password || u.port || !u.hostname.includes('.') || /(?:^|\.)(?:localhost|local|internal)$/.test(u.hostname) || /^[\d.]+$/.test(u.hostname) || u.hostname.includes(':') || !offer && /(?:^|\.)gonggumoa\.com$/.test(u.hostname)) throw new Error('unsafe_url');
   let path: string, host: string;
   try { path = decodeURIComponent(u.pathname); host = decodeURIComponent(u.hostname); } catch { throw new Error('unsafe_url'); }
-  if (/\/(?:api|my|auth|login|logout|signin|signup|admin|account|member|mypage|oauth|session|messages|direct|mail|profile)(?:\/|$)/i.test(path) || filterText(path,4096) !== path) throw new Error('private_url');
+  const publicStore = offer && u.origin === 'https://09pangpang.com' && /^\/account\/\d+\/?$/.test(path);
+  if (!publicStore && /\/(?:api|my|auth|login|logout|signin|signup|admin|account|member|mypage|oauth|session|messages|direct|mail|profile)(?:\/|$)/i.test(path) || filterText(path,4096) !== path) throw new Error('private_url');
   const entries = [...u.searchParams];
   const pangpangPost = u.origin === 'https://09pangpang.com' && /^\/post\/\d+\/?$/.test(u.pathname);
   const pangpangTrack = pangpangPost && (() => {
@@ -54,7 +55,10 @@ export function canonicalUrl(raw: string): string {
   const params: [string,string][] = [];
   for (const [k,v] of entries) {
     if (pangpang || /^(?:utm_.+|fbclid|gclid|igshid|ref|from|share)$/i.test(k)) continue;
-    if (!/^(?:id|p|page|lang|recallid|format|productname|title)$/i.test(k) || !/^[\p{L}\p{N}_.-]{1,60}$/u.test(v)) throw new Error('unsafe_url');
+    const productKey = offer && /^(?:product_?id|product_no|goods_?no|item_?id|pack_content_id|iniCategory|thisCategory|variant|sku|option_id|categoryId|nt_detail)$/i.test(k);
+    const publicSearch = offer && /(?:^|\.)threads\.(?:net|com)$/.test(u.hostname) && u.pathname === '/search' && k === 'q';
+    if (!(SUPPORTED_QUERY_KEY.test(k) || productKey || publicSearch) ||
+        !(publicSearch ? /^[\p{L}\p{N}_ .#-]{1,60}$/u : /^[\p{L}\p{N}_.-]{1,60}$/u).test(v)) throw new Error('unsafe_url');
     if (filterText(v,200) !== v) throw new Error('private_url');
     params.push([k,v]);
   }

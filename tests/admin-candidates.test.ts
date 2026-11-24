@@ -1,3 +1,4 @@
+import { migrationStatements } from './helpers/migrations';
 import { Children, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readdir, readFile } from 'node:fs/promises';
@@ -23,7 +24,7 @@ beforeEach(async () => {
   memory = memoryD1(); context.db = memory.db;
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
-    for (const statement of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(s => s.trim())) await memory.db.prepare(statement).run();
+    for (const statement of migrationStatements(await readFile(new URL(file, dir), 'utf8'))) await memory.db.prepare(statement).run();
   }
   await memory.db.prepare("INSERT INTO external_candidates (id,source,source_url,title,text,seller_handle,price_hint,price_raw,dates_raw,model_match,captured_at,last_seen_at) VALUES ('cand-1','pangpang','https://09pangpang.com/deal/1','합성 후보 제목','합성 본문','synthetic_seller',390000,'390,000원','10/26~10/28',1,'2026-10-22T00:30:00.000Z','2026-10-22T09:30:00.000Z')").run();
 });

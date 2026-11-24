@@ -22,6 +22,7 @@ export type PriceCompletion = (index: 0 | 1, input: Parameters<DeepSeekClient['c
 export type OfficialPage = { url: string; text: string; observedAt: string; approval: OfficialApproval; approvedAt: string };
 export type VerifierDependencies = {
   complete: PriceCompletion;
+  offerUrls?: boolean;
   // `beforeRequest` charges the official-page fetches (including redirects and
   // robots) to the caller's request budget for this verification pass.
   official: (offer: SourceReadings, beforeRequest?: (url: string) => void) => Promise<OfficialPage | 'source_inaccessible' | 'configuration_mismatch' | null>;
@@ -54,7 +55,7 @@ export function createPriceVerifier(deps: VerifierDependencies) {
     beforeRequest?: (url: string) => void): Promise<PriceEvidence> => {
     const evidence = unavailablePriceEvidence(offer_url, 'source_inaccessible');
     const text = captureText(capturedText);
-    if (!text || !httpsSource(offer_url)) return evidence;
+    if (!text || !httpsSource(offer_url, deps.offerUrls)) return evidence;
     const offer = await capture(offer_url, text, observedAt);
     evidence.failed = null;
     const read = async (source: Capture, isOfficial: boolean): Promise<SourceReadings> => {
@@ -88,7 +89,7 @@ export function createPriceVerifier(deps: VerifierDependencies) {
     catch { comparison = 'source_inaccessible'; }
     if (comparison === 'configuration_mismatch') return { ...evidence, failed: comparison };
     if (!comparison || comparison === 'source_inaccessible' || comparison.url === offer_url ||
-        !httpsSource(comparison.url) || !captureText(comparison.text)) {
+        !httpsSource(comparison.url, deps.offerUrls) || !captureText(comparison.text)) {
       evidence.failed = comparison === null ? 'missing_official_coverage' : 'source_inaccessible';
       return evidence;
     }

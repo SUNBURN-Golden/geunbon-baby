@@ -1,3 +1,4 @@
+import { migrationStatements } from './helpers/migrations';
 import { readdir, readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { configuredProviders, handleAuth, readSession, createSession, STATE_COOKIE, SESSION_COOKIE, setNewsletter, deleteSession } from '../lib/auth';
@@ -23,7 +24,7 @@ beforeEach(async () => {
   memory = memoryD1();
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
-    for (const sql of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(s => s.trim())) await memory.db.prepare(sql).run();
+    for (const sql of migrationStatements(await readFile(new URL(file, dir), 'utf8'))) await memory.db.prepare(sql).run();
   }
   env = { DB: memory.db, GOOGLE_CLIENT_ID: 'gid-fixture', GOOGLE_CLIENT_SECRET: SECRETS[0], KAKAO_REST_KEY: 'krest-fixture', KAKAO_CLIENT_SECRET: SECRETS[1] } as LegacyEnv;
   userinfo = { sub: 'g-1', email: 'a@example.com', email_verified: true };

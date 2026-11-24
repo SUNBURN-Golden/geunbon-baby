@@ -24,7 +24,7 @@ export function threadsAdmission(registry: Decision, url: string) {
 type Post = NonNullable<ReturnType<typeof threadsPost>>;
 type ThreadsResult = { outcome: 'captured'; text: string; post: Post } | { outcome: 'source_inaccessible' };
 
-function postBody(html: string, post: Post) {
+export function threadsPostBody(html: string, post: Post) {
   const root = parseHtml(html, new ParseBudget());
   const articles = selectAll(root, 'article').filter(article => {
     if (article.attrs['data-post-id'] !== post.id) return false;
@@ -91,7 +91,7 @@ export async function fetchThreadsPost(url: string, registry: Decision, fetchImp
         await response.body?.cancel().catch(() => {});
         return denied;
       }
-      const text = postBody(await boundedHtml(response), requested);
+      const text = threadsPostBody(await boundedHtml(response), requested);
       if (text) return { outcome: 'captured', text, post: requested };
       return denied;
     }

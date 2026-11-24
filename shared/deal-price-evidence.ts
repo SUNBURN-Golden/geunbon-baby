@@ -24,7 +24,7 @@ export type Reading = {
 export type Capture = { url: string; text: string; hash: string; observed_at: string };
 export type SourceReadings = { source: Capture; readings: [Reading | null, Reading | null] };
 export type PriceVariant = {
-  id: string; catalog_id: string; configuration: Configuration; brand_aliases: string[]; model_aliases: string[]; skus: string[];
+  id: string; catalog_id: string; site_model_id?: string; configuration: Configuration; brand_aliases: string[]; model_aliases: string[]; skus: string[];
 };
 export type OfficialApproval = { id: string; revision: number; variant?: PriceVariant };
 export type OfficialPriceScope = OfficialApproval & {
@@ -52,11 +52,11 @@ export type PriceResult = { outcome: Exclude<PriceOutcome, 'verified'>; facts?: 
 export const amount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 export const instant = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v) &&
   Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
-export function httpsSource(value: unknown): value is string {
+export function httpsSource(value: unknown, offer = false): value is string {
   if (typeof value !== 'string' || value.length > 1000) return false;
   try {
     const u = new URL(value);
-    canonicalUrl(value);
+    canonicalUrl(value, offer);
     return u.href === value && u.protocol === 'https:' && !u.username && !u.password && !u.port && !u.hash;
   } catch { return false; }
 }
@@ -87,7 +87,8 @@ export function isOfficialPriceScope(value: unknown): value is OfficialPriceScop
     instant(value.expires_at) && value.approved_at < value.expires_at;
 }
 export function isPriceVariant(value: unknown): value is PriceVariant {
-  if (!record(value) || Object.keys(value).length !== 6 || !clean(value.id, 100) || !clean(value.catalog_id, 100) ||
+  if (!record(value) || Object.keys(value).length !== (value.site_model_id === undefined ? 6 : 7) ||
+      value.site_model_id !== undefined && !clean(value.site_model_id, 100) || !clean(value.id, 100) || !clean(value.catalog_id, 100) ||
       !record(value.configuration)) return false;
   const configuration = value.configuration;
   return Object.keys(configuration).length === configurationFields.length &&
@@ -111,20 +112,20 @@ function isReading(value: unknown): value is Reading {
 export function readProviderReading(value: unknown): Reading | null {
   return isReading(value) ? value : null;
 }
-async function isSource(value: unknown): Promise<boolean> {
+async function isSource(value: unknown, offer: boolean): Promise<boolean> {
   if (value === null) return true;
   if (!record(value) || Object.keys(value).length !== 2 || !record(value.source) || !Array.isArray(value.readings) ||
       value.readings.length !== 2 || !value.readings.every(reading => reading === null || isReading(reading))) return false;
   const { url, text, hash, observed_at } = value.source;
-  return Object.keys(value.source).length === 4 && httpsSource(url) && clean(text, PRICE_TEXT_LIMIT) &&
+  return Object.keys(value.source).length === 4 && httpsSource(url, offer) && clean(text, PRICE_TEXT_LIMIT) &&
     instant(observed_at) && hash === await digest(text);
 }
-export async function parsePriceEvidence(value: unknown): Promise<PriceEvidence | null> {
+export async function parsePriceEvidence(value: unknown, takeOfferUrls = false): Promise<PriceEvidence | null> {
   if (!record(value) || Object.keys(value).length !== 7 || value.verifier !== PRICE_VERIFIER || !Array.isArray(value.models) ||
       value.models.length !== 2 || value.models.some((model, i) => model !== PRICE_MODELS[i]) ||
-      !(httpsSource(value.offer_url) || value.failed === 'source_inaccessible' && value.offer === null && value.official === null && inaccessibleOfferUrl(value.offer_url)) ||
+      !(httpsSource(value.offer_url, takeOfferUrls) || value.failed === 'source_inaccessible' && value.offer === null && value.official === null && inaccessibleOfferUrl(value.offer_url)) ||
       ![null, 'configuration_mismatch', 'missing_official_coverage', 'source_inaccessible', 'expired_story', 'provider_retryable'].includes(value.failed as null | string) ||
-      !await isSource(value.offer) || !await isSource(value.official) ||
+      !await isSource(value.offer, takeOfferUrls) || !await isSource(value.official, takeOfferUrls) ||
       (value.official === null ? value.official_approval !== null :
         !record(value.official_approval) || Object.keys(value.official_approval).length !== (value.official_approval.variant === undefined ? 2 : 3) ||
         !approvalIdentity(value.official_approval) || value.official_approval.variant !== undefined && !isPriceVariant(value.official_approval.variant))) return null;
@@ -231,6 +232,18 @@ function writtenDeadline(value: string | null) {
   if (parts.length !== 2) return null;
   const start = parseWrittenDate(parts[0], false), end = parseWrittenDate(parts[1]);
   return start && end && start.timestamp <= end.timestamp ? end : null;
+}
+export function offerDeadlinePrecision(reading: Reading | null) {
+  return writtenDeadline(reading?.deadline?.quote.normalize('NFKC').trim() ?? null)?.precision ?? null;
+}
+export function metadataStart(quote: string) {
+  const line = quote.normalize('NFKC').trim();
+  if (rangeLabel.test(line)) {
+    const parts = line.replace(rangeLabel, '').split(/\s*[~–—]\s*|\s+-\s+|\s*부터\s*/);
+    return parts.length === 2 ? parseWrittenDate(parts[0], false)?.timestamp ?? null : null;
+  }
+  const label = /^(?:공구\s*)?(?:시작일(?:시)?|시작|오픈일(?:시)?|오픈|starts at)\s*[:：]\s*/i;
+  return label.test(line) ? parseWrittenDate(line.replace(label, ''), false)?.timestamp ?? null : null;
 }
 const sameDeadline = (a: NonNullable<ReturnType<typeof writtenDeadline>>, b: NonNullable<ReturnType<typeof writtenDeadline>>) =>
   a.timestamp === b.timestamp && a.precision === b.precision;

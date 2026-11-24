@@ -1,3 +1,5 @@
+import { offerConfig } from './offers/config';
+import { enqueueConfigured } from './offers/frontier';
 import { validateArtifact } from './agamajung/pre-storage';
 import { RawStore } from '../engine/raw-store';
 import { AgamajungPipeline } from './agamajung/pipeline';
@@ -16,6 +18,13 @@ export function collectAdapter(pipeline:AgamajungPipeline):JobAdapter {
   return {enabled:sources.length>0,start:slot=>pipeline.start(slot),seed:id=>pipeline.seed(id),resume:id=>pipeline.resume(id),run:async id=>pipeline.run(id!),preview:()=>({dry_run:true,state:sources.length?'running':'finished',sources:sources.map(s=>s.id)})};
 }
 export function jobDefinition(store:CollectorStore,job:CollectionJob,trusted:Cidr[]=[]):JobDefinition {
+  if (process.env.AGAMAJUNG_PM2_JOB && (process.env.AGAMAJUNG_API_URL || process.env.COLLECTOR_SITE_URL) && job !== 'backfill-engine') {
+    return { create: () => ({ enabled: true,
+      async run() { enqueueConfigured(store, offerConfig(), store.settings.sources.filter(source => source.enabled).map(source => source.origin)); },
+      preview: () => ({ dry_run: true, frontier: true }),
+      result: () => ({ status: 'succeeded', reason: 'completed', output: { frontier: true } }),
+    }) };
+  }
   const scheduler=()=>new Scheduler(store,(u,m,_t,opts)=>pinnedRequest(u,m,trusted,opts));
   if(job==='collect')return {profileId:'agamajung',create:(offline=false)=>collectAdapter(new AgamajungPipeline(store,new RawStore(process.env.COLLECTOR_RAW_DIR!,'agamajung',process.cwd(),Date.now,validateArtifact),undefined,{scheduler:scheduler(),offline}))};
   if(job==='discover-sources')return {profileId:DISCOVERY_RUN_ID,output:id=>sourceDiscoveryReport(store,id),create:(offline=false)=>{

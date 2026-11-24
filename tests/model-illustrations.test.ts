@@ -8,7 +8,7 @@ const decode = (text: string) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>'
 
 test('every seeded model resolves to a non-empty square SVG', async () => {
   const ids = seed.models.map((_, i) => `model-${i + 1}`);
-  expect(ids).toHaveLength(41);
+  expect(ids).toHaveLength(43);
   expect([...SQUARE_MODEL_IDS]).toEqual(ids);
   for (const id of ids) {
     expect(modelIllustration(id)).toEqual({ src: `/img/models/${id}.svg`, width: 1080, height: 1080 });
@@ -124,7 +124,7 @@ test('set components keep distinct detailed groups rather than abstract stand-in
   }
 });
 
-test('only the 41 production SVG illustration files remain', async () => {
+test('only the catalog production SVG illustration files remain', async () => {
   const files = (await readdir(dir)).sort();
   const expected = SQUARE_MODEL_IDS.map(id => `${id}.svg`).sort();
   expect(files).toEqual(expected);

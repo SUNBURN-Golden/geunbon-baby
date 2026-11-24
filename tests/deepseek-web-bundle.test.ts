@@ -1,3 +1,4 @@
+import { migrationStatements } from './helpers/migrations';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -427,7 +428,7 @@ describe('bundle promotion mapping, CLI forwarding and site rendering', () => {
       memory = memoryD1();
       const dir = new URL('../migrations/', import.meta.url);
       for (const file of (await readdir(dir)).filter(name => name.endsWith('.sql')).sort()) {
-        for (const statement of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(value => value.trim())) {
+        for (const statement of migrationStatements(await readFile(new URL(file, dir), 'utf8'))) {
           await memory.db.prepare(statement).run();
         }
       }

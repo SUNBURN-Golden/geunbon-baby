@@ -79,5 +79,5 @@ test('illustrations resolve only for listed IDs', () => {
       width: 1080, height: 1080,
     });
   }
-  for (const id of ['model-42', 'model-0', '../model-1', 'model-1/../model-2', '', 'MODEL-1']) expect(modelIllustration(id)).toBeNull();
+  for (const id of ['model-44', 'model-0', '../model-1', 'model-1/../model-2', '', 'MODEL-1']) expect(modelIllustration(id)).toBeNull();
 });

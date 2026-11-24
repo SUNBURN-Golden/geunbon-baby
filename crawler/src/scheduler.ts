@@ -17,8 +17,13 @@ export function publicAddress(ip:string) {
   // Only global unicast; reject mapped IPv4, ULA, link-local, transition and documentation space.
   return isIP(ip)===6&&/^[23][0-9a-f]{3}:/i.test(ip)&&!/^2001:(?:db8|0|10|20):/i.test(ip)&&!/^2002:/i.test(ip);
 }
+export async function validatedAddresses(url: URL, trusted: Cidr[] = []) {
+  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  requireThat(addresses.length && addresses.every(address => addressAllowed(address.address, trusted)), 'private_network');
+  return addresses;
+}
 export async function pinnedRequest(url:URL,maxBytes:number,trusted:Cidr[]=[],opts:{headers?:Record<string,string>}={}):Promise<NetworkResponse> {
-  const addresses=await lookup(url.hostname,{all:true,verbatim:true});requireThat(addresses.length&&addresses.every(a=>addressAllowed(a.address,trusted)),'private_network');
+  const addresses = await validatedAddresses(url, trusted);
   const chosen=addresses[0];
   return new Promise((resolve,reject)=>{
     let size=0;

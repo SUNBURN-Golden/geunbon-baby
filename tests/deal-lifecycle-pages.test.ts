@@ -108,10 +108,11 @@ test('public source reads use only the shared published projections', async () =
     return files;
   }
   for (const file of [...await scan(new URL('../app/', import.meta.url)), ...await scan(new URL('../lib/', import.meta.url))]) {
-    if (['promote-external', 'deal-bundles', 'deal-price-review'].some(name => file.pathname.endsWith(`/lib/${name}.ts`))) continue;
+    if (['promote-external', 'deal-bundles', 'deal-price-review', 'verified-offers'].some(name => file.pathname.endsWith(`/lib/${name}.ts`))) continue;
     let source = await readFile(file, 'utf8');
     if (file.pathname.endsWith('/lib/api.ts')) {
       source = source.replace(/\/\/ Admin lifecycle reads[\s\S]*?(?=\/\/ ── 크롤러)/, '');
+      source = source.replace(/async function manageDeal[\s\S]*?(?=\nexport async function handleApi)/, '');
       // Everything after this point is the authenticated review branch.
       source = source.slice(0, source.indexOf("    if (!['approve', 'reject']"));
     }

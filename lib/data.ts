@@ -43,7 +43,7 @@ export type DealBundleItem = {
   model_id: string | null;
   price: number | null;
 };
-export const categories: Record<string, string> = { high_chair: '하이체어', stroller: '유모차', car_seat: '카시트', bouncer: '바운서', carrier: '아기띠' };
+export const categories: Record<string, string> = { high_chair: '하이체어', stroller: '유모차', car_seat: '카시트', bouncer: '바운서', carrier: '아기띠', play_gym: '플레이짐·모빌' };
 export const verification: Record<string, string> = {
   page_body: '공식 원문 본문 확인',
   official_unpublished: '공식가 미확인 · 정보 없음',
@@ -51,6 +51,7 @@ export const verification: Record<string, string> = {
   search_summary: dealsCopy.searchSummary,
   seed_unspecified: dealsCopy.seedUnspecified,
   manual: dealsCopy.manual,
+  verified_offer_v2: '공구 원문 교차 확인',
 };
 export const unknownVerification = '확인 수준 정보 없음';
 export const verificationLabel = (level: string | null | undefined) =>

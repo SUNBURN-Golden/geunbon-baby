@@ -193,8 +193,8 @@ function unconfirmed(value: { status?: string; reason?: string }) {
 
 
 test('41 stable model IDs and authoritative source policies', () => {
-  expect(models).toHaveLength(41);
-  expect(models.map((m: { brand: string; model: string }) => [m.brand, m.model])).toEqual(expectedOrder);
+  expect(models).toHaveLength(43);
+  expect(models.slice(0, 41).map((m: { brand: string; model: string }) => [m.brand, m.model])).toEqual(expectedOrder);
   for (const [brand] of expectedOrder) {
     const source = sources[brand];
     expect(source).toBeTruthy();
@@ -219,7 +219,7 @@ test('41 stable model IDs and authoritative source policies', () => {
   }
 });
 
-for (const [index, m] of models.entries()) {
+for (const [index, m] of models.slice(0, 41).entries()) {
   test(`model-${index + 1}: official price, bundle, manual and recall evidence`, () => {
     const e = m.evidence, b = m.bundle, source = sources[m.brand];
     expect(['page_body', 'official_unpublished']).toContain(m.verify_level);
@@ -299,6 +299,14 @@ for (const [index, m] of models.entries()) {
     }
   });
 }
+
+test('identity-only play gyms append stable IDs with unknown domestic MSRP', () => {
+  expect(models.slice(41).map(({ brand, model, category, kr_official_price_krw, verify_level, source_url }: typeof import('../seed/models.json').models[number]) =>
+    [brand, model, category, kr_official_price_krw, verify_level, new URL(source_url).hostname])).toEqual([
+      ['하베브릭스','바람개비 아기체육관','play_gym',null,'official_unpublished','m.whittlestore.com'],
+      ['Lovevery','The Play Gym','play_gym',null,'official_unpublished','lovevery.com'],
+    ]);
+});
 
 test('snapshot provenance and Linux/Workers boundary', () => {
   expect(recalls.endpoint).toBe('https://www.saferproducts.gov/RestWebServices/Recall');

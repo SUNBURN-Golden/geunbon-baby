@@ -127,7 +127,7 @@ export type OfficialSourceConfig = {
   url: string;
   brand: string;
   price_model?: string;
-  price_variants?: { id: string; catalog_id: string; configuration: import('../../../shared/deal-price-evidence').Configuration; skus: string[] }[];
+  price_variants?: { id: string; catalog_id: string; site_model_id?: string; configuration: import('../../../shared/deal-price-evidence').Configuration; skus: string[] }[];
   category: ScopedCategory;
   fields: string[];
   enabled: boolean;
@@ -161,7 +161,7 @@ export type DeepSeekWebConfig = {
   profile_version: number;
   model: { provider: string; default_model: string; reasoning_note: string; profiles: ModelProfile[] };
   scope_categories: { id: ScopedCategory; ko: string[]; examples: string[] }[];
-  prohibited_hosts: string[];
+  prohibited_hosts?: string[];
   fetch: { min_interval_ms: number; jitter_ms: [number, number]; timeout_ms: number; max_bytes: number; user_agent_note: string };
   budget: { max_tokens_per_run: number; max_requests_per_run: number; max_completion_tokens: number; estimated_prompt_tokens: number };
   memory: { max_queue_urls: number };
