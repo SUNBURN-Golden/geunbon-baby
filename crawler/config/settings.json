@@ -14,7 +14,10 @@
     "post_views": 40,
     "story_opens": 20,
     "follows": 8,
-    "hashtag_pages": 2
+    "hashtag_pages": 2,
+    "price_checks": 6,
+    "price_provider_calls": 24,
+    "price_official_fetches": 12
   },
   "follow": {
     "daily_cap": 20,

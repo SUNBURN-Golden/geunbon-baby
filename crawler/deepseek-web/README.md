@@ -316,3 +316,31 @@ New offline regression suites: `deal-fact-check`, `deepseek-web-weekly-review`,
 promotion/API suites. The weekly subprocess guard forbids runtime/cache/store loading,
 network and state writes, and compares directory entries and queue bytes. The daemon
 owns execution of these suites and repository validation/build checks.
+
+## Verified deal prices
+
+With `DEAL_PRICE_VERIFICATION=1`, the Linux runner verifies prices alongside metadata delivery. It captures the product region once, filters it for privacy, then sends the same bounded text independently to direct DeepSeek Flash and `qwen4-max-preview`. Price, deadline precision, and configuration must be present in the corresponding labeled source spans. The regular list price requires a separate authorized product page and two independent readings of that page. Usage settlement covers every attempted completion, including unusable output after a successful response. The workflow retains fixed outcomes and filtered evidence.
+
+An official comparison requires one matching `price_variants` entry for an enabled product page. Each entry has a variant ID, catalog ID, exact configuration and optional source-visible SKUs. The catalog supplies brand and model aliases. Selected option rows and product headings must support the configuration and the whole-item price. Match the actual product path against the manufacturer/importer registry rules and approve the `official_msrp` field for that scope and expiry. The eleven existing configured official sources start disabled. Authorization is checked before every comparison fetch and every redirected request. Cache reuse requires a current authorized fetch and matching approval, verifier, model IDs, and source URLs and hashes.
+
+Price sidecars bind to the queue revision and its prepared source hash. The manual promotion CLI accepts the current queue line and rechecks the official approval against `COLLECTOR_DB` before sending its evidence and before promotion. Regenerate older sidecars under the current verifier. For manual promotion by candidate ID, pass the reviewed ID with `--price-evidence-id` and its revision with `--expected-revision`. After changing official-source approval, sync the current registry scopes to the site. [Price-source synchronization](../README.md#검증-가격-수집과-일회성-백필)
+
+With `AGAMAJUNG_API_URL` and `INGEST_TOKEN` configured, scheduled price-verification runs reserve one page slot to revisit an approved external offer, including archived offers and offers awaiting initial or replacement proof. The runner rotates through site targets, checks domain and robots policy, and stores a six-hour revisit deadline by default. The official page is checked even when the offer is unchanged. The site can renew unchanged facts, stage new observations, and invalidate other deals that depend on a contradicted official comparison. An explicit closure on an otherwise identical capture moves the deal to the archive using its last verified comparison. The site keeps observation revisions and still requires human review for changed prices, deadlines, or configurations.
+
+Alibaba documents the Singapore Token Plan endpoint and `qwen4-max-preview` for interactive coding tools. The Linux host owner must verify account availability and permission for automated use before activation. The Qwen credential is read at runtime on Linux. No credential or raw provider response belongs in the sidecar. [Qwen model configuration](https://www.alibabacloud.com/help/en/model-studio/qwen-code)
+
+Missing official coverage and price disagreements are review outcomes. A retryable provider failure retains the last evidence and leaves the source available for a later cycle, subject to existing request and token caps. Recover with the same state directory and current source approvals. Public-web collection blocks social domains. Threads uses an exact-permalink adapter with its own registry approval and live access check. [Threads and backfill operations](../README.md#검증-가격-수집과-일회성-백필)
+
+The checked-in registry contains no approved comparison configurations. The configured product pages currently awaiting an exact variant mapping and authority are listed below. The synchronization command reports any remaining entries individually after mappings are configured.
+
+- `stokke-tripp-trapp-1001`
+- `stokke-tripp-trapp-4952`
+- `stokke-tripp-trapp-newborn-complete`
+- `stokke-yoyo3-frame-last-chance`
+- `bugaboo-fox-5-renew`
+- `bugaboo-butterfly-2`
+- `babybjorn-bouncer-bliss`
+- `babybjorn-bouncer-balance-soft`
+- `babybjorn-carrier-harmony`
+- `babybjorn-carrier-one-air`
+- `babybjorn-carrier-mini`

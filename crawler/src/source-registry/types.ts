@@ -40,4 +40,8 @@ export type RevisionApproval = {
   expires_at: string;
 };
 export type Reason = 'approved'|'unknown_source'|'invalid_url'|'origin_mismatch'|'host_mismatch'|'path_mismatch'|'query_denied'|'blocked_path'|'unsupported'|'field_denied'|'inactive'|'permission_unknown'|'permission_denied'|'reevaluation_due'|'approval_required'|'approval_expired'|'scope_shadowed'|'ambiguous_scope'|'legacy_scope_mismatch'|'legacy_disabled'|'legacy_field_denied';
-export type RegistryDecision = {allowed: boolean; reason: Reason; source_id: string; revision: number|null; applied?: {source_id: string; revision: number}};
+export type RegistryDecision = {
+  allowed: boolean; reason: Reason; source_id: string; revision: number|null;
+  applied?: {source_id: string; revision: number};
+  approval?: {id: string; approved_at: string; expires_at: string};
+};

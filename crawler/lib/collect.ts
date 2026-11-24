@@ -1,3 +1,5 @@
+import { instagramPriceEvidence } from '../src/deal-prices/instagram';
+import { priceVerificationEnabled } from '../src/deal-prices/providers';
 import type { Locator, Page } from 'playwright';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -14,6 +16,7 @@ import { extract, toSuggestions } from './extract';
 import { postImageUrl, selectMedia, readMediaUrl, propagateMediaInterruption } from './media';
 import { isImageUrl } from '../../lib/image-url';
 import { filterText } from '../../shared/privacy-rules';
+import { digest } from '../../shared/deal-price-evidence';
 
 const exec = promisify(execFile);
 async function pauseReadyStory(page: Page, account: string, previousPath: string | null): Promise<boolean> {
@@ -228,6 +231,20 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
   const collectImages = ctx.collectImages !== false;
   const result = { posts: 0, stories: 0 };
   const accountState = state.account(account);
+  const verifyPrices = priceVerificationEnabled();
+  // Price verification is an external action: reserve the check before the
+  // providers run, then charge each provider completion and official-page
+  // request to its hourly cap. Exhaustion fails closed (the item is delivered
+  // without verified evidence and stays out of the public list).
+  const priceBudget = async () => {
+    if (!verifyPrices || !await state.reserve('price_checks', { hourly: settings.hourly_caps.price_checks })) return null;
+    const claim = (bucket: 'price_provider_calls' | 'price_official_fetches') => {
+      if (!state.canSpend(bucket, { hourly: settings.hourly_caps[bucket] })) return false;
+      state.spend(bucket);
+      return true;
+    };
+    return { provider: () => claim('price_provider_calls'), fetch: () => claim('price_official_fetches') };
+  };
   if (ctx.scanPosts && await state.reserve('profile_visits', { hourly: settings.hourly_caps.profile_visits })) {
     await page.goto(`https://www.instagram.com/${account}/`, { waitUntil: 'domcontentloaded' });
     await sleep(...settings.delays_ms.navigation);
@@ -237,9 +254,15 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
     const requested = parseHandle(`/${account}/`);
     const { links, anchors } = await profilePosts(page, requested ?? '');
     if (!links.length) health('selector_miss', { scope: 'profile_posts', account, anchors });
-    const fresh = links.filter(link => !state.isSeen(link)).slice(0, settings.per_tick.max_posts_per_account);
-    for (const canonical of fresh) {
+    const checks = verifyPrices ? accountState.post_checks ?? {} : null;
+    if (checks) accountState.post_checks = checks;
+    const candidates = checks
+      ? [...new Set([...links, ...Object.keys(checks)])].filter(url =>
+        !checks[url]?.stopped && (!checks[url]?.price_due_at || Date.parse(checks[url].price_due_at!) <= Date.now())).sort((a, b) => (checks[a]?.checked_at ?? '').localeCompare(checks[b]?.checked_at ?? ''))
+      : links.filter(link => !state.isSeen(link));
+    for (const canonical of candidates.slice(0, settings.per_tick.max_posts_per_account)) {
       if (!await state.reserve('post_views', { hourly: settings.hourly_caps.post_views })) break;
+      if (checks) checks[canonical] = { ...checks[canonical], checked_at: new Date().toISOString() };
       await page.goto(canonical, { waitUntil: 'domcontentloaded' });
       await sleep(...settings.delays_ms.action);
       await assertHuman(page);
@@ -248,12 +271,27 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
       if (!caption.trim()) { health('selector_miss', { scope: 'caption', account }); continue; }
       const prepared = prepareText(caption);
       if (!prepared) continue;
+      const hash = checks ? await digest(prepared.text) : undefined;
       const image_url = collectImages ? await postImageUrl(page) : undefined;
       const { text, suggestions } = prepared;
       await assertHuman(page);
       if (!await verifiedPost(page, canonical, requested)) continue;
-      await sendItem(api, token, { source_url: canonical, account: requested, kind: 'post', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions });
-      state.markSeen(canonical);
+      const captured_at = new Date().toISOString();
+      const budget = await priceBudget();
+      const price_evidence = budget ? await instagramPriceEvidence(canonical, text, captured_at, budget) : undefined;
+      const receipt = await sendItem(api, token, { source_url: canonical, account: requested, kind: 'post', ...(image_url ? { image_url } : {}), text, captured_at, suggestions, price_evidence });
+      const acknowledged = !price_evidence || !!receipt.price_evidence_id || receipt.status === 'rejected';
+      if (acknowledged && price_evidence?.failed !== 'provider_retryable') {
+        state.markSeen(canonical);
+        if (checks && hash) checks[canonical].delivered_hash = hash;
+      }
+      if (checks) {
+        const delay = acknowledged && price_evidence?.failed !== 'provider_retryable' ? 21_600_000 : 900_000;
+        checks[canonical].price_due_at = new Date(Date.now() + delay).toISOString();
+        checks[canonical].observation_id = receipt.price_evidence_id;
+        checks[canonical].revision = receipt.revision;
+        checks[canonical].stopped = receipt.status === 'rejected' || receipt.price_target_closed === true;
+      }
       await state.save();
       result.posts++;
     }
@@ -285,8 +323,11 @@ export async function collectAccount(page: Page, ctx: CollectContext): Promise<{
           const prepared = prepareText(ocrText);
           if (prepared) {
             const { text, suggestions } = prepared;
-            await sendItem(api, token, { source_url: canonical, account, kind: 'story', ...(image_url ? { image_url } : {}), text, captured_at: new Date().toISOString(), suggestions });
-            state.markSeen(canonical);
+            const captured_at = new Date().toISOString();
+            const budget = await priceBudget();
+            const price_evidence = budget ? await instagramPriceEvidence(canonical, text, captured_at, budget) : undefined;
+            await sendItem(api, token, { source_url: canonical, account, kind: 'story', ...(image_url ? { image_url } : {}), text, captured_at, suggestions, price_evidence });
+            if (price_evidence?.failed !== 'provider_retryable') state.markSeen(canonical);
             await state.save();
             result.stories++;
           }

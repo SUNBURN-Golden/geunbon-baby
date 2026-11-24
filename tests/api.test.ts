@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { memoryD1 } from './helpers/sqlite';
 import { handleApi } from '../lib/api';
-import { dealsCopy } from '../lib/deals-copy';
 import type { Model, comparison } from '../lib/data';
 import type { Env } from '../lib/db';
 const memory = memoryD1();
@@ -68,7 +67,7 @@ test('invalid JSON and unsafe URLs are rejected before insertion', async () => {
   assert.equal((await call('ingest', 'POST', { ...ingest, text: 'a'.repeat(40000) }, env.INGEST_TOKEN)).status, 400);
   const r = new Request('http://localhost', { method: 'POST', body: '{', headers: { authorization: `Bearer ${env.INGEST_TOKEN}` } }); assert.equal((await handleApi(r, ['ingest'], env)).status, 400);
 });
-test('ingest stays private; canonical URL is idempotent; approval publishes atomically', async () => {
+test('ingest stays private; canonical URL is idempotent; approval keeps a priceless deal private', async () => {
   const one = await (await call('ingest', 'POST', ingest, env.INGEST_TOKEN)).json<ItemResponse>();
   const two = await (await call('ingest', 'POST', { ...ingest, source_url: 'https://instagram.com/p/test-local' }, env.INGEST_TOKEN)).json<ItemResponse>();
   assert.equal(one.data.id, two.data.id); assert.equal(one.data.status, 'pending');
@@ -80,14 +79,15 @@ test('ingest stays private; canonical URL is idempotent; approval publishes atom
   assert.equal((await call(`admin/review/${one.data.id}`, 'POST', approval, env.ADMIN_TOKEN)).status, 200);
   assert.equal((await call(`admin/review/${one.data.id}`, 'POST', approval, env.ADMIN_TOKEN)).status, 409);
   const deals = (await (await call('deals')).json<ListResponse>()).data;
-  assert.equal(deals.length, 1); assert.equal(deals[0].price, null); assert.equal(deals[0].advertisement, true); assert.equal(deals[0].notice, dealsCopy.apiNotice);
+  assert.equal(deals.length, 0);
+  assert.equal((await env.DB.prepare('SELECT status FROM ingested_items WHERE id = ?').bind(one.data.id).first<{ status: string }>())?.status, 'approved');
   assert.equal((await (await call('admin/queue', 'GET', undefined, env.ADMIN_TOKEN)).json<ListResponse>()).data.length, 0);
 });
 test('reject never publishes and cannot later be approved', async () => {
-  const item = (await (await call('ingest', 'POST', { ...ingest, source_url: 'https://www.instagram.com/stories/test/123/' }, env.INGEST_TOKEN)).json<ItemResponse>()).data;
+  const item = (await (await call('ingest', 'POST', { ...ingest, source_url: 'https://www.instagram.com/stories/test/123/', kind: 'story' }, env.INGEST_TOKEN)).json<ItemResponse>()).data;
   assert.equal((await call(`admin/review/${item.id}`, 'POST', { action: 'reject' }, env.ADMIN_TOKEN)).status, 200);
   assert.equal((await call(`admin/review/${item.id}`, 'POST', { action: 'approve' }, env.ADMIN_TOKEN)).status, 409);
-  assert.equal((await (await call('deals')).json<ListResponse>()).data.length, 1);
+  assert.equal((await (await call('deals')).json<ListResponse>()).data.length, 0);
 });
 test('crawler suggestions ride along, stay private, and never auto-publish', async () => {
   const suggestions = { models: [{ model_id: 'model-1', brand: 'Stokke', name: '트립트랩 하이체어(너도밤나무)', matched: ['스토케', '트립트랩', '너도밤나무'], confidence: 0.95 }], price: { value: 390000, raw: '390,000원', confidence: 0.9 }, dates: { starts_at: '2026-10-26T00:00:00+09:00', ends_at: '2026-10-28T23:59:59+09:00', raw: '10/26~10/28', confidence: 0.95 }, links: [{ url: '', kind: 'link_in_bio', confidence: 0.85 }], confidence: 0.93 };

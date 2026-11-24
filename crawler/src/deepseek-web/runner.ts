@@ -1,3 +1,11 @@
+import { assessPriceEvidence, offerSourceClosed, PRICE_MODELS, withoutStandaloneClosure } from '../../../shared/deal-price-evidence';
+import { externalObservations, priceSubmission, priorPriceEvidence } from '../deal-prices/external-observation';
+import { priceRevisit } from '../deal-prices/revisit';
+import { runThreadsRevisit } from '../deal-prices/threads-schedule';
+import { closureEvidence, preparedOfferText } from '../deal-prices/verify';
+import { priceRuntime } from '../deal-prices/runtime';
+import { priceVerificationEnabled, qwenClient } from '../deal-prices/providers';
+import { queuePriceRevision, readQueuePrices, writeQueuePrices } from '../deal-prices/review-sidecar';
 import { pangpangIdentityAllowed, pangpangPost } from '../../lib/external/pangpang';
 import { join } from 'node:path';
 import { evaluateUrlDomainPolicy, assertDomainPolicyReadable } from './domain-policy';
@@ -9,12 +17,12 @@ import { buildParserProposal } from './proposals';
 import { canonicalUrl } from '../../../shared/privacy-rules';
 import { digest } from '../../engine/util';
 import { modelProfile } from './config';
-import { preparePage } from './page-content';
+import { preparePage, sha256 } from './page-content';
 import { candidateDecision } from './candidate-filter';
 import { ExtractionCache, contractHash, cacheKey, representation, type CacheEntry } from './extraction-cache';
 import { deliverCached } from './cache-delivery';
 import type { ConditionalRequest, FetchFailure, RequestStage } from '../../lib/external/fetch';
-import { countPending } from './review-queue';
+import { countPending, readQueue } from './review-queue';
 import { cycleAdmit } from './budget-cycle';
 import { cycleLifecycle, waitFor, type CycleContext } from './lifecycle';
 import type { WriterOwnership } from './writer-ownership';
@@ -40,6 +48,7 @@ export type RunnerOptions = {
   store?: CollectorStore;
   registry?: SourceRegistryStore;
   client?: ReturnType<typeof createDeepSeekClient>;
+  priceClients?: readonly [ReturnType<typeof createDeepSeekClient>, ReturnType<typeof createDeepSeekClient>];
   fetchImpl?: typeof fetch;
   fetchPage?: (url: string, conditional?: ConditionalRequest) => Promise<FetchPageResult>;
   now?: () => number;
@@ -155,6 +164,26 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       [...options.store.settings.sources, ...officialLegacySources(config, loadRegistrySeed())],
     );
   }
+  const verifyPrices = options.mode !== 'dry_run' && priceVerificationEnabled();
+  const observations = verifyPrices ? externalObservations(process.env.AGAMAJUNG_API_URL, process.env.INGEST_TOKEN, options.fetchImpl) : null;
+  const qwen = options.priceClients?.[1] ?? qwenClient(options.fetchImpl);
+  const priceFlash = options.priceClients?.[0] ?? (verifyPrices && report.model !== PRICE_MODELS[0]
+    ? createDeepSeekClient({ apiKey: process.env.DEEPSEEK_API_KEY ?? '', model: PRICE_MODELS[0], maxCompletionTokens: config.budget.max_completion_tokens, fetchImpl: options.fetchImpl })
+    : ctx.client);
+  const priceVerifier = verifyPrices ? priceRuntime(async (provider, input) => {
+    const admission = cycleAdmit(memory, config);
+    if (!admission.ok) throw new Error(admission.reason);
+    const response = await ctx.complete(input, admission.reserve, undefined, provider ? qwen : priceFlash, provider ? 'qwen' : 'deepseek');
+    await logOutcome(dir, { run_id: runId, cycle_id: cycleId, outcome: 'price_model_call', url: "",
+      detail: { model: PRICE_MODELS[provider], total_tokens: response.usage.total_tokens } });
+    return response;
+  }, options.store, config, registry, {
+    fetcher, now: nowMs,
+    beforeRequest(url) {
+      if (!fetchEligible(memory, url, nowMs())) throw new Error('source_inaccessible');
+    },
+  }) : null;
+  const scopesRevision = priceVerifier ? sha256(JSON.stringify(priceVerifier.scopes().map(({ scope }) => scope))) : '';
   const sourcesById = new Map(enabledOfficial.map(source => [source.id, source]));
   const cycleTouched = new Set<string>();
 
@@ -263,10 +292,45 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
     for (const row of catalogSearchUrls(catalog)) {
       if (eligibleAtPlan(row.url)) (searchRows[row.category] ??= []).push(row);
     }
+    const priceWork: WorkItem[] = [];
+    if (observations && (config.selection.max_pages_per_cycle > 1 || memory.lifetime.cycles % 2 === 0)) {
+      try {
+        let cursor = memory.external_price_cursor ?? '';
+        const initial = cursor;
+        for (let scanned = 0; scanned < 12; scanned++) {
+          const target = await observations.next(cursor);
+          if (!target) {
+            memory.external_price_cursor = '';
+            if (cursor) { cursor = ''; continue; }
+            break;
+          }
+          if (scanned && target.id === initial && cursor) break;
+          cursor = memory.external_price_cursor = target.id;
+          if ((await priceRevisit(dir, target, scopesRevision)).isDue(nowMs()) && eligibleAtPlan(target.source_url)) {
+            priceWork.push({ kind: 'price_observation', tier: -1, url: target.source_url, target });
+            if (target.official_hash && config.selection.max_pages_per_cycle > 2) {
+              let after = '';
+              for (let lookahead = 0; lookahead < 4; lookahead++) {
+                const related = await observations.next(after, target.id);
+                if (!related || related.id === target.id || related.id === after) break;
+                after = related.id;
+                if (eligibleAtPlan(related.source_url) && (await priceRevisit(dir, related, scopesRevision)).isDue(nowMs())) {
+                  priceWork.push({ kind: 'price_observation', tier: -1, url: related.source_url, target: related });
+                  break;
+                }
+              }
+            }
+            break;
+          }
+        }
+      } catch {
+        await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: '', outcome: 'price_verification', detail: { result: 'price_watch_unavailable' } });
+      }
+    }
     const plan = planRotation({
       categories,
       categoryQuota: config.selection.category_quota_per_cycle,
-      maxPages: config.selection.max_pages_per_cycle,
+      maxPages: config.selection.max_pages_per_cycle - priceWork.length,
       legacyBudget: config.selection.legacy_budget_per_cycle,
       pending,
       legacy,
@@ -277,7 +341,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
       categoryDigest: nextDigest,
     });
     memory.rotation = plan.rotation;
-    workItems = plan.items;
+    workItems = [...priceWork, ...plan.items];
     scheduled = plan.scheduled;
     served = plan.served;
   }
@@ -367,18 +431,32 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
   };
 
   try {
+    const threadsRan = observations && priceVerifier && options.store ?
+      await runThreadsRevisit(dir, options.store, { api: observations.api, token: observations.token, verify: priceVerifier.verify,
+        now: nowMs, fetchImpl: options.fetchImpl }) : false;
     {
-      for (const item of workItems.slice(0, maxQueue)) {
+      for (const item of workItems.slice(0, Math.max(0, Math.min(maxQueue, config.selection.max_pages_per_cycle - (threadsRan ? 1 : 0))))) {
         options.signal?.throwIfAborted();
         if (!fetchEligible(memory, item.url, nowMs())) continue;
         if (item.kind === 'official') {
           await executeOfficial(item);
           continue;
         }
+        const revisit = item.kind === 'price_observation' ? await priceRevisit(dir, item.target, scopesRevision) : null;
+        if (revisit?.pending) {
+          try {
+            const receipt = await observations!.submit(revisit.pending);
+            revisit.finish(nowMs(), priceVerifier!.recheckInterval(revisit.pending.price_evidence.official?.source.url ?? null,
+              revisit.pending.price_evidence.official_approval?.variant?.id), receipt.outcome, receipt.revision);
+          } catch {
+            await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: item.url, outcome: 'price_verification', detail: { result: 'price_observation_unavailable' } });
+          }
+          continue;
+        }
         const rawSeed = item.url;
         let seedUrl: string;
         try { seedUrl = canonicalUrl(rawSeed); } catch { blocked++; policyBlocked++; continue; }
-        if (shouldDedupObservedSeed(memory, seedUrl, config, nowMs())) {
+        if (item.kind !== 'price_observation' && shouldDedupObservedSeed(memory, seedUrl, config, nowMs())) {
           dedupSkips++;
           forgetPending(memory, seedUrl);
           memory.plan_notes.push(`dedup_observed_seed ${seedUrl}`);
@@ -438,7 +516,7 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
             continue;
           } else {
             if (listingRefresh) listingRefreshAttempts++;
-            const prior = cache.prior(pageUrl, contract);
+            const prior = priceVerifier ? null : cache.prior(pageUrl, contract);
             const conditional = prior && prior.representation.fetch_url === pageUrl && (prior.representation.etag || prior.representation.last_modified) ? { fetch_url: prior.representation.fetch_url, etag: prior.representation.etag, last_modified: prior.representation.last_modified } : undefined;
             const checkPolicy = (url: string, stage: RequestStage = 'page') => {
               if (stage === 'page' && pangpangPost(seedUrl) && new URL(url).pathname !== '/robots.txt' && !pangpangIdentityAllowed(seedUrl, url)) throw new Error('source_response_invalid');
@@ -576,6 +654,37 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
           if (!fetched) continue;
           const at = new Date(nowMs()).toISOString();
           const prepared = reused ? null : preparePage(text, pageUrl);
+          if (item.kind === 'price_observation') {
+            const capture = prepared && pageUrl === seedUrl ? preparedOfferText(prepared) : '';
+            try {
+              const prior = await priorPriceEvidence(item.target);
+              let outcome = 'source_inaccessible';
+              let revision: string | undefined;
+              let interval = config.selection.official_recheck_ms;
+              if (capture) {
+                const closureOnly = offerSourceClosed(capture) && item.target.capture_hash &&
+                  sha256(withoutStandaloneClosure(capture)) === item.target.capture_hash;
+                const evidence = closureOnly ? await closureEvidence(item.target.source_url, capture, at) :
+                  await priceVerifier!.verify(item.target.source_url, capture, at, prior);
+                const comparison = evidence.official ?? prior?.official;
+                interval = priceVerifier!.recheckInterval(comparison?.source.url ?? null,
+                  (evidence.official_approval ?? prior?.official_approval)?.variant?.id);
+                outcome = assessPriceEvidence(evidence).outcome;
+                if (evidence.offer && (offerSourceClosed(capture) || !['provider_retryable', 'source_inaccessible'].includes(outcome))) {
+                  const payload = await priceSubmission(item.target, evidence);
+                  revisit!.submit(payload);
+                  const receipt = await observations!.submit(payload);
+                  ({ outcome, revision } = receipt);
+                }
+              }
+              revisit!.finish(nowMs(), interval, outcome, revision);
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'price_verification', detail: { result: outcome } });
+            } catch {
+              await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'price_verification', detail: { result: 'price_observation_unavailable' } });
+            }
+            await progress();
+            continue;
+          }
           const decision = reused ? reused.candidate : candidateDecision(prepared!, catalog, config);
           if (prepared?.truncated) await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'preparation_truncated' });
           if (!decision.accepted) {
@@ -636,9 +745,22 @@ async function executeCycle(options: RunnerOptions, ctx: CycleContext): Promise<
               if (cat !== '정보 없음') coverage.extracted[cat] = (coverage.extracted[cat] ?? 0) + 1;
             }
             if (delivered.proposal) proposals++;
+            let pricePending = false;
+            if (priceVerifier && !delivered.deferred && entry!.result.in_scope && prepared && !prepared.truncated) {
+              const row = (await readQueue(dir)).filter(item => item.extraction.url === pageUrl).at(-1);
+              if (row?.status === 'pending' && row.revision?.content_hash === prepared.content_hash) {
+                const prior = await readQueuePrices(dir, row);
+                const evidence = await priceVerifier.verify(pageUrl, preparedOfferText(prepared), at, prior);
+                const outcome = assessPriceEvidence(evidence).outcome;
+                pricePending = outcome === 'provider_retryable';
+                if (!pricePending || !prior) writeQueuePrices(dir, await queuePriceRevision(row), prepared.content_hash, evidence);
+                await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: 'price_verification',
+                  detail: { result: outcome, product_id: entry!.result.catalog_product_id ?? null } });
+              }
+            }
             await logOutcome(dir, { run_id: runId, cycle_id: cycleId, url: pageUrl, outcome: entry!.result.in_scope ? 'extracted' : 'out_of_scope' });
             memory.observed_urls = [...new Set([...memory.observed_urls, pageUrl])];
-            if (!delivered.deferred) {
+            if (!delivered.deferred && !pricePending) {
               forgetPending(memory, seedUrl);
               forgetPending(memory, pageUrl);
             } else mergePending(memory, [pageUrl]);

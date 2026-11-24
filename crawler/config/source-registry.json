@@ -2325,5 +2325,109 @@
         "reference": "crawler/README.md"
       }
     ]
+  },
+  {
+    "source_id": "social:www.threads.com",
+    "revision": 1,
+    "kind": "social",
+    "origin": "https://www.threads.com",
+    "scope_hosts": [
+      "www.threads.com"
+    ],
+    "allowed_path_prefixes": [
+      "/"
+    ],
+    "path_patterns": [
+      "^/@[A-Za-z0-9._]{1,30}/post/[A-Za-z0-9_-]{1,100}/?$"
+    ],
+    "query_keys": [],
+    "blocked_paths": [],
+    "collectable_fields": [
+      "brand",
+      "model",
+      "generation",
+      "bundle_components",
+      "clue_price",
+      "group_buy_terms"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "Only bounded public offer evidence after approval"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "Exact public Threads post permalink adapter"
+      }
+    ]
+  },
+  {
+    "source_id": "social:www.threads.net",
+    "revision": 1,
+    "kind": "social",
+    "origin": "https://www.threads.net",
+    "scope_hosts": [
+      "www.threads.net"
+    ],
+    "allowed_path_prefixes": [
+      "/"
+    ],
+    "path_patterns": [
+      "^/@[A-Za-z0-9._]{1,30}/post/[A-Za-z0-9_-]{1,100}/?$"
+    ],
+    "query_keys": [],
+    "blocked_paths": [],
+    "collectable_fields": [
+      "brand",
+      "model",
+      "generation",
+      "bundle_components",
+      "clue_price",
+      "group_buy_terms"
+    ],
+    "permission": {
+      "robots": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      },
+      "terms": {
+        "status": "unknown",
+        "checked_at": null,
+        "evidence": null
+      }
+    },
+    "refresh_ms": null,
+    "retention": {
+      "snippets_days": null,
+      "full_text_days": null,
+      "images_days": null,
+      "conditions": "Only bounded public offer evidence after approval"
+    },
+    "unsupported": [],
+    "status": "registered",
+    "reevaluate_at": null,
+    "evidence": [
+      {
+        "reference": "Exact public Threads post permalink adapter"
+      }
+    ]
   }
 ]

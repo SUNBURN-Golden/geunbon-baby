@@ -15,6 +15,7 @@ function validate(raw: RunMemory & { version: number }) {
   const count = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
   if (!raw || ![1, 2, 3, 4, 5].includes(raw.version)) throw new Error();
   for (const field of ['plan_notes', 'observed_urls', 'pending_urls'] as const) if (!Array.isArray(raw[field]) || !raw[field].every(v => typeof v === 'string')) throw new Error();
+  if (raw.external_price_cursor !== undefined && (typeof raw.external_price_cursor !== 'string' || raw.external_price_cursor.length > 200)) throw new Error();
   const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
   if (raw.gone_urls !== undefined && (!record(raw.gone_urls) || Object.entries(raw.gone_urls).some(([url, status]) => canonicalUrl(url) !== url || status !== 404 && status !== 410))) throw new Error();
   if (raw.fetch_retry_after !== undefined && (!record(raw.fetch_retry_after) || Object.entries(raw.fetch_retry_after).some(([host, at]) => new URL(canonicalUrl(`https://${host}/`)).hostname !== host || typeof at !== 'number' || !Number.isSafeInteger(at) || at <= 0 || at > 8.64e15))) throw new Error();
@@ -38,7 +39,7 @@ function validate(raw: RunMemory & { version: number }) {
       || !(r.last_cycle === null || record(r.last_cycle) && Array.isArray(r.last_cycle.categories) && r.last_cycle.categories.every(c => typeof c === 'string' && categories.has(c)) && count(r.last_cycle.official) && count(r.last_cycle.pages))) throw new Error();
   }
   if (raw.lifetime !== undefined && (!record(raw.lifetime) || ![raw.lifetime.token_spent, raw.lifetime.requests, raw.lifetime.cycles, raw.lifetime.model_calls].every(count))) throw new Error();
-  if (raw.active_cycle != null && (!validHeartbeat(raw.active_cycle.snapshot) || !raw.cycle || raw.active_cycle.snapshot.cycle_id !== raw.cycle.cycle_id || !['in_flight', 'settled', null].includes(raw.active_cycle.call))) throw new Error();
+  if (raw.active_cycle != null && (!validHeartbeat(raw.active_cycle.snapshot) || !raw.cycle || raw.active_cycle.snapshot.cycle_id !== raw.cycle.cycle_id || !['in_flight', 'settled', 'settled_qwen', null].includes(raw.active_cycle.call))) throw new Error();
   if (raw.terminal_summary != null && (!validHeartbeat(raw.terminal_summary) || raw.terminal_summary.cycle_id !== raw.finalized_cycle_id || raw.terminal_summary.outcome === 'running')) throw new Error();
   if (raw.pending_audit != null && (!record(raw.pending_audit) || raw.pending_audit.cycle_id !== raw.finalized_cycle_id || raw.pending_audit.lifetime_token_spent !== raw.lifetime?.token_spent || raw.pending_audit.lifetime_cycles !== raw.lifetime?.cycles)) throw new Error();
   if (raw.version >= 2) {
@@ -46,7 +47,7 @@ function validate(raw: RunMemory & { version: number }) {
     if (![raw.cycle.token_spent, raw.cycle.requests_spent, raw.cycle.tokens_reserved, raw.cycle.requests_reserved, raw.lifetime.token_spent, raw.lifetime.requests, raw.lifetime.cycles, raw.lifetime.model_calls].every(count)) throw new Error();
   } else if (![raw.token_spent ?? 0, raw.requests_spent ?? 0].every(count)) throw new Error();
   if (raw.version >= 3) {
-    if (raw.active_cycle && (!validHeartbeat(raw.active_cycle.snapshot) || !raw.active_cycle.snapshot || raw.active_cycle.snapshot.cycle_id !== raw.cycle.cycle_id || !['in_flight', 'settled', null].includes(raw.active_cycle.call))) throw new Error();
+    if (raw.active_cycle && (!validHeartbeat(raw.active_cycle.snapshot) || !raw.active_cycle.snapshot || raw.active_cycle.snapshot.cycle_id !== raw.cycle.cycle_id || !['in_flight', 'settled', 'settled_qwen', null].includes(raw.active_cycle.call))) throw new Error();
     if (!raw.active_cycle && (raw.cycle.token_spent || raw.cycle.requests_spent || raw.cycle.tokens_reserved || raw.cycle.requests_reserved)) throw new Error();
     if (raw.terminal_summary !== null && (!validHeartbeat(raw.terminal_summary) || raw.terminal_summary.cycle_id !== raw.finalized_cycle_id || raw.terminal_summary.outcome === 'running')) throw new Error();
     if (raw.finalized_cycle_id !== null && typeof raw.finalized_cycle_id !== 'string') throw new Error();

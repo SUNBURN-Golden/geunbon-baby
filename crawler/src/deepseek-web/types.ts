@@ -126,6 +126,8 @@ export type OfficialSourceConfig = {
   /** Raw fetch URL, kept byte-for-byte so registry path patterns (trailing slash) still match. */
   url: string;
   brand: string;
+  price_model?: string;
+  price_variants?: { id: string; catalog_id: string; configuration: import('../../../shared/deal-price-evidence').Configuration; skus: string[] }[];
   category: ScopedCategory;
   fields: string[];
   enabled: boolean;
@@ -182,10 +184,11 @@ export type RunMemory = {
   finalized_cycle_id: string | null;
   terminal_summary: RunReport | null;
   pending_audit: Record<string, unknown> | null;
-  active_cycle: { snapshot: RunReport; call: 'in_flight' | 'settled' | null } | null;
+  active_cycle: { snapshot: RunReport; call: 'in_flight' | 'settled' | 'settled_qwen' | null } | null;
   updated_at: string;
   plan_notes: string[];
   observed_urls: string[];
+  external_price_cursor?: string;
   pending_urls: string[];
   gone_urls: Record<string, 404 | 410>;
   fetch_retry_after: Record<string, number>;

@@ -1,10 +1,11 @@
+import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { readdir, readFile } from 'node:fs/promises';
 import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
-import { DEAL_SELECT, dealTiming, formatDealDate, formatGap, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
+import { dealSelect, dealTiming, formatDealDate, formatGap, priceGap, sortDeals, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
-import { DealActions, DealCard, DealCardLinks, DealDetail, DealList, DealStateChip, PriceGap } from '../app/deals/_components';
+import { DealActions, DealCard, DealCardLinks, DealDetail, DealList, DealStateChip } from '../app/deals/_components';
 import DealNotFound from '../app/deals/[id]/not-found';
 import DealsPage, { dynamic as listDynamic } from '../app/deals/page';
 import DealDetailPage, { dynamic as detailDynamic } from '../app/deals/[id]/page';
@@ -29,6 +30,8 @@ const nowMs = Date.parse('2026-10-21T03:00:00Z');
 const fixture: DealWithContext & { model_note: string } = {
   id: 'deal-1', model_id: 'model-1', seller_id: 'seller-1', title: 'A carefully checked deal',
   image_url: null, price: 390000, source_url: 'https://www.instagram.com/p/example/',
+  deal_price_krw: 390000, list_price_krw: 430000, discount_pct: 9,
+  price_checked_at: '2026-10-20T16:00:00.000Z', price_source_url: 'https://example.com/deal', list_price_source_url: 'https://fixture.example/official',
   verify_level: 'manual', checked: '2026-10-20T16:00:00Z',
   starts_at: '2026-10-20T00:00:00Z', ends_at: '2026-10-22T14:59:59Z',
   model_joined_id: 'model-1', model_name: 'Example model', model_official_price: 430000,
@@ -39,29 +42,14 @@ const fixture: DealWithContext & { model_note: string } = {
 const card = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealCard, { deal: { ...fixture, ...patch }, nowMs }));
 const detail = (patch: Partial<DealWithContext> = {}) => renderToStaticMarkup(createElement(DealDetail, { deal: { ...fixture, ...patch }, nowMs }));
 
-test.each(['page_text', 'search_summary'])('deal cards and details hide %s prices and all comparisons', model_verify_level => {
+test.each(['page_text', 'search_summary'])('deal comparisons use the verified list price with a model level of %s', model_verify_level => {
   for (const render of [card, detail]) {
-    const html = render({ model_verify_level });
-    expect(html).toContain(dealsCopy.unknownOfficial);
-    expect(html).not.toContain('430,000');
-    expect(html).not.toContain('class="deal-gap');
-    expect(html).not.toContain('class="deal-tone');
+    const html = render({ model_verify_level, model_official_price: 880000 });
     expect(html).toContain('390,000');
+    expect(html).toContain('<del>430,000원</del>');
+    expect(html).toContain('정가보다 9% 싸요');
+    expect(html).not.toContain('880,000');
   }
-  const html = detail({ model_verify_level });
-  expect(html).toContain(dealsCopy.officialEvidence);
-  expect(html).not.toContain(dealsCopy.officialChecked);
-  expect(html).toContain('2026.10.18');
-  expect(html).toContain(model_verify_level === 'page_text' ? dealsCopy.pageText : dealsCopy.searchSummary);
-});
-
-test.each(['page_text', 'search_summary'])('PriceGap gates %s prices even when a caller supplies a gap', model_verify_level => {
-  const html = renderToStaticMarkup(createElement(PriceGap, {
-    deal: { ...fixture, model_verify_level }, gap: priceGap(400000, 430000),
-  }));
-  expect(html).toContain(dealsCopy.unknownOfficial);
-  expect(html).not.toContain('430,000');
-  expect(html).not.toContain('class="deal-gap');
 });
 
 describe('price comparisons', () => {
@@ -200,11 +188,8 @@ describe('server rendered deals UI', () => {
     expect(html).toContain(fixture.title);
     expect(html).toContain('390,000');
     expect(html).toContain(dealsCopy.groupBuyPrice);
-    expect(html).toContain(dealsCopy.officialPrice);
-    expect(html).toContain('430,000');
-    expect(html.replace(/<[^>]+>/g, "")).toContain(formatGap(priceGap(fixture.price, fixture.model_official_price)!));
-    expect(html).toMatch(/<span class="deal-gap-chunk"> · [^<]*(낮아요|높아요)<\/span>/);
-    expect(html).toContain(dealsCopy.good);
+    expect(html).toContain('<del>430,000원</del>');
+    expect(html.match(/정가보다 9% 싸요/g)).toHaveLength(1);
     expect(html).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer"`);
     expect(html).toContain('href="/sellers#trust-seller-1"');
     expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
@@ -228,23 +213,18 @@ describe('server rendered deals UI', () => {
       dealsCopy.pageBody, dealsCopy.manual, fixture.model_note!, '2026.10.21', '2026.10.18']) {
       expect(html).not.toContain(copy);
     }
-    expect(html.match(/<time /g)).toHaveLength(2);
+    expect(html.match(/<time /g)).toHaveLength(3);
     expect(html).not.toMatch(/<time[^>]*>2026\.10\.18/);
   });
 
-  test('detail preserves qualification, verification, both dates and disclaimer while hiding price-bearing notes', () => {
+  test('detail preserves both evidence links, check time and disclaimer', () => {
     const html = detail();
-    expect(html).toContain(dealsCopy.qualification);
-    expect(html).toContain(dealsCopy.dealChecked);
-    expect(html).toContain(dealsCopy.officialChecked);
-    expect(html).toContain(dealsCopy.pageBody);
-    expect(html).toContain(dealsCopy.manual);
+    expect(html).toContain('가격 확인 시각');
+    expect(html).toContain('2026.10.21 01:00');
+    expect(html).toContain(fixture.price_source_url);
+    expect(html).toContain(fixture.list_price_source_url);
     expect(html).not.toContain(fixture.model_note);
-    expect(html).toContain('2026.10.21');
-    expect(html).toContain('2026.10.18');
-    expect(html.indexOf(dealsCopy.qualification)).toBeLessThan(html.indexOf(dealsCopy.good));
     expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
-    expect(html).toContain(dealsCopy.disclaimer);
   });
 
   test('detail header advertises and one source action describes its new tab', () => {
@@ -261,82 +241,19 @@ describe('server rendered deals UI', () => {
     expect(html).toContain('2026.10.22 23:59');
   });
 
-  test('ended deals retain one last-checked line on cards and full context on detail, without recommendations', () => {
+  test('ended deals retain one discount badge and the transaction notice', () => {
     const patch = { ends_at: '2026-10-21T02:00:00Z' };
     for (const html of [card(patch), detail(patch)]) {
-      expect(html.replace(/<span class="keep-line">|<\/span>/g, '')).toContain(`${dealsCopy.archived} · <time dateTime="${fixture.checked}">2026.10.21</time>`);
-      expect(html).toMatch(/<span class="keep-line">\S+ · <time /);
-      expect(html).not.toContain('class="deal-tone');
-      expect(html).not.toContain(dealsCopy.remaining.replace('{n}', '0'));
-    }
-    const endedCard = card(patch);
-    expect(endedCard).toContain(dealsCopy.ended);
-    expect(endedCard).not.toContain(dealsCopy.qualification);
-    expect(endedCard).not.toContain(dealsCopy.dealChecked);
-    expect(endedCard).not.toContain(dealsCopy.officialChecked);
-    expect(endedCard).not.toContain('2026.10.18');
-    expect(endedCard.match(/class="deal-disclaimer"/g)).toHaveLength(1);
-    expect(detail(patch)).toContain(dealsCopy.officialChecked);
-    expect(detail(patch)).toContain('2026.10.18');
-    expect(detail(patch)).toContain(fixture.source_url);
-    expect(detail({ ...patch, price: 500000 })).not.toContain(dealsCopy.wait);
-  });
-
-  test('equal/above prices get a waiting badge, unknown comparisons get neither gap nor badge', () => {
-    expect(card({ price: 430000 })).toContain(dealsCopy.equal);
-    expect(card({ price: 430000 })).toContain(dealsCopy.wait);
-    expect(card({ price: 500000 })).toContain(dealsCopy.wait);
-    for (const patch of [{ price: null }, { model_official_price: null }, { model_official_price: 0 }, { model_joined_id: null }]) {
-      const html = card(patch);
-      expect(html).not.toContain('class="deal-gap"');
-      expect(html).not.toContain('class="deal-tone');
-    }
-    expect(card({ price: 0 })).toContain(`>0<span>${dealsCopy.won}</span>`);
-    expect(card({ price: null })).toContain(dealsCopy.unknownPrice);
-    expect(card({ price: null })).toContain('정보 없음');
-    expect(card({ model_official_price: null })).toContain('390,000');
-    expect(card({ model_official_price: null })).toContain(dealsCopy.unknownOfficial);
-  });
-
-  test('failed official retrieval retains the deal price and neutral evidence with its date', () => {
-    const html = detail({ model_verify_level: 'official_unpublished', model_official_price: null });
-    for (const text of [dealsCopy.officialEvidence, dealsCopy.officialUnconfirmed, dealsCopy.unknownOfficial, '390,000', '2026.10.18']) {
-      expect(html).toContain(text);
-    }
-    for (const text of [dealsCopy.officialChecked, '미공개', '비공개', 'class="deal-gap"', 'class="deal-tone', '430,000']) {
-      expect(html).not.toContain(text);
+      expect(html).toContain(dealsCopy.ended);
+      expect(html.match(/정가보다 9% 싸요/g)).toHaveLength(1);
+      expect(html).not.toContain('D-day');
+      expect(html).toContain(dealsCopy.disclaimer);
     }
   });
 
-  test.each([0, null])('official price %s with a legacy level uses a neutral evidence heading', model_official_price => {
-    const html = detail({ model_official_price, model_verify_level: 'page_text' });
-    expect(html).toContain(dealsCopy.officialEvidence);
-    expect(html).toContain(dealsCopy.pageText);
-    expect(html).not.toContain(dealsCopy.officialChecked);
-  });
-
-  test('an unconfirmed level cannot claim official confirmation even with a numeric price', () => {
-    const html = detail({ model_verify_level: 'official_unpublished' }).replace(/<[^>]+>/g, '');
-    expect(html).toContain(dealsCopy.officialEvidence);
-    expect(html).not.toContain(dealsCopy.officialChecked);
-  });
-
-  test('missing deal price retains evidence and confirmed official metadata without substituting a price', () => {
-    const html = detail({ price: null });
-    expect(html).toContain(dealsCopy.dealEvidence);
-    expect(html).toContain('정보 없음');
-    expect(html).not.toContain(dealsCopy.dealChecked);
-    expect(html).toContain(dealsCopy.officialChecked);
-    expect(html).toContain('2026.10.21');
-    expect(html).not.toContain('390,000');
-    expect(html).not.toContain('class="deal-price"');
-  });
-
-  test('zero deal price remains known and keeps the confirmed headings', () => {
-    const html = detail({ price: 0 });
-    expect(html).toContain('>0<span>원</span>');
-    expect(html).toContain(dealsCopy.dealChecked);
-    expect(html).toContain(dealsCopy.officialChecked);
+  test('zero-won verified offer displays as zero with a full discount', () => {
+    expect(detail({ deal_price_krw: 0, discount_pct: 100 })).toContain('>0<span>원</span>');
+    expect(card({ deal_price_krw: 0, discount_pct: 100 })).toContain('정가보다 100% 싸요');
   });
 
   test('missing joined rows retain the deal, hide the model action and provide a seller fallback', () => {
@@ -411,12 +328,13 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     for (const d of [fixture, { ...fixture, id: 'missing-joins', model_id: 'absent-model', seller_id: 'absent-seller' }]) {
       await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .bind(d.id, d.model_id, d.seller_id, d.title, d.price, d.source_url, d.verify_level, d.checked, d.starts_at, d.ends_at, d.id === fixture.id ? 'https://cdninstagram.com/fixture.jpg?x=1&sig=synthetic%2Bvalue' : null).run();
+      await seedPublicPrice(memory.db, d.id, 390000);
     }
   });
   afterAll(() => memory.close());
 
   test('aliased columns preserve deal identity and confirmation metadata, even for missing joins', async () => {
-    const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+    const rows = await all<DealWithContext>(memory.db, dealSelect());
     expect(rows).toHaveLength(2);
     for (const row of rows) expect(row).not.toHaveProperty('model_note');
     expect(rows.find(d => d.id === fixture.id)).toMatchObject({
@@ -439,7 +357,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     await memory.db.prepare('UPDATE sellers SET registration_source = ?, withdrawal_source = ?, official_import_source = ? WHERE id = ?')
       .bind(...evidence.map(([, , url]) => url), 'seller-1').run();
     // Observe executed reads as well as preparations, after all fixture writes.
-    const statementPrototype = Object.getPrototypeOf(memory.db.prepare(DEAL_SELECT)) as D1PreparedStatement;
+    const statementPrototype = Object.getPrototypeOf(memory.db.prepare(dealSelect())) as D1PreparedStatement;
     const prepare = vi.spyOn(memory.db, 'prepare');
     const bind = vi.spyOn(statementPrototype, 'bind');
     const readAll = vi.spyOn(statementPrototype, 'all');
@@ -453,7 +371,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
       expect(prepare.mock.calls.filter(([sql]) => sql.includes('SELECT id,')).every(([sql]) => sql.includes('LIMIT ?'))).toBe(true);
       expect(prepare.mock.calls.some(([sql]) => sql.includes('d.id IN (?,?)'))).toBe(true);
       expect([...list.matchAll(/href="\/deals\/([^"]+)"/g)].map(m => m[1])).toEqual(['deal-1', 'missing-joins']);
-      expect(readFirst).toHaveBeenCalledTimes(1);
+      expect(readFirst).toHaveBeenCalledTimes(2);
       expect(fetch).not.toHaveBeenCalled();
 
       vi.clearAllMocks();
@@ -461,7 +379,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
       const detail = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) }));
       expect(detail.match(/class="badge verified"/g)).toHaveLength(3);
       expect(prepare).toHaveBeenCalledTimes(2);
-      expect(prepare).toHaveBeenNthCalledWith(1, `${DEAL_SELECT} AND d.id = ?`);
+      expect(prepare).toHaveBeenNthCalledWith(1, expect.stringMatching(/AND d\.id = \?$/));
       expect(prepare).toHaveBeenNthCalledWith(2, expect.stringContaining('deal_bundle_items'));
       expect(bind).toHaveBeenCalledWith(fixture.id);
       expect(readFirst).toHaveBeenCalledTimes(1);
@@ -485,7 +403,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     await memory.db.prepare('UPDATE sellers SET registration_source = ?, withdrawal_source = ?, official_import_source = ? WHERE id = ?')
       .bind(...sources, 'seller-1').run();
     try {
-      const rows = await all<DealWithContext>(memory.db, DEAL_SELECT);
+      const rows = await all<DealWithContext>(memory.db, dealSelect());
       const row = rows.find(d => d.id === fixture.id)!;
       evidence.forEach(([field], index) => expect(row[field]).toBe(sources[index]));
       const list = await DealsPage();
@@ -545,18 +463,14 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(nowMs);
     const list = renderToStaticMarkup(await DealsPage());
     expect(list).toContain('/deals/deal-1');
-    expect(list).toContain(dealsCopy.unknownOfficial);
-    expect(list).not.toContain('430,000');
-    expect(list).not.toContain('class="deal-gap');
-    expect(list).not.toContain('class="deal-tone');
+    expect(list).toContain('<del>430,000원</del>');
+    expect(list).toContain('정가보다 9% 싸요');
     expect(clock).toHaveBeenCalledTimes(1);
     clock.mockClear();
     const html = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) }));
     expect(html).toContain(fixture.title);
-    expect(html).toContain(dealsCopy.unknownOfficial);
-    expect(html).not.toContain('430,000');
-    expect(html).not.toContain('class="deal-gap');
-    expect(html).not.toContain('class="deal-tone');
+    expect(html).toContain('정가보다 9% 싸요');
+    expect(html).toContain('<del>430,000원</del>');
     expect(html).not.toContain('123,456');
     expect(html).not.toContain('234,567');
     expect(html).not.toContain('$799');
@@ -567,7 +481,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     const html = renderToStaticMarkup(await DealsPage());
     expect(html.match(/class="deal-card"/g)).toHaveLength(2);
     expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(2);
-    expect(html).toContain('</article></div><nav aria-label="공구 목록 페이지">');
+    expect(html).toContain('</article></div></section><nav aria-label="공구 목록 페이지">');
   });
 
   test('awaits params, binds IDs literally, and calls notFound for missing records', async () => {

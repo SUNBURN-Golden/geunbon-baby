@@ -1,3 +1,4 @@
+import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { readdir, readFile } from 'node:fs/promises';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -7,6 +8,7 @@ import DealDetail from '../app/deals/[id]/page';
 import Models from '../app/models/page';
 import ModelDetail from '../app/models/[id]/page';
 import Calendar from '../app/calendar/page';
+import { GET as rss } from '../app/rss.xml/route';
 import type { Deal } from '../lib/data';
 import { memoryD1 } from './helpers/sqlite';
 import { api, migrate, publish } from './helpers/deal-timestamps';
@@ -50,7 +52,8 @@ beforeEach(async () => {
   vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-24T00:00:00Z'));
   id = (await publish(memory.db, 'public-first')).id;
   otherId = (await publish(memory.db, 'public-second')).id;
-  await memory.db.prepare('UPDATE deals SET price = 600000 WHERE id = ?').bind(otherId).run();
+  await seedPublicPrice(memory.db, id, 400000, 500000);
+  await seedPublicPrice(memory.db, otherId, 600000, 700000);
   await memory.db.prepare("INSERT INTO models SELECT 'model-2',brand,'Other model',category,importer,official_price,source_url,checked,verify_level,note FROM models WHERE id = 'model-1'").run();
 });
 afterEach(() => memory.close());
@@ -63,18 +66,13 @@ test('every public surface follows corrections and withdrawals and public JSON s
   for (const path of ['deals','calendar','models/model-1']) expect(data[path].map(d => d.id)).toContain(id);
   const correction = edit();
   expect((await call(`admin/deals/${id}`, correction)).status).toBe(200);
-  pages = await surfaces(); counts(pages, 2);
-  for (const html of [pages.home, pages.deals, pages.model, pages.calendar, await render(() => detail(id))]) {
-    expect(html).toContain('Revised public title'); expect(html).toContain('234,567'); expect(html).not.toContain('Original public-first');
-  }
-  expect(pages.models).toContain('234,567'); expect(pages.models).not.toContain('400,000');
-  for (const html of [pages.model, pages.calendar, await render(() => detail(id))]) {
-    expect(html).toContain('2026-10-21T00:00:00.000Z'); expect(html).toContain('2026-10-29T00:00:00.000Z');
-  }
-  // Only the second deal still has an image, and the corrected detail has none.
-  expect(await render(() => detail(id))).not.toContain('original.jpg');
+  pages = await surfaces(); counts(pages, 1);
+  for (const html of Object.values(pages)) expect(html).not.toContain('Revised public title');
+  await expect(detail(id)).rejects.toThrow('NEXT_NOT_FOUND');
   data = await publicData();
-  for (const path of ['deals','calendar','models/model-1']) expect(data[path].find(d => d.id === id)).toMatchObject({ title: 'Revised public title', price: 234567, image_url: null, starts_at: '2026-10-21T00:00:00.000Z', ends_at: '2026-10-29T00:00:00.000Z' });
+  for (const rows of Object.values(data)) expect(rows.map(row => row.id)).not.toContain(id);
+  const admin = await (await call(`admin/deals/${id}`)).json<{ data: Deal }>();
+  expect(admin.data).toMatchObject({ title: 'Revised public title', price: 234567, image_url: null, starts_at: '2026-10-21T00:00:00.000Z', ends_at: '2026-10-29T00:00:00.000Z' });
   expect((await call(`admin/deals/${id}`, withdraw(2))).status).toBe(200);
   pages = await surfaces(); counts(pages, 1);
   for (const html of Object.values(pages)) { expect(html).not.toContain('Revised public title'); expect(html).not.toContain('234,567'); }
@@ -90,22 +88,13 @@ test('every public surface follows corrections and withdrawals and public JSON s
   for (const rows of Object.values(await publicData())) expect(rows).toEqual([]);
 });
 
-test('model moves, image restoration and changed schedules reach all applicable surfaces', async () => {
+test('a model and schedule correction retains the original image for admin and awaits new evidence', async () => {
   expect((await call(`admin/deals/${id}`, edit({ model_id: 'model-2', include_image: true }))).status).toBe(200);
-  let data = await publicData();
-  expect(data['models/model-1'].map(d => d.id)).not.toContain(id);
-  expect(data['models/model-2'].map(d => d.id)).toContain(id);
-  for (const path of ['deals','calendar','models/model-2']) expect(data[path].find(d => d.id === id)?.image_url).toBe('https://cdninstagram.com/original.jpg?sig=offline%2B');
-  expect(await render(() => model())).not.toContain('Revised public title');
-  expect(await render(() => model('model-2'))).toContain('Revised public title');
-  const page = await render(() => detail(id)); expect(page).toContain('Other model'); expect(page).toContain('/models/model-2'); expect(page).toContain('original.jpg');
-  expect(await render(Home)).toContain('alt="Other model 상품 이미지"');
-  expect(await render(DealsPage)).toContain('alt="Other model 상품 이미지"');
-  // A corrected future schedule removes the deal from active-price cards and counts.
-  expect((await call(`admin/deals/${id}`, edit({ expected_version: 2, model_id: 'model-2', starts_at: '2026-11-01T00:00:00Z', ends_at: '2026-11-02T00:00:00Z' }))).status).toBe(200);
-  const pages = await surfaces(); counts(pages, 1); expect(pages.home).not.toContain('Revised public title');
-  expect(pages.models).not.toContain('234,567'); expect(pages.deals).toContain('Revised public title'); expect(pages.calendar).toContain('2026-11-01T00:00:00.000Z');
-  data = await publicData(); expect(data.deals.find(d => d.id === id)?.starts_at).toBe('2026-11-01T00:00:00.000Z');
+  const data = await publicData();
+  for (const rows of Object.values(data)) expect(rows.map(row => row.id)).not.toContain(id);
+  const admin = await (await call(`admin/deals/${id}`)).json<{ data: Deal }>();
+  expect(admin.data).toMatchObject({ model_id: 'model-2', image_url: 'https://cdninstagram.com/original.jpg?sig=offline%2B', price: 234567 });
+  await expect(detail(id)).rejects.toThrow('NEXT_NOT_FOUND');
 });
 
 test('public source reads use only the shared published projections', async () => {
@@ -119,7 +108,7 @@ test('public source reads use only the shared published projections', async () =
     return files;
   }
   for (const file of [...await scan(new URL('../app/', import.meta.url)), ...await scan(new URL('../lib/', import.meta.url))]) {
-    if (file.pathname.endsWith('/lib/promote-external.ts') || file.pathname.endsWith('/lib/deal-bundles.ts')) continue;
+    if (['promote-external', 'deal-bundles', 'deal-price-review'].some(name => file.pathname.endsWith(`/lib/${name}.ts`))) continue;
     let source = await readFile(file, 'utf8');
     if (file.pathname.endsWith('/lib/api.ts')) {
       source = source.replace(/\/\/ Admin lifecycle reads[\s\S]*?(?=\/\/ ── 크롤러)/, '');
@@ -130,8 +119,85 @@ test('public source reads use only the shared published projections', async () =
       // This is the sole designated implementation of public bounded reads.
       // Its helpers/projections/withdrawal behavior are exercised against real D1 SQL.
       source = source.slice(0, source.indexOf('// Public historical queries'));
-      source = source.replace(/export const PUBLISHED_DEALS = `[\s\S]*?`;/, '').replace(/export const DEAL_SELECT = `[\s\S]*?`;/, '');
+      source = source.replace(/const publishedDeals = [^`]+`[\s\S]*?`;/, '').replace(/export const dealSelect = [^`]+`[\s\S]*?`;/, '');
     }
     expect(source, file.pathname).not.toMatch(/\bFROM\s+deals\b/i);
   }
+});
+
+test('24-hour official proof expiry during an outage hides public surfaces and a fresh check recovers them', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const T0 = Date.parse('2026-10-24T00:00:00.000Z');
+    vi.setSystemTime(T0);
+    // Re-seed under the fixed clock so price_checked_at is exactly T0.
+    await seedPublicPrice(memory.db, id, 400000, 500000);
+    await seedPublicPrice(memory.db, otherId, 600000, 700000);
+    let pages = await surfaces();
+    counts(pages, 2);
+    expect((await (await rss()).text())).toContain(id);
+
+    // The crawler is down: no revists, only wall-clock time advances past 24h.
+    vi.setSystemTime(T0 + 86_400_000 + 1);
+    pages = await surfaces();
+    counts(pages, 0);
+    await expect(detail(id)).rejects.toThrow('NEXT_NOT_FOUND');
+    expect((await (await rss()).text())).not.toContain(id);
+    expect(pages.models).toContain('진행 중인 공구 없음');
+
+    // Recovery after restart: a successful official check refreshes the proof.
+    vi.setSystemTime(T0 + 86_400_000 + 2000);
+    await seedPublicPrice(memory.db, id, 400000, 500000);
+    pages = await surfaces();
+    counts(pages, 1);
+    expect(await render(() => detail(id))).toContain('Original public-first');
+    expect((await (await rss()).text())).toContain(id);
+    expect(pages.models).toContain('400,000');
+  } finally { vi.useRealTimers(); }
+});
+
+test('an orders-open end-only deal is active through its inclusive deadline on every surface', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const T0 = Date.parse('2026-10-24T00:00:00.000Z');
+    vi.setSystemTime(T0);
+    const end = new Date(T0 + 2 * 3_600_000).toISOString();
+    await memory.db.prepare("UPDATE deals SET starts_at = NULL, ends_at = ?, orders_open = 1 WHERE id = ?").bind(end, id).run();
+    await memory.db.prepare("UPDATE deals SET status = 'withdrawn' WHERE id = ?").bind(otherId).run();
+    await memory.db.prepare("INSERT OR IGNORE INTO ingested_items (id,source_url,account,text,kind,captured_at,status) VALUES (?,?,?,?,?,?,'approved')")
+      .bind(id, `https://fixture.example/offers/${encodeURIComponent(id)}`, 'fixture', 'fixture', 'post', '2026-10-20T16:00:00.000Z').run();
+    await seedPublicPrice(memory.db, id, 400000, 500000);
+    const snapshot = async () => ({
+      home: await render(Home), deals: await render(DealsPage),
+      discount: await render(() => DealsPage({ searchParams: Promise.resolve({ sort: 'discount' }) })),
+      ending: await render(() => DealsPage({ searchParams: Promise.resolve({ sort: 'ending' }) })),
+      calendar: await render(Calendar), model: await render(() => model()), models: await render(models),
+      detail: await render(() => detail(id)), feed: await (await rss()).text(),
+    });
+
+    let pages = await snapshot();
+    counts(pages, 1);
+    for (const html of [pages.home, pages.deals, pages.calendar, pages.model, pages.detail]) expect(html).toContain('Original public-first');
+    expect(pages.feed).toContain(id);
+    expect(pages.models).toContain('400,000');
+    for (const html of [pages.discount, pages.ending]) { expect(html).toContain('id="deals-active"'); expect(html).not.toContain('id="deals-ended"'); }
+
+    // The deadline is inclusive: still active exactly at ends_at.
+    vi.setSystemTime(Date.parse(end));
+    pages = await snapshot();
+    counts(pages, 1);
+    expect(pages.feed).toContain(id);
+
+    // One millisecond later it moves out of active everywhere, while an
+    // eligible ended deal remains in history and on its detail page.
+    vi.setSystemTime(Date.parse(end) + 1);
+    pages = await snapshot();
+    counts(pages, 0);
+    expect(pages.feed).not.toContain(id);
+    expect(pages.models).toContain('진행 중인 공구 없음');
+    expect(pages.detail).toContain('종료');
+    expect(pages.deals).toContain('id="deals-ended"');
+    expect(pages.discount).toContain('id="deals-ended"');
+    expect(pages.ending).toContain('id="deals-ended"');
+  } finally { vi.useRealTimers(); }
 });

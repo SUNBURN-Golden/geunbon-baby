@@ -1,3 +1,4 @@
+import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -8,7 +9,7 @@ import ModelDetail from '../app/models/[id]/page';
 import Calendar from '../app/calendar/page';
 import { NavLinks } from '../app/nav';
 import { DealCard } from '../app/deals/_components';
-import { DEAL_SELECT, type DealWithContext } from '../lib/deals';
+import { dealSelect, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
 import { siteCopy } from '../lib/site-copy';
 import { verification, verificationLabel, type Deal } from '../lib/data';
@@ -41,6 +42,7 @@ beforeAll(async () => {
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at, status) VALUES ('deal-1', 'https://example.com/deal', 'example', 'Reviewed deal', 'post', '2026-10-21', 'approved')").run();
   await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(deal.id, deal.model_id, deal.seller_id, deal.title, deal.price, deal.source_url, deal.verify_level, deal.checked, deal.starts_at, deal.ends_at).run();
+  await seedPublicPrice(memory.db, deal.id, 390000, 440000);
 });
 afterAll(() => memory.close());
 
@@ -59,7 +61,7 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   const models = renderToStaticMarkup(await Models({ searchParams: Promise.resolve({}) }));
   const detail = renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
   const calendar = renderToStaticMarkup(await Calendar());
-  const joinedDeal = (await memory.db.prepare(DEAL_SELECT).first<DealWithContext>())!;
+  const joinedDeal = (await memory.db.prepare(dealSelect()).first<DealWithContext>())!;
   const card = renderToStaticMarkup(createElement(DealCard, { deal: joinedDeal, nowMs: Date.now() }));
   for (const html of [home, models, detail, calendar, card]) excludesOtherPrices(html);
   expect(home).toContain(siteCopy.pricePromise);
@@ -78,7 +80,7 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   for (const html of [calendar, card]) {
     expect(html).toContain(dealsCopy.groupBuyPrice);
     expect(html).toContain('390,000<span>원</span>');
-    expect(html).toContain('430,000원');
+    expect(html).toContain('440,000원');
   }
 });
 

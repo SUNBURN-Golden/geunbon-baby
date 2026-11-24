@@ -9,10 +9,13 @@ import { deepSeekWebCli } from '../crawler/src/deepseek-web/cli';
 import { DeepSeekHttpError, createDeepSeekClient, usageFrom } from '../crawler/src/deepseek-web/client';
 import { backoffDelay, failBackoff, readBackoff } from '../crawler/src/deepseek-web/backoff';
 import { heartbeatStatus, readHeartbeat, writeHeartbeat } from '../crawler/src/deepseek-web/heartbeat';
-import { initialReport } from '../crawler/src/deepseek-web/lifecycle';
+import { cycleLifecycle, initialReport } from '../crawler/src/deepseek-web/lifecycle';
 import { acquireWriter } from '../crawler/src/deepseek-web/writer-ownership';
 import { loadDeepSeekWebConfig } from '../crawler/src/deepseek-web/config';
 import { EMERGENCY_STOP_META_ID } from '../crawler/src/deepseek-web/domain-policy';
+import { preparePage, sha256 } from '../crawler/src/deepseek-web/page-content';
+import { preparedOfferText } from '../crawler/src/deal-prices/verify';
+import { offerHtml } from './helpers/verified-deal-prices';
 const dirs: string[] = [];
 const fixtures: ReturnType<typeof fixture>[] = [];
 const temp = async () => { const dir = await mkdtemp(join(tmpdir(), 'ds-lifecycle-')); dirs.push(dir); return dir; };
@@ -20,6 +23,40 @@ const db = () => { const f = fixture(); fixtures.push(f); return f.store; };
 afterEach(async () => { for (const f of fixtures.splice(0)) f.close(); for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }); vi.unstubAllEnvs(); });
 const urls = ['https://fixture.example/one', 'https://fixture.example/two'];
 const completion = (tokens: number | null = 15) => ({ content: '{"brand":"A","model":"B","category":"정보 없음","gonggu_price":"정보 없음","regular_price":"정보 없음","period":"정보 없음","gifts":"정보 없음","conditions":"정보 없음","seller":"정보 없음","url":"정보 없음","checked_date":"정보 없음","in_scope":false}', usage: { prompt_tokens: null, completion_tokens: null, total_tokens: tokens }, model: 'deepseek-chat' });
+
+test('a scheduled public-web tick delivers a source closure even when the metadata collector rejects ended offers', async () => {
+  vi.stubEnv('DEAL_PRICE_VERIFICATION', '1');
+  vi.stubEnv('AGAMAJUNG_API_URL', 'https://site.test');
+  vi.stubEnv('INGEST_TOKEN', 'offline-fixture-token');
+  const dir = await temp(), store = db();
+  const source_url = 'https://fixture.example/published';
+  const capture_hash = sha256(preparedOfferText(preparePage(offerHtml, source_url)));
+  const target = { id: 'published', source_url, capture_hash, revision: '1',
+    official_hash: null, authority: null, price_checked_at: null, prior: null };
+  const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
+    expect(new URL(String(url)).origin).toBe('https://site.test');
+    if (init?.method === 'POST') return Response.json({ data: { id: target.id, status: 'observed', outcome: 'source_closed', revision: '2' } }, { status: 202 });
+    return Response.json({ data: new URL(String(url)).searchParams.get('cursor') ? null : target });
+  });
+  const complete = vi.fn(async () => completion());
+  const config = loadDeepSeekWebConfig();
+  let html = offerHtml;
+  let now = Date.parse('2026-11-22T00:00:00Z');
+  const opts = { now: () => now, mode: 'daemon_tick' as const, stateDir: dir, store, fetchImpl, client: { complete }, loadConfig: () => config,
+    fetchPage: async (url: string) => url === source_url ? { ok: true as const, text: html, finalUrl: url } :
+      { ok: false as const, reason: 'robots_or_policy' } };
+  await runDeepSeekWeb(opts);
+  fetchImpl.mockClear();
+  complete.mockClear();
+  now += config.selection.official_recheck_ms + 1;
+  html = offerHtml.replace('</article>', '<span class="text-status-closed">종료</span></article>');
+  await runDeepSeekWeb(opts);
+  const [sent] = fetchImpl.mock.calls.filter(([, init]) => init?.method === 'POST');
+  expect(sent).toBeDefined();
+  expect(JSON.parse(sent[1]!.body as string)).toMatchObject({ kind: 'external_price_observation', deal_id: target.id, source_url,
+    price_evidence: { offer: { source: { text: expect.stringMatching(/\n종료$/) }, readings: [null, null] } } });
+  expect(complete).not.toHaveBeenCalled();
+});
 
 test('402 → 402 → 429 → success persists capped backoff and once returns without DB or network', async () => {
   const dir = await temp(), store = db();
@@ -49,6 +86,24 @@ test('402 → 402 → 429 → success persists capped backoff and once returns w
   expect(success.backoff).toBeNull();
   expect(readBackoff(dir)).toBeNull();
   expect(backoffDelay(1000000)).toBe(6 * 3600000);
+});
+
+test.each([402, 429])('Qwen success cannot clear a DeepSeek %i cooldown or permit another DeepSeek request', async status => {
+  const dir = await temp(), store = db();
+  const now = Date.parse('2026-11-10T00:00:00Z');
+  const complete = vi.fn().mockRejectedValue(new DeepSeekHttpError(status));
+  const qwen = { complete: vi.fn().mockResolvedValue({ ...completion(), model: 'qwen4-max-preview' }) };
+  const options = { mode: 'once' as const, stateDir: dir, store, now: () => now, client: { complete } };
+  const input = { system: 'fixture', user: 'fixture' };
+  const report = await cycleLifecycle(options, async ctx => {
+    await expect(ctx.complete(input, 100)).rejects.toMatchObject({ status });
+    await expect(ctx.complete(input, 100, undefined, qwen, 'qwen')).resolves.toMatchObject({ model: 'qwen4-max-preview' });
+    await expect(ctx.complete(input, 100)).rejects.toMatchObject({ status });
+  });
+  expect(complete).toHaveBeenCalledTimes(1);
+  expect(qwen.complete).toHaveBeenCalledTimes(1);
+  expect(report).toMatchObject({ outcome: 'backoff', backoff: { status, failures: 1, state: 'scheduled' } });
+  expect(readBackoff(dir)).toMatchObject({ status, failures: 1 });
 });
 
 test('daemon remains alive across model backoff; expired no-call cycles wait a normal interval', async () => {

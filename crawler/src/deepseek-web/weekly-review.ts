@@ -2,6 +2,8 @@
 import { canonicalUrl } from '../../../shared/privacy-rules';
 import { interpretSchedule, type FactReason } from '../../lib/deal-fact-check';
 import { kstDate, kstDay, kstWeek } from '../../lib/kst';
+import { assessPriceEvidence } from '../../../shared/deal-price-evidence';
+import { queueObservations } from '../deal-prices/review-sidecar';
 import { readQueue } from './review-queue';
 import { isCheckedExtraction } from './extract';
 import type { ReviewQueueItem, ScopedCategory } from './types';
@@ -15,7 +17,7 @@ export type WeeklyBundleItem = {
   price: number | null;
   price_reason: FactReason | null;
 };
-export type WeeklyDeal = { id: string; url: string; title: string; facts: { gonggu_price: number | null; regular_price: number | null; start_date: ReviewQueueItem['extraction']['start_date']; end_date: ReviewQueueItem['extraction']['end_date'] }; warnings: string[]; missing_fields: string[]; bundle?: { title: string | null; items: WeeklyBundleItem[] } };
+export type WeeklyDeal = { id: string; url: string; title: string; facts: { gonggu_price: number | null; regular_price: number | null; start_date: ReviewQueueItem['extraction']['start_date']; end_date: ReviewQueueItem['extraction']['end_date'] }; warnings: string[]; missing_fields: string[]; price_observations?: { id: string; reason: string; outcome: string }[]; bundle?: { title: string | null; items: WeeklyBundleItem[] } };
 function bundleView(e: ReviewQueueItem['extraction']): WeeklyDeal['bundle'] | undefined {
   if (!e.bundle_items?.length) return undefined;
   const items: WeeklyBundleItem[] = e.bundle_items.map(item => 'price_fact' in item
@@ -50,6 +52,9 @@ export async function weeklyReview(dir: string, now = Date.now()): Promise<Weekl
         deal.missing_fields = deal.missing_fields.filter(key => key !== 'gonggu_price' && key !== 'regular_price');
         if (bundle.items.some(item => item.price === null)) deal.warnings.push('bundle_item_price_missing');
       }
+      const observations = await queueObservations(dir, row);
+      if (observations.length) deal.price_observations = observations.map(({ id, reason, evidence }) =>
+        ({ id, reason, outcome: assessPriceEvidence(evidence).outcome }));
       const reasons: Exclusion[] = [];
       if (!c) deal.warnings.push('needs_fact_check');
       else {
@@ -72,6 +77,7 @@ export function formatWeeklyReview(p: WeeklyPacket): string {
   const date = (d: NonNullable<WeeklyDeal['facts']['start_date']>) => `${d.year === null ? '연도 미기재' : d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}${d.hour === null ? '' : ` ${String(d.hour).padStart(2, '0')}${d.minute === null ? '시' : ':' + String(d.minute).padStart(2, '0') + (d.second === null ? '' : ':' + String(d.second).padStart(2, '0'))}`}`;
   for (const d of [...p.deals, ...p.excluded]) {
     lines.push(`${'reasons' in d ? `[제외 ${(d.reasons as Exclusion[]).join(', ')}]` : '[검토]'} ${d.title}`, `  ${d.url}`, `  공구가 ${d.facts.gonggu_price === null ? '가격 미확인' : d.facts.gonggu_price.toLocaleString('ko-KR') + '원'} · 정가 ${d.facts.regular_price === null ? '가격 미확인' : d.facts.regular_price.toLocaleString('ko-KR') + '원'} · 시작 ${d.facts.start_date ? date(d.facts.start_date) : '미확인'} · 마감 ${d.facts.end_date ? date(d.facts.end_date) : '마감일 미확인'}`, `  누락 ${d.missing_fields.join(', ') || '없음'} · 경고 ${d.warnings.join(', ') || '없음'}`);
+    for (const proof of d.price_observations ?? []) lines.push(`    - ${proof.id} · ${proof.reason} · ${proof.outcome}`);
     for (const item of d.bundle?.items ?? []) {
       lines.push(`    - ${[item.brand, item.product_name].filter(Boolean).join(' ')} / ${item.option_text ?? '옵션 없음'} · ${item.price === null ? '가격 미확인' : item.price.toLocaleString('ko-KR') + '원'} · ${item.model_id ?? '모델 미매칭'}`);
     }

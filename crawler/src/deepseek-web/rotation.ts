@@ -29,6 +29,7 @@ export type SearchRow = {
 
 export type WorkItem =
   | { kind: 'explicit'; tier: -1; url: string }
+  | { kind: 'price_observation'; tier: -1; url: string; target: import('../deal-prices/external-observation').ExternalPriceTarget }
   | { kind: 'official'; tier: 0; url: string; category: ScopedCategory; source_id: string; canonical_url: string; registry_id: string; fields: string[] }
   | { kind: 'recheck'; tier: 1; url: string; category: ScopedCategory }
   | { kind: 'discovery'; tier: 2; url: string; category: ScopedCategory }

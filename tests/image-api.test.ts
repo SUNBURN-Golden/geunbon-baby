@@ -1,3 +1,4 @@
+import { endsAt, exampleEvidence, officialScope } from './helpers/verified-deal-prices';
 import { readdir, readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { handleApi } from '../lib/api';
@@ -26,14 +27,14 @@ beforeEach(async () => {
   memory = memoryD1();
   env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'fixture-admin-token-separation-0001', INGEST_TOKEN: 'fixture-ingest-token-separation-0002' };
   await migrate();
-  await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','fixture','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
+  await env.DB.prepare("INSERT INTO models VALUES ('model-1','Test brand','Test model','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','fixture','https://example.com/')").run();
 });
 afterEach(() => memory.close());
 async function create(patch: Record<string, unknown> = {}) {
   const response = await call('ingest', { ...ingest, image_url: image, ...patch });
   expect(response.status).toBe(202);
-  return (await response.json<{ data: { id: string; status: string } }>()).data;
+  return (await response.json<{ data: { id: string; status: string; price_evidence_id?: string } }>()).data;
 }
 async function publicDeals(path: string) {
   const response = await (await call(path)).json<{ data: { image_url: string | null; comparison?: { gonggu: { image_url: string | null }[] } } | { image_url: string | null }[] }>();
@@ -67,11 +68,12 @@ test('valid CDN host boundaries, standard ports and maximum URL length are accep
   }
 });
 
-test.each([undefined, null])('legacy payload with image %s stays accepted and publishes NULL', async image_url => {
+test.each([undefined, null])('legacy payload with image %s preserves NULL through private approval', async image_url => {
   const item = await create({ image_url });
   expect(await env.DB.prepare('SELECT image_url FROM ingested_items WHERE id = ?').bind(item.id).first()).toEqual({ image_url: null });
   expect((await call(`admin/review/${item.id}`, approval)).status).toBe(200);
-  for (const path of publicPaths) expect(await publicDeals(path)).toMatchObject([{ image_url: null }]);
+  expect(await env.DB.prepare('SELECT image_url FROM deals WHERE id = ?').bind(item.id).first()).toEqual({ image_url: null });
+  for (const path of publicPaths) expect(await publicDeals(path)).toEqual([]);
 });
 
 test('pending images are private; duplicate ingestion never overwrites stored text or image', async () => {
@@ -88,8 +90,11 @@ test('pending images are private; duplicate ingestion never overwrites stored te
 });
 
 test.each([undefined, true, false])('approval include_image=%s publishes only the stored choice through every public path', async include_image => {
-  const item = await create();
-  const response = await call(`admin/review/${item.id}`, { ...approval, include_image });
+  expect((await call('admin/price-sources', { observed_at: new Date().toISOString(), scopes: [officialScope] })).status).toBe(200);
+  const price_evidence = await exampleEvidence(ingest.source_url, approval.price);
+  price_evidence.official!.source.observed_at = new Date().toISOString();
+  const item = await create({ price_evidence, text: price_evidence.offer!.source.text });
+  const response = await call(`admin/review/${item.id}`, { ...approval, ends_at: endsAt, include_image, price_evidence_id: item.price_evidence_id });
   expect(response.status).toBe(200);
   for (const path of publicPaths) expect(await publicDeals(path)).toMatchObject([{ image_url: include_image === false ? null : image }]);
   expect(await env.DB.prepare('SELECT status,image_url FROM ingested_items WHERE id = ?').bind(item.id).first()).toEqual({ status: 'approved', image_url: image });

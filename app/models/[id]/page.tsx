@@ -17,7 +17,7 @@ export default async function Detail({ params, searchParams = Promise.resolve({}
   catch (error) { if (error instanceof PublicDealPaginationError) return <main className="page public-page"><InvalidDealPage path={path} /></main>; throw error; }
   const m = await db.prepare('SELECT * FROM models WHERE id = ?').bind(id).first<Model>();
   if (!m) notFound();
-  const [page, summaries] = await Promise.all([chronologicalDeals<DealWithContext>(db, options, true), modelDealSummaries(db, [id], nowMs)]);
+  const [page, summaries] = await Promise.all([chronologicalDeals<DealWithContext>(db, options, true, nowMs), modelDealSummaries(db, [id], nowMs)]);
   const current = summaries.get(id)!;
   return (
     <main className="page public-page">

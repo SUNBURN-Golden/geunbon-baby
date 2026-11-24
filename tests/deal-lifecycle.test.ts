@@ -30,7 +30,7 @@ afterEach(() => memory.close());
 test('approval, correction and terminal withdrawal preserve evidence and full audit history', async () => {
   const evidence = await memory.db.prepare('SELECT * FROM ingested_items WHERE id = ?').bind(id).first();
   const original = (await row())!;
-  expect((await revisions()).results).toMatchObject([{ action: 'publish', version: 1, request_hash: 'review' }]);
+  expect((await revisions()).results).toMatchObject([{ action: 'publish', version: 1, request_hash: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
   const body = correction({ title: '  Corrected deal  ', reason: '  Offline correction evidence reviewed  ' });
   expect((await update(body)).status).toBe(200);
   const corrected = (await row())!;

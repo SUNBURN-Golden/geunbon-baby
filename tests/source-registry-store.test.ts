@@ -6,6 +6,9 @@ import { initializeSourceRegistry, SourceRegistryStore } from '../crawler/src/so
 import { loadRegistrySeed } from '../crawler/src/source-registry/seed';
 import type { RevisionApproval, SourceRegistryEntry } from '../crawler/src/source-registry/types';
 import { config, type SourcePolicy } from '../crawler/src/source-policy';
+import { loadDeepSeekWebConfig } from '../crawler/src/deepseek-web/config';
+import { priceSourceAuthority } from '../crawler/src/deal-prices/runtime';
+import { exampleEvidence } from './helpers/verified-deal-prices';
 
 const NOW=Date.parse('2026-10-28T00:00:00Z');
 const databases: DatabaseSync[]=[];
@@ -37,6 +40,27 @@ test('normal scope requires the ID, origin, exact host, path, fields, and both p
   expect(f.registry.decide('fixture','https://example.org/products/item',['manual_url'])).toMatchObject({allowed:true,reason:'approved',revision:2});
   expect(f.registry.decide('unknown','https://example.org/products/item',[])).toMatchObject({allowed:false,reason:'unknown_source',revision:null});
   expect(f.registry.decide('fixture','https://example.org/products/item',['official_msrp']).reason).toBe('field_denied');
+});
+
+test('a matching price sidecar needs the same live official approval at promotion time', async () => {
+  const url = 'https://example.org/products/item';
+  const e = entry({ kind: 'manufacturer_importer', collectable_fields: ['official_msrp'] });
+  const first = setup([e], [legacy({ official_fields: ['official_msrp'] })]);
+  const runtimeConfig = loadDeepSeekWebConfig();
+  runtimeConfig.official_sources = [{ id: 'product', registry_id: e.source_id, url, brand: 'Stokke', price_variants: [{ id: 'chair', catalog_id: 'stokke-tripp-trapp', skus: [],
+      configuration: { brand: 'Stokke', model: 'Tripp Trapp', generation: '2세대', option: 'Natural', quantity: '1개', bundle: '단품' } }],
+    category: 'high_chair', fields: ['official_msrp'], enabled: true }];
+  const authority = priceSourceAuthority(undefined, runtimeConfig, first.registry);
+  const [{ scope }] = authority.scopes();
+  const proof = await exampleEvidence('https://seller.example.com/offer');
+  proof.official!.source.url = url;
+  proof.official_approval = { id: scope.id, revision: scope.revision, variant: scope.variant };
+  expect(authority.approved(proof)).toBe(true);
+  const changed = setup([e], [legacy({ official_fields: ['official_msrp'] })]);
+  first.advance(Date.parse(scope.expires_at) - NOW);
+  expect(authority.approved(proof)).toBe(false);
+  changed.registry.approveRevision(approval({ ...e, revision: 3, status: 'excluded' }));
+  expect(priceSourceAuthority(undefined, runtimeConfig, changed.registry).approved(proof)).toBe(false);
 });
 test.each([
   'https://example.org/unapproved/item','https://example.org/products-other/item','https://example.org/products/item/extra',

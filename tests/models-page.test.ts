@@ -1,3 +1,4 @@
+import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -27,6 +28,7 @@ const insertDeal = async (id: string, model: string, price: number | null, start
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at, status) VALUES (?, ?, 'example', 'Deal', 'post', '2026-10-20', 'approved')").bind(id, `https://example.com/${id}`).run();
   await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(id, model, 'seller-1', `${id} title`, price, `https://example.com/${id}`, 'manual', '2026-10-20', starts, ends).run();
+  if (price !== null) await seedPublicPrice(memory.db, id, price);
 };
 
 beforeAll(async () => {
@@ -106,7 +108,7 @@ describe('model search parameters', () => {
         .bind(model.id, model.brand, model.name, model.category, 'Importer', null, 'https://example.com/model', '2026-10-18', 'official_unpublished', '').run();
     }
     for (const id of ['model-5', 'model-7']) {
-      await insertDeal(`query-${id}`, id, null, '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z');
+      await insertDeal(`query-${id}`, id, 390000, '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z');
     }
   });
   afterEach(async () => {
@@ -293,15 +295,13 @@ test('cards show name, art or placeholder, official price and the lowest active 
   expect(hrefs).toEqual(['/models/model-1', '/models/model-3', '/models/model-42', '/models/model-20']);
 });
 
-test('an active deal with no price retains the official row and says information is unavailable', async () => {
+test('a priceless deal stays outside the current price row', async () => {
   await insertDeal('d-null-price', 'model-20', null, '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z');
   try {
     const card = cardOf(await render('2026-10-21T03:00:00Z'), 'model-20');
     expectIllustratedCard(card, 'model-20', `Stokke ${names['model-20']}`);
-    expect(card).toContain('<p class="model-deal"><span class="model-deal-unknown">정보 없음</span></p>');
-    expect(card).toContain('<p class="model-official"><span>공식가</span> <span>670,000원</span></p>');
-    expect(card).not.toContain('진행 중인 공구 없음');
-    expect(card).not.toContain('model-official-solo');
+    expect(card).toContain('진행 중인 공구 없음');
+    expect(card).toContain('<p class="model-official model-official-solo"><span>공식가</span> <span>670,000원</span></p>');
     expect(card).not.toContain('<s>');
   } finally {
     await memory.db.prepare("DELETE FROM deals WHERE id = 'd-null-price'").run();

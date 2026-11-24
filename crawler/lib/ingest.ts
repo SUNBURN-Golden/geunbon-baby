@@ -1,6 +1,7 @@
 // /api/v1/ingest 클라이언트. 원문 + 자동 추출 제안을 검수 대기열로 보낸다.
 // 응답 본문·토큰은 기록하지 않고 상태코드와 고정된 실패 사유만 남긴다.
 import { health } from './health';
+import type { PriceEvidence } from '../../shared/deal-price-evidence';
 import type { ExternalPayload } from './external/filter';
 
 export class IngestError extends Error {
@@ -8,19 +9,23 @@ export class IngestError extends Error {
   constructor(message: string, readonly status?: number) { super(message); }
 }
 
-export type InstagramItem = { source_url: string; account: string; kind: 'post' | 'story'; text: string; captured_at: string; image_url?: string | null; suggestions?: unknown };
-export type IngestItem = InstagramItem | ExternalPayload;
-export type IngestReceipt = { id: string; status: string };
+type SocialFields = { source_url: string; account: string; text: string; captured_at: string; image_url?: string | null; suggestions?: unknown; price_evidence?: PriceEvidence };
+export type InstagramItem = SocialFields & { kind: 'post' | 'story'; platform?: 'instagram' };
+export type ThreadsItem = SocialFields & { kind: 'threads_post'; platform: 'threads' };
+export type IngestItem = InstagramItem | ThreadsItem | ExternalPayload;
+export type IngestReceipt = { id: string; status: string; price_evidence_id?: string; revision?: string; price_target_closed?: true };
 
 export function parseIngestReceipt(value: unknown, kind: IngestItem['kind']): IngestReceipt | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const data = (value as Record<string, unknown>).data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-  const { id, status } = data as Record<string, unknown>;
+  const { id, status, price_evidence_id, revision, price_target_closed } = data as Record<string, unknown>;
   if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) return null;
   const allowed = kind === 'external_listing' ? ['candidate', 'dismissed'] : ['pending', 'approved', 'rejected'];
   if (typeof status !== 'string' || !allowed.includes(status)) return null;
-  return { id, status };
+  if (price_evidence_id !== undefined && (typeof price_evidence_id !== 'string' || !/^[a-f0-9]{64}$/.test(price_evidence_id) ||
+      typeof revision !== 'string' || !revision || revision.length > 100)) return null;
+  return { id, status, ...(price_target_closed === true ? { price_target_closed: true as const } : {}), ...(price_evidence_id === undefined ? {} : { price_evidence_id, revision: revision as string }) };
 }
 
 type ReceiptFailure = 'redirect' | 'status' | 'content_type' | 'oversized' | 'body' | 'json' | 'invalid';
@@ -52,10 +57,10 @@ async function readReceipt(response: Response, fail: (reason: ReceiptFailure) =>
   catch { return fail('json'); }
 }
 
-export async function sendItem(api: URL, token: string, item: IngestItem): Promise<IngestReceipt> {
+export async function sendItem(api: URL, token: string, item: IngestItem, fetchImpl = fetch): Promise<IngestReceipt> {
   let response: Response;
   try {
-    response = await fetch(api, {
+    response = await fetchImpl(api, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
       body: JSON.stringify(item),
