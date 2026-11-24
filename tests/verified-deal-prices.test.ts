@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFile } from 'node:fs/promises';
-import { expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DealCard, DealDetail } from '../app/deals/_components';
 import { GET as rss } from '../app/rss.xml/route';
 import { GET as sitemap } from '../app/sitemap.xml/route';
@@ -12,12 +12,24 @@ import { digest } from '../shared/deal-price-evidence';
 import { closureEvidence, unavailablePriceEvidence } from '../crawler/src/deal-prices/verify';
 import { detectSourceEnded } from '../lib/promote-external';
 import { publicDealEligibility, verifiedDealIndexSql, verifiedStartColumnSql } from '../lib/verified-deal-sql';
-import { checkedAt, endsAt, exampleEvidence, officialScope, startsAt } from './helpers/verified-deal-prices';
+import { checkedAt, endsAt, exampleEvidence as baseExampleEvidence, officialScope, startsAt } from './helpers/verified-deal-prices';
 import { execute, legacy, migrate } from './helpers/deal-timestamps';
 import { batchGate, memoryD1 } from './helpers/sqlite';
 
 vi.mock('../lib/db', async importOriginal => ({ ...await importOriginal<typeof import('../lib/db')>(), environment: vi.fn() }));
 
+beforeEach(() => { vi.useFakeTimers({ toFake:['Date'] }); vi.setSystemTime(Date.parse(checkedAt)+60_000); });
+afterEach(() => vi.useRealTimers());
+const merchant = 'https://merchant.example.com/store-1';
+async function exampleEvidence(url: string, amount?: number, list?: number) {
+  const evidence = await baseExampleEvidence(url,amount,list);
+  if (url.startsWith('https://09pangpang.com/')) {
+    const src = evidence.offer!.source;
+    src.text += '\n판매처: ' + merchant;
+    src.hash = await digest(src.text);
+  }
+  return evidence;
+}
 const migration = () => readFile(new URL('../migrations/0016_verified_deal_prices.sql', import.meta.url), 'utf8');
 
 test('0016 preserves historical rows, child identities, foreign keys, and indexes', async () => {
@@ -55,7 +67,7 @@ test('0016 preserves historical rows, child identities, foreign keys, and indexe
     expect(await indexKeys()).toEqual(priorIndexKeys);
     expect(await all(db, 'PRAGMA foreign_key_check')).toEqual([]);
     expect(await adminDeal(db, 'older')).toMatchObject({ price: 400000, deal_price_krw: null, price_verification: 'unverified' });
-    expect(await activeDealCount(db, Date.parse(checkedAt))).toBe(0);
+    expect((await db.prepare('SELECT verified_price_ready FROM deals WHERE id=?').bind('older').first())).toEqual({ verified_price_ready:0 });
 
     for (const [deal, list, discount] of [[390000,430000,9], [100000,100000,0], [100001,100000,-1],
       [99999,100000,0], [0,430000,100], [0,0,null], [null,400000,null], [0,Number.MAX_SAFE_INTEGER,100]]) {
@@ -193,7 +205,7 @@ test('external promotion selects revision-bound evidence and rejects reuse with 
     await syncScopes(request);
     const source_url = 'https://09pangpang.com/post/8701';
     const evidence = await exampleEvidence(source_url);
-    const ingested = await request('ingest', { kind: 'external_listing', source: 'pangpang', source_url, title: 'fixture external',
+    const ingested = await request('ingest', { kind: 'external_listing', source: 'pangpang', source_url, seller_url:merchant, title: 'fixture external',
       text: evidence.offer!.source.text, captured_at: checkedAt, price_evidence: evidence });
     expect(ingested.status).toBe(202);
     const { data: candidate } = await ingested.json<{ data: { id: string; price_evidence_id: string } }>();
@@ -222,7 +234,7 @@ test('backfill stages separate proof for a different candidate capture, and an o
     const current = await exampleEvidence(source_url, 400000);
     const later = '2026-11-22T00:01:00.000Z';
     current.offer!.source.observed_at = later;
-    const base = { kind: 'external_listing', source: 'pangpang', source_url, title: 'fixture external' };
+    const base = { kind: 'external_listing', source: 'pangpang', source_url, seller_url:merchant, title: 'fixture external' };
     const older = { ...base, text: old.offer!.source.text, captured_at: checkedAt, price_evidence: old };
     type Receipt = { data: { id: string; revision: string; price_evidence_id?: string } };
     const { data: original } = await (await request('ingest', older)).json<Receipt>();
@@ -286,7 +298,7 @@ test.each(['공구 마감됨', '안내: 공구 마감됨', '종료'])('a deliver
     const source_url = 'https://09pangpang.com/post/8712';
     const proof = await exampleEvidence(source_url);
     const original = proof.offer!.source;
-    const { data: candidate } = await (await request('ingest', { kind: 'external_listing', source: 'pangpang', source_url,
+    const { data: candidate } = await (await request('ingest', { kind: 'external_listing', source: 'pangpang', source_url, seller_url:merchant,
       title: 'fixture external', text: original.text, captured_at: checkedAt, price_evidence: proof })).json<{ data: { id: string; price_evidence_id: string } }>();
     const promotion = await request(`admin/candidates/${candidate.id}`, { action: 'promote', request_id: 'fixture-live-closure',
       model_id: 'model-1', seller_id: 'seller-1', starts_at: startsAt, price_evidence_id: candidate.price_evidence_id });
@@ -300,6 +312,7 @@ test.each(['공구 마감됨', '안내: 공구 마감됨', '종료'])('a deliver
     const observed = '2026-11-22T00:10:00.000Z';
     const price_evidence = label === '종료' ? await closureEvidence(source_url, captured, observed) :
       { ...proof, offer: { ...proof.offer, source: { ...original, text: captured, hash: await digest(captured), observed_at: observed } } };
+    vi.setSystemTime(Date.parse(observed));
     const submit = { kind: 'external_price_observation', deal_id, source_url, price_evidence };
     expect((await request('ingest', submit)).status).toBe(202);
     expect((await request('ingest', submit)).status).toBe(202);
@@ -320,7 +333,7 @@ test('the site rejects unapproved official URLs, expired approvals, and queued p
     await syncScopes(request);
     const source_url = 'https://09pangpang.com/post/8702';
     const evidence = await exampleEvidence(source_url);
-    const incoming = { kind: 'external_listing', source: 'pangpang', source_url, title: 'fixture external',
+    const incoming = { kind: 'external_listing', source: 'pangpang', source_url, seller_url:merchant, title: 'fixture external',
       text: evidence.offer!.source.text, captured_at: checkedAt };
     const sellerProof = structuredClone(evidence);
     sellerProof.official!.source.url = 'https://seller.example.com/products/test-model';
@@ -412,6 +425,7 @@ test('edited pending posts accept successful retries and changed live prices ret
       expect((await adminDeal(db, data.id))?.price_review).toMatchObject({ reason: 'prior_fact_conflict', result: { facts: { deal_price_krw: 400000 } } });
     }
     await request('ingest', { ...original, captured_at, text: proof.offer!.source.text, price_evidence: proof });
+    vi.setSystemTime(Date.parse('2026-11-22T00:03:00.000Z'));
     const reviewed = (await adminDeal(db, data.id))!;
     expect(reviewed.version).toBe(4);
     expect(reviewed.previous_price_reviews).toEqual(expect.arrayContaining([expect.objectContaining({ id: data.price_evidence_id })]));
@@ -429,7 +443,7 @@ test('backfill applies once, demotes a later disagreement, and cannot revive a w
     await syncScopes(request);
     const id = 'legacy-price';
     await legacy(db, id, startsAt, endsAt);
-    await db.prepare("UPDATE ingested_items SET status = 'approved' WHERE id = ?").bind(id).run();
+    await db.prepare("UPDATE ingested_items SET status = 'approved',attribution='explicit',attribution_note='Reviewed seller source association' WHERE id = ?").bind(id).run();
     const source = `https://www.instagram.com/p/${id}/`;
     const proof = await exampleEvidence(source);
     await db.prepare('UPDATE ingested_items SET text = ? WHERE id = ?').bind(proof.offer!.source.text, id).run();
@@ -465,7 +479,7 @@ test('a concurrent withdrawal wins over stale backfill without storing a receipt
     await migrate(db);
     const id = 'withdraw-first';
     await legacy(db, id, startsAt, endsAt);
-    await db.prepare("UPDATE ingested_items SET status = 'approved' WHERE id = ?").bind(id).run();
+    await db.prepare("UPDATE ingested_items SET status = 'approved',attribution='explicit',attribution_note='Reviewed seller source association' WHERE id = ?").bind(id).run();
     const request = requests(envFor(db));
     await syncScopes(request);
     const evidence = await exampleEvidence(`https://www.instagram.com/p/${id}/`);
@@ -533,7 +547,7 @@ test('a closure with an edited amount drops both public projections while the of
     await syncScopes(request);
     const source_url = 'https://09pangpang.com/post/8172';
     const proof = await exampleEvidence(source_url);
-    const listing = { kind: 'external_listing', source: 'pangpang', source_url,
+    const listing = { kind: 'external_listing', source: 'pangpang', source_url, seller_url:merchant,
       title: 'Closure with a price edit', text: proof.offer!.source.text, captured_at: checkedAt, price_evidence: proof };
     const { data: candidate } = await (await request('ingest', listing)).json<{ data: { id: string; price_evidence_id: string } }>();
     const promotion = await request('admin/candidates/' + candidate.id, { action: 'promote', request_id: 'closure-edited-price-fixture',
@@ -562,7 +576,7 @@ test('a legacy reader over migrated D1 still exposes priceless rows; the verifie
     await migrate(db);
     const id = 'priceless-legacy';
     await legacy(db, id, startsAt, endsAt);
-    await db.prepare("UPDATE ingested_items SET status = 'approved' WHERE id = ?").bind(id).run();
+    await db.prepare("UPDATE ingested_items SET status = 'approved',attribution='explicit',attribution_note='Reviewed seller source association' WHERE id = ?").bind(id).run();
     // The 7f8d7d8 public reader selected status = 'published' without evidence,
     // so a direct rollback after 0016 still shows legacy rows (documented
     // residual exposure in README §0016).

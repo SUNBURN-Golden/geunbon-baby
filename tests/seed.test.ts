@@ -25,7 +25,7 @@ test('every non-null seeded official price has page_body verification', () => {
 });
 
 async function execute(db: D1Database, sql: string) {
-  for (const statement of sql.split(';').filter(s => s.trim())) await db.prepare(statement).run();
+  await db.exec(sql);
 }
 
 async function schema(db: D1Database) {

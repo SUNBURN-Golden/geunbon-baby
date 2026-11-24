@@ -612,3 +612,16 @@ footer .logo { font-size: 30px; }
 .deal-sort { display: flex; flex-wrap: wrap; gap: var(--s-4); }
 .deal-sort [aria-current="page"] { font-weight: 700; text-decoration: underline; }
 .deal-price-block .deal-tone { display: inline-block; font-weight: 800; }
+
+.seller-history-chart { margin-block: 2rem; }
+.seller-history-chart figure { margin: 1rem 0; }
+.seller-history-chart svg { display: block; width: 100%; max-width: 58rem; }
+.seller-history-chart svg text { fill: currentColor; font-size: 23px; }
+.seller-chart-minimum { fill: currentColor; stroke: currentColor; }
+.seller-history-table { overflow-x: auto; margin-block: 1rem; }
+.seller-history-table table { width: 100%; border-collapse: collapse; }
+.seller-history-table :is(th, td) { text-align: left; padding: .55rem .65rem; border-bottom: 1px solid currentColor; vertical-align: top; }
+.seller-history-table caption { text-align: left; font-weight: 600; padding-block: .4rem; }
+.seller-official { list-style: none; padding-inline-start: 0; margin-block: .35rem; }
+.seller-record-low, .seller-official a { font-size: .9rem; font-weight: 700; }
+.deal-seller-context { overflow-wrap: anywhere; }

@@ -22,6 +22,7 @@ import { memoryD1 } from './helpers/sqlite';
 
 const official = 'https://gear.example.org/products/tripp-trapp';
 const base = 'https://09pangpang.com/post/';
+const merchant = 'https://merchant.example.com/fixture-shop';
 const deadline = '2026-10-24T14:59:59.999Z';
 const stamp = '2026-10-23T10:00:00.000Z';
 const configuration = (bundle: string): Configuration => ({
@@ -35,7 +36,7 @@ const row = (...cells: string[]) => '<tr>' + cells.map(cell => '<td>' + cell + '
 const option = (bundle: string, price: string, orders?: string) =>
   row('옵션: 내추럴', '수량: 1개', '구성: ' + bundle, price, orders ?? '');
 const page = (body: string) => '<main><article><h1>스토케 트립트랩 2세대 공동구매</h1><div class="offer">' + body + '</div></article></main>';
-const offer = (bundle: string, price: string) => page('<p>마감일: 2026년 10월 24일</p><table>' +
+const offer = (bundle: string, price: string) => page('<p>판매처: ' + merchant + '</p><p>마감일: 2026년 10월 24일</p><table>' +
   option(bundle, price, open) + row('유모차 거치대 액세서리', '공구가: 3,000원') + '</table>');
 const officialPage = (price: number) => page('<table>' + option('단품', '정가: ' + price.toLocaleString('ko-KR') + '원') +
   option('베이비 세트', '정가: 560,000원') + '</table>');
@@ -132,7 +133,7 @@ test('routine web verification binds option prices and refreshes active and arch
       const source_url = base + id;
       bodies.set(source_url, html);
       const text = preparedOfferText(preparePage(html, source_url));
-      const candidate = await call('ingest', { kind: 'external_listing', source: 'pangpang', source_url, title: '공구 ' + id, text, captured_at: stamp });
+      const candidate = await call('ingest', { kind: 'external_listing', source: 'pangpang', source_url, seller_url:merchant, title: '공구 ' + id, text, captured_at: stamp });
       const { data } = await candidate.json<{ data: { id: string } }>();
       const response = await call('admin/candidates/' + data.id, { action: 'promote', request_id: 'fixture-runtime-' + id, model_id: 'model-1',
         seller_id: 'seller-1', ...(archived ? { source_ended: true } : {}) });

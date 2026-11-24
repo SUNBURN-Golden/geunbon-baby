@@ -195,7 +195,7 @@ test('a concurrent review returns conflict without creating a deal', async () =>
 test('a conflicting account acquired during registration rolls back the new seller', async () => {
   const batch = env.DB.batch.bind(env.DB);
   vi.spyOn(env.DB, 'batch').mockImplementationOnce(async statements => {
-    await env.DB.prepare("INSERT INTO seller_accounts VALUES ('new.shop','seller-1','2026-10-24T00:00:00Z')").run();
+    await env.DB.prepare("INSERT INTO seller_accounts (account,seller_id,reviewed_at) VALUES ('new.shop','seller-1','2026-10-24T00:00:00Z')").run();
     return batch(statements);
   });
   expect((await call('admin/sellers', { ...seller, account: 'new.shop', account_reviewed: true })).status).toBe(409);
@@ -208,7 +208,7 @@ test('public projection excludes private metadata and ingestion never creates si
   const id = await ingest();
   await call(`admin/review/${id}`, { ...approval, attribution: 'explicit', attribution_note: 'Private documented source attribution.' });
   const response = await (await call('sellers')).json<{ data: Record<string, unknown>[] }>();
-  expect(Object.keys(response.data[0]).sort()).toEqual(['id', 'name', 'source_url', 'registration_source', 'withdrawal_source', 'official_import_source'].sort());
+  expect(Object.keys(response.data[0]).sort()).toEqual(['id', 'handle', 'name', 'source_url', 'registration_source', 'withdrawal_source', 'official_import_source'].sort());
   const deals = await (await call('deals')).text();
   for (const key of ['attribution', 'accounts', 'private_review', 'Private documented']) expect(deals).not.toContain(key);
   const ingested = await call('ingest', { source_url: 'https://instagram.com/p/extra-fields/', account: 'seller', text: 'Synthetic', kind: 'post', captured_at: '2026-10-24T00:00:00Z', seller_id: 'injected', name: 'Injected seller', account_reviewed: true, registration_source: 'https://example.com/', seller: { ...seller } }, env.INGEST_TOKEN);

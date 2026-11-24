@@ -567,3 +567,13 @@ for the read-only packet. Collection, fact checking and packet generation never 
 `verified_offer_v2`는 관찰, 실패 코드와 재확인 일정, 사이트 요청을 Linux SQLite에서 함께 보존합니다. 사이트의 ingest 확인 응답이 현재 revision과 digest에 맞으면 관리 인증으로 게시를 요청합니다. 게시된 자료의 근거가 바뀌면 공개에서 내리고, 재확인이 성공하면 같은 식별자로 복구할 수 있습니다. 반복 라운드는 KST 시작일에 따라 구분합니다.
 
 `metrics-hourly.jsonl`에 시간별 조회·검증·게시·보류와 모델별 사용량을 기록합니다. 상태 디렉터리는 `DEEPSEEK_WEB_STATE_DIR`입니다. Instagram 429 또는 계정 확인 요청은 다음 KST 자정까지 Instagram 작업만 중단하고 이 파일에 경보를 기록합니다. [데몬과 설정](deepseek-web/README.md#연속-수집과-게시)
+
+## 판매자 공구 이력과 공식 판매처
+
+`npm run history:sellers -- inventory --out=...`로 인증된 사이트 D1 스냅샷을 읽습니다. Linux에서 `reconcile --inventory=... --queue=... --collector=... --out=...`에 검수 디렉터리와 SQLite 파일을 지정하면 연결, 보류, 제외, 확인 불가 자료를 출처별로 집계합니다. 시점이 맞는 공식 근거를 확보한 가격만 적용 패킷에 포함합니다.
+
+보관 원문을 다시 판독할 때는 `--raw-root`, `--profile`, `--artifact-policy`, `--runtime-dir`를 함께 설정합니다. 정책 파일의 `permitted` 목록과 `maxAgeMs`가 재사용 가능한 수집 출처와 기간을 정합니다. 기존 DeepSeek 및 Qwen 설정을 사용하며, 과거 정가를 확인하는 데 보관된 동시점 근거를 사용합니다.
+
+`apply --packet=... --checkpoint=...`는 확정된 D1 영수증을 체크포인트에 기록합니다. 응답을 잃거나 작업이 중단됐을 때 같은 패킷과 체크포인트로 재시도할 수 있습니다. `HISTORY_API_ORIGIN`과 `ADMIN_TOKEN`은 인증된 사이트 작업에서 사용합니다.
+
+`attest --policy=... --capture=... --claim=... --key-id=... --signing-key=... --collector=... --runtime-dir=... --out=...`는 승인된 브랜드 출처에서 확보한 캡처를 두 모델에 독립적으로 판독시키고 일치한 근거를 Worker에 제출합니다. Worker의 `OFFICIAL_SELLER_POLICY`에는 공개키와 브랜드의 공식 호스트·계정 정책을 설정합니다. PKCS#8 서명 개인키는 권한이 제한된 Linux 파일에 둡니다. Worker가 확인을 마치면 별도 승인 없이 배지가 활성화됩니다.

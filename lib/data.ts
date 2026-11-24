@@ -2,7 +2,7 @@ import type { PriceReview } from './deal-price-review';
 import { dealsCopy } from './deals-copy';
 
 export type Model = { id: string; brand: string; name: string; category: string; importer: string; official_price: number | null; source_url: string; checked: string; verify_level: string; note: string };
-export type Seller = { id: string; name: string; source_url: string; registration_source: string | null; withdrawal_source: string | null; official_import_source: string | null };
+export type Seller = { id: string; handle?: string; name: string; source_url: string; registration_source: string | null; withdrawal_source: string | null; official_import_source: string | null };
 export const sellerAnchor = (id: string) => `trust-${id}`;
 export const sellerTrustHref = (id: string) => `/sellers#${encodeURIComponent(sellerAnchor(id))}`;
 export type DealOrigin = 'instagram' | 'external_web' | 'threads';
