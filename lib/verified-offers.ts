@@ -1,3 +1,5 @@
+import { sellerIdentity } from '../shared/seller-identity';
+import { capturedRound } from '../shared/offer-round';
 import {
   assessPriceEvidence, digest, displayExclusion, identityToken, instant, metadataStart,
   OFFICIAL_PRICE_MAX_AGE_MS, offerDeadlinePrecision, offerSourceClosed, parsePriceEvidence, type PriceResult,
@@ -221,7 +223,14 @@ export async function mutateVerifiedOffer(db: D1Database, id: string, value: Rec
     || !closed && f.ends_at < time) return reject('offer_evidence_expired', 409);
   const authority = officialPriceGuard(offer.price_evidence, now);
   const sellerId = 'offer-seller-' + await offerHash(f.seller_url);
-  const priceValues = makePriceValues(result, request_id, expected_version + 1, sellerId, f);
+  const authoritySnapshot = await db.prepare(`SELECT scope.value AS value FROM official_price_approvals a,json_each(a.scopes) scope
+    WHERE json_extract(scope.value,'$.id')=? AND json_extract(scope.value,'$.revision')=?
+      AND json_extract(scope.value,'$.url')=? AND json_extract(scope.value,'$.variant') IS ?`)
+    .bind(offer.price_evidence.official_approval!.id,offer.price_evidence.official_approval!.revision,f.list_price_source_url,
+      offer.price_evidence.official_approval!.variant ? JSON.stringify(offer.price_evidence.official_approval!.variant) : null).first<{value:string}>();
+  const priceValues = makePriceValues(result, request_id, expected_version + 1, sellerId, f,
+    capturedRound(offer.price_evidence.offer!.source.text,f.source_url,offer.locator),
+    authoritySnapshot ? JSON.parse(authoritySnapshot.value) : null);
   try {
     await db.prepare(`INSERT INTO verified_offer_operations(request_id,action,request_hash,candidate_id,offer_key,revision,digest,deal_id,expected_version,committed_at,price_values)
       SELECT ?,?,?,c.id,e.offer_key,c.revision,c.digest,COALESCE(c.deal_id,'deal-'||c.id),?,?,?
@@ -254,9 +263,9 @@ export async function mutateVerifiedOffer(db: D1Database, id: string, value: Rec
   return await receipt(db, id, request_id, requestHash) ?? reject('offer_claim_conflict', 409);
 }
 
-function makePriceValues(result: PriceResult, id: string, version: number, sellerId: string, f: VerifiedOffer['facts']) {
+function makePriceValues(result: PriceResult, id: string, version: number, sellerId: string, f: VerifiedOffer['facts'], round: ReturnType<typeof capturedRound>, authority: unknown) {
   return JSON.stringify({ prices: priceBindings(result, id, version), seller_id: sellerId, seller_url: f.seller_url,
-    seller_handle: f.seller_handle, host: new URL(f.source_url).hostname });
+    seller_handle: f.seller_handle, identity: sellerIdentity(f.seller_url), round, authority, host: new URL(f.source_url).hostname });
 }
 
 export async function dismissVerifiedOffer(db: D1Database, id: string, value: Record<string, unknown>) {

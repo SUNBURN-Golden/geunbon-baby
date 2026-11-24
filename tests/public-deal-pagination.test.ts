@@ -1,4 +1,4 @@
-import { fixtureProofBody, seedFixtureAuthority } from './helpers/public-deal-fixture';
+import { fixtureProofBody, seedFixtureAuthority, seedFixtureHistory } from './helpers/public-deal-fixture';
 import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -34,7 +34,7 @@ function row(i: number, start: string | null, end: string | null, source_ended =
 }
 const listPrice = 1_000_000;
 const eligible = (d: Fixture) => d.status === 'published' && d.price !== null && normalizeTimestamp(d.ends_at) !== null;
-function insert(memory: ReturnType<typeof memoryD1>, rows: Fixture[]) {
+async function insert(memory: ReturnType<typeof memoryD1>, rows: Fixture[]) {
   memory.bulk("INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,status) VALUES (?,?,'offline','synthetic','post','2026-10-20','approved')", rows.map(d => [d.id, d.source_url]));
   const proofs = rows.filter(eligible);
   const checked = new Date(Date.now()).toISOString();
@@ -56,6 +56,7 @@ function insert(memory: ReturnType<typeof memoryD1>, rows: Fixture[]) {
       verified ? d.price : null, verified ? listPrice : null, verified ? d.source_url : null, verified ? 'https://fixture.example/official' : null,
       verified ? checked : null, verified ? 'verified' : 'unverified', verified ? d.id : null, verified ? 1 : null];
   }));
+  await seedFixtureHistory(memory.db);
 }
 function reference(rows: Fixture[], now = NOW, discount = true) {
   const ranks = { active: 0, upcoming: 1, ended: 2, unknown: 3 };
@@ -95,7 +96,7 @@ describe('large offline public D1 history', { timeout: 120000 }, () => {
       fixture.push(d);
     }
     fixture.push({ ...row(100800, iso(NOW - 1), iso(NOW + 1)), model_id: null, status: 'published' });
-    insert(memory, fixture);
+    await insert(memory, fixture);
     // The fixture starts with no data in migrations and remains referentially valid.
     expect(await all(db, 'PRAGMA foreign_key_check')).toEqual([]);
     expect(await db.prepare('PRAGMA integrity_check').first()).toEqual({ integrity_check: 'ok' });
@@ -228,7 +229,7 @@ describe('large offline public D1 history', { timeout: 120000 }, () => {
       expect((await chronologicalDeals(db, opts('api-deals', 1, page.next_cursor))).data[0].id).toBe(expectedNext);
       await db.prepare('DELETE FROM deals WHERE id = ?').bind(anchor).run();
       expect((await chronologicalDeals(db, opts('api-deals', 1, page.next_cursor))).data[0].id).toBe(expectedNext);
-      const expectedKeys = ['id','model_id','seller_id','title','price','source_url','image_url','verify_level','checked','starts_at','ends_at','origin','source_host','source_ended','brand_label','category_label','deal_price_krw','list_price_krw','discount_pct','price_source_url','list_price_source_url','price_checked_at','advertisement','notice','orders_open'].sort();
+      const expectedKeys = ['id','model_id','seller_id','title','price','source_url','image_url','verify_level','checked','starts_at','ends_at','origin','source_host','source_ended','brand_label','category_label','deal_price_krw','list_price_krw','discount_pct','price_source_url','list_price_source_url','price_checked_at','advertisement','notice','orders_open', 'campaign_id', 'offer', 'official_badges', 'seller_handle', 'seller_name', 'seller_ordinal'].sort();
       const response = await api(db)('deals?limit=1');
       expect(response.headers.get('cache-control')).toBe('no-store');
       const payload = await response.json<{ data: Deal[]; next_cursor: string }>();
@@ -242,7 +243,7 @@ describe('large offline public D1 history', { timeout: 120000 }, () => {
       await db.prepare("UPDATE deals SET starts_at = NULL WHERE id = ?").bind(expectedNext).run();
       expect((await chronologicalDeals(db, opts('api-deals', 1, page.next_cursor))).data[0].id).not.toBe(anchor);
       const extra = { ...row(900000, '2028-01-01T00:00:00Z', '2028-02-01T00:00:00Z'), price: 300000, model_id: 'model-1', status: 'published' };
-      insert(memory, [extra]);
+      await insert(memory, [extra]);
       const nearEnd = Buffer.from(JSON.stringify([1, 'api-deals', 'chronological', null, 'start', '2027-12-31', '!', null])).toString('base64url');
       expect((await chronologicalDeals(db, opts('api-deals', 20, nearEnd))).data.map(d => d.id)).toContain(extra.id);
       const failing = { prepare: () => { throw new Error('D1 unavailable'); } } as unknown as D1Database;
@@ -292,7 +293,7 @@ describe('public page boundary and cursor contracts', () => {
       ].map(d => ({ ...d, model_id: 'model-1', status: 'published' }));
       // Equal UTC instants use two offset forms whose stored strings still satisfy the legacy CHECK.
       rows[1].starts_at = '2024-02-29T14:59:59.999Z'; rows[1].ends_at = start;
-      insert(memory, rows);
+      await insert(memory, rows);
       const s = Date.parse(start), e = Date.parse(end);
       for (const now of [s - 1, s, s + 1, e - 1, e, e + 1]) {
         const ids: string[] = []; let cursor: string | null = null;
@@ -311,7 +312,7 @@ describe('public page boundary and cursor contracts', () => {
       await migrate(memory.db);
       await seedFixtureAuthority(memory.db);
       const rows = [null, null, null, '', '', ' ', 'bad', 'bad', '2026-10-20T00:00:00Z'].map((s, i) => ({ ...row(i + 1, s, '2026-10-25T00:00:00Z'), price: 100000, model_id: 'model-1', status: 'published' }));
-      insert(memory, rows);
+      await insert(memory, rows);
       for (const surface of ['api-deals', 'api-calendar', 'api-model', 'page-calendar', 'page-model'] as const) {
         const ids: string[] = []; let cursor: string | null = null;
         do {
@@ -331,7 +332,7 @@ describe('public page boundary and cursor contracts', () => {
       for (const size of [0, 1, 20, 40, 50, 51, 100]) {
         await memory.db.prepare('SAVEPOINT boundary').run();
         try {
-          insert(memory, Array.from({ length: size }, (_, i) => ({ ...row(i + 1, '2026-10-20T00:00:00Z', '2026-10-23T00:00:00Z'), price: 100000, model_id: 'model-1', status: 'published' })));
+          await insert(memory, Array.from({ length: size }, (_, i) => ({ ...row(i + 1, '2026-10-20T00:00:00Z', '2026-10-23T00:00:00Z'), price: 100000, model_id: 'model-1', status: 'published' })));
           for (const limit of [1, 20, 50]) for (const surface of ['api-calendar', 'page-deals'] as const) {
             const ids: string[] = []; let cursor: string | null = null;
             do {

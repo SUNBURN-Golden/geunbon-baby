@@ -114,6 +114,10 @@ describe('model search parameters', () => {
   });
   afterEach(async () => {
     for (const id of ['query-model-5', 'query-model-7']) {
+      for (const [table,column] of [['campaign_observations','campaign_id'],['offer_price_observations','campaign_id'],
+        ['campaign_offers','campaign_id'],['campaign_deals','campaign_id'],['history_operations','id'],['seller_campaigns','id']]) {
+        await memory.db.prepare(`DELETE FROM ${table} WHERE ${column}=?`).bind(id).run();
+      }
       await memory.db.prepare('DELETE FROM deals WHERE id = ?').bind(id).run();
       await memory.db.prepare('DELETE FROM ingested_items WHERE id = ?').bind(id).run();
     }

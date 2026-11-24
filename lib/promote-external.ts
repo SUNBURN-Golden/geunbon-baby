@@ -1,3 +1,4 @@
+import { sellerIdentity } from '../shared/seller-identity';
 import { EXTERNAL_SOURCES, type ExternalCandidate, type ExternalSourceId, externalSourceIds } from './data';
 import { digest, offerSourceClosed } from '../shared/deal-price-evidence';
 import { bundleComponents, configurationMatches, currentReviewEvidence, pendingPriceObservation, reviewEvidenceGuard, priceBindings, priceColumns } from './deal-price-review';
@@ -105,18 +106,22 @@ export async function promoteExternalCandidate(db: D1Database, input: PromoteExt
   if (selectedStart != null && (typeof selectedStart !== 'string' || startsAt === null) || selectedEnd != null && (typeof selectedEnd !== 'string' || endsAt === null)) return { ok: false, code: 'invalid_schedule', status: 400 };
   if (startsAt !== null && endsAt !== null && endsAt <= startsAt) return { ok: false, code: 'invalid_schedule', status: 400 };
   const sourceEnded = detectSourceEnded({ ...candidate, text: proof?.evidence.offer?.source.text ?? candidate.text, ends_at: endsAt }, input.source_ended);
-  let sellerId = input.seller_id ?? null;
+  const storefront = sellerIdentity(candidate.seller_url);
+  const sellerEvidence = storefront && facts && proof?.evidence.offer?.source.text.includes(candidate.seller_url!) ? storefront : null;
+  const linked = sellerEvidence ? await db.prepare(`SELECT c.canonical_id FROM seller_identity_aliases a
+    JOIN canonical_sellers c ON c.id=a.seller_id WHERE a.platform=? AND a.identity=?`)
+    .bind(sellerEvidence.platform,sellerEvidence.identity).first<{ canonical_id: string }>() : null;
+  let sellerId = input.seller_id ?? linked?.canonical_id ?? null;
+  if (input.seller_id && linked && !await db.prepare('SELECT 1 FROM canonical_sellers WHERE id=? AND canonical_id=?')
+    .bind(input.seller_id,linked.canonical_id).first()) return { ok:false, code:'seller_identity_conflict', status:409 };
   let createSeller = false;
   if (sellerId) {
     if (!await db.prepare('SELECT id FROM sellers WHERE id = ?').bind(sellerId).first()) {
       return { ok: false, code: 'invalid_seller', status: 400 };
     }
   } else {
-    sellerId = await db.prepare('SELECT id FROM sellers WHERE name = ? ORDER BY id LIMIT 1').bind(sellerLabel(candidate)).first<{ id: string }>().then(r => r?.id ?? null);
-    if (!sellerId) {
-      sellerId = `ext-${candidate.source}-${(candidate.seller_handle ?? 'unknown').slice(0, 24)}`;
-      createSeller = true;
-    }
+    sellerId = sellerEvidence ? 'ext-seller-' + await digest(sellerEvidence.identity) : 'ext-unresolved-' + candidate.id;
+    createSeller = true;
   }
   let modelId = input.model_id ?? null;
   if (modelId && !await db.prepare('SELECT id FROM models WHERE id = ?').bind(modelId).first()) {
@@ -176,7 +181,13 @@ export async function promoteExternalCandidate(db: D1Database, input: PromoteExt
   if (createSeller) {
     statements.splice(1, 0, db.prepare(`INSERT INTO sellers (id,name,source_url)
       SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM ingested_items WHERE id = ?) ON CONFLICT DO NOTHING`)
-      .bind(sellerId, sellerLabel(candidate), candidate.seller_url ?? `https://${host ?? 'example.invalid'}/`, dealId));
+      .bind(sellerId, sellerLabel(candidate), sellerEvidence?.url ?? candidate.source_url, dealId));
+  }
+  if (sellerEvidence) {
+    const promotionIndex = statements.length - 1;
+    statements.splice(promotionIndex,0,db.prepare(`INSERT INTO seller_identity_aliases(platform,identity,seller_id,source_url,evidence_ref)
+      SELECT ?,?,canonical_id,?,? FROM canonical_sellers WHERE id=? AND EXISTS (SELECT 1 FROM deals WHERE id=?)
+      ON CONFLICT(platform,identity) DO NOTHING`).bind(sellerEvidence.platform,sellerEvidence.identity,sellerEvidence.url,proofId,sellerId,dealId));
   }
   for (const [index, row] of bundle.entries()) {
     statements.push(db.prepare(`INSERT INTO deal_bundle_items (id,deal_id,position,brand,product_name,model_id,price)

@@ -33,6 +33,7 @@ beforeAll(async () => {
   }
   await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
   await memory.db.prepare("INSERT INTO models VALUES ('model', 'Brand', 'Chair', 'high_chair', 'Importer', 500000, 'https://example.com/model', '2026-10-20', 'page_body', '')").run();
+  await memory.db.prepare("INSERT INTO sellers(id,name,source_url) VALUES ('seller','Fixture seller','https://example.com/store')").run();
   // Deliberately insert in an order different from the required closing order.
   for (const [id, start, end] of [
     ['later', '2026-10-20T00:00:00Z', '2026-10-25T00:00:00Z'],
@@ -74,12 +75,12 @@ test('dynamic home queries D1 and renders only active deals before the hero, usi
     expect(card).toContain('500,000원');
     expect(card).toContain('정가보다 20% 싸요');
     expect(card).toContain('rel="sponsored noopener noreferrer"');
-    expect(card).not.toContain('/sellers#');
+    expect(card).toContain('/sellers#trust-seller');
     expect(card.match(/class="deal-disclaimer"/g)).toHaveLength(1);
     // An opening anchor must be closed before another one opens.
     const anchors = card.match(/<a\b[^>]*>|<\/a>/g);
-    expect(anchors).toHaveLength(4);
-    expect(anchors?.map(anchor => anchor === '</a>' ? 'close' : 'open')).toEqual(['open', 'close', 'open', 'close']);
+    expect(anchors).toHaveLength(8);
+    expect(anchors?.map(anchor => anchor === '</a>' ? 'close' : 'open')).toEqual(['open','close','open','close','open','close','open','close']);
     expect(card).toContain(dealsCopy.ad);
   }
   expect(cards[0]).toContain('<img');
@@ -156,7 +157,7 @@ test('/deals keeps active deals first and displays their count near the h1', asy
   expect(html).toMatch(/<h1>[^<]+<\/h1><p>지금 진행 중 <span class="active-deal-count" aria-label="3개 진행 중이에요">3<\/span><\/p>/);
 });
 
-test('the same deal without a seller renders byte-identical cards on all four routes', async () => {
+test('the same eligible deal renders byte-identical cards on all four routes', async () => {
   vi.spyOn(Date, 'now').mockReturnValue(nowMs);
   const cards = [];
   for (const page of [await Home(), await DealsPage(), await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model' }) })]) {

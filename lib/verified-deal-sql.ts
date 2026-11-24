@@ -27,6 +27,11 @@ export const verifiedDealPredicate = (prefix = '') => `${prefix}verified_price_r
 export function publicDealEligibility(alias = 'deals', nowMs = Date.now()) {
   const now = new Date(nowMs).toISOString();
   return `${verifiedDealPredicate(alias === 'deals' ? '' : alias + '.')}
+    AND EXISTS (SELECT 1 FROM campaign_deals membership JOIN accepted_seller_rounds round ON round.id=membership.campaign_id
+      JOIN canonical_sellers seller ON seller.id=${alias}.seller_id AND seller.canonical_id=round.seller_id
+      WHERE membership.deal_id=${alias}.id AND EXISTS (
+        SELECT 1 FROM campaign_observations observation JOIN history_operations op ON op.id=observation.id
+        WHERE op.deal_id=${alias}.id AND observation.proof_id=${alias}.price_evidence_id AND observation.retracted_by IS NULL))
     AND EXISTS (SELECT 1 FROM ingested_items AS approval WHERE approval.id = ${alias}.id AND approval.status = 'approved')
     AND EXISTS (SELECT 1 FROM deal_price_evidence AS proof
       JOIN official_price_approvals AS authority ON authority.id = 1

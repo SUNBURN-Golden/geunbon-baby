@@ -46,6 +46,7 @@ export function memoryD1(options: MemoryOptions = {}) {
     async run() { return execute(() => this.runRaw()); }
   }
   const db = {
+    exec: (sql: string) => execute(() => sqlite.exec(sql)),
     prepare: (sql: string) => new Statement(sql),
     async batch(statements: Statement[]) {
       const batch = ++batches;

@@ -320,7 +320,7 @@ describe('dynamic routes and LEFT JOIN projection', () => {
       const schema = await readFile(new URL(file, dir), 'utf8');
       for (const sql of migrationStatements(schema)) await memory.db.prepare(sql).run();
     }
-    // Model/seller deletion and old incomplete records must not hide a deal.
+    // A dangling legacy attribution cannot make a deal public.
     await memory.db.prepare('PRAGMA foreign_keys = OFF').run();
     await memory.db.prepare("INSERT INTO models VALUES ('model-1', 'Brand', 'Model', 'high_chair', 'Importer', 430000, 'https://example.com/model', '2026-10-18', 'search_summary', 'Retailer 123,456원; overseas $799; used 234,567원')").run();
     await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
@@ -334,18 +334,15 @@ describe('dynamic routes and LEFT JOIN projection', () => {
   });
   afterAll(() => memory.close());
 
-  test('aliased columns preserve deal identity and confirmation metadata, even for missing joins', async () => {
+  test('the public join preserves evidence and excludes unresolved seller attribution', async () => {
     const rows = await all<DealWithContext>(memory.db, dealSelect());
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
     for (const row of rows) expect(row).not.toHaveProperty('model_note');
     expect(rows.find(d => d.id === fixture.id)).toMatchObject({
       id: 'deal-1', checked: fixture.checked, verify_level: 'manual', source_url: fixture.source_url,
       image_url: 'https://cdninstagram.com/fixture.jpg?x=1&sig=synthetic%2Bvalue', model_joined_id: 'model-1', model_checked: '2026-10-18', model_verify_level: 'search_summary', seller_name: 'Seller',
     });
-    expect(rows.find(d => d.id === 'missing-joins')).toMatchObject({
-      model_joined_id: null, seller_joined_id: null, seller_name: null,
-      seller_registration_source: null, seller_withdrawal_source: null, seller_official_import_source: null,
-    });
+    expect(rows.find(d => d.id === 'missing-joins')).toBeUndefined();
   });
 
   const evidence = [
@@ -365,13 +362,13 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     const readFirst = vi.spyOn(statementPrototype, 'first');
     try {
       const list = renderToStaticMarkup(await DealsPage());
-      expect(list.match(/class="deal-card"/g)).toHaveLength(2);
+      expect(list.match(/class="deal-card"/g)).toHaveLength(1);
       expect(list.match(/class="badge verified"/g)).toHaveLength(3);
-      expect(list.match(/· 미확인/g)).toHaveLength(3);
+      expect(list.match(/· 미확인/g)).toBeNull();
       expect(prepare.mock.calls.some(([sql]) => sql.includes('COUNT(*) AS count'))).toBe(true);
       expect(prepare.mock.calls.filter(([sql]) => sql.includes('SELECT id,')).every(([sql]) => sql.includes('LIMIT ?'))).toBe(true);
-      expect(prepare.mock.calls.some(([sql]) => sql.includes('d.id IN (?,?)'))).toBe(true);
-      expect([...list.matchAll(/href="\/deals\/([^"]+)"/g)].map(m => m[1])).toEqual(['deal-1', 'missing-joins']);
+      expect(prepare.mock.calls.some(([sql]) => sql.includes('d.id IN (?)'))).toBe(true);
+      expect([...list.matchAll(/href="\/deals\/([^"]+)"/g)].map(m => m[1])).toEqual(['deal-1']);
       expect(readFirst).toHaveBeenCalledTimes(2);
       expect(fetch).not.toHaveBeenCalled();
 
@@ -379,12 +376,12 @@ describe('dynamic routes and LEFT JOIN projection', () => {
 
       const detail = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: fixture.id }) }));
       expect(detail.match(/class="badge verified"/g)).toHaveLength(3);
-      expect(prepare).toHaveBeenCalledTimes(2);
-      expect(prepare).toHaveBeenNthCalledWith(1, expect.stringMatching(/AND d\.id = \?$/));
-      expect(prepare).toHaveBeenNthCalledWith(2, expect.stringContaining('deal_bundle_items'));
+      expect(prepare).toHaveBeenCalledTimes(5);
+      expect(prepare).toHaveBeenNthCalledWith(1, expect.stringMatching(/AND d\.id=\?$/));
+      expect(prepare).toHaveBeenNthCalledWith(5, expect.stringContaining('deal_bundle_items'));
       expect(bind).toHaveBeenCalledWith(fixture.id);
       expect(readFirst).toHaveBeenCalledTimes(1);
-      expect(readAll).toHaveBeenCalledTimes(1);
+      expect(readAll).toHaveBeenCalledTimes(4);
       expect(fetch).not.toHaveBeenCalled();
     } finally {
       prepare.mockRestore();
@@ -440,22 +437,9 @@ describe('dynamic routes and LEFT JOIN projection', () => {
     }
   });
 
-  test('missing seller remains visible on both routes with three noninteractive unconfirmed badges', async () => {
-    const pages = [await DealsPage(), await DealDetailPage({ params: Promise.resolve({ id: 'missing-joins' }) })];
-    for (const page of pages) {
-      const html = renderToStaticMarkup(createElement(Layout, null, page));
-      const articles = html.match(/<article class="deal-(?:card|detail)">[\s\S]*?<\/article>/g)!;
-      const article = articles.find(a => a.includes('/deals/missing-joins')) ?? articles[0];
-      const badges = article.match(/<div class="badges">([\s\S]*?)<\/div>/)![1];
-      expect(badges.match(/· 미확인/g)).toHaveLength(3);
-      expect(badges).not.toContain('<a');
-      expect(article).not.toContain('/sellers#');
-      expect(article).toContain(fixture.title);
-      expect(article).toContain(`class="deal-ad">${dealsCopy.ad}`);
-      expect(article).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer"`);
-      expect(article).toContain(dealsCopy.disclaimer);
-      expect(html).toContain(siteCopy.transactionNotice);
-    }
+  test('an unresolved seller is absent from the list and detail routes', async () => {
+    expect(renderToStaticMarkup(await DealsPage())).not.toContain('/deals/missing-joins');
+    await expect(DealDetailPage({ params:Promise.resolve({id:'missing-joins'}) })).rejects.toThrow('NEXT_NOT_FOUND');
   });
 
   test('both routes are dynamic and capture time only once per render', async () => {
@@ -480,16 +464,28 @@ describe('dynamic routes and LEFT JOIN projection', () => {
 
   test('list page renders one disclaimer at the end of each card', async () => {
     const html = renderToStaticMarkup(await DealsPage());
-    expect(html.match(/class="deal-card"/g)).toHaveLength(2);
-    expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(2);
+    expect(html.match(/class="deal-card"/g)).toHaveLength(1);
+    expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
     expect(html).toContain('</article></div></section><nav aria-label="공구 목록 페이지">');
   });
 
   test('awaits params, binds IDs literally, and calls notFound for missing records', async () => {
-    const html = renderToStaticMarkup(await DealDetailPage({ params: Promise.resolve({ id: 'missing-joins' }) }));
-    expect(html).toContain(dealsCopy.unknownSeller);
+    const html=renderToStaticMarkup(await DealDetailPage({ params:Promise.resolve({id:fixture.id}) }));
+    expect(html).toContain(fixture.title);
     for (const id of ['absent', "' OR 1=1 --"]) {
       await expect(DealDetailPage({ params: Promise.resolve({ id }) })).rejects.toThrow('NEXT_NOT_FOUND');
+    }
+  });
+
+  test('bundle items keep their stored model link and component price', async () => {
+    await memory.db.prepare("INSERT INTO deal_bundle_items(id,deal_id,position,brand,product_name,model_id,price) VALUES ('bundle-check','deal-1',0,'Brand','Component','model-1',123000)").run();
+    try {
+      const { bundleItemsForDeal } = await import('../lib/deal-bundles');
+      expect(await bundleItemsForDeal(memory.db,'deal-1')).toEqual([
+        {id:'bundle-check',deal_id:'deal-1',position:0,brand:'Brand',product_name:'Component',model_id:'model-1',price:123000},
+      ]);
+    } finally {
+      await memory.db.prepare("DELETE FROM deal_bundle_items WHERE id='bundle-check'").run();
     }
   });
 });

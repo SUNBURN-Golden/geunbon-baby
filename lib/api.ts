@@ -1,6 +1,12 @@
+import { sellerIdentity } from '../shared/seller-identity';
+import { HistoryError } from './history-review';
+import { inventory } from './history-inventory';
+import { importHistory, mergeCampaigns, reassignSellerHistory, retractHistory } from './history-write';
+import { manageOfficialSeller } from './official-sellers';
 import { CLOSE_OFFER, INVALIDATE_OFFER, OFFER_KIND, PROMOTE_OFFER } from '../shared/verified-offer';
 import { dismissVerifiedOffer, ingestVerifiedOffer, mutateVerifiedOffer, verifiedOfferReviewPage } from './verified-offers';
-import { normalizeTimestamp, parseDate, publicDealOptions, chronologicalDeals, lifecycleDeals, activeDealCount, endedDealCount, modelDealSummaries, PublicDealPaginationError } from './deals';
+import { normalizeTimestamp, parseDate, publicDealOptions, validatePublicDealOptions, chronologicalDeals, lifecycleDeals, activeDealCount, campaignDetail, endedDealCount, historyConfigurationParam, historyConfigurations, modelDealSummaries, modelPriceHistory,
+  PublicDealPaginationError, selectedHistoryConfiguration, sellerCampaignPage, sellerProfile, type HistoryConfiguration } from './deals';
 import { receiveStatus, collectionStatus } from './collection-status';
 import { digest, filterOfferCapture, httpsSource, PRICE_TEXT_LIMIT } from '../shared/deal-price-evidence';
 import { threadsPost } from '../shared/threads-url';
@@ -67,7 +73,7 @@ const date = (v: unknown) => normalizeTimestamp(v) !== null;
 // Seed notes can contain retailer, discount, overseas and used prices.
 // Keep them out of every public model response, including comparisons.
 const PUBLIC_MODEL_COLUMNS = 'id, brand, name, category, importer, official_price, source_url, checked, verify_level';
-const PUBLIC_SELLER_COLUMNS = 'id, name, source_url, registration_source, withdrawal_source, official_import_source';
+const PUBLIC_SELLER_COLUMNS = 'id, handle, name, source_url, registration_source, withdrawal_source, official_import_source';
 
 export function normalizeAccount(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -452,9 +458,8 @@ function parseExternalListing(b: Record<string, unknown>) {
   if (startsAt !== null && endsAt !== null && endsAt <= startsAt) return bad();
   if (b.seller_handle != null && (typeof b.seller_handle !== 'string' || !/^[A-Za-z0-9._]{1,30}$/.test(b.seller_handle))) return bad();
   if (b.seller_url != null) {
-    let ok = false;
-    try { const u = new URL(b.seller_url as string); ok = safeUrl(b.seller_url) && u.protocol === 'https:' && ['instagram.com', 'www.instagram.com'].includes(u.hostname) && /^\/[A-Za-z0-9._]{1,30}\/?$/.test(u.pathname) && !u.search && !u.hash; } catch { /* invalid */ }
-    if (!ok) return bad();
+    const seller = sellerIdentity(b.seller_url);
+    if (!seller || seller.platform!=='instagram' && !(b.text as string).includes(String(b.seller_url))) return bad();
   }
   let suggestions: string | null = null;
   if (b.suggestions != null) {
@@ -538,6 +543,15 @@ async function body(request: Request, maxBytes = 32768) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 export async function handleApi(request: Request, parts: string[], env: Env): Promise<Response> {
+  try { return await dispatch(request,parts,env); }
+  catch (error) {
+    if (error instanceof HistoryError) return json({ error: error.code, ...error.detail }, error.status);
+    if (error instanceof PublicDealPaginationError) return json({ error: error.code }, 400);
+    throw error;
+  }
+}
+
+async function dispatch(request: Request, parts: string[], env: Env): Promise<Response> {
   const path = parts.join('/');
   const admin = parts[0] === 'admin' || path === 'collector-status';
   if (path === 'collector/status') {
@@ -554,6 +568,45 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
   }
   if ((path === 'admin/collection-status' || path === 'collector-status') && request.method === 'GET') return json({ data: await collectionStatus(env.DB) });
   if (request.method === 'GET') {
+    if (parts[0] === 'admin' && parts[1] === 'history-proof' && parts.length === 3) {
+      const generation = Number(new URL(request.url).searchParams.get('generation'));
+      if (!Number.isSafeInteger(generation) || generation<1) return json({ error:'invalid_generation' },400);
+      const row = await env.DB.prepare(`SELECT g.generation,p.body FROM history_generation g LEFT JOIN deal_price_evidence p
+        ON p.id=? AND p.outcome='verified' AND g.generation=? WHERE g.id=1`)
+        .bind(parts[2],generation).first<{generation:number;body:string|null}>();
+      if (row?.generation!==generation) return json({ error:'inventory_changed' },409);
+      const evidence = row.body ? await validatedEvidence(JSON.parse(row.body),JSON.parse(row.body).offer_url) : null;
+      return evidence ? json({ data:evidence }) : json({ error:'proof_not_found' },404);
+    }
+    if (path === 'admin/history-inventory') return json(await inventory(env.DB,new URL(request.url).searchParams));
+    if (parts[0] === 'sellers' && parts.length === 2) {
+      const now = Date.now();
+      const profile = await sellerProfile(env.DB,parts[1],now);
+      if (!profile) return json({ error:'seller_not_found' },404);
+      const params = new URL(request.url).searchParams;
+      const config = selectedHistoryConfiguration(profile.products,historyConfigurationParam(params));
+      const prices = new URLSearchParams();
+      for (const cursor of params.getAll('prices')) prices.append('cursor',cursor);
+      const [page,history] = await Promise.all([
+        sellerCampaignPage(env.DB,profile.seller.id,params,now),
+        config ? modelPriceHistory(env.DB,config.model_id,config.configuration_key,prices,now,profile.seller.id,config.scope) : null,
+      ]);
+      if (params.has('round') && !page.data.length) return json({ error:'round_not_found' },404);
+      return json({ data:{ ...profile,rounds:page.data,history,selected:config ?? null },next_cursor:page.next_cursor });
+    }
+    if (parts[0] === 'models' && parts.length === 3 && parts[2] === 'price-history') {
+      const params = new URL(request.url).searchParams;
+      const id = parts[1];
+      if (!await env.DB.prepare('SELECT 1 FROM models WHERE id=?').bind(id).first()) return json({ error:'model_not_found' },404);
+      const configurations = await historyConfigurations(env.DB,id);
+      const selected = selectedHistoryConfiguration(configurations,historyConfigurationParam(params));
+      const history = await modelPriceHistory(env.DB,id,selected?.configuration_key ?? '',params,Date.now(),null,selected?.scope);
+      return json({ ...history,configurations,selected: selected ?? null });
+    }
+    if (parts[0] === 'deals' && parts.length === 2) {
+      const deal = await campaignDetail(env.DB,parts[1],Date.now());
+      return deal ? json({ data:{ ...deal,advertisement:true,notice:dealsCopy.apiNotice } }) : json({ error:'deal_not_found' },404);
+    }
     if (path === 'ingest') {
       const params = new URL(request.url).searchParams;
       if (params.get('kind') === 'external_price_observation') {
@@ -582,15 +635,22 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       return json({ data: models.map(model => ({ ...model, official_price: displayableOfficialPrice(model) })) });
     }
     if ((parts[0] === 'models' && parts.length === 2) || path === 'deals' || path === 'calendar') {
-      let options;
+      const params = new URL(request.url).searchParams;
+      let options, filter: HistoryConfiguration | undefined;
       const isModel = parts[0] === 'models';
-      try { options = publicDealOptions(new URL(request.url).searchParams, isModel ? 'api-model' : path === 'deals' ? 'api-deals' : 'api-calendar', isModel ? parts[1] : null); }
+      const surface = isModel ? 'api-model' as const : path === 'deals' ? 'api-deals' as const : 'api-calendar' as const;
+      try {
+        // Reject malformed limits, sorts and cursors before reading D1.
+        validatePublicDealOptions(params, surface);
+        filter = isModel ? selectedHistoryConfiguration(await historyConfigurations(env.DB,parts[1]),historyConfigurationParam(params)) : undefined;
+        options = publicDealOptions(params, surface, isModel ? parts[1] : null, filter);
+      }
       catch (error) { if (error instanceof PublicDealPaginationError) return json({ error: error.code }, 400); throw error; }
       const nowMs = Date.now();
       if (isModel) {
         const model = await env.DB.prepare(`SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE id = ?`).bind(parts[1]).first<Omit<Model, 'note'>>();
         if (!model) return json({ error: '모델을 찾을 수 없습니다' }, 404);
-        const [page, summaries] = await Promise.all([chronologicalDeals(env.DB, options, false, nowMs), modelDealSummaries(env.DB, [model.id], nowMs)]);
+        const [page, summaries] = await Promise.all([chronologicalDeals(env.DB, options, false, nowMs), modelDealSummaries(env.DB, [model.id], nowMs,filter)]);
         const { active_count, lowest_price } = summaries.get(model.id)!;
         return json({ data: { ...model, official_price: displayableOfficialPrice(model), comparison: { ...comparison(model, page.data), current: { active_count, lowest_price } } }, next_cursor: page.next_cursor });
       }
@@ -651,6 +711,16 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       .first<{ observed_at: string; scopes: string }>();
     return snapshot ? json({ data: await officialScopeReceipt({ observed_at: snapshot.observed_at, scopes: JSON.parse(snapshot.scopes) },
       new URL(request.url).origin) }) : json({ error: 'price_scope_snapshot_missing' }, 404);
+  }
+  if (request.method === 'POST' && ['admin/history-import','admin/history-merge','admin/history-retract','admin/history-reassign','admin/official-sellers'].includes(path)) {
+    let payload: unknown;
+    try { payload = await body(request,262144); } catch { return json({ error:'invalid_history_body' },400); }
+    const data = path === 'admin/history-import' ? await importHistory(env.DB,payload)
+      : path === 'admin/history-merge' ? await mergeCampaigns(env.DB,payload)
+      : path === 'admin/history-retract' ? await retractHistory(env.DB,payload)
+      : path === 'admin/history-reassign' ? await reassignSellerHistory(env.DB,payload)
+      : await manageOfficialSeller(env.DB,payload,env.OFFICIAL_SELLER_POLICY);
+    return json({ data });
   }
   if (request.method === 'POST' && path === 'admin/price-sources') {
     let payload: unknown;

@@ -1,7 +1,7 @@
-import { endsAt, exampleEvidence, officialScope } from './helpers/verified-deal-prices';
+import { checkedAt, endsAt, exampleEvidence, officialScope } from './helpers/verified-deal-prices';
 import { migrationStatements } from './helpers/migrations';
 import { readdir, readFile } from 'node:fs/promises';
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { handleApi } from '../lib/api';
 import { isImageUrl } from '../lib/image-url';
 import type { Env } from '../lib/db';
@@ -25,13 +25,15 @@ async function migrate(files?: string[]) {
   }
 }
 beforeEach(async () => {
+  vi.useFakeTimers({toFake:['Date']});
+  vi.setSystemTime(Date.parse(checkedAt));
   memory = memoryD1();
   env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'fixture-admin-token-separation-0001', INGEST_TOKEN: 'fixture-ingest-token-separation-0002' };
   await migrate();
   await env.DB.prepare("INSERT INTO models VALUES ('model-1','Test brand','Test model','high_chair','fixture',100,'https://example.com/','2026-10-20','manual','')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','fixture','https://example.com/')").run();
 });
-afterEach(() => memory.close());
+afterEach(() => { memory.close(); vi.useRealTimers(); });
 async function create(patch: Record<string, unknown> = {}) {
   const response = await call('ingest', { ...ingest, image_url: image, ...patch });
   expect(response.status).toBe(202);

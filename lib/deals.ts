@@ -14,6 +14,11 @@ export type Gap = {
 
 export type DealWithContext = Deal & {
   origin?: Deal['origin'];
+  seller_handle?: string | null;
+  seller_ordinal?: number;
+  campaign_id?: string;
+  offer?: ComparedOffer;
+  official_badges?: OfficialSellerBadge[];
   source_host?: string | null;
   source_ended?: number;
   brand_label?: string | null;
@@ -33,7 +38,7 @@ export type DealWithContext = Deal & {
 // Public reads exclude withdrawn deals and all lifecycle metadata.
 export const PUBLIC_DEAL_COLUMNS = `id, model_id, seller_id, title, deal_price_krw AS price, deal_price_krw, list_price_krw, discount_pct, price_source_url, list_price_source_url, price_checked_at, source_url, image_url, verify_level, checked, starts_at, ends_at,
   origin, source_host, orders_open, COALESCE(source_ended, 0) AS source_ended, brand_label, category_label`;
-const publishedDeals = (nowMs: number) => `SELECT ${PUBLIC_DEAL_COLUMNS} FROM deals WHERE ${publicDealEligibility('deals', nowMs)}`;
+
 
 // Joined IDs distinguish missing rows from rows whose price is unknown.
 export const dealSelect = (nowMs = Date.now()) => `
@@ -41,7 +46,7 @@ export const dealSelect = (nowMs = Date.now()) => `
          d.price_source_url, d.list_price_source_url, d.price_checked_at, d.source_url, d.image_url,
          d.verify_level, d.checked, d.starts_at, d.ends_at,
          d.origin, d.source_host, d.orders_open, COALESCE(d.source_ended, 0) AS source_ended,
-         d.brand_label, d.category_label,
+         d.brand_label, d.category_label, s.handle AS seller_handle,
          m.id AS model_joined_id, m.name AS model_name,
          m.official_price AS model_official_price, m.checked AS model_checked,
          m.verify_level AS model_verify_level,
@@ -51,7 +56,8 @@ export const dealSelect = (nowMs = Date.now()) => `
          s.official_import_source AS seller_official_import_source
   FROM deals AS d
   LEFT JOIN models AS m ON m.id = d.model_id
-  LEFT JOIN sellers AS s ON s.id = d.seller_id
+  JOIN canonical_sellers AS seller_map ON seller_map.id=d.seller_id
+  JOIN sellers AS s ON s.id = seller_map.canonical_id
   WHERE ${publicDealEligibility('d', nowMs)}`;
 
 export function priceGap(price: number | null, official: number | null): Gap | null {
@@ -161,9 +167,9 @@ type Phase = Timing['state'];
 type Partition = 'null' | 'start' | Phase;
 export type DealSort = 'discount' | 'ending';
 type Cursor = [1 | 2, PublicDealSurface, 'chronological' | DealSort, string | null, Partition, string | null, string, string | null, (number | null)?];
-export type PublicDealOptions = { surface: PublicDealSurface; limit: number; cursor: Cursor | null; modelId: string | null; sort?: DealSort };
+export type PublicDealOptions = { surface: PublicDealSurface; limit: number; cursor: Cursor | null; modelId: string | null; sort?: DealSort; configuration?: HistoryConfiguration; cursorModel?: string };
 export class PublicDealPaginationError extends Error {
-  constructor(public code: 'invalid_limit' | 'invalid_cursor' | 'invalid_sort') { super(code); }
+  constructor(public code: 'invalid_limit' | 'invalid_cursor' | 'invalid_sort' | 'invalid_configuration') { super(code); }
 }
 const boundedString = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max && v.length > 0 && !/[\u0000-\u001f\u007f]/.test(v);
 const canonicalInstant = (v: unknown): v is string => typeof v === 'string' && normalizeTimestamp(v) === v;
@@ -171,7 +177,16 @@ function encodeCursor(cursor: Cursor): string {
   const bytes = new TextEncoder().encode(JSON.stringify(cursor));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-export function publicDealOptions(params: URLSearchParams, surface: PublicDealSurface, modelId: string | null = null): PublicDealOptions {
+// Validating the search parameters is pure. Callers can reject malformed
+// limits, sorts and cursors before resolving a default configuration in D1.
+export function validatePublicDealOptions(params: URLSearchParams, surface: PublicDealSurface): void {
+  dealOptions(params, surface, null, undefined, true);
+}
+export function publicDealOptions(params: URLSearchParams, surface: PublicDealSurface, modelId: string | null = null, configuration?: HistoryConfiguration): PublicDealOptions {
+  return dealOptions(params, surface, modelId, configuration, false);
+}
+function dealOptions(params: URLSearchParams, surface: PublicDealSurface, modelId: string | null, configuration: HistoryConfiguration | undefined, anyCursorModel: boolean): PublicDealOptions {
+  const cursorModel = configuration && historySelection(configuration);
   const sorts = params.getAll('sort');
   const sortable = surface === 'page-deals' || surface === 'api-deals';
   if (sorts.length && (!sortable || sorts.length !== 1 || !['discount', 'ending'].includes(sorts[0]))) throw new PublicDealPaginationError('invalid_sort');
@@ -190,8 +205,9 @@ export function publicDealOptions(params: URLSearchParams, surface: PublicDealSu
       const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
       if (!Array.isArray(value) || value.length !== (sort ? 9 : 8)) throw new Error();
       const [v, scope, order, model, part, key, id, time, rank] = value;
-      if (v !== (sort ? 2 : 1) || scope !== surface || order !== (sort ?? 'chronological') || model !== modelId ||
-          !(model === null || boundedString(model, 200)) || !boundedString(id, 200)) throw new Error();
+      if (v !== (sort ? 2 : 1) || scope !== surface || order !== (sort ?? 'chronological') ||
+          (!anyCursorModel && model !== (cursorModel ?? modelId)) ||
+          !(model === null || boundedString(model, anyCursorModel || cursorModel ? 1000 : 200)) || !boundedString(id, 200)) throw new Error();
       if (sort) {
         if (sort === 'discount' && part === 'active' ? !Number.isInteger(rank) || rank < -100 || rank > -1 : rank !== null) throw new Error();
         if (!canonicalInstant(time) || !['active', 'upcoming', 'ended', 'unknown'].includes(part) || !canonicalInstant(key)) throw new Error();
@@ -200,12 +216,12 @@ export function publicDealOptions(params: URLSearchParams, surface: PublicDealSu
       if (encodeCursor(cursor) !== raw) throw new Error();
     } catch { throw new PublicDealPaginationError('invalid_cursor'); }
   }
-  return { surface, limit, cursor, modelId, sort };
+  return { surface, limit, cursor, modelId, sort, configuration, cursorModel };
 }
 // Next passes repeated page parameters as arrays. Preserve duplicates for validation.
 export function publicPageParams(params: Record<string, string | string[] | undefined>): URLSearchParams {
   const result = new URLSearchParams();
-  for (const key of ['limit', 'cursor', 'sort']) {
+  for (const key of ['limit', 'cursor', 'sort', 'round']) {
     const value = params[key];
     if (Array.isArray(value)) for (const item of value) result.append(key, item);
     else if (value !== undefined) result.append(key, value);
@@ -214,7 +230,7 @@ export function publicPageParams(params: Record<string, string | string[] | unde
 }
 
 type Candidate = { id: string; key: string | null; rank?: number; part: Partition };
-async function publicRows<T>(db: D1Database, sql: string, ...values: (string | number)[]): Promise<T[]> {
+async function publicRows<T>(db: D1Database, sql: string, ...values: (string | number | null)[]): Promise<T[]> {
   const result = await db.prepare(sql).bind(...values).all<T>();
   if (!result.success) throw new Error('Public deal query failed');
   return result.results;
@@ -225,20 +241,30 @@ async function candidates(db: D1Database, sql: string, values: (string | number)
 }
 async function hydrate<T extends Deal>(db: D1Database, rows: Candidate[], joined: boolean, nowMs: number): Promise<T[]> {
   if (!rows.length) return [];
-  const result = await publicRows<T>(db, `${joined ? dealSelect(nowMs) : publishedDeals(nowMs)} AND ${joined ? 'd.' : ''}id IN (${rows.map(() => '?').join(',')})`, ...rows.map(row => row.id));
+  const hydrated = await enrichCampaigns(db, await publicRows<DealWithContext>(db,
+    `${dealSelect(nowMs)} AND d.id IN (${rows.map(() => '?').join(',')})`, ...rows.map(row => row.id)), nowMs);
+  const result = hydrated.map(deal => {
+    if (joined) return deal;
+    const { id,model_id,seller_id,title,price,deal_price_krw,list_price_krw,discount_pct,price_source_url,list_price_source_url,
+      price_checked_at,source_url,image_url,verify_level,checked,starts_at,ends_at,origin,source_host,source_ended,orders_open,
+      brand_label,category_label,seller_handle,seller_name,seller_ordinal,campaign_id,offer,official_badges } = deal;
+    return { id,model_id,seller_id,title,price,deal_price_krw,list_price_krw,discount_pct,price_source_url,list_price_source_url,
+      price_checked_at,source_url,image_url,verify_level,checked,starts_at,ends_at,origin,source_host,source_ended,orders_open,
+      brand_label,category_label,seller_handle,seller_name,seller_ordinal,campaign_id,offer,official_badges };
+  }) as unknown as T[];
   const byId = new Map(result.map(row => [row.id, row]));
   // A withdrawal between selection and hydration disappears immediately.
   return rows.flatMap(row => { const deal = byId.get(row.id); return deal ? [deal] : []; });
 }
 function pageCursor(options: PublicDealOptions, row: Candidate, time: string | null): string {
-  if (options.sort) return encodeCursor([2, options.surface, options.sort, options.modelId, row.part, row.key, row.id, time, row.rank ?? null]);
-  return encodeCursor([1, options.surface, 'chronological', options.modelId, row.part, row.key, row.id, null]);
+  if (options.sort) return encodeCursor([2, options.surface, options.sort, options.cursorModel ?? options.modelId, row.part, row.key, row.id, time, row.rank ?? null]);
+  return encodeCursor([1, options.surface, 'chronological', options.cursorModel ?? options.modelId, row.part, row.key, row.id, null]);
 }
 export async function chronologicalDeals<T extends Deal = Deal>(db: D1Database, options: PublicDealOptions, joined = false, nowMs = Date.now()) {
-  const { limit, cursor, modelId } = options;
+  const { limit, cursor, modelId, configuration } = options;
   const index = modelId === null ? 'verified_deal_chronology' : 'verified_deal_model_chronology';
-  const base = `FROM deals INDEXED BY ${index} WHERE ${publicDealEligibility('deals', nowMs)}${modelId === null ? '' : ' AND model_id = ?'}`;
-  const scope = modelId === null ? [] : [modelId];
+  const base = `FROM deals INDEXED BY ${index} WHERE ${publicDealEligibility('deals', nowMs)}${modelId === null ? '' : ' AND model_id = ?'}${configuration ? ' AND ' + matchingDealConfiguration : ''}`;
+  const scope = [...(modelId === null ? [] : [modelId]),...(configuration ? [configuration.configuration_key,configuration.scope] : [])];
   const rows: Candidate[] = [];
   if (!cursor || cursor[4] === 'null') {
     rows.push(...await candidates(db, `SELECT id, starts_at AS key ${base} AND starts_at IS NULL${cursor ? ' AND id > ?' : ''} ORDER BY id LIMIT ?`, [...scope, ...(cursor ? [cursor[6]] : []), limit + 1], 'null'));
@@ -325,15 +351,21 @@ export async function activeDealCount(db: D1Database, nowMs: number, eligibility
   if (!result) throw new Error('active count unavailable');
   return result.count;
 }
+const matchingDealConfiguration = `EXISTS (SELECT 1 FROM campaign_offers history
+  JOIN campaign_deals member ON member.campaign_id=history.campaign_id AND member.deal_id=history.deal_id
+  JOIN offer_price_observations price ON price.offer_id=history.id JOIN campaign_observations support ON support.price_id=price.id
+  WHERE history.deal_id=deals.id AND history.configuration_key=? AND history.scope=?
+  AND support.proof_id=deals.price_evidence_id AND support.retracted_by IS NULL)`;
 export type ModelDealSummary = { model_id: string; active_count: number; lowest_price: number | null };
-export async function modelDealSummaries(db: D1Database, modelIds: readonly string[], nowMs: number): Promise<Map<string, ModelDealSummary>> {
+export async function modelDealSummaries(db: D1Database, modelIds: readonly string[], nowMs: number, configuration?: HistoryConfiguration): Promise<Map<string, ModelDealSummary>> {
   const summaries = new Map([...new Set(modelIds)].map(model_id => [model_id, { model_id, active_count: 0, lowest_price: null } as ModelDealSummary]));
   const ids = [...summaries.keys()];
   const time = new Date(nowMs).toISOString();
   // <= 82 bound values, below D1's 100-parameter limit. One result per model.
   for (let offset = 0; offset < ids.length; offset += 80) {
     const batch = ids.slice(offset, offset + 80);
-    const rows = await publicRows<ModelDealSummary>(db, `SELECT model_id, COUNT(*) AS active_count, MIN(deal_price_krw) AS lowest_price FROM deals INDEXED BY verified_deal_model_active WHERE ${verifiedActive} AND ${publicDealEligibility('deals', nowMs)} AND model_id IN (${batch.map(() => '?').join(',')}) AND ends_at >= ? AND ${activeStart} <= ? GROUP BY model_id`, ...batch, time, time);
+    const rows = await publicRows<ModelDealSummary>(db, `SELECT model_id, COUNT(*) AS active_count, MIN(deal_price_krw) AS lowest_price FROM deals INDEXED BY verified_deal_model_active WHERE ${verifiedActive} AND ${publicDealEligibility('deals', nowMs)} AND model_id IN (${batch.map(() => '?').join(',')}) AND ends_at >= ? AND ${activeStart} <= ?${configuration ? ' AND ' + matchingDealConfiguration : ''} GROUP BY model_id`,
+      ...batch, time, time, ...(configuration ? [configuration.configuration_key,configuration.scope] : []));
     for (const row of rows) summaries.set(row.model_id, row);
   }
   return summaries;
@@ -374,4 +406,200 @@ export async function endedDealCount(db: D1Database, nowMs: number) {
     .bind(time).first<{ count: number }>();
   if (!row) throw new Error('ended count unavailable');
   return row.count;
+}
+
+// Public historical queries
+type ScopedCursor = [string, string, string];
+function scopedOptions(params: URLSearchParams, scope: string) {
+  const limit = params.get('limit') ?? '20';
+  const cursor = params.get('cursor');
+  if (!/^(?:[1-9]|[1-4][0-9]|50)$/.test(limit) || ['limit','cursor'].some(k => params.getAll(k).length > 1)) throw new PublicDealPaginationError('invalid_limit');
+  let key = '', id = '';
+  if (cursor !== null) {
+    try {
+      if (!/^[A-Za-z0-9_-]{1,2048}$/.test(cursor)) throw new Error();
+      const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(cursor.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)))) as ScopedCursor;
+      if (!Array.isArray(decoded) || decoded.length !== 3 || decoded[0] !== scope || !boundedString(decoded[1], 40) ||
+          !boundedString(decoded[2], 200) || scopedCursor(...decoded) !== cursor) throw new Error();
+      [, key, id] = decoded;
+    } catch { throw new PublicDealPaginationError('invalid_cursor'); }
+  }
+  return { limit: Number(limit), key, id };
+}
+function scopedCursor(scope: string, key: string, id: string) {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify([scope,key,id])))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
+}
+
+export type OfficialSellerBadge = { digest: string; brand_id: string; campaign_id: string | null; evidence_url: string; title?: string | null };
+export type ComparedOffer = { id: string; model_id: string; configuration_key: string; scope: string; amount: number; record_low: boolean };
+export const sellerHref = (handle: string) => `/sellers/${encodeURIComponent(handle)}`;
+export const roundHref = (handle: string, round: string) => `${sellerHref(handle)}?${new URLSearchParams({ round })}`;
+
+const roundBrands = `SELECT DISTINCT o.campaign_id,m.brand
+  FROM accepted_offer_prices o JOIN models m ON m.id=o.model_id`;
+
+export async function campaignDetail(db: D1Database, id: string, now: number) {
+  const row = await db.prepare(`${dealSelect(now)} AND d.id=?`).bind(id).first<DealWithContext>();
+  return row ? (await enrichCampaigns(db, [row], now))[0] : null;
+}
+
+async function enrichCampaigns(db: D1Database, deals: DealWithContext[], now: number) {
+  if (!deals.length) return deals;
+  const ids = deals.map(deal => deal.id);
+  const selected = JSON.stringify(ids);
+  const [contexts, badges, offers] = await Promise.all([
+    publicRows<{ deal_id: string; campaign_id: string; ordinal: number }>(db, `SELECT cd.deal_id,c.id AS campaign_id,
+      (SELECT count(*) FROM accepted_seller_rounds prior WHERE prior.seller_id=c.seller_id
+        AND (prior.sort_at,prior.id)<=(c.sort_at,c.id)) AS ordinal
+      FROM campaign_deals cd JOIN accepted_seller_rounds c ON c.id=cd.campaign_id
+      WHERE cd.deal_id IN (SELECT value FROM json_each(?))`, selected),
+    publicRows<OfficialSellerBadge & { deal_id: string }>(db, `SELECT d.id AS deal_id,a.digest,a.brand_id,a.campaign_id,a.evidence_url
+      FROM deals d JOIN models model ON model.id=d.model_id JOIN campaign_deals cd ON cd.deal_id=d.id
+      JOIN accepted_seller_rounds c ON c.id=cd.campaign_id
+      JOIN official_attestations a ON a.seller_id=c.seller_id AND a.brand_id=model.brand AND (a.campaign_id IS NULL OR a.campaign_id=c.id)
+      JOIN official_approvals approval ON approval.digest=a.digest AND approval.state='approved'
+      JOIN seller_identity_aliases identity ON identity.seller_id=a.seller_id
+        AND identity.source_url=json_extract(a.envelope,'$.envelope.claim.seller_identity_url')
+      WHERE d.id IN (SELECT value FROM json_each(?)) ORDER BY a.brand_id,a.digest`, selected),
+    publicRows<Omit<ComparedOffer,'record_low'> & { deal_id: string; minimum: number }>(db, `SELECT d.id AS deal_id,o.id,
+      o.model_id,o.configuration_key,o.scope,d.deal_price_krw AS amount,
+      (SELECT MIN(p.amount) FROM accepted_offer_prices p WHERE p.model_id=o.model_id
+        AND p.configuration_key=o.configuration_key AND p.scope=o.scope AND p.point_time<=?) AS minimum
+      FROM deals d JOIN campaign_offers o ON o.deal_id=d.id JOIN offer_price_observations price ON price.offer_id=o.id
+      JOIN campaign_observations support ON support.price_id=price.id AND support.proof_id=d.price_evidence_id AND support.retracted_by IS NULL
+      WHERE d.id IN (SELECT value FROM json_each(?)) AND o.model_id=d.model_id AND o.line_id IS NULL
+        AND o.campaign_id=(SELECT campaign_id FROM campaign_deals WHERE deal_id=d.id)
+      GROUP BY d.id,o.id`, new Date(now).toISOString(), selected),
+  ]);
+  const contextById = new Map(contexts.map(c => [c.deal_id,c]));
+  const offerById = new Map(offers.map(({ deal_id, minimum, ...offer }) => [deal_id, { offer, minimum }]));
+  const badgesById = new Map<string, OfficialSellerBadge[]>();
+  for (const badge of badges) {
+    const list = badgesById.get(badge.deal_id) ?? [];
+    list.push(badge);
+    badgesById.set(badge.deal_id,list);
+  }
+  return deals.map(deal => {
+    const context = contextById.get(deal.id);
+    const matched = offerById.get(deal.id);
+    return { ...deal, seller_id: deal.seller_joined_id ?? deal.seller_id,
+      seller_ordinal: context?.ordinal, campaign_id: context?.campaign_id,
+      official_badges: badgesById.get(deal.id) ?? [],
+      ...(matched ? { offer: { ...matched.offer, record_low: isDealPubliclyActive(deal,now) && matched.minimum != null && matched.offer.amount <= matched.minimum } } : {}),
+    };
+  });
+}
+
+export type HistoryConfiguration = {
+  model_id: string; name: string; brand: string; configuration_key: string; scope: string;
+};
+export function historyConfigurations(db: D1Database, model: string | null, seller: string | null = null) {
+  return publicRows<HistoryConfiguration>(db, `SELECT DISTINCT p.model_id,m.name,m.brand,p.configuration_key,p.scope
+    FROM accepted_offer_prices p JOIN accepted_seller_rounds c ON c.id=p.campaign_id JOIN models m ON m.id=p.model_id
+    WHERE (? IS NULL OR p.model_id=?) AND (? IS NULL OR c.seller_id=?)
+    ORDER BY m.brand,m.name,p.model_id,p.scope,p.configuration_key`, model,model,seller,seller);
+}
+
+export async function sellerProfile(db: D1Database, handle: string, now: number) {
+  const seller = await db.prepare(`SELECT canonical.*,public.handle AS requested_handle
+    FROM sellers public JOIN canonical_sellers ids ON ids.id=public.id JOIN sellers canonical ON canonical.id=ids.canonical_id
+    WHERE public.id=COALESCE((SELECT id FROM sellers WHERE handle=?),
+      (SELECT seller_id FROM seller_handle_aliases WHERE handle=?))`).bind(handle,handle).first<import('./data').Seller & { handle: string; requested_handle: string }>();
+  if (!seller) return null;
+  const [summary, observations, brands, products, badges] = await Promise.all([
+    db.prepare(`SELECT count(*) AS total,COALESCE(SUM(NOT EXISTS (
+      SELECT 1 FROM accepted_offer_prices p JOIN campaign_offers o ON o.id=p.offer_id
+      WHERE p.campaign_id=c.id AND o.closed_at IS NULL AND p.id=(
+        SELECT recent.id FROM accepted_offer_prices recent WHERE recent.offer_id=o.id ORDER BY recent.point_time DESC,recent.id DESC LIMIT 1)
+      AND p.ends_at>=?
+    )),0) AS completed FROM accepted_seller_rounds c WHERE c.seller_id=?`)
+      .bind(new Date(now).toISOString(),seller.id).first<{ total: number; completed: number }>(),
+    publicRows<{ observed_at: string; precision: 'day' | 'instant' }>(db, `WITH o AS (
+      SELECT s.* FROM campaign_observations s JOIN accepted_seller_rounds c ON c.id=s.campaign_id
+      WHERE c.seller_id=? AND s.retracted_by IS NULL),
+      first AS (SELECT observed_at,precision FROM o ORDER BY point_time,id LIMIT 1),
+      last AS (SELECT observed_at,precision FROM o ORDER BY point_time DESC,id DESC LIMIT 1)
+      SELECT * FROM first UNION ALL SELECT * FROM last`, seller.id),
+    publicRows<{ brand: string }>(db,`SELECT DISTINCT b.brand FROM (${roundBrands}) b
+      JOIN accepted_seller_rounds c ON c.id=b.campaign_id WHERE c.seller_id=? ORDER BY b.brand`,seller.id),
+    historyConfigurations(db, null, seller.id),
+    publicRows<OfficialSellerBadge>(db,`SELECT a.digest,a.brand_id,a.campaign_id,a.evidence_url,c.title
+      FROM official_attestations a JOIN official_approvals approval ON approval.digest=a.digest AND approval.state='approved'
+      JOIN seller_identity_aliases identity ON identity.seller_id=a.seller_id
+        AND identity.source_url=json_extract(a.envelope,'$.envelope.claim.seller_identity_url')
+      LEFT JOIN accepted_seller_rounds c ON c.id=a.campaign_id
+      WHERE a.seller_id=? AND (a.campaign_id IS NULL OR c.seller_id=a.seller_id AND EXISTS (
+        SELECT 1 FROM (${roundBrands}) b WHERE b.campaign_id=c.id AND b.brand=a.brand_id))
+      ORDER BY a.brand_id,a.campaign_id,a.digest`,seller.id),
+  ]);
+  return { seller, ...summary!, first_seen: observations[0] ?? null, last_seen: observations[1] ?? null,
+    brands: brands.map(b => b.brand), products, official_badges: badges };
+}
+
+type Round = { id: string; title: string; source_url: string; starts_at: string | null; sort_at: string };
+export async function sellerCampaignPage(db: D1Database, seller: string, params: URLSearchParams, now: number) {
+  const scope = `seller:${seller}`, { limit,key,id } = scopedOptions(params, scope);
+  const picked = params.get('round');
+  if (params.getAll('round').length>1 || picked!==null && !boundedString(picked,200)) throw new PublicDealPaginationError('invalid_cursor');
+  const rows = await publicRows<Round>(db,`SELECT id,title,source_url,starts_at,sort_at FROM accepted_seller_rounds
+    WHERE seller_id=? AND ${picked ? 'id=COALESCE((SELECT merged_into FROM seller_campaigns WHERE id=?),?)' : '(sort_at,id)>(?,?)'}
+    ORDER BY sort_at,id LIMIT ?`, seller,...(picked ? [picked,picked] : [key,id]),limit+1);
+  const page = rows.slice(0,limit);
+  const dealRows = page.length ? await publicRows<DealWithContext>(db,`${dealSelect(now)} AND d.id IN (
+    SELECT deal_id FROM campaign_deals WHERE campaign_id IN (SELECT value FROM json_each(?))) ORDER BY d.id`, JSON.stringify(page.map(r => r.id))) : [];
+  const deals = new Map<string | undefined, DealWithContext[]>();
+  for (const deal of await enrichCampaigns(db,dealRows,now)) {
+    const list = deals.get(deal.campaign_id) ?? [];
+    list.push(deal);
+    deals.set(deal.campaign_id,list);
+  }
+  return { data: page.map(round => ({ ...round, deals: deals.get(round.id) ?? [] })),
+    next_cursor: rows.length > limit ? scopedCursor(scope,page.at(-1)!.sort_at,page.at(-1)!.id) : null };
+}
+
+export type PricePoint = {
+  id: string; campaign_id: string; seller_id: string; seller_name: string; handle: string; title: string;
+  observed_at: string; precision: 'day' | 'instant'; point_time: string; amount: number; list_amount: number;
+  scope: string; source_url: string; official_url: string;
+};
+export async function modelPriceHistory(db: D1Database, model: string, configuration: string, params: URLSearchParams,
+  now: number, seller: string | null = null, offerScope = 'unit') {
+  const scope = JSON.stringify(['history',model,configuration,offerScope,seller]);
+  const { limit,key,id } = scopedOptions(params, scope);
+  const base = `FROM accepted_offer_prices p JOIN accepted_seller_rounds c ON c.id=p.campaign_id
+    JOIN sellers s ON s.id=c.seller_id WHERE p.model_id=? AND p.configuration_key=? AND p.scope=? AND p.point_time<=?`;
+  const fields = 'p.id,p.campaign_id,c.seller_id,s.name AS seller_name,s.handle,c.title,p.observed_at,p.precision,p.point_time,p.amount,p.list_amount,p.scope,p.source_url,p.official_url';
+  const bindings = [model,configuration,offerScope,new Date(now).toISOString()];
+  const scoped = `${base}${seller ? ' AND c.seller_id=?' : ''}`;
+  const values = seller ? [...bindings,seller] : bindings;
+  const [minimum, count, rows, sampled] = await Promise.all([
+    db.prepare(`SELECT ${fields} ${base} ORDER BY p.amount,p.point_time,p.id LIMIT 1`).bind(...bindings).first<PricePoint>(),
+    db.prepare(`SELECT COUNT(*) AS count ${scoped}`).bind(...values).first<{ count:number }>(),
+    publicRows<PricePoint>(db,`SELECT ${fields} ${scoped} AND (p.point_time,p.id)>(?,?) ORDER BY p.point_time,p.id LIMIT ?`,...values,key,id,limit+1),
+    publicRows<PricePoint>(db,`WITH points AS (SELECT ${fields},julianday(p.point_time) AS day ${scoped}),
+      bounds AS (SELECT MIN(day) AS first,MAX(day) AS last FROM points),
+      buckets AS (SELECT points.*,CAST(31*(day-first)/MAX(last-first,0.000001) AS INTEGER) AS bucket FROM points,bounds),
+      ranked AS (SELECT *,ROW_NUMBER() OVER (PARTITION BY bucket ORDER BY amount,point_time,id) lo,
+        ROW_NUMBER() OVER (PARTITION BY bucket ORDER BY amount DESC,point_time DESC,id DESC) hi,
+        ROW_NUMBER() OVER (PARTITION BY bucket ORDER BY list_amount,point_time,id) list_lo,
+        ROW_NUMBER() OVER (PARTITION BY bucket ORDER BY list_amount DESC,point_time DESC,id DESC) list_hi FROM buckets)
+      SELECT * FROM ranked WHERE lo=1 OR hi=1 OR list_lo=1 OR list_hi=1 ORDER BY point_time,id`,...values),
+  ]);
+  const data = rows.slice(0,limit);
+  return { data, sampled, minimum, observation_count: count?.count ?? 0,
+    next_cursor: rows.length > limit ? scopedCursor(scope,data.at(-1)!.point_time,data.at(-1)!.id) : null };
+}
+
+export const historySelection = (entry: HistoryConfiguration) => JSON.stringify([entry.model_id,entry.configuration_key,entry.scope]);
+export function selectedHistoryConfiguration(configurations: HistoryConfiguration[], value?: string | string[] | null) {
+  if (value == null) return configurations[0];
+  const selection = configurations.find(entry => historySelection(entry) === value);
+  if (!selection) throw new PublicDealPaginationError('invalid_configuration');
+  return selection;
+}
+
+export function historyConfigurationParam(params: URLSearchParams) {
+  const selections = params.getAll('configuration');
+  if (selections.length>1) throw new PublicDealPaginationError('invalid_configuration');
+  return selections[0];
 }

@@ -1,6 +1,7 @@
 import { verifiedOfferReviewPage } from '../../lib/verified-offers';
 import { PriceEvidenceReview } from './_price-evidence';
 import { verifiedDealsCopy } from '../../lib/copy/deals.ko';
+import { sellersCopy as copy } from '../../lib/copy/sellers.ko';
 import { collectionStatus } from '../../lib/collection-status';
 import { STATUSES, LABELS } from '../../shared/collection-schema';
 import { DealImage } from '../deals/_image';
@@ -32,7 +33,7 @@ async function login(form: FormData) {
   redirect('/admin');
 }
 async function logout() { 'use server'; await (await cookies()).set(ADMIN_COOKIE, '', { ...adminCookie(), maxAge: 0, expires: new Date(0) }); redirect('/admin'); }
-async function adminAction(parts: string[], body: Record<string, unknown>, errorCode: 'review' | 'seller' | 'deal' | 'deal_conflict', form: FormData, conflictCode?: 'deal_conflict' | 'review_conflict') {
+async function adminAction(parts: string[], body: Record<string, unknown>, errorCode: 'review' | 'seller' | 'deal' | 'deal_conflict' | 'history', form: FormData, conflictCode?: 'deal_conflict' | 'review_conflict') {
   if (!await authenticated()) redirect('/admin?error=auth');
   const token = adminToken();
   if (!token) redirect('/admin?error=config');
@@ -118,6 +119,18 @@ async function unlinkSeller(form: FormData) {
   'use server';
   await adminAction(['admin', 'sellers', String(form.get('seller_id'))], { action: 'unlink_account', account: form.get('account') }, 'seller', form);
 }
+async function historyOperation(form: FormData) {
+  'use server';
+  const operation = String(form.get('operation') ?? '');
+  if (!['history-import', 'history-merge', 'history-retract', 'history-reassign', 'official-sellers'].includes(operation)) {
+    redirect('/admin?error=history');
+  }
+  const raw = String(form.get('reviewed_packet') ?? '').trim();
+  let payload: unknown;
+  try { payload = JSON.parse(raw); } catch { redirect('/admin?error=history'); }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) redirect('/admin?error=history');
+  await adminAction(['admin', operation], payload as Record<string, unknown>, 'history', form);
+}
 function sellerFields(seller?: Seller) {
   return <>
     <label>판매자 이름<input name="name" required maxLength={100} defaultValue={seller?.name ?? ''}/></label>
@@ -165,7 +178,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Ad
     dealPage = await adminDealsPage(db, { status: dealStatus, limit: 20, cursor: deal_cursor });
   }
   const percent = (c: number) => `${Math.round(c * 100)}%`;
-  return <main className="page"><h1>게시 전 검수</h1><section><h2>로컬 수집함 현황</h2>{collector.kind === 'failed' ? <p role="alert">수집 현황을 불러오지 못했습니다. 잠시 후 새로고침해 주세요. 문제가 계속되면 운영자에게 문의하세요.</p> : !collector.data.synced ? <p>미동기화</p> : collector.data.workers.map(w => <article key={w.snapshot.worker_id}><p>{w.snapshot.worker_id} · {w.stale ? '동기화 지연' : '동기화됨'}</p><ul>{STATUSES.map(s => <li key={s}>{LABELS[s]}: {w.snapshot.counts[s]}</li>)}</ul><p>생성 {w.snapshot.generated_at} · 수신 {w.received_at}</p><p>공개 대기는 실제 게시를 실행하지 않습니다.</p></article>)}</section><form action={logout}><button>로그아웃</button></form>{error && <p role="alert">{error === 'review_conflict' ? '검수 상태가 변경되었습니다. 다른 요청에서 이미 승인 또는 반려했습니다. 새로고침 후 현재 상태를 확인하세요.' : error === 'deal' ? '공구 정정·철회에 실패했습니다. 입력값을 확인하세요.' : error === 'deal_conflict' ? '다른 관리자가 먼저 변경했거나 이미 처리된 요청입니다. 새로고침 후 다시 확인하세요.' : error === 'seller' ? '판매자 등록·증빙 처리에 실패했습니다. 입력값·계정 검수 확인·기존 연결을 확인하세요.' : '검수 처리에 실패했습니다. 입력값 및 이미 처리된 항목인지 확인하세요.'}</p>}<p>수집 원문을 직접 확인한 뒤 모델·판매자·정확한 가격·일정을 지정하세요. 불명확한 가격은 비워 두세요. 판매자가 등록되어 있지 않으면 게시할 수 없습니다.</p><section aria-label="자동 게시 보류"><h2>자동 게시 보류</h2>
+  return <main className="page"><h1>게시 전 검수</h1><section><h2>로컬 수집함 현황</h2>{collector.kind === 'failed' ? <p role="alert">수집 현황을 불러오지 못했습니다. 잠시 후 새로고침해 주세요. 문제가 계속되면 운영자에게 문의하세요.</p> : !collector.data.synced ? <p>미동기화</p> : collector.data.workers.map(w => <article key={w.snapshot.worker_id}><p>{w.snapshot.worker_id} · {w.stale ? '동기화 지연' : '동기화됨'}</p><ul>{STATUSES.map(s => <li key={s}>{LABELS[s]}: {w.snapshot.counts[s]}</li>)}</ul><p>생성 {w.snapshot.generated_at} · 수신 {w.received_at}</p><p>공개 대기는 실제 게시를 실행하지 않습니다.</p></article>)}</section><form action={logout}><button>로그아웃</button></form>{error && <p role="alert">{error === 'review_conflict' ? '검수 상태가 변경되었습니다. 다른 요청에서 이미 승인 또는 반려했습니다. 새로고침 후 현재 상태를 확인하세요.' : error === 'deal' ? '공구 정정·철회에 실패했습니다. 입력값을 확인하세요.' : error === 'deal_conflict' ? '다른 관리자가 먼저 변경했거나 이미 처리된 요청입니다. 새로고침 후 다시 확인하세요.' : error === 'seller' ? '판매자 등록·증빙 처리에 실패했습니다. 입력값·계정 검수 확인·기존 연결을 확인하세요.' : error === 'history' ? copy.operationError : '검수 처리에 실패했습니다. 입력값 및 이미 처리된 항목인지 확인하세요.'}</p>}<p>수집 원문을 직접 확인한 뒤 모델·판매자·정확한 가격·일정을 지정하세요. 불명확한 가격은 비워 두세요. 판매자가 등록되어 있지 않으면 게시할 수 없습니다.</p><section aria-label="자동 게시 보류"><h2>자동 게시 보류</h2>
     {offerReview?.data.length ? offerReview.data.map(row => <article className="seller" key={row.id}>
       <h3>{row.title}</h3><p><a href={row.source_url} rel="noopener noreferrer">원문 확인</a></p>
       <ul>{row.gates.map(gate => <li key={gate}>{gate}</li>)}</ul>
@@ -251,5 +264,13 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Ad
   </section><section aria-label="외부 공구 모음 후보"><h2>외부 공구 모음 후보</h2>{invalid.includes('candidate_cursor') && <p role="alert">외부 후보 목록의 위치가 올바르지 않아 처음부터 표시합니다.</p>}<p>원문·가격·일정을 확인한 뒤 공개 /deals로 게시하거나 확인 완료로 내립니다. 불명확한 가격·마감은 비워 두세요.</p>{!candidates.length && <div className="empty">{state.candidate_cursor ? '이 위치에 남아 있는 외부 후보가 없습니다. 처음부터 다시 확인하세요.' : '확인할 외부 후보가 없습니다.'}</div>}{candidates.map(c => <article className="seller" key={c.id}><h3>{c.title}</h3><p>{(EXTERNAL_SOURCES as Record<string, { name: string }>)[c.source]?.name ?? c.source} · <a href={c.source_url} target="_blank" rel="noopener noreferrer">출처 확인 ↗</a>{c.seller_handle && <> · 셀러 @{c.seller_handle}</>}</p><PriceEvidenceReview proof={c.price_review}/>{c.price_observation && <PriceEvidenceReview proof={c.price_observation}/>}<p>가격 힌트(참고용) {money(c.price_hint)}{c.price_raw && <> · 원문 {c.price_raw}</>} · 일정 {c.dates_raw ?? c.starts_at ?? '정보 없음'}</p><p>수집 {c.captured_at} · 마지막 확인 {c.last_seen_at} · 시드 모델 매칭 {c.model_match ? '예' : '아니오'}</p><form action={promoteCandidate}>{navigationFields(state)}<input type="hidden" name="candidate_id" value={c.id}/><input type="hidden" name="expected_revision" value={c.price_revision ?? 'legacy'}/>{c.price_observation?.result.facts ? <label>{verifiedDealsCopy.evidence}<select name="price_evidence_id" defaultValue={c.price_review?.id ?? c.price_observation.id}>
     {c.price_review && <option value={c.price_review.id}>{verifiedDealsCopy.currentEvidence}</option>}
     <option value={c.price_observation.id}>{verifiedDealsCopy.selectObservation}</option>
-    </select></label> : c.price_review && <input type="hidden" name="price_evidence_id" value={c.price_review.id}/>}<input type="hidden" name="request_id" value={crypto.randomUUID()}/><label>게시 제목<input name="title" maxLength={200} defaultValue={c.title}/></label><label>모델(선택)<select name="model_id" defaultValue=""><option value="">없음</option>{models.map(m => <option key={m.id} value={m.id}>{m.brand} {m.name}</option>)}</select></label><label>판매자(선택)<select name="seller_id" defaultValue=""><option value="">자동(셀러명/출처)</option>{sellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>공구가(원, 미확인 시 공란)<input name="price" type="number" min="0" step="1" defaultValue={c.price_review?.result.facts?.deal_price_krw ?? c.price_observation?.result.facts?.deal_price_krw ?? c.price_hint ?? ''}/></label><label>시작 ISO(선택)<input name="starts_at" defaultValue={c.starts_at ?? ''}/></label><label>종료 ISO(선택)<input name="ends_at" defaultValue={c.price_review?.result.facts?.ends_at ?? c.price_observation?.result.facts?.ends_at ?? c.ends_at ?? ''}/></label><label><input type="checkbox" name="source_ended"/>원문상 종료/마감</label><label>묶음 JSON(선택)[<textarea name="bundle_json" rows={3} placeholder='[{"product_name":"조이 카시트","brand":"Joie"}]'/>]</label><label>게시 사유<textarea name="reason" required minLength={10} maxLength={300} defaultValue="외부 공구 원문 확인 후 공개 게시"/></label><button>원문 확인 후 /deals 게시</button></form><form action={dismissCandidate}>{navigationFields(state)}<input type="hidden" name="candidate_id" value={c.id}/><button>확인 완료(게시 안 함)</button></form></article>)}{reviewNavigation(state, 'candidate_cursor', candidatePage.next_cursor, '외부 후보 페이지')}</section></main>;
+    </select></label> : c.price_review && <input type="hidden" name="price_evidence_id" value={c.price_review.id}/>}<input type="hidden" name="request_id" value={crypto.randomUUID()}/><label>게시 제목<input name="title" maxLength={200} defaultValue={c.title}/></label><label>모델(선택)<select name="model_id" defaultValue=""><option value="">없음</option>{models.map(m => <option key={m.id} value={m.id}>{m.brand} {m.name}</option>)}</select></label><label>판매자(선택)<select name="seller_id" defaultValue=""><option value="">자동(셀러명/출처)</option>{sellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>공구가(원, 미확인 시 공란)<input name="price" type="number" min="0" step="1" defaultValue={c.price_review?.result.facts?.deal_price_krw ?? c.price_observation?.result.facts?.deal_price_krw ?? c.price_hint ?? ''}/></label><label>시작 ISO(선택)<input name="starts_at" defaultValue={c.starts_at ?? ''}/></label><label>종료 ISO(선택)<input name="ends_at" defaultValue={c.price_review?.result.facts?.ends_at ?? c.price_observation?.result.facts?.ends_at ?? c.ends_at ?? ''}/></label><label><input type="checkbox" name="source_ended"/>원문상 종료/마감</label><label>묶음 JSON(선택)[<textarea name="bundle_json" rows={3} placeholder='[{"product_name":"조이 카시트","brand":"Joie"}]'/>]</label><label>게시 사유<textarea name="reason" required minLength={10} maxLength={300} defaultValue="외부 공구 원문 확인 후 공개 게시"/></label><button>원문 확인 후 /deals 게시</button></form><form action={dismissCandidate}>{navigationFields(state)}<input type="hidden" name="candidate_id" value={c.id}/><button>확인 완료(게시 안 함)</button></form></article>)}{reviewNavigation(state, 'candidate_cursor', candidatePage.next_cursor, '외부 후보 페이지')}</section>
+    <section><h2>{copy.historyAdmin}</h2><form action={historyOperation}>{navigationFields(state)}
+      <select name="operation" aria-label={copy.historyAdmin}>
+        <option value="history-import">{copy.operationImport}</option><option value="history-merge">{copy.operationMerge}</option>
+        <option value="history-retract">{copy.operationRetract}</option><option value="history-reassign">{copy.operationReassign}</option>
+        <option value="official-sellers">{copy.operationOfficial}</option>
+      </select>
+      <label>{copy.reviewedPacket}<textarea name="reviewed_packet" rows={8} required/></label><button>{copy.nextOperation}</button>
+    </form></section></main>;
 }

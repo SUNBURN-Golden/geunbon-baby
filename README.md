@@ -507,3 +507,11 @@ Linux `agamajung-deepseek-web` 데몬은 공개 출처와 Instagram v2에서 받
 `0017_verified_offers.sql`은 상품별 게시 이력과 요청 영수증을 추가합니다. `0018_play_gyms.sql`은 하베브릭스 바람개비 아기체육관과 Lovevery The Play Gym을 추가하며 두 모델의 국내 공식가는 확인 전까지 정보 없음으로 표시합니다. [하베브릭스 제품 페이지](https://m.whittlestore.com/views/shop/shopview?iniCategory=91&pack_content_id=4463&thisCategory=546) · [Lovevery 제품 페이지](https://lovevery.com/products/the-play-gym)
 
 시간별 수집 및 비용 집계, Instagram 중단 경보와 재개 시각은 Linux 상태 디렉터리의 `metrics-hourly.jsonl`에서 확인합니다. [Linux 운영](crawler/deepseek-web/README.md#연속-수집과-게시)
+
+## 판매자 공구 이력
+
+`/sellers/[handle]`은 확인된 공구 회차와 제품별 가격 이력을 표시합니다. 제품 상세의 가격 추이는 같은 구성과 가격 범위에서 확인된 공구가와 당시 정가를 비교합니다. 공구 상세의 판매자 링크와 기존 `/sellers#trust-…` 근거 링크를 모두 사용할 수 있습니다. 공식 판매처 표시는 확인된 브랜드 범위 또는 회차에서 근거 링크와 함께 표시됩니다.
+
+공개 API는 `/api/v1/sellers/:handle`, `/api/v1/models/:id/price-history`, `/api/v1/deals/:id`를 제공합니다. 가격 이력과 판매자 회차는 받은 `next_cursor`를 `cursor`로 전달해 이어서 조회합니다. 구성은 응답의 상품·구성 키·가격 범위로 구성된 배열을 JSON으로 인코딩해 `configuration`에 전달합니다. 판매자 주소의 `round`는 해당 회차를 직접 엽니다.
+
+`0019_seller_history.sql`은 기존 게시 영수증과 확인 가능한 검수 이력을 같은 D1 트랜잭션에 연결합니다. 나머지 자료의 수집 및 근거 대조는 Linux에서 실행합니다. [판매자 이력 운영](crawler/README.md#판매자-공구-이력과-공식-판매처)

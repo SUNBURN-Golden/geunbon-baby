@@ -1,10 +1,12 @@
 import { sellerTrustHref, type Deal, type DealBundleItem } from '../../lib/data';
 import { DealImage } from './_image';
 import Link from 'next/link';
-import { dealTimingFor, formatDealDate, type DealWithContext, type Timing } from '../../lib/deals';
+import { dealTimingFor, formatDealDate, sellerHref, type DealWithContext, type Timing } from '../../lib/deals';
 import { verifiedDealsCopy } from '../../lib/copy/deals.ko';
 import { DealCountdown } from './_countdown';
 import { dealsCopy } from '../../lib/deals-copy';
+import { sellersCopy } from '../../lib/copy/sellers.ko';
+import { OfficialSellerBadges } from '../sellers/_official';
 import { SellerTrustBadges } from '../sellers/_trust-badges';
 
 export function DealStateChip({ timing, countdown = false }: { timing: Timing; countdown?: boolean }) {
@@ -26,8 +28,9 @@ export function DealComparison({ deal }: { deal: DealWithContext }) {
   const { deal_price_krw, list_price_krw, discount_pct } = deal;
   if (deal_price_krw == null || list_price_krw == null || discount_pct == null || discount_pct <= 0) return null;
   return <div className="deal-price-block">
-    <p className="deal-context">{dealsCopy.groupBuyPrice}</p>
+    <p className="deal-context">{deal.offer?.scope === 'bundle_total' ? sellersCopy.bundleTotal : dealsCopy.groupBuyPrice}</p>
     <p className="deal-price">{deal_price_krw.toLocaleString('ko-KR')}<span>{dealsCopy.won}</span></p>
+    {deal.offer?.record_low && deal.offer.amount === deal_price_krw && <strong className="seller-record-low">{sellersCopy.lowest}</strong>}
     <p className="deal-context">{verifiedDealsCopy.listPrice} <del>{list_price_krw.toLocaleString('ko-KR')}{dealsCopy.won}</del></p>
     <strong className="deal-tone deal-tone-good">{verifiedDealsCopy.discount.replace('{n}', String(discount_pct))}</strong>
   </div>;
@@ -43,7 +46,6 @@ export function DealExternalSource({ deal }: { deal: DealWithContext }) {
   return (
     <p className="deal-context">
       {dealsCopy.externalSource} · {host}
-      {deal.seller_name ? ` · ${deal.seller_name}` : ''}
     </p>
   );
 }
@@ -75,6 +77,7 @@ export function DealCard({ deal, nowMs, clockMs = nowMs }: { deal: DealWithConte
       <DealImage src={deal.image_url} verifiedOffer={deal.verify_level === 'verified_offer_v2'} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
       <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} countdown /></div>
       <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link></h2>
+      <SellerContext deal={deal} />
       <p className="deal-period"><DealPeriod deal={deal} timing={timing} external={deal.origin === 'external_web'} /></p>
       <DealComparison deal={deal} />
       {timing.state === 'active' && deal.ends_at && <DealCountdown endsAt={deal.ends_at} nowMs={clockMs} />}
@@ -84,6 +87,14 @@ export function DealCard({ deal, nowMs, clockMs = nowMs }: { deal: DealWithConte
       <DealDisclaimer external={deal.origin === 'external_web'} />
     </article>
   );
+}
+
+function SellerContext({ deal }: { deal: DealWithContext }) {
+  return <div className="deal-seller-context">
+    {deal.seller_handle && deal.seller_name ? <Link href={sellerHref(deal.seller_handle)}>{deal.seller_name}</Link> : deal.seller_name || dealsCopy.unknownSeller}
+    {deal.seller_ordinal != null && <> · {sellersCopy.ordinal(deal.seller_ordinal)}</>}
+    <OfficialSellerBadges badges={deal.official_badges} />
+  </div>;
 }
 
 export function DealCardLinks({ deal }: { deal: DealWithContext }) {
@@ -128,7 +139,7 @@ export function DealPeriod({ deal, timing, external = false }: { deal: Pick<Deal
 export function DealFacts({ deal, timing }: { deal: DealWithContext; timing: Timing }) {
   return (
     <dl className="deal-facts">
-      <div><dt>{dealsCopy.seller}</dt><dd>{deal.seller_name || dealsCopy.unknownSeller}</dd></div>
+      <div><dt>{dealsCopy.seller}</dt><dd><SellerContext deal={deal} /></dd></div>
       {deal.model_joined_id && <div><dt>{dealsCopy.model}</dt><dd>{deal.model_name}</dd></div>}
       {!deal.model_joined_id && deal.brand_label && <div><dt>{dealsCopy.model}</dt><dd>{deal.brand_label}{deal.category_label ? ` · ${deal.category_label}` : ''}</dd></div>}
       <div><dt>{dealsCopy.period}</dt><dd><DealPeriod deal={deal} timing={timing} external={deal.origin === 'external_web'} /></dd></div>
