@@ -1,3 +1,4 @@
+import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import Calendar from '../app/calendar/page';
@@ -120,6 +121,7 @@ test('API and rendered lists order normalized instants and break ties by ID desp
   for (const [id, start] of [['B', '2026-10-23T20:00:00Z'], ['A-tie', '2026-10-24T01:00:00+09:00'], ['A', '2026-10-24T01:00:00+09:00']]) {
     await pending(memory.db, id);
     expect((await call(`admin/review/${id}`, approval(start, '2026-10-25T00:00:00Z', `Title ${id}`))).status).toBe(200);
+    await seedPublicPrice(memory.db, id, 390000);
   }
   for (const path of ['calendar', 'deals', 'models/model-1']) {
     const response = await call(path);
@@ -157,6 +159,7 @@ test('KST midnight changes day counts and every page agrees on visible dates and
   expect(dealTiming(start, end, Date.parse(end) - 1).days).toBe(1);
   expect(dealTiming(start, end, Date.parse(end)).days).toBe(0);
   await legacy(memory.db, 'midnight', start, end);
+  await seedPublicPrice(memory.db, 'midnight', 390000);
   const clock = vi.spyOn(Date, 'now').mockReturnValue(midnight);
   for (const render of [() => Calendar(), () => ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }), () => DealDetail({ params: Promise.resolve({ id: 'midnight' }) })]) {
     clock.mockClear();

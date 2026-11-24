@@ -5,7 +5,10 @@ import { dirname, resolve } from 'node:path';
 import { kstDayKey, kstHourKey } from './util';
 
 export type Candidate = { handle: string; found_via: string; first_seen: string; last_seen: string; hits: number; sample_urls: string[]; matched_models: string[] };
-export type AccountState = { following?: boolean; followed_at?: string; last_follow_attempt?: string; last_checked?: string; last_story_at?: string; last_post_urls?: string[] };
+export type AccountState = {
+  following?: boolean; followed_at?: string; last_follow_attempt?: string; last_checked?: string; last_story_at?: string; last_post_urls?: string[];
+  post_checks?: Record<string, { checked_at: string; delivered_hash?: string; price_due_at?: string; observation_id?: string; revision?: string; stopped?: boolean }>;
+};
 type StateData = {
   seen: string[];
   accounts: Record<string, AccountState>;

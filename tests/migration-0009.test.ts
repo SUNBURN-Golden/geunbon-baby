@@ -1,3 +1,4 @@
+import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { readFile } from 'node:fs/promises';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -5,7 +6,6 @@ import Calendar from '../app/calendar/page';
 import ModelDetail from '../app/models/[id]/page';
 import DealDetail from '../app/deals/[id]/page';
 import { normalizeTimestamp } from '../lib/deals';
-import { dealsCopy } from '../lib/deals-copy';
 import type { Deal } from '../lib/data';
 import { memoryD1 } from './helpers/sqlite';
 import { api, approval, execute, legacy, migrate, pending } from './helpers/deal-timestamps';
@@ -91,6 +91,8 @@ test('migrated extreme offsets and newly approved rows sort together in API and 
   await pending(memory.db, 'new');
   const call = api(memory.db);
   expect((await call('admin/review/new', approval('2026-10-23T20:00:00Z', '2026-10-24T00:00:00Z', 'New fixture'))).status).toBe(200);
+  await seedPublicPrice(memory.db, 'migrated', 390000);
+  await seedPublicPrice(memory.db, 'new', 390000);
   for (const path of ['calendar', 'deals', 'models/model-1']) {
     const response = await call(path);
     const deals = path.startsWith('models')
@@ -105,15 +107,14 @@ test('migrated extreme offsets and newly approved rows sort together in API and 
   }
 });
 
-test.each(['dateonly', 'feb30', 'reversed'])('unchanged %s schedules remain unknown on all three pages while date-only checked dates display', async id => {
+test.each(['dateonly', 'feb30', 'reversed'])('unchanged %s legacy schedules remain in D1 and stay private without verified prices', async id => {
   const fixture = fixtures.find(([key]) => key === id)!;
   await legacy(memory.db, ...fixture);
   await execute(memory.db, migration);
-  for (const node of [await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }), await DealDetail({ params: Promise.resolve({ id }) })]) {
-    const html = renderToStaticMarkup(node);
-    expect(html).toContain(dealsCopy.unknownSchedule);
-    expect(html).not.toContain('09:00');
-    if (html.includes('class="deal-detail"')) expect(html).toContain('2026.10.20');
-    expect(html.toLowerCase()).not.toContain(`datetime="${fixture[1]}"`.toLowerCase());
+  const row = await memory.db.prepare('SELECT starts_at, ends_at FROM deals WHERE id = ?').bind(id).first();
+  expect(row).toEqual({ starts_at: fixture[1], ends_at: fixture[2] });
+  for (const node of [await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) })]) {
+    expect(renderToStaticMarkup(node)).not.toContain('Fixture ' + id);
   }
+  await expect(DealDetail({ params: Promise.resolve({ id }) })).rejects.toThrow('NEXT_NOT_FOUND');
 });

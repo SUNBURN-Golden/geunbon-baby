@@ -17,9 +17,12 @@ import { HaltError } from '../crawler/lib/browser';
 import { QuietWindowError } from '../crawler/lib/quiet-window';
 import { POST_ANCHORS, PROFILE_ARTICLES } from '../crawler/lib/selectors';
 import { POST_ARTICLES, PostElement, postTree, node, mockProfilePostPage } from './helpers/post-page';
+import { instagramPriceEvidence } from '../crawler/src/deal-prices/instagram';
+import { exampleEvidence } from './helpers/verified-deal-prices';
 const matchingPage = (resolve: Parameters<typeof mockPage>[0] = () => []) => mockProfilePostPage('stokke', resolve);
 import { sleep } from '../crawler/lib/util';
 vi.mock('../crawler/lib/util', async importOriginal => ({ ...await importOriginal<typeof import('../crawler/lib/util')>(), sleep: vi.fn(async () => {}) }));
+vi.mock('../crawler/src/deal-prices/instagram', () => ({ instagramPriceEvidence: vi.fn(async () => undefined) }));
 vi.mock('node:child_process', async () => {
   const { promisify } = await import('node:util');
   return { execFile: Object.assign(vi.fn(), { [promisify.custom]: vi.fn(async () => ({ stdout: '스토케 트립트랩 공구 39만원' })) }) };
@@ -36,7 +39,7 @@ beforeEach(async () => {
   vi.mocked(sleep).mockImplementation(async () => {});
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { id: 'item-1', status: 'pending' } }, { status: 202 })));
 });
-afterEach(async () => { await flushHealth(); await rm(dir, { recursive: true, force: true }); });
+afterEach(async () => { await flushHealth(); await rm(dir, { recursive: true, force: true }); vi.unstubAllEnvs(); });
 test('unprocessed profile posts remain eligible after per-tick limit and restart', async () => {
   const { page } = matchingPage(selector => {
     if (selector.startsWith('a[href*="/p/"')) return ['a', 'b', 'c'].map(id => ({ href: `/p/${id}/` }));
@@ -52,6 +55,26 @@ test('unprocessed profile posts remain eligible after per-tick limit and restart
   const request = vi.mocked(fetch).mock.calls[0][1]!;
   expect(request.headers).toMatchObject({ authorization: 'Bearer test-ingest-token' });
   expect(JSON.parse(request.body as string)).toMatchObject({ kind: 'post', suggestions: { price: { value: 390000 } } });
+});
+test('price collection revisits a seen Instagram post and submits an edited caption on the next due check', async () => {
+  vi.stubEnv('DEAL_PRICE_VERIFICATION', '1');
+  const url = 'https://www.instagram.com/p/edited/';
+  const original = await exampleEvidence(url);
+  const edited = await exampleEvidence(url, 400000);
+  vi.mocked(instagramPriceEvidence).mockResolvedValueOnce(original).mockResolvedValueOnce(edited);
+  let caption = original.offer!.source.text;
+  const { page } = matchingPage(selector => selector.startsWith('a[href*="/p/"') ? [{ href: '/p/edited/' }] :
+    selector === 'article' ? [{ text: caption }] : []);
+  ctx.state.markSeen(url); // Existing installations only had URL history.
+  expect(await collectAccount(page, ctx)).toEqual({ posts: 1, stories: 0 });
+  ctx.state = await CrawlerState.open(join(dir, '.cache', 'state.json'));
+  expect(await collectAccount(page, ctx)).toEqual({ posts: 0, stories: 0 });
+  caption = edited.offer!.source.text;
+  ctx.state.account(ctx.account).post_checks![url].price_due_at = '2026-01-01T00:00:00.000Z';
+  expect(await collectAccount(page, ctx)).toEqual({ posts: 1, stories: 0 });
+  expect(instagramPriceEvidence).toHaveBeenCalledTimes(2);
+  const delivered = vi.mocked(fetch).mock.calls.map(([, request]) => JSON.parse(request!.body as string));
+  expect(delivered.map(row => row.price_evidence.offer.readings[0].amount)).toEqual([390000, 400000]);
 });
 test('blank caption and failed ingestion do not mark a post as delivered', async () => {
   let text = '';

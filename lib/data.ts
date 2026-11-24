@@ -1,10 +1,11 @@
+import type { PriceReview } from './deal-price-review';
 import { dealsCopy } from './deals-copy';
 
 export type Model = { id: string; brand: string; name: string; category: string; importer: string; official_price: number | null; source_url: string; checked: string; verify_level: string; note: string };
 export type Seller = { id: string; name: string; source_url: string; registration_source: string | null; withdrawal_source: string | null; official_import_source: string | null };
 export const sellerAnchor = (id: string) => `trust-${id}`;
 export const sellerTrustHref = (id: string) => `/sellers#${encodeURIComponent(sellerAnchor(id))}`;
-export type DealOrigin = 'instagram' | 'external_web';
+export type DealOrigin = 'instagram' | 'external_web' | 'threads';
 export type Deal = {
   image_url: string | null;
   id: string;
@@ -12,6 +13,12 @@ export type Deal = {
   seller_id: string;
   title: string;
   price: number | null;
+  deal_price_krw?: number | null;
+  list_price_krw?: number | null;
+  discount_pct?: number | null;
+  price_source_url?: string | null;
+  list_price_source_url?: string | null;
+  price_checked_at?: string | null;
   source_url: string;
   verify_level: string;
   checked: string;
@@ -20,6 +27,7 @@ export type Deal = {
   origin?: DealOrigin;
   source_host?: string | null;
   source_ended?: number;
+  orders_open?: number;
   brand_label?: string | null;
   category_label?: string | null;
   promoted_by?: string | null;
@@ -74,16 +82,22 @@ export type ExternalCandidate = {
   category: string | null; model_match: number; suggestions: string | null;
   captured_at: string; last_seen_at: string; status: 'candidate' | 'dismissed' | 'promoted'; reviewed_at: string | null;
   promoted_deal_id?: string | null;
+  price_revision?: string;
+  price_review?: PriceReview | null;
+  price_observation?: PriceReview | null;
 };
 
 // Lifecycle metadata and original evidence are exclusively for authenticated administrators.
 export type DealRevision = Pick<Deal, 'model_id' | 'seller_id' | 'title' | 'price' | 'starts_at' | 'ends_at' | 'image_url' | 'checked'> & {
-  id: string; deal_id: string; version: number; action: 'publish' | 'correct' | 'withdraw';
+  id: string; deal_id: string; version: number; action: 'publish' | 'correct' | 'withdraw' | 'promote_external' | 'verify_prices';
   request_id: string; reason: string | null; status: 'published' | 'withdrawn'; created_at: string;
 };
 export type AdminDeal = Deal & {
   status: 'published' | 'withdrawn'; version: number; updated_at: string | null; withdrawn_at: string | null;
   revisions: DealRevision[];
+  price_review?: PriceReview | null;
+  price_evidence_version?: number | null;
+  previous_price_reviews?: PriceReview[];
   evidence: { source_url: string; account: string; text: string; captured_at: string; image_url: string | null;
     attribution: string | null; attribution_note: string | null; reviewed_at: string | null } | null;
 };

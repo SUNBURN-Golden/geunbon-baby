@@ -76,13 +76,14 @@ export class SourceRegistryStore {
         return result('ambiguous_scope');
       }
       const reason=entryReason(entry,url,fields,now);if(reason)return result(reason);
-      const approval=this.store.db.prepare('SELECT a.expires_at FROM source_registry_revisions r JOIN source_registry_approvals a ON a.id=r.approval_id WHERE r.source_id=? AND r.revision=?').get(sourceId,entry.revision);
+      const approval=this.store.db.prepare('SELECT a.id,a.approved_at,a.expires_at FROM source_registry_revisions r JOIN source_registry_approvals a ON a.id=r.approval_id WHERE r.source_id=? AND r.revision=?').get(sourceId,entry.revision) as RegistryDecision['approval'];
       // Registration and reseeding, including a new ID on an existing origin,
       // never grant collection authority even if the input claims permission.
       if(!approval)return result('approval_required');
       if(Date.parse(String(approval.expires_at))<=now)return result('approval_expired');
       const legacy=legacyReason(this.legacySources,url,fields);if(legacy)return result(legacy);
-      return result('approved');
+      return { ...result('approved'), approval: { id: approval.id, approved_at: new Date(approval.approved_at).toISOString(),
+        expires_at: new Date(Math.min(Date.parse(approval.expires_at), Date.parse(entry.reevaluate_at!))).toISOString() } };
     });
   }
 }

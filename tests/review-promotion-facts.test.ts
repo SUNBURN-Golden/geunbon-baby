@@ -1,4 +1,4 @@
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -30,4 +30,22 @@ test.each([false,true])('manual script sends checked nulls to exact acknowledged
     if(missing){expect(result.status).not.toBe(0);expect(requests).toHaveLength(1);}
     else{expect(result.status,result.stderr).toBe(0);expect(requests).toHaveLength(2);expect(requests[1]).toMatchObject({url:'https://promotion.example/api/v1/admin/candidates/exact-ingested-id',body:{price:null,starts_at:null,ends_at:null}});}
   } finally { rmSync(dir,{recursive:true,force:true}); }
+});
+
+test('manual promotion refuses a superseded queue line before sending an ingest request', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'superseded-promotion-'));
+  try {
+    const queue = join(dir, 'review.jsonl'), calls = join(dir, 'calls.jsonl');
+    const extraction = validateExtraction(mock.content, url, '2026-11-10');
+    writeFileSync(queue, [JSON.stringify({ id: 'old', extraction }), JSON.stringify({ id: 'new', extraction })].join('\n') + '\n');
+    const child = spawnSync(process.execPath, ['--import', './tests/helpers/promotion-child.mjs', 'scripts/promote-external.mjs',
+      `--from-review-queue=${queue}`, '--line=0'], {
+      cwd: process.cwd(), env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: process.env.HOME, ADMIN_TOKEN: 'fixture-only-admin',
+        INGEST_TOKEN: 'fixture-only-ingest', PROMOTE_API_ORIGIN: 'https://promotion.example', PROMOTION_TEST_CALLS: calls, TSX_DISABLE_CACHE: '1' },
+      encoding: 'utf8', timeout: 20000,
+    });
+    expect(child.status).not.toBe(0);
+    expect(child.stderr).toContain('review_candidate_superseded');
+    expect(existsSync(calls)).toBe(false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

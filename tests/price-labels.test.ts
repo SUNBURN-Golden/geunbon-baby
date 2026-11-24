@@ -1,3 +1,4 @@
+import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -5,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vit
 import ModelDetail from '../app/models/[id]/page';
 import { DealCard, DealDetail } from '../app/deals/_components';
 import { verification, verificationLabel, unknownVerification } from '../lib/data';
-import { DEAL_SELECT, type DealWithContext } from '../lib/deals';
+import { dealSelect, type DealWithContext } from '../lib/deals';
 import { dealsCopy } from '../lib/deals-copy';
 import { memoryD1 } from './helpers/sqlite';
 
@@ -68,6 +69,7 @@ describe('D1-backed price and evidence rendering', () => {
     await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind('deal-1', 'model-1', 'seller-1', 'Reviewed group buy', 390000, 'https://example.com/deal',
         'manual', '2026-10-20', '2026-10-20T00:00:00Z', '2026-10-22T00:00:00Z').run();
+    await seedPublicPrice(memory.db, 'deal-1', 390000, 440000);
   });
   beforeEach(async () => {
     await memory.db.prepare("UPDATE models SET official_price = 430000, source_url = 'https://example.com/model', verify_level = 'page_body', importer = 'Importer'").run();
@@ -76,7 +78,7 @@ describe('D1-backed price and evidence rendering', () => {
   afterAll(() => memory.close());
 
   const modelPage = async () => renderToStaticMarkup(await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) }));
-  const joinedDeal = async () => (await memory.db.prepare(DEAL_SELECT).first<DealWithContext>())!;
+  const joinedDeal = async () => (await memory.db.prepare(dealSelect()).first<DealWithContext>())!;
   const officialSection = (html: string) => html.match(/<section><p class="eyebrow">02 \/ OFFICIAL<\/p>[\s\S]*?<\/section>/)![0];
   const excludesPrivatePrices = (html: string) => {
     for (const text of [note, '123,456', '654,321', '234,567', '$799']) expect(html).not.toContain(text);
@@ -109,7 +111,7 @@ describe('D1-backed price and evidence rendering', () => {
     if (price === null) expect(section).not.toMatch(/\d[\d,]*원/);
   });
 
-  test('failed official retrieval preserves importer uncertainty and neutral joined-deal evidence', async () => {
+  test('failed model official retrieval preserves importer uncertainty and verified deal evidence', async () => {
     // The public fields mirror migration 0008's failed-fetch rows, without importing seed investigations.
     await memory.db.prepare("UPDATE models SET source_url = '', official_price = NULL, verify_level = 'official_unpublished', importer = '기존 수입사 (기존 정보, 재확인 실패)'").run();
     const modelHtml = await modelPage();
@@ -118,11 +120,9 @@ describe('D1-backed price and evidence rendering', () => {
     expect(modelHtml).toContain('기존 정보, 재확인 실패');
     expect(modelHtml).not.toContain('href=""');
     const dealHtml = renderToStaticMarkup(createElement(DealDetail, { deal: await joinedDeal(), nowMs }));
-    expect(dealHtml).toContain(dealsCopy.officialEvidence);
-    expect(dealHtml).toContain(dealsCopy.officialUnconfirmed);
-    expect(dealHtml).toContain(dealsCopy.unknownOfficial);
-    expect(dealHtml).toContain('2026.10.18');
-    expect(dealHtml).not.toContain(dealsCopy.officialChecked);
+    expect(dealHtml).toContain('<del>440,000원</del>');
+    expect(dealHtml).toContain('가격 확인 시각');
+    expect(dealHtml).not.toContain(dealsCopy.officialUnconfirmed);
     for (const html of [modelHtml, dealHtml]) {
       expect(html).not.toMatch(/미공개|비공개|>official_unpublished</);
       expect(html).not.toContain('430,000');
@@ -130,28 +130,11 @@ describe('D1-backed price and evidence rendering', () => {
     }
   });
 
-  test('nullable LEFT JOIN evidence and unknown deal evidence render neutral fallbacks through props', async () => {
-    const deal = { ...await joinedDeal(), model_verify_level: null, model_official_price: null, verify_level: 'legacy_x' };
-    const html = renderToStaticMarkup(createElement(DealDetail, { deal, nowMs }));
-    expect(html).toContain(dealsCopy.officialEvidence);
-    expect(html).toContain(dealsCopy.unknownOfficial);
-    expect(html.match(/확인 수준 정보 없음/g)).toHaveLength(2);
-    expect(html).not.toContain(dealsCopy.officialChecked);
-    expect(html).not.toContain('legacy_x');
-    expect(html).not.toContain(dealsCopy.seedUnspecified);
-    expect(renderToStaticMarkup(createElement(DealCard, { deal, nowMs }))).toContain('정보 없음');
-  });
-
-  test.each([
-    ['page_body', dealsCopy.pageBody], ['page_text', dealsCopy.pageText],
-    ['search_summary', dealsCopy.searchSummary], ['seed_unspecified', dealsCopy.seedUnspecified],
-    ['manual', dealsCopy.manual], ['official_unpublished', dealsCopy.officialUnconfirmed],
-    ['legacy_x', dealsCopy.unknownVerification], ['constructor', dealsCopy.unknownVerification],
-    ['toString', dealsCopy.unknownVerification], ['', dealsCopy.unknownVerification],
-  ])('deal detail maps level "%s" to bounded copy', async (level, label) => {
+  test.each(levels)('verified deal detail is independent of legacy level "%s"', async level => {
     const deal = { ...await joinedDeal(), verify_level: level, model_verify_level: level, model_official_price: null };
     const html = renderToStaticMarkup(createElement(DealDetail, { deal, nowMs }));
-    expect(html).toContain(label);
+    expect(html).toContain('<del>440,000원</del>');
+    expect(html).toContain('정가보다 11% 싸요');
     if (level) expect(html).not.toContain(`>${level}<`);
   });
 });

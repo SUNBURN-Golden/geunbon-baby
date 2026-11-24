@@ -1,9 +1,13 @@
-import { normalizeTimestamp, parseDate, publicDealOptions, chronologicalDeals, modelDealSummaries, PublicDealPaginationError } from './deals';
+import { normalizeTimestamp, parseDate, publicDealOptions, chronologicalDeals, lifecycleDeals, activeDealCount, endedDealCount, modelDealSummaries, PublicDealPaginationError } from './deals';
 import { receiveStatus, collectionStatus } from './collection-status';
+import { digest, filterOfferCapture, httpsSource, PRICE_TEXT_LIMIT } from '../shared/deal-price-evidence';
+import { threadsPost } from '../shared/threads-url';
+import { officialPriceAllowed, officialPriceGuard, officialScopeReceipt, syncOfficialPriceScopes } from './official-price-sources';
+import { bundleComponents, configurationMatches, currentReviewEvidence, externalPriceSource, nextExternalPriceTarget, pendingPriceObservation, reviewEvidenceGuard, priceBindings, priceCaptureSql, priceColumns, previousDealPrices, priceTarget, priceTargetTables, recordBackfill, reviewDealPrices, reviewPricesFor, stageIngestEvidence, validatedEvidence, type PriceObservationReceipt, type PriceTargetKind, type PriceReview } from './deal-price-review';
 import { isImageUrl } from './image-url';
 import { all, type Env } from './db';
 import { dealsCopy } from './deals-copy';
-import { comparison, displayableOfficialPrice, EXTERNAL_SOURCES, type ExternalSourceId, type ExternalCandidate, type Model, type Seller, type AdminDeal, type DealRevision } from './data';
+import { comparison, displayableOfficialPrice, EXTERNAL_SOURCES, type ExternalSourceId, type ExternalCandidate, type Model, type Seller, type AdminDeal, type DealRevision, type Deal } from './data';
 export function json(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
 export const MIN_SERVICE_TOKEN_LENGTH = 24;
 // Header values are trimmed in transit; surrounding whitespace usually means a paste error.
@@ -83,7 +87,7 @@ export async function adminSellersData(db: D1Database) {
   const sellers = await all<Seller>(db, `SELECT ${PUBLIC_SELLER_COLUMNS} FROM sellers ORDER BY name`);
   const links = await all<{ account: string; seller_id: string }>(db, 'SELECT account, seller_id FROM seller_accounts ORDER BY account');
   const linked = new Set(links.map(link => link.account));
-  const pending = await all<{ account: string; pending: number }>(db, "SELECT account, COUNT(*) AS pending FROM ingested_items WHERE status = 'pending' GROUP BY account ORDER BY account");
+  const pending = await all<{ account: string; pending: number }>(db, "SELECT account, COUNT(*) AS pending FROM ingested_items WHERE status = 'pending' AND kind IN ('post','story') GROUP BY account ORDER BY account");
   return {
     sellers: sellers.map(seller => ({ ...seller, accounts: links.filter(link => link.seller_id === seller.id).map(link => link.account) })),
     unlinked_accounts: pending.map(row => ({ ...row, normalized: normalizeAccount(row.account) })).filter(row => !row.normalized || !linked.has(row.normalized)),
@@ -143,10 +147,12 @@ export class AdminPaginationError extends Error {
 type ReviewList = 'queue' | 'candidates';
 type ReviewPageOptions = { limit?: number; cursor?: string | null };
 export type AdminQueueItem = {
-  id: string; source_url: string; account: string; text: string; kind: 'post' | 'story';
+  id: string; source_url: string; account: string; text: string; kind: 'post' | 'story' | 'threads_post';
   captured_at: string; status: 'pending'; reviewed_at: string | null;
   suggestions: string | null; image_url: string | null;
   attribution: string | null; attribution_note: string | null;
+  price_review?: PriceReview | null;
+  price_observation?: PriceReview | null;
 };
 const REVIEW_LISTS = {
   queue: { table: 'ingested_items', status: 'pending', maximum: 100 },
@@ -189,11 +195,17 @@ async function adminReviewPage<T extends { id: string; captured_at: string }>(db
   return { data, next_cursor: rows.length > limit && last ? encodeReviewCursor(list, last.captured_at, last.id) : null };
 }
 // These shared reads are private: callers must authenticate before invoking them.
-export function adminQueuePage(db: D1Database, options: ReviewPageOptions = {}) {
-  return adminReviewPage<AdminQueueItem>(db, 'queue', options);
+export async function adminQueuePage(db: D1Database, options: ReviewPageOptions = {}) {
+  const page = await adminReviewPage<AdminQueueItem>(db, 'queue', options);
+  const proofs = await reviewPricesFor(db, 'ingest', page.data.map(row => ({ id: row.id, revision: row.captured_at })));
+  return { ...page, data: await Promise.all(page.data.map(async row => ({ ...row, price_review: proofs.get(row.id) ?? null,
+    price_observation: await pendingPriceObservation(db, 'ingest', row.id, row.captured_at) }))) };
 }
-export function adminCandidatesPage(db: D1Database, options: ReviewPageOptions = {}) {
-  return adminReviewPage<ExternalCandidate>(db, 'candidates', options);
+export async function adminCandidatesPage(db: D1Database, options: ReviewPageOptions = {}) {
+  const page = await adminReviewPage<ExternalCandidate>(db, 'candidates', options);
+  const proofs = await reviewPricesFor(db, 'candidate', page.data.map(row => ({ id: row.id, revision: row.price_revision ?? 'legacy' })));
+  return { ...page, data: await Promise.all(page.data.map(async row => ({ ...row, price_review: proofs.get(row.id) ?? null,
+    price_observation: await pendingPriceObservation(db, 'candidate', row.id, row.price_revision ?? 'legacy') }))) };
 }
 function reviewRequestOptions(params: URLSearchParams, list: ReviewList): ReviewPageOptions {
   if (params.getAll('cursor').length > 1) throw new AdminPaginationError('invalid_cursor');
@@ -228,10 +240,11 @@ async function hydrateAdminDeals(db: D1Database, rows: Omit<AdminDeal, 'evidence
   const ids = rows.map(row => row.id);
   const revisions = await all<DealRevision>(db, `SELECT ${REVISION_COLUMNS} FROM deal_revisions WHERE deal_id IN (${marks}) ORDER BY version`, ...ids);
   const evidence = await all<NonNullable<AdminDeal['evidence']> & { id: string }>(db, `SELECT id,source_url,account,text,captured_at,image_url,attribution,attribution_note,reviewed_at FROM ingested_items WHERE id IN (${marks})`, ...ids);
+  const proofs = await reviewDealPrices(db, ids);
   return rows.map(row => {
     const original = evidence.find(item => item.id === row.id);
     const preserved = original ? { source_url: original.source_url, account: original.account, text: original.text, captured_at: original.captured_at, image_url: original.image_url, attribution: original.attribution, attribution_note: original.attribution_note, reviewed_at: original.reviewed_at } : null;
-    return { ...row, evidence: preserved, revisions: revisions.filter(revision => revision.deal_id === row.id) };
+    return { ...row, evidence: preserved, price_review: proofs.get(row.id) ?? null, revisions: revisions.filter(revision => revision.deal_id === row.id) };
   });
 }
 export async function adminDealsPage(db: D1Database, options: DealPageOptions = {}) {
@@ -246,7 +259,9 @@ export async function adminDealsPage(db: D1Database, options: DealPageOptions = 
 }
 export async function adminDeal(db: D1Database, id: string): Promise<AdminDeal | null> {
   const row = await db.prepare('SELECT * FROM deals WHERE id = ?').bind(id).first<Omit<AdminDeal, 'evidence' | 'revisions'>>();
-  return row ? (await hydrateAdminDeals(db, [row]))[0] : null;
+  if (!row) return null;
+  const [deal] = await hydrateAdminDeals(db, [row]);
+  return { ...deal, previous_price_reviews: await previousDealPrices(db, id) };
 }
 async function requestHash(tuple: unknown[]) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(tuple)));
@@ -269,23 +284,31 @@ async function manageDeal(request: Request, id: string, env: Env) {
   if ((action !== 'correct' && action !== 'withdraw') || !Number.isSafeInteger(expected) || expected < 1 ||
       typeof key !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(key) || key.startsWith('review-') ||
       reason.length < 10 || reason.length > 300 ||
-      ['source_url','verify_level','checked','image_url','seller_id','status','version','id'].some(field => field in b)) return json({ error: 'invalid_deal' }, 400);
+      ['discount_pct','source_url','verify_level','checked','image_url','seller_id','status','version','id'].some(field => field in b)) return json({ error: 'invalid_deal' }, 400);
   const title = typeof b.title === 'string' ? b.title.trim() : '';
   const starts = normalizeTimestamp(b.starts_at), ends = normalizeTimestamp(b.ends_at);
   if (action === 'correct') {
     if (typeof b.model_id !== 'string' || !title || title.length > 200 ||
         !(b.price === null || (Number.isSafeInteger(b.price) && (b.price as number) >= 0)) ||
-        !starts || !ends || ends <= starts || typeof b.include_image !== 'boolean') return json({ error: 'invalid_deal' }, 400);
+        (b.starts_at !== null && !starts) || (b.ends_at !== null && !ends) || (starts && ends && ends <= starts) || typeof b.include_image !== 'boolean') return json({ error: 'invalid_deal' }, 400);
     if (!await env.DB.prepare('SELECT id FROM models WHERE id = ?').bind(b.model_id).first()) return json({ error: 'invalid_model' }, 400);
   }
-  const hash = await requestHash(action === 'correct' ? [action, expected, b.model_id, title, b.price, starts, ends, b.include_image, reason] : [action, expected, reason]);
-  const state = () => env.DB.prepare('SELECT id,status,version FROM deals WHERE id = ?').bind(id).first<DealState>();
+  if (b.price_evidence_id !== undefined && (action !== 'correct' || typeof b.price_evidence_id !== 'string' || !/^[a-f0-9]{64}$/.test(b.price_evidence_id))) return json({ error: 'invalid_evidence' }, 400);
+  const hash = await requestHash(action === 'correct' ? [action, expected, b.model_id, title, b.price, starts, ends, b.include_image, reason, b.price_evidence_id ?? null] : [action, expected, reason]);
+  const state = () => env.DB.prepare(`SELECT id,status,version,model_id,price,deal_price_krw,starts_at,ends_at,price_verification,price_evidence_version
+    FROM deals WHERE id = ?`).bind(id).first<DealState & {
+    model_id: string | null; price: number | null; deal_price_krw: number | null; starts_at: string | null; ends_at: string | null;
+    price_verification: string; price_evidence_version: number | null;
+  }>();
   const current = await state();
   if (!current) return json({ error: 'deal_not_found' }, 404);
   const replay = async () => {
     const classification = await classifyReplay(env.DB, id, key, action, hash, expected);
     if (classification === 'conflict') return json({ error: 'request_id_reused' }, 409);
-    if (classification === 'replay') return json({ data: { ...await state(), replayed: true } });
+    if (classification === 'replay') {
+      const row = (await state())!;
+      return json({ data: { id: row.id, status: row.status, version: row.version, replayed: true } });
+    }
     return null;
   };
   const previous = await replay();
@@ -294,22 +317,46 @@ async function manageDeal(request: Request, id: string, env: Env) {
   if (current.status === 'withdrawn' || current.version !== expected) return conflict(current);
   const now = new Date().toISOString();
   const correct = action === 'correct';
+  let applied: PriceReview | null = null;
+  if (correct && b.price_evidence_id) {
+    applied = (await reviewDealPrices(env.DB, [id])).get(id) ?? null;
+    const facts = applied?.result.facts;
+    const bundles = await all<{ product_name: string }>(env.DB, 'SELECT product_name FROM deal_bundle_items WHERE deal_id = ? ORDER BY position', id);
+    if (applied?.id !== b.price_evidence_id || !facts ||
+        facts.deal_price_krw !== b.price || facts.ends_at !== ends || !await configurationMatches(env.DB, facts, b.model_id as string, bundles.map(row => row.product_name))) {
+      return json({ error: 'evidence_configuration_or_fact_conflict' }, 409);
+    }
+  }
+  const retainProof = correct && current.price_verification === 'verified' && current.price_evidence_version === expected &&
+    b.model_id === current.model_id && (b.price === current.price || b.price === current.deal_price_krw) &&
+    starts === normalizeTimestamp(current.starts_at) && ends === normalizeTimestamp(current.ends_at);
+  const authority = officialPriceGuard(applied?.evidence ?? null);
   const values = correct ? '?,d.seller_id,?,?,?,?,CASE WHEN ? THEN i.image_url ELSE NULL END,?' : 'd.model_id,d.seller_id,d.title,d.price,d.starts_at,d.ends_at,d.image_url,d.checked';
   const snapshotBindings = [crypto.randomUUID(), action, key, hash, reason,
     ...(correct ? [b.model_id as string, title, b.price as number | null, starts, ends, b.include_image ? 1 : 0, now] : []),
-    correct ? 'published' : 'withdrawn', now, id, expected];
+    correct ? 'published' : 'withdrawn', now, applied?.id ?? null, id, expected, ...authority.values];
   const results = await env.DB.batch([
-    env.DB.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at)
-      SELECT ?,d.id,d.version + 1,?,?,?,?,${values},?,? FROM deals AS d JOIN ingested_items AS i ON i.id = d.id
-      WHERE d.id = ? AND d.version = ? AND d.status = 'published' ON CONFLICT DO NOTHING`).bind(...snapshotBindings),
+    env.DB.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at,price_evidence_id)
+      SELECT ?,d.id,d.version + 1,?,?,?,?,${values},?,?,COALESCE(?,d.price_evidence_id) FROM deals AS d JOIN ingested_items AS i ON i.id = d.id
+      WHERE d.id = ? AND d.version = ? AND d.status = 'published' AND ${authority.sql} ON CONFLICT DO NOTHING`).bind(...snapshotBindings),
     env.DB.prepare(`UPDATE deals SET (model_id,title,price,starts_at,ends_at,image_url,checked,status) =
       (SELECT model_id,title,price,starts_at,ends_at,image_url,checked,status FROM deal_revisions WHERE deal_id = deals.id AND request_id = ?),
+      deal_price_krw = CASE WHEN ? THEN ? ELSE deal_price_krw END,
+      list_price_krw = CASE WHEN ? THEN ? ELSE list_price_krw END,
+      price_source_url = CASE WHEN ? THEN ? ELSE price_source_url END,
+      list_price_source_url = CASE WHEN ? THEN ? ELSE list_price_source_url END,
+      price_checked_at = CASE WHEN ? THEN ? ELSE price_checked_at END,
+      price_evidence_id = COALESCE(?, price_evidence_id), orders_open = COALESCE(?, orders_open),
+      price_verification = ?, price_evidence_version = CASE WHEN ? THEN version + 1 ELSE price_evidence_version END,
       version = version + 1, updated_at = ?, withdrawn_at = CASE WHEN ? = 'withdraw' THEN ? ELSE withdrawn_at END
       WHERE id = ? AND version = ? AND status = 'published'
       AND EXISTS (SELECT 1 FROM deal_revisions WHERE deal_id = ? AND request_id = ? AND request_hash = ? AND action = ? AND version = ? + 1)`)
-      .bind(key, now, action, now, id, expected, id, key, hash, action, expected),
+      .bind(key, ...priceBindings(applied?.result ?? null, applied?.id ?? null, expected + 1).slice(0, 5).flatMap(value => [applied ? 1 : 0, value]),
+        applied?.id ?? null, applied ? (applied.result.facts?.orders_open ? 1 : 0) : null,
+        applied || retainProof ? 'verified' : 'unverified', applied || retainProof ? 1 : 0, now, action, now, id, expected, id, key, hash, action, expected),
   ]);
   if (results[1].meta.changes === 1) return json({ data: { id, status: correct ? 'published' : 'withdrawn', version: expected + 1 } });
+  if (applied && !await officialPriceAllowed(env.DB, applied.evidence)) return json({ error: 'official_source_not_approved' }, 409);
   return await replay() ?? conflict((await state())!);
 }
 
@@ -391,7 +438,7 @@ function parseExternalListing(b: Record<string, unknown>) {
   const id = source as ExternalSourceId;
   const sourceUrl = canonicalExternalUrl(b.source_url, id);
   if (!sourceUrl) return bad('source_url이 소스 호스트의 허용된 공개 https 경로가 아닙니다');
-  if (!text(b.title, 200) || !text(b.text, 2000) || !date(b.captured_at)) return bad();
+  if (!text(b.title, 200) || !text(b.text, b.price_evidence == null ? 2000 : PRICE_TEXT_LIMIT) || !date(b.captured_at)) return bad();
   if (!optText(b.price_raw, 100) || !optText(b.dates_raw, 100) || !optText(b.seller_name, 100) || !optText(b.category, 40)) return bad();
   if (b.price_basis != null && b.price_basis !== 'external_listing') return bad();
   if (b.price_hint != null && (!Number.isSafeInteger(b.price_hint) || (b.price_hint as number) < 0)) return bad();
@@ -423,25 +470,66 @@ function parseExternalListing(b: Record<string, unknown>) {
     },
   };
 }
+async function applyLivePriceObservation(db: D1Database, id: string, evidence: NonNullable<Awaited<ReturnType<typeof validatedEvidence>>>): Promise<PriceObservationReceipt | null> {
+  if (!evidence.offer) return null;
+  const deal = await priceTarget(db, 'deal', id);
+  if (!deal) return null;
+  const duplicate = await db.prepare(`SELECT r.observation_id,r.revision,r.outcome FROM deal_price_backfill_receipts r
+    JOIN deal_price_evidence p ON p.id = r.observation_id
+    WHERE p.target_kind = 'deal' AND p.target_id = ? AND p.body = ?`).bind(id, JSON.stringify(evidence))
+    .first<{ observation_id: string; revision: string; outcome: string }>();
+  if (duplicate) return duplicate;
+  if (deal.status !== 'published') return { outcome: 'withdrawn' };
+  const key = await digest(JSON.stringify(['live', id, deal.revision, evidence]));
+  return recordBackfill(db, 'deal', id, deal.revision, key, evidence, true);
+}
+
+async function ingestExternalObservation(b: Record<string, unknown>, db: D1Database) {
+  if (!text(b.deal_id, 200) || !httpsSource(b.source_url) ||
+      (b.request_id !== undefined || b.expected_revision !== undefined) &&
+      (typeof b.request_id !== 'string' || !/^[0-9a-f]{64}$/.test(b.request_id) ||
+        typeof b.expected_revision !== 'string' || !/^\d{1,16}$/.test(b.expected_revision))) return json({ error: 'invalid_target' }, 400);
+  const deal = await externalPriceSource(db, b.deal_id as string);
+  if (!deal) return json({ error: 'target_not_found' }, 404);
+  const evidence = await validatedEvidence(b.price_evidence, deal.source_url);
+  if (!evidence?.offer || evidence.offer_url !== b.source_url) return json({ error: 'invalid_evidence' }, 400);
+  const result = typeof b.request_id === 'string' ?
+    await recordBackfill(db, 'deal', b.deal_id as string, b.expected_revision as string, b.request_id, evidence, true) :
+    await applyLivePriceObservation(db, b.deal_id as string, evidence);
+  if (result?.error) return json({ error: result.error }, 409);
+  return json({ data: { id: b.deal_id, status: 'observed', ...result } }, 202);
+}
+
 async function ingestExternal(b: Record<string, unknown>, env: Env) {
   const parsed = parseExternalListing(b);
   if ('error' in parsed) return json({ error: parsed.error }, 400);
   const v = parsed.value;
-  // 이미 있는 URL은 candidate 상태일 때만 갱신한다. dismissed는 그대로 두고 같은 202로 응답한다.
-  await env.DB.prepare(`INSERT INTO external_candidates (id,source,source_url,title,text,seller_handle,seller_name,seller_url,price_hint,price_raw,price_basis,starts_at,ends_at,dates_raw,category,model_match,suggestions,captured_at,last_seen_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,'external_listing',?,?,?,?,?,?,?,?)
+  const evidence = b.price_evidence == null ? null : await validatedEvidence(b.price_evidence, v.source_url);
+  if (b.price_evidence != null && (!evidence || evidence.offer && evidence.offer.source.text !== filterOfferCapture(v.text))) {
+    return json({ error: 'invalid_evidence' }, 400);
+  }
+  if (!await officialPriceAllowed(env.DB, evidence)) return json({ error: 'official_source_not_approved' }, 409);
+  const { captured_at: captured, ...content } = v;
+  const revision = await digest(JSON.stringify([captured, content]));
+  await env.DB.prepare(`INSERT INTO external_candidates (id,source,source_url,title,text,seller_handle,seller_name,seller_url,price_hint,price_raw,price_basis,starts_at,ends_at,dates_raw,category,model_match,suggestions,captured_at,last_seen_at,price_revision)
+    VALUES (?,?,?,?,?,?,?,?,?,?,'external_listing',?,?,?,?,?,?,?,?,?)
     ON CONFLICT(source_url) DO UPDATE SET title=excluded.title, text=excluded.text, seller_handle=excluded.seller_handle, seller_name=excluded.seller_name, seller_url=excluded.seller_url,
       price_hint=excluded.price_hint, price_raw=excluded.price_raw, starts_at=excluded.starts_at, ends_at=excluded.ends_at, dates_raw=excluded.dates_raw,
-      category=excluded.category, model_match=excluded.model_match, suggestions=excluded.suggestions, last_seen_at=excluded.last_seen_at
-    WHERE external_candidates.status = 'candidate'`)
-    .bind(crypto.randomUUID(), v.source, v.source_url, v.title, v.text, v.seller_handle, v.seller_name, v.seller_url, v.price_hint, v.price_raw, v.starts_at, v.ends_at, v.dates_raw, v.category, v.model_match, v.suggestions, v.captured_at, v.captured_at).run();
-  return json({ data: await env.DB.prepare('SELECT id,status FROM external_candidates WHERE source_url = ?').bind(v.source_url).first() }, 202);
+      category=excluded.category, model_match=excluded.model_match, suggestions=excluded.suggestions, last_seen_at=excluded.last_seen_at, price_revision=excluded.price_revision
+    WHERE external_candidates.status = 'candidate' AND (julianday(external_candidates.last_seen_at) IS NULL
+      OR julianday(excluded.last_seen_at) > julianday(external_candidates.last_seen_at))`)
+    .bind(crypto.randomUUID(), v.source, v.source_url, v.title, v.text, v.seller_handle, v.seller_name, v.seller_url, v.price_hint, v.price_raw, v.starts_at, v.ends_at, v.dates_raw, v.category, v.model_match, v.suggestions, captured, captured, revision).run();
+  const item = await env.DB.prepare('SELECT id,status,promoted_deal_id,price_revision FROM external_candidates WHERE source_url = ?').bind(v.source_url)
+    .first<{ id: string; status: string; promoted_deal_id: string | null; price_revision: string }>();
+  if (evidence && item?.promoted_deal_id && item.status === 'promoted') await applyLivePriceObservation(env.DB, item.promoted_deal_id, evidence);
+  const staged = item && evidence ? await stageIngestEvidence(env.DB, 'candidate', item.id, evidence, revision) : null;
+  return json({ data: item ? { id: item.id, status: item.status, ...(staged ? { price_evidence_id: staged.id } : {}), revision: item.price_revision } : null }, 202);
 }
-async function body(request: Request) {
+async function body(request: Request, maxBytes = 32768) {
   const reader = request.body?.getReader();
   if (!reader) throw new Error('body');
   const chunks: Uint8Array[] = []; let size = 0;
-  while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > 32768) { await reader.cancel(); throw new Error('body'); } chunks.push(value); }
+  while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > maxBytes) { await reader.cancel(); throw new Error('body'); } chunks.push(value); }
   const bytes = new Uint8Array(size); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   return JSON.parse(new TextDecoder().decode(bytes));
@@ -463,6 +551,15 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
   }
   if ((path === 'admin/collection-status' || path === 'collector-status') && request.method === 'GET') return json({ data: await collectionStatus(env.DB) });
   if (request.method === 'GET') {
+    if (path === 'ingest') {
+      const params = new URL(request.url).searchParams;
+      if (params.get('kind') === 'external_price_observation') {
+        const cursor = params.get('cursor') ?? '';
+        const relatedTo = params.get('related_to');
+        if (cursor.length > 200 || relatedTo && relatedTo.length > 200) return json({ error: 'invalid_cursor' }, 400);
+        return json({ data: await nextExternalPriceTarget(env.DB, cursor, relatedTo) });
+      }
+    }
     if (path === 'brands') return json({ data: await all(env.DB, 'SELECT brand AS name, COUNT(*) AS model_count FROM models GROUP BY brand ORDER BY brand') });
     if (path === 'models') {
       const u = new URL(request.url); const brand = u.searchParams.get('brand'); const category = u.searchParams.get('category');
@@ -478,14 +575,40 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       if (isModel) {
         const model = await env.DB.prepare(`SELECT ${PUBLIC_MODEL_COLUMNS} FROM models WHERE id = ?`).bind(parts[1]).first<Omit<Model, 'note'>>();
         if (!model) return json({ error: '모델을 찾을 수 없습니다' }, 404);
-        const [page, summaries] = await Promise.all([chronologicalDeals(env.DB, options), modelDealSummaries(env.DB, [model.id], nowMs)]);
+        const [page, summaries] = await Promise.all([chronologicalDeals(env.DB, options, false, nowMs), modelDealSummaries(env.DB, [model.id], nowMs)]);
         const { active_count, lowest_price } = summaries.get(model.id)!;
         return json({ data: { ...model, official_price: displayableOfficialPrice(model), comparison: { ...comparison(model, page.data), current: { active_count, lowest_price } } }, next_cursor: page.next_cursor });
       }
-      const page = await chronologicalDeals(env.DB, options);
+      const page = options.sort ? await lifecycleDeals<Deal>(env.DB, options, nowMs, false) : await chronologicalDeals(env.DB, options, false, nowMs);
       return json({ data: page.data.map(d => ({ ...d, advertisement: true, notice: dealsCopy.apiNotice })), next_cursor: page.next_cursor });
     }
     if (path === 'sellers') return json({ data: await all(env.DB, `SELECT ${PUBLIC_SELLER_COLUMNS} FROM sellers ORDER BY name`) });
+    if (path === 'admin/price-backfill') {
+      const params = new URL(request.url).searchParams;
+      const kind = params.get('kind');
+      if (kind === 'counts') {
+        const now = Date.now();
+        const [active, ended] = await Promise.all([activeDealCount(env.DB, now), endedDealCount(env.DB, now)]);
+        return json({ data: { active, ended } });
+      }
+      if (!kind || !Object.hasOwn(priceTargetTables, kind)) return json({ error: 'invalid_target' }, 400);
+      const targetKind = kind as PriceTargetKind;
+      const { table, revision, status } = priceTargetTables[targetKind];
+      const cursor = params.get('cursor') ?? '';
+      if (cursor.length > 200) return json({ error: 'invalid_cursor' }, 400);
+      const social = kind === 'deal'
+        ? ", (SELECT json_object('kind',i.kind,'captured_at',i.captured_at,'text',i.text) FROM ingested_items AS i WHERE i.id = deals.id AND i.kind IN ('post','story')) AS original"
+        : kind === 'ingest' ? ", CASE WHEN kind IN ('post','story') THEN json_object('kind',kind,'captured_at',captured_at,'text',text) END AS original" : '';
+      const rows = await all<{ id: string; capture_text: string | null; hash_known: number; original?: string | null }>(env.DB, `SELECT id,source_url,${revision} AS revision,
+        ${kind === 'deal' ? "origin != 'external_web' OR price_evidence_id IS NOT NULL" : kind === 'candidate' ? "price_revision != 'legacy'" : '1'} AS hash_known,
+        ${priceCaptureSql(targetKind)} AS capture_text${social}
+        FROM ${table} WHERE id > ? AND status = ? ORDER BY id LIMIT 51`, cursor, status);
+      const data = await Promise.all(rows.slice(0, 50).map(async ({ capture_text, hash_known, ...row }) => {
+        const capture = filterOfferCapture(capture_text ?? '');
+        return { ...row, captureHash: capture && hash_known ? await digest(capture) : null, captureFormat: 'verified-offer-text@2' };
+      }));
+      return json({ data, next_cursor: rows.length > 50 ? rows[49].id : null });
+    }
     if (path === 'admin/deals') {
       const params = new URL(request.url).searchParams;
       const options = { status: params.get('status') ?? 'published', limit: params.has('limit') ? Number(params.get('limit')) : 20, cursor: params.get('cursor') };
@@ -508,16 +631,39 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       }
     }
   }
+  if (request.method === 'GET' && path === 'admin/price-sources') {
+    const snapshot = await env.DB.prepare('SELECT observed_at,scopes FROM official_price_approvals WHERE id=1')
+      .first<{ observed_at: string; scopes: string }>();
+    return snapshot ? json({ data: await officialScopeReceipt({ observed_at: snapshot.observed_at, scopes: JSON.parse(snapshot.scopes) },
+      new URL(request.url).origin) }) : json({ error: 'price_scope_snapshot_missing' }, 404);
+  }
+  if (request.method === 'POST' && path === 'admin/price-sources') {
+    let payload: unknown;
+    try { payload = await body(request, 131072); } catch { return json({ error: 'invalid_source_approvals' }, 400); }
+    const error = await syncOfficialPriceScopes(env.DB, payload);
+    return error ? json({ error }, error === 'stale_source_approvals' ? 409 : 400) : json({ data: await officialScopeReceipt(payload as Parameters<typeof officialScopeReceipt>[0], new URL(request.url).origin) });
+  }
+  if (request.method === 'POST' && path === 'admin/price-backfill') {
+    let payload;
+    try { payload = await body(request, 98304); } catch { return json({ error: 'invalid_evidence' }, 400); }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || 'discount_pct' in payload || !Object.hasOwn(priceTargetTables, payload.kind) ||
+        !text(payload.id, 200) || !text(payload.expected_revision, 100) ||
+        typeof payload.request_id !== 'string' || !/^[0-9a-f]{64}$/.test(payload.request_id) ||
+        payload.capture_reason !== undefined && !['capture_changed','legacy_hash_missing'].includes(payload.capture_reason)) return json({ error: 'invalid_target' }, 400);
+    const result = await recordBackfill(env.DB, payload.kind, payload.id, payload.expected_revision, payload.request_id, payload.price_evidence, false, payload.capture_reason);
+    return result.error ? json({ error: result.error }, result.error === 'target_not_found' ? 404 : result.error === 'invalid_evidence' ? 400 : 409) : json({ data: result });
+  }
   if (request.method === 'POST' && admin && parts[1] === 'deals' && parts.length === 3) return manageDeal(request, parts[2], env);
   if (request.method === 'POST' && admin && parts[1] === 'sellers' && (parts.length === 2 || parts.length === 3)) return manageSeller(request, parts, env);
   if (request.method === 'POST' && admin && parts.length === 3 && parts[1] === 'candidates') {
     let b;
     try { b = await body(request); } catch { return json({ error: '32KB 이하 JSON 필요' }, 400); }
-    if (!b || typeof b !== 'object') return json({ error: '잘못된 입력' }, 400);
+    if (!b || typeof b !== 'object' || Array.isArray(b) || 'discount_pct' in b) return json({ error: '잘못된 입력' }, 400);
     if (b.action === 'promote') {
       const requestId = typeof b.request_id === 'string' ? b.request_id : '';
       const promotedBy = typeof b.promoted_by === 'string' ? b.promoted_by.trim() : 'admin';
       if (!/^[A-Za-z0-9-]{8,64}$/.test(requestId)) return json({ error: 'request_id 필요' }, 400);
+      if (!validReviewSelection(b)) return json({ error: 'invalid_evidence_selection' }, 400);
       for (const key of ['starts_at', 'ends_at']) {
         if (b[key] !== undefined && b[key] !== null && (typeof b[key] !== 'string' || normalizeTimestamp(b[key]) === null)) return json({ error: 'invalid_schedule' }, 400);
       }
@@ -525,6 +671,8 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
       const { promoteExternalCandidate } = await import('./promote-external');
       const result = await promoteExternalCandidate(env.DB, {
         candidate_id: parts[2],
+        price_evidence_id: b.price_evidence_id as string | null | undefined,
+        expected_revision: b.expected_revision as string | undefined,
         promoted_by: promotedBy.slice(0, 120),
         request_id: requestId,
         reason: typeof b.reason === 'string' ? b.reason : null,
@@ -556,11 +704,12 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
   }
   if (request.method === 'POST' && (path === 'ingest' || (admin && parts.length === 3 && parts[1] === 'review'))) {
     let b;
-    try { b = await body(request); } catch { return json({ error: '32KB 이하 JSON 필요' }, 400); }
-    if (!b || typeof b !== 'object') return json({ error: '잘못된 입력' }, 400);
+    try { b = await body(request, path === 'ingest' ? 98304 : 32768); } catch { return json({ error: 'invalid_body' }, 400); }
+    if (!b || typeof b !== 'object' || Array.isArray(b) || 'discount_pct' in b) return json({ error: '잘못된 입력' }, 400);
+    if (path === 'ingest' && b.kind === 'external_price_observation') return ingestExternalObservation(b, env.DB);
     if (path === 'ingest' && b.kind === 'external_listing') return ingestExternal(b, env);
     if (path === 'ingest') {
-      if (!safeUrl(b.source_url) || !text(b.account, 100) || !text(b.text, 20000) || !['post', 'story'].includes(b.kind) || !date(b.captured_at)) return json({ error: 'source_url, account, text, kind, captured_at 확인 필요' }, 400);
+      if (!safeUrl(b.source_url) || !text(b.account, 100) || !text(b.text, 20000) || !['post', 'story', 'threads_post'].includes(b.kind) || !date(b.captured_at)) return json({ error: 'source_url, account, text, kind, captured_at 확인 필요' }, 400);
       if (b.image_url != null && !isImageUrl(b.image_url)) return json({ error: '잘못된 입력' }, 400);
       let suggestions: string | null = null;
       if (b.suggestions != null) {
@@ -569,17 +718,52 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
         suggestions = JSON.stringify(parsed);
       }
       const u = new URL(b.source_url);
-      if (!['www.instagram.com', 'instagram.com'].includes(u.hostname) || u.protocol !== 'https:' || u.search || u.hash || !/^\/(p|reel)\/[A-Za-z0-9_-]+\/?$|^\/stories\/[A-Za-z0-9._]+\/[0-9]+\/?$/.test(u.pathname)) return json({ error: 'Instagram 원문 URL 필요' }, 400);
-      const canonical = `https://www.instagram.com${u.pathname.replace(/\/$/, '')}/`;
-      const id = crypto.randomUUID();
-      await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,suggestions,image_url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(source_url) DO NOTHING').bind(id, canonical, b.account, b.text, b.kind, iso(b.captured_at), suggestions, b.image_url ?? null).run();
-      const item = await env.DB.prepare('SELECT id,status FROM ingested_items WHERE source_url = ?').bind(canonical).first();
-      return json({ data: item }, 202);
+      const threads = b.kind === 'threads_post';
+      const thread = threads ? threadsPost(b.source_url, b.account) : null;
+      if (threads ? b.platform !== 'threads' || !thread :
+          b.platform !== undefined && b.platform !== 'instagram' ||
+          !['www.instagram.com', 'instagram.com'].includes(u.hostname) || u.protocol !== 'https:' || u.port || u.username || u.password || u.search || u.hash ||
+          !(b.kind === 'story' ? /^\/stories\/[A-Za-z0-9._]+\/[0-9]+\/?$/.test(u.pathname) : /^\/(?:p|reel)\/[A-Za-z0-9_-]+\/?$/.test(u.pathname))) return json({ error: 'invalid_source_url' }, 400);
+      const canonical = thread?.url ?? `https://www.instagram.com${u.pathname.replace(/\/$/, '')}/`;
+      const evidence = b.price_evidence == null ? null : await validatedEvidence(b.price_evidence, canonical);
+      if (b.price_evidence != null && (!evidence || evidence.offer && filterOfferCapture(b.text) !== evidence.offer.source.text)) return json({ error: 'invalid_evidence' }, 400);
+      if (!await officialPriceAllowed(env.DB, evidence)) return json({ error: 'official_source_not_approved' }, 409);
+      const id = crypto.randomUUID(), captured = iso(b.captured_at);
+      await env.DB.prepare('INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,suggestions,image_url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(source_url) DO NOTHING').bind(id, canonical, thread?.account ?? b.account, b.text, b.kind, captured, suggestions, b.image_url ?? null).run();
+      const readItem = () => env.DB.prepare('SELECT id,status,captured_at FROM ingested_items WHERE source_url = ?').bind(canonical).first<{ id: string; status: string; captured_at: string }>();
+      let item = await readItem();
+      const staged = evidence && item?.status === 'pending'
+        ? await stageIngestEvidence(env.DB, 'ingest', item.id, evidence, undefined, { text: b.text, capturedAt: captured!, suggestions })
+        : null;
+      if (evidence && item?.status === 'pending') item = await readItem();
+      const observed = evidence && item?.status === 'approved' ? await applyLivePriceObservation(env.DB, item.id, evidence) : null;
+      return json({ data: item ? { id: item.id, status: item.status,
+        ...(staged?.revision === item.captured_at ? { price_evidence_id: staged.id, revision: staged.revision } : {}),
+        ...(observed?.observation_id ? { price_evidence_id: observed.observation_id, revision: observed.revision } : {}),
+        ...(observed?.outcome === 'withdrawn' ? { price_target_closed: true } : {}) } : null }, 202);
     }
     if (!['approve', 'reject'].includes(b.action)) return json({ error: 'approve 또는 reject 필요' }, 400);
+    if (b.action === 'approve' && !validReviewSelection(b)) return json({ error: 'invalid_evidence_selection' }, 400);
     if ((b.include_image !== undefined && typeof b.include_image !== 'boolean') || 'image_url' in b) return json({ error: '잘못된 입력' }, 400);
-    const item = await env.DB.prepare('SELECT * FROM ingested_items WHERE id = ?').bind(parts[2]).first<{ status: string; source_url: string; account: string }>();
+    const item = await env.DB.prepare('SELECT * FROM ingested_items WHERE id = ?').bind(parts[2]).first<{ status: string; source_url: string; account: string; kind: string; captured_at: string; text: string }>();
     if (!item) return json({ error: '항목 없음' }, 404);
+    const requestId = b.action === 'approve' ? b.request_id : undefined;
+    if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(requestId))) return json({ error: 'invalid_request_id' }, 400);
+    const key = requestId ? `review-${requestId}` : `review-${parts[2]}`;
+    const selectedId = b.price_evidence_id ?? null;
+    const reviewHash = await digest(JSON.stringify([parts[2], b.expected_revision ?? item.captured_at, b.model_id, b.seller_id,
+      b.title, b.price ?? null, normalizeTimestamp(b.starts_at), normalizeTimestamp(b.ends_at), b.include_image ?? true,
+      b.attribution, b.attribution_note ?? null, b.source_ended ?? null, selectedId]));
+    const approvalReplay = async () => {
+      if (!requestId) return null;
+      const previous = await env.DB.prepare("SELECT request_hash FROM deal_revisions WHERE deal_id = ? AND request_id = ? AND action = 'publish'")
+        .bind(parts[2], key).first<{ request_hash: string }>();
+      if (!previous) return null;
+      return previous.request_hash === reviewHash ? json({ data: { status: 'approved', replayed: true } }) :
+        json({ error: 'request_id_reused' }, 409);
+    };
+    const replay = await approvalReplay();
+    if (replay) return replay;
     if (item.status !== 'pending') return json({ error: '이미 검수된 항목' }, 409);
     const now = new Date().toISOString();
     if (b.action === 'reject') {
@@ -588,28 +772,69 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
         ? json({ data: { changed: 1 } })
         : json({ error: '이미 검수된 항목' }, 409);
     }
+    const head = await currentReviewEvidence(env.DB, 'ingest', parts[2], item.captured_at);
+    const observation = typeof selectedId === 'string' && selectedId !== head?.id ?
+      await pendingPriceObservation(env.DB, 'ingest', parts[2], item.captured_at, selectedId) : null;
+    const proof = observation ?? head;
+    if (b.expected_revision !== undefined && b.expected_revision !== item.captured_at ||
+        selectedId !== (proof?.id ?? null)) return json({ error: 'stale_evidence' }, 409);
+    if (!await officialPriceAllowed(env.DB, proof?.evidence ?? null)) return json({ error: 'official_source_not_approved' }, 409);
+    const facts = proof?.result.facts;
     const startsAt = normalizeTimestamp(b.starts_at);
-    const endsAt = normalizeTimestamp(b.ends_at);
-    if (!text(b.model_id) || !text(b.seller_id) || !text(b.title, 200) || !(b.price === null || (Number.isSafeInteger(b.price) && b.price >= 0)) || !startsAt || !endsAt || endsAt <= startsAt) return json({ error: '모델·판매자·제목·가격(null 허용)·ISO 시작/종료일 필요' }, 400);
+    const endsAt = facts?.ends_at ?? normalizeTimestamp(b.ends_at);
+    const price = facts?.deal_price_krw ?? b.price ?? null;
+    if (!text(b.model_id) || !text(b.seller_id) || !text(b.title, 200) ||
+        !(price === null || Number.isSafeInteger(price) && price >= 0) ||
+        (b.starts_at != null && !startsAt) || (b.ends_at != null && !normalizeTimestamp(b.ends_at)) ||
+        (startsAt && endsAt && endsAt <= startsAt)) return json({ error: 'invalid_deal' }, 400);
+    const components = facts ? bundleComponents(facts) : [];
+    if (facts && (b.price != null && b.price !== price || b.ends_at != null && normalizeTimestamp(b.ends_at) !== endsAt ||
+        !await configurationMatches(env.DB, facts, b.model_id, components))) return json({ error: 'evidence_configuration_or_fact_conflict' }, 409);
     const model = await env.DB.prepare('SELECT id FROM models WHERE id = ?').bind(b.model_id).first();
     const seller = await env.DB.prepare('SELECT id FROM sellers WHERE id = ?').bind(b.seller_id).first();
     if (!model || !seller) return json({ error: '등록된 모델·판매자만 게시할 수 있습니다' }, 400);
     const account = normalizeAccount(item.account);
     if (b.attribution === 'account') {
-      if (!account || !await env.DB.prepare('SELECT account FROM seller_accounts WHERE account = ? AND seller_id = ?').bind(account, b.seller_id).first()) return json({ error: '원문 계정과 판매자 연결 검수 필요' }, 400);
+      if (item.kind === 'threads_post' || !account || !await env.DB.prepare('SELECT account FROM seller_accounts WHERE account = ? AND seller_id = ?').bind(account, b.seller_id).first()) return json({ error: '원문 계정과 판매자 연결 검수 필요' }, 400);
     } else if (b.attribution === 'explicit') {
       if (!text(b.attribution_note, 300) || b.attribution_note.trim().length < 10) return json({ error: '명시 귀속 사유 10–300자 필요' }, 400);
     } else return json({ error: '판매자 귀속 방식 선택 필요' }, 400);
-    const results = await env.DB.batch([
-      env.DB.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at, image_url) SELECT id, ?, ?, ?, ?, source_url, 'manual', ?, ?, ?, CASE WHEN ? THEN image_url ELSE NULL END FROM ingested_items WHERE id = ? AND status = 'pending' AND (? = 'explicit' OR EXISTS (SELECT 1 FROM seller_accounts WHERE account = ? AND seller_id = ?)) ON CONFLICT(id) DO NOTHING").bind(b.model_id, b.seller_id, b.title, b.price, now, startsAt, endsAt, b.include_image === false ? 0 : 1, parts[2], b.attribution, account, b.seller_id),
+    const origin = item.kind === 'threads_post' ? 'threads' : 'instagram';
+    const proofId = proof?.id ?? null;
+    const { detectSourceEnded } = await import('./promote-external');
+    const sourceEnded = detectSourceEnded({ text: proof?.evidence.offer?.source.text ?? item.text, dates_raw: null, ends_at: endsAt },
+      typeof b.source_ended === 'boolean' ? b.source_ended : undefined);
+    const guard = reviewEvidenceGuard('ingest', parts[2], item.captured_at, proof, !!observation);
+    const statements = [
+      env.DB.prepare(`INSERT INTO deals (id,model_id,seller_id,title,price,source_url,verify_level,checked,starts_at,ends_at,image_url,origin,source_ended,${priceColumns})
+        SELECT id,?,?,?,?,source_url,'manual',?,?,?,CASE WHEN ? THEN image_url ELSE NULL END,?,?,?,?,?,?,?,?,?,?,?
+        FROM ingested_items WHERE id = ? AND ${guard.sql}
+        AND (? = 'explicit' OR (kind <> 'threads_post' AND EXISTS (SELECT 1 FROM seller_accounts WHERE account = ? AND seller_id = ?)))
+        ON CONFLICT(id) DO NOTHING`).bind(b.model_id, b.seller_id, b.title, price, now, startsAt, endsAt, b.include_image === false ? 0 : 1, origin, sourceEnded ? 1 : 0,
+          ...priceBindings(proof?.result ?? null, proofId, 1), parts[2], ...guard.values, b.attribution, account, b.seller_id),
       env.DB.prepare("UPDATE ingested_items SET status = 'approved', reviewed_at = ?, attribution = ?, attribution_note = ? WHERE id = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM deals WHERE id = ?)").bind(now, b.attribution, b.attribution === 'explicit' ? b.attribution_note.trim() : null, parts[2], parts[2]),
-      env.DB.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at)
-        SELECT ?,id,1,'publish','review-' || id,'review',NULL,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,?
-        FROM deals WHERE id = ? AND NOT EXISTS (SELECT 1 FROM deal_revisions WHERE deal_id = ?) ON CONFLICT DO NOTHING`).bind(crypto.randomUUID(), now, parts[2], parts[2]),
-    ]);
+      env.DB.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at,price_evidence_id)
+        SELECT ?,id,1,'publish',?,?,NULL,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,?,price_evidence_id
+        FROM deals WHERE id = ? AND NOT EXISTS (SELECT 1 FROM deal_revisions WHERE deal_id = ?) ON CONFLICT DO NOTHING`).bind(crypto.randomUUID(), key, reviewHash, now, parts[2], parts[2]),
+    ];
+    for (const [position, name] of components.entries()) {
+      statements.push(env.DB.prepare(`INSERT INTO deal_bundle_items (id,deal_id,position,product_name)
+        SELECT ?,d.id,?,? FROM deals d JOIN deal_revisions r ON r.deal_id = d.id AND r.version = 1
+        WHERE d.id = ? AND r.request_id = ? AND r.request_hash = ? ON CONFLICT(deal_id,position) DO NOTHING`)
+        .bind(crypto.randomUUID(), position, name, parts[2], key, reviewHash));
+    }
+    const results = await env.DB.batch(statements);
     if (results[0].meta.changes) return json({ data: { status: 'approved' } });
-    const current = await env.DB.prepare('SELECT status FROM ingested_items WHERE id = ?').bind(parts[2]).first<{ status: string }>();
-    return current?.status !== 'pending' ? json({ error: '이미 검수된 항목' }, 409) : json({ error: '원문 계정과 판매자 연결 검수 필요' }, 400);
+    const concurrentApproval = await approvalReplay();
+    if (concurrentApproval) return concurrentApproval;
+    if (b.attribution === 'account' && !await env.DB.prepare('SELECT 1 FROM seller_accounts WHERE account = ? AND seller_id = ?')
+      .bind(account, b.seller_id).first()) return json({ error: '원문 계정과 판매자 연결 검수 필요' }, 400);
+    return json({ error: 'stale_review' }, 409);
   }
   return json({ error: '지원하지 않는 경로 또는 메서드' }, request.method === 'GET' ? 404 : 405);
+}
+
+function validReviewSelection(value: Record<string, unknown>) {
+  return (value.price_evidence_id == null || typeof value.price_evidence_id === 'string' && /^[a-f0-9]{64}$/.test(value.price_evidence_id)) &&
+    (value.expected_revision === undefined || text(value.expected_revision, 100));
 }

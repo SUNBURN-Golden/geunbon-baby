@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import Admin from '../app/admin/page';
 import * as apiModule from '../lib/api';
 import { api, migrate, publish } from './helpers/deal-timestamps';
+import { endsAt, exampleEvidence } from './helpers/verified-deal-prices';
 import { memoryD1 } from './helpers/sqlite';
 
 const context = vi.hoisted(() => ({ db: undefined as D1Database | undefined, authenticated: true, session: '' }));
@@ -119,6 +120,27 @@ test('logout invalidates both captured forms before they can call the API', asyn
   await submit(captured.withdraw, {}, '/admin?error=auth');
   expect(handler).not.toHaveBeenCalled(); expect(await snapshot()).toEqual(before);
   const html = renderToStaticMarkup(await page()); expect(html).not.toContain('게시된 공구 정정·철회');
+});
+
+test('the correction form prefills the current evidence facts so applying it matches the API', async () => {
+  const proof = await exampleEvidence('https://www.instagram.com/p/admin-form/');
+  const evidenceId = 'e'.repeat(64);
+  await memory.db.prepare(`INSERT INTO deal_price_evidence (id,target_kind,target_id,target_revision,outcome,body,created_at,observed_at)
+    VALUES (?,'deal',?,'2','configuration_mismatch',?,?,?)`)
+    .bind(evidenceId, id, JSON.stringify(proof), '2026-11-22T00:00:00.000Z', '2026-11-22T00:00:00.000Z').run();
+  await memory.db.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at,price_evidence_id)
+    SELECT ?,id,2,'verify_prices',?,?,'prior_fact_conflict',model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,?,? FROM deals WHERE id = ?`)
+    .bind('price-conflict-revision', 'fixture-price-conflict', 'h'.repeat(64), '2026-11-22T00:00:00.000Z', evidenceId, id).run();
+  await memory.db.prepare("UPDATE deals SET version = 2, price_verification = 'unverified' WHERE id = ?").bind(id).run();
+  const form = (await lifecycle()).correct;
+  const price = elements(form.node).find(node => node.props.name === 'price')!;
+  const ends = elements(form.node).find(node => node.props.name === 'ends_at')!;
+  // The deal row still holds the pre-evidence values; the form must present the
+  // verified facts required by the "apply current evidence" correction path.
+  expect(price.props.defaultValue).toBe(proof.offer!.readings[0]!.amount);
+  expect(ends.props.defaultValue).toBe(endsAt);
+  const checkbox = elements(form.node).find(node => node.props.name === 'apply_price_evidence')!;
+  expect(checkbox.props).toMatchObject({ type: 'checkbox' });
 });
 
 test('ID lookup and next links reach a deal ranked beyond 200, including status and bad-cursor fallback', async () => {

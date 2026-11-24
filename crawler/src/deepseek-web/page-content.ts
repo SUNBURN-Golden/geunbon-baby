@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { canonicalUrl, filterText } from '../../../shared/privacy-rules';
+import { offerSourceClosed } from '../../../shared/deal-price-evidence';
 import { parseHtml, selectAll, decodeEntities, type El } from '../../lib/external/parse';
 import { ParseBudget } from '../../lib/external/parse-budget';
 import { pangpangPost } from '../../lib/external/pangpang';
@@ -25,7 +26,7 @@ export type DealStatus = 'ended' | 'scheduled' | 'open' | null;
 export type PreparedPage = Readonly<{
   url: string; text: string; content_hash: string; title: string; category: string;
   description: string; identity_description: string; deal_text: string; seller: string; schedule: string;
-  deal_status: DealStatus;
+  deal_status: DealStatus; source_closure: string; price_capture: string;
   pangpang: boolean; truncated: boolean; bundle: PreparedBundle | null;
   failure: 'candidate_listing' | 'candidate_empty' | 'candidate_ambiguous_product' | 'candidate_evidence_unavailable' | 'candidate_preparation_limit' | 'candidate_bundle_unsupported' | null;
 }>;
@@ -36,6 +37,32 @@ function regionText(node: El | string): string {
   if (excluded(node) || statusBadge(node)) return '';
   const inner = node.children.map(regionText).join('');
   return /^(?:article|main|div|p|section|h[1-6]|li|tr|td|dt|dd|br)$/.test(node.tag) ? `\n${inner}\n` : inner;
+}
+// Keep heading and option-row boundaries in the price capture. Price labels
+// and values come from visible cells, in their original order.
+function priceRegionText(node: El | string): string {
+  if (typeof node === 'string') return decodeEntities(node).replace(/\[(?:상품|항목|옵션 행|주문 가능)\]/g, '');
+  if (excluded(node) || statusBadge(node) || 'hidden' in node.attrs || node.attrs['aria-hidden'] === 'true') return '';
+  const text = () => node.children.map(priceRegionText).join('');
+  if (node.tag === 'tr') {
+    const cells = node.children.filter((child): child is El =>
+      typeof child !== 'string' && ['td', 'th'].includes(child.tag) && !excluded(child) &&
+      !('hidden' in child.attrs) && child.attrs['aria-hidden'] !== 'true').map(cell =>
+      normalizePageText(cell.children.map(priceRegionText).join('')).replace(/[|\n]+/g, ' '));
+    const labeled: string[] = [];
+    for (const cell of cells) {
+      if (labeled.at(-1)?.endsWith(':')) labeled[labeled.length - 1] += ' ' + cell;
+      else if (cell) labeled.push(cell);
+    }
+    return labeled.length ? '\n[옵션 행] ' + labeled.join(' | ') + '\n' : '';
+  }
+  if (node.tag === 'button' && !('disabled' in node.attrs) && node.attrs['aria-disabled'] !== 'true' &&
+      /^(?:공구 주문하기|구매하기|주문하기)$/.test(flat(text()))) return '[주문 가능] ' + flat(text());
+  if (/^h[1-2]$/.test(node.tag)) return '\n[상품] ' + flat(text()) + '\n';
+  if (/^h[3-6]$/.test(node.tag)) return '\n[항목] ' + flat(text()) + '\n';
+  if (node.tag === 'li' && selectAll(node, 'p,div').length) return '\n[항목] ' + text().trim() + '\n';
+  const content = text();
+  return /^(?:article|main|div|p|section|li|dt|dd|br|table|caption)$/.test(node.tag) ? `\n${content}\n` : content;
 }
 export function normalizePageText(text: string) {
   return text.normalize('NFKC').replace(/\r\n?/g, '\n').split('\n')
@@ -51,7 +78,7 @@ function isInside(node: El, ancestor: El): boolean {
   return false;
 }
 type BundlePlan =
-  | { kind: 'bundle'; title: string; hint: string; text: string; regions: PreparedBundleRegion[]; category: string; seller: string; schedule: string; deal_status: DealStatus; description: string; identity_description: string; deal_text: string }
+  | { kind: 'bundle'; title: string; hint: string; text: string; regions: PreparedBundleRegion[]; category: string; seller: string; schedule: string; deal_status: DealStatus; source_closure: string; description: string; identity_description: string; deal_text: string }
   | { kind: 'failure'; failure: 'candidate_bundle_unsupported' | 'candidate_preparation_limit' | 'candidate_evidence_unavailable' };
 
 // Deal status comes only from the source's own status badge, classified by its
@@ -60,26 +87,26 @@ type BundlePlan =
 // closed deal can never be queued. Badges are skipped by every text walk, so
 // their labels are read through a raw walk of the still-attached node.
 const rawText = (node: El | string): string => typeof node === 'string' ? decodeEntities(node) : node.children.map(rawText).join('');
-function dealStatus(scope: El): DealStatus {
+function dealState(scope: El): { deal_status: DealStatus; source_closure: string } {
   const labels = selectAll(scope, 'span')
     .filter(e => (e.attrs.class ?? '').includes('text-status'))
     .map(e => normalizePageText(rawText(e)).replace(/\s+/g, ' ').trim())
     .filter(Boolean);
-  if (!labels.length) return null;
-  if (labels.some(label => /종료/.test(label) || label === '마감')) return 'ended';
-  if (labels.some(label => /예정/.test(label))) return 'scheduled';
-  if (labels.some(label => /오픈/.test(label))) return 'open';
-  return null;
+  const source_closure = labels.find(offerSourceClosed) ?? '';
+  const deal_status = labels.some(label => /종료/.test(label) || label === '마감') ? 'ended' :
+    labels.some(label => /예정/.test(label)) ? 'scheduled' :
+    labels.some(label => /오픈/.test(label)) ? 'open' : null;
+  return { deal_status, source_closure };
 }
 
-function bundleMeta(scope: El, url: string): { category: string; seller: string; schedule: string; deal_status: DealStatus } {
+function bundleMeta(scope: El, url: string) {
   const category = normalizePageText(selectAll(scope, '.text-category,[itemprop=category],[data-category]').map(e => e.attrs['data-category'] ?? regionText(e)).join('\n'));
   const sellerLink = selectAll(scope, 'a[href]').find(e => { try { return /^\/account\/\d+$/.test(new URL(e.attrs.href, url).pathname); } catch { return false; } });
   const seller = normalizePageText(sellerLink ? selectAll(sellerLink, 'p').map(regionText)[0] ?? '' : selectAll(scope, 'p.truncate').map(regionText)[0] ?? '');
   const times = selectAll(scope, 'time').filter(e => /\d{1,2}\/\d{1,2}/.test(regionText(e)));
   const scheduleEl = times[0]?.parent ?? selectAll(scope, 'span').find(e => !selectAll(e, 'span').length && /\d{1,2}\/\d{1,2}/.test(regionText(e)));
   const schedule = normalizePageText(scheduleEl ? regionText(scheduleEl) : '');
-  return { category, seller, schedule, deal_status: dealStatus(scope) };
+  return { category, seller, schedule, ...dealState(scope) };
 }
 
 function identityDescription(scope: El, url: string): string {
@@ -141,7 +168,7 @@ function buildBundle(scope: El, regionBlocks: El[] | null, itemHeadings: El[], h
   if (text.length > PAGE_TEXT_LIMIT) return { kind: 'failure', failure: 'candidate_preparation_limit' };
   const meta = bundleMeta(scope, url);
   return {
-    kind: 'bundle', title, hint, text, regions, category: meta.category, seller: meta.seller, schedule: meta.schedule, deal_status: meta.deal_status,
+    kind: 'bundle', title, hint, text, regions, ...meta,
     description: normalizePageText(bodies.join('\n')),
     identity_description: identityDescription(scope, url),
     deal_text: normalizePageText([title, ...bodies].filter(Boolean).join('\n')),
@@ -153,8 +180,8 @@ function headingText(heading: El) { return normalizePageText(regionText(heading)
 export function preparePage(html: string, rawUrl: string): PreparedPage {
   const url = canonicalUrl(rawUrl), pangpang = !!pangpangPost(url);
   let title = '', category = '', description = '', deal_text = '', seller = '', schedule = '';
-  let deal_status: DealStatus = null;
-  let identity_description = '';
+  let deal_status: DealStatus = null, source_closure = '';
+  let identity_description = '', price_capture = '';
   let failure: PreparedPage['failure'] = null;
   let bundleText: string | null = null, bundle: PreparedBundle | null = null, bundleAttempted = false;
   try {
@@ -195,7 +222,7 @@ export function preparePage(html: string, rawUrl: string): PreparedPage {
             const plan = buildBundle(root, regions, itemHeadings, pageHint || headingText(itemHeadings[0]), pageHint || headingText(itemHeadings[0]), url);
             if (plan.kind === 'failure') failure = plan.failure;
             else {
-              ({ title, category, seller, schedule, deal_status, description, identity_description, deal_text } = plan);
+              ({ title, category, seller, schedule, deal_status, source_closure, description, identity_description, deal_text } = plan);
               bundle = { hint: plan.hint, title: plan.title, regions: plan.regions };
               bundleText = plan.text;
             }
@@ -215,10 +242,11 @@ export function preparePage(html: string, rawUrl: string): PreparedPage {
           const times = selectAll(region, 'time').filter(e => /\d{1,2}\/\d{1,2}/.test(regionText(e)));
           const scheduleEl = times[0]?.parent ?? selectAll(region, 'span').find(e => !selectAll(e, 'span').length && /\d{1,2}\/\d{1,2}/.test(regionText(e)));
           schedule = normalizePageText(scheduleEl ? regionText(scheduleEl) : '');
-          deal_status = dealStatus(region);
+          ({ deal_status, source_closure } = dealState(region));
           const blocks = selectAll(region, '[itemprop=offers],.offer,.offers,.schedule,.conditions,[data-offer],[data-schedule],[data-conditions]');
           deal_text = normalizePageText([title, ...blocks.map(regionText)].join('\n'));
           description = normalizePageText(regionText(region));
+          price_capture = normalizePageText(priceRegionText(region));
           const identityText = (node: El | string): string => {
             if (typeof node === 'string') return decodeEntities(node);
             if (statusBadge(node) || node === sellerLink || /^(?:seller|brand)$/.test(node.attrs.itemprop ?? '') || /(?:^|[\s_-])seller(?:$|[\s_-])/.test(node.attrs.class ?? '') || 'data-seller' in node.attrs || node.tag === 'p' && (node.attrs.class ?? '').split(/\s+/).includes('truncate')) return '';
@@ -247,7 +275,7 @@ export function preparePage(html: string, rawUrl: string): PreparedPage {
           const plan = buildBundle(region, null, itemHeadings, pageHint || bundleTitle, bundleTitle, url);
           if (plan.kind === 'failure') failure = plan.failure;
           else {
-            ({ title, category, seller, schedule, deal_status, description, identity_description, deal_text } = plan);
+            ({ title, category, seller, schedule, deal_status, source_closure, description, identity_description, deal_text } = plan);
             bundle = { hint: plan.hint, title: plan.title, regions: plan.regions };
             bundleText = plan.text;
           }
@@ -261,5 +289,5 @@ export function preparePage(html: string, rawUrl: string): PreparedPage {
   const text = bundleText ?? normalized.slice(0, PAGE_TEXT_LIMIT);
   // Bundle preparation never truncates: it fails closed above the caps instead.
   const truncated = bundleAttempted ? false : normalized.length > PAGE_TEXT_LIMIT;
-  return Object.freeze({ url, text, content_hash: sha256(text), title, category, description, identity_description, deal_text, seller, schedule, deal_status, pangpang, truncated, bundle, failure });
+  return Object.freeze({ url, text, content_hash: sha256(text), title, category, description, identity_description, deal_text, seller, schedule, deal_status, source_closure, price_capture, pangpang, truncated, bundle, failure });
 }

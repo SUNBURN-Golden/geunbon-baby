@@ -48,6 +48,7 @@ export function migrateMemory(raw: Omit<Partial<RunMemory>, 'version'> & { versi
     updated_at: raw.updated_at ?? new Date().toISOString(),
     plan_notes: raw.plan_notes ?? [],
     observed_urls: canonicalSet(raw.observed_urls ?? []),
+    external_price_cursor: raw.external_price_cursor,
     pending_urls: canonicalSet(raw.pending_urls ?? []).filter(url => !Object.hasOwn(gone, url)),
     gone_urls: gone,
     fetch_retry_after: raw.fetch_retry_after ?? {},

@@ -1,3 +1,4 @@
+import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -38,6 +39,7 @@ beforeAll(async () => {
   await memory.db.prepare("INSERT INTO sellers (id, name, source_url) VALUES ('seller-1', 'Seller', 'https://example.com/seller')").run();
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at) VALUES ('deal-1', 'https://example.com/deal', 'example', 'Example', 'post', '2026-10-20')").run();
   await memory.db.prepare("INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES ('deal-1', 'model-1', 'seller-1', 'Example deal', 390000, 'https://example.com/deal', 'manual', '2026-10-20', '2026-10-21T00:00:00Z', '2026-10-22T00:00:00Z')").run();
+  await seedPublicPrice(memory.db, 'deal-1', 390000);
 });
 beforeEach(() => { vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00Z')); });
 afterAll(() => { vi.restoreAllMocks(); memory.close(); });

@@ -534,3 +534,26 @@ Instagram caption/OCR extraction and its existing year-roll policy are unchanged
 
 See [DeepSeek checked results and weekly review](deepseek-web/README.md#checked-facts-and-weekly-review)
 for the read-only packet. Collection, fact checking and packet generation never publish.
+
+## 검증 가격 수집과 일회성 백필
+
+가격 검증은 Linux에서 실행합니다. 동일한 필터링 원문을 DeepSeek Flash와 Qwen4-Max Preview가 독립적으로 판독합니다. 공구가·마감일은 원문에서, 정가는 승인된 공식 상품 페이지에서 확인합니다. Instagram은 기존 작성자 및 permalink 확인과 캡션·OCR 필터를 거쳐 이 증거를 pending 검수로 보냅니다. 독립 로컬 수집함은 기존 건수 API를 사용합니다.
+
+가격 검증 모드의 Instagram 수집기는 기존 시간당·회차별 한도 안에서 이미 알고 있는 게시물과 새 게시물을 확인 기한 순으로 다시 엽니다. 같은 캡션이라도 기한이 되면 공식 가격을 다시 확인하며 근거 ID와 revision을 접수한 뒤 캡션 해시를 갱신합니다. 사이트는 게시된 공구의 후속 관찰도 처리합니다.
+
+가격 검증 요청도 별도 상한에 청구합니다. Instagram은 게시물·스토리마다 `price_checks` 1회를 먼저 예약하고, 모델 호출과 공식 페이지 요청(리다이렉트·robots 포함)을 각각 `price_provider_calls`·`price_official_fetches` 시간당 상한에 계산합니다. 한도가 소진되면 검증 없이 접수하며 공개 목록에는 나오지 않습니다. Threads 재방문은 게시물 조회와 공식 페이지 요청을 합쳐 방문당 최대 8회로 제한하고, 같은 permalink는 최소 1시간 간격을 지킵니다.
+
+`DEAL_PRICE_VERIFICATION=1` 활성화 전에 호스트 운영자가 직접 Flash 계정 및 Qwen 계정의 모델·엔드포인트와 이 Linux 자동화에 대한 사용 권한을 확인합니다. Flash는 호스트의 `DEEPSEEK_API_KEY`, Qwen은 런타임에 읽는 `/home/box/.qwen/token_plan_key`를 사용합니다. [Qwen 모델·Token Plan 문서](https://www.alibabacloud.com/help/en/model-studio/base-url)
+공식 가격은 현재 registry에서 `official_msrp`가 승인된 정확한 제품 경로에서만 읽습니다. 적용 가능한 활성 소스가 없으면 구성별로 `missing_official_coverage`를 기록합니다. [DeepSeek 웹 가격 검증](deepseek-web/README.md#verified-deal-prices)
+
+공식 소스 등록·승인·철회 또는 설정 변경 뒤에는 승인된 Linux 호스트에서 `COLLECTOR_DB`, `AGAMAJUNG_API_URL`, `ADMIN_TOKEN`을 설정해 `npm run sync:price-sources`를 실행합니다. 이 명령은 현재 유효한 공식 상품 범위를 사이트에 전달합니다. 사이트는 접수와 승인 시 이 범위를 확인하고, 만료된 승인은 공개 조회에서도 제외합니다. 명령 결과에는 대상 사이트, 스냅샷 revision과 digest, 승인 범위 수, 구성별 미확인 목록이 포함됩니다. 권한이나 설정이 바뀔 때와 승인 만료 전에 다시 실행합니다. 철회는 새 스냅샷에서 기존 범위를 제거합니다.
+
+### Threads
+
+등록된 Threads 원점은 각각 최초 미승인입니다. `approveRevision()`으로 robots·약관 근거, 정확한 게시물 경로 및 수집 필드, 승인자, 재검토 시각, 만료를 기록한 뒤 Linux 호스트에서 `npm run collect:threads -- check '<https-post-permalink>'`를 실행합니다. 요청한 게시물 ID와 작성자가 포함된 공개 본문을 비로그인 상태에서 확인한 뒤 `collect`로 같은 permalink를 등록합니다. 기존 `agamajung-deepseek-web` 데몬이 회차당 최대 한 건을 확인하고, 확인 시각과 접수 결과를 같은 Linux 상태 디렉터리에 저장합니다. 한 permalink의 재방문 간격은 최소 한 시간입니다. 로그인 화면, 다른 게시물, 읽을 수 없는 본문은 `source_inaccessible`입니다. 현재 체크아웃의 Threads 처리는 HTML fixture로 검증하며 운영 수집 승인은 별도로 진행합니다. Threads는 관리자 명시 귀속으로 검수합니다. [소스 승인 계약](src/source-registry/README.md)
+
+### 일회성 실행과 복구
+
+운영 사이트에 D1 0016과 공개 필터가 적용되면 먼저 Linux 호스트에서 `npm run sync:price-sources`를 실행해 현재 사이트와 범위가 일치하는 접수 결과를 확인한 뒤 `npm run backfill:prices`를 실행합니다. 사이트 대상은 ID·revision·필터링 본문 해시를 고정합니다. 본문이 달라지거나 비교할 이전 해시가 없으면 새 관찰에 `capture_changed` 또는 `legacy_hash_missing`을 기록합니다. 같은 관리 revision에 있는 관찰을 선택해 적용할 수 있습니다. 적용 가능한 공식 범위가 0개면 가격 백필은 대기합니다. `DEEPSEEK_WEB_STATE_DIR`의 검수 큐는 읽기 스냅샷으로 사용합니다. 본문 해시가 일치하는 결과는 `price-evidence/`에 저장합니다. 달라진 원문은 `price-observations/`에 별도로 보존합니다. 주간 검토에서 관찰 ID를 찾아 `--price-observation=<id>`로 선택할 수 있습니다. 만료된 스토리, 접근 불가, 불일치, 자료 부족, 표시 제외, 이전 revision, 재시도 및 공개 진행/종료 건수가 요약됩니다.
+
+체크포인트는 `DEAL_PRICE_BACKFILL_DIR`(기본 `.local/deal-price-backfill`)에 있습니다. 중단이나 응답 유실 뒤에는 동일한 디렉터리로 재실행하면 동일한 사이트 요청 키로 이어집니다. 이전 manifest 형식(version 1 또는 2)을 사용한 경우 새 디렉터리를 지정합니다. 최신 검수 결정, 가격 충돌, 철회 및 소스별 실패는 관리자에서 확인할 수 있습니다. 사이트 권한, registry 승인, 공급자 상태를 복구한 뒤 재시도 항목을 처리합니다.

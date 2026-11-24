@@ -16,6 +16,9 @@
     "collector": "node --import tsx crawler/collector.mjs",
     "collector:worker": "node --import tsx crawler/local-worker.mjs",
     "deepseek-web": "node --import tsx crawler/deepseek-web/run.mjs",
+    "backfill:prices": "node --import tsx crawler/src/deal-prices/backfill-cli.ts",
+    "sync:price-sources": "node --import tsx crawler/src/deal-prices/sync-sources.ts",
+    "collect:threads": "node --import tsx crawler/src/deal-prices/threads-cli.ts",
     "promote-external": "node scripts/promote-external.mjs",
     "build:clipper": "node scripts/build-clipper.mjs"
   },

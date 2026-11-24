@@ -20,7 +20,7 @@ export type OutcomeKind =
   | 'official_robots_blocked'
   | 'official_redirect_blocked'
   | 'official_fetch_failed'
-  | 'model_failed';
+  | 'model_failed' | 'price_model_call' | 'price_verification';
 
 export function fetchFailureDetail(failure: FetchFailure) {
   const base = { stage: failure.stage, hostname: failure.hostname };

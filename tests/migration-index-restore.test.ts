@@ -19,7 +19,7 @@ const restoredNames = restored.map(index => index.name);
 test('full migration chain restores exactly the three indexes dropped by 0013', async () => {
   const memory = memoryD1(), baseline = memoryD1();
   try {
-    await migrate(memory.db);
+    await migrate(memory.db, '0015');
     await migrate(baseline.db, '0014');
     const indexes = await all<{ name: string; tbl_name: string }>(memory.db, "SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex_%' ORDER BY name");
     for (const index of restored) expect(indexes).toContainEqual({ name: index.name, tbl_name: index.table });

@@ -1,3 +1,4 @@
+import { directHttps } from '../deal-prices/direct-https';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DeepSeekClient, DeepSeekUsage } from './types';
@@ -20,8 +21,9 @@ export function usageFrom(data: { usage?: Partial<DeepSeekUsage> }): DeepSeekUsa
   return { prompt_cache_hit_tokens: hit, prompt_cache_miss_tokens: miss, prompt_tokens: prompt, completion_tokens: completion, total_tokens: reported ?? derived, total_source: reported !== null ? u.total_source === 'derived' && derived === reported ? 'derived' : 'reported' : derived !== null ? 'derived' : 'unknown' };
 }
 export function createDeepSeekClient(options: ClientOptions): DeepSeekClient {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const base = options.baseUrl ?? 'https://api.deepseek.com';
+  const fetchImpl = options.fetchImpl ?? directHttps;
+  const base = 'https://api.deepseek.com';
+  if (options.baseUrl !== undefined && options.baseUrl !== base) throw new Error('deepseek_endpoint_invalid');
   if (options.apiKey === 'mock' || options.fixturePath) {
     return {
       async complete({ system, user, signal }) {
@@ -37,6 +39,7 @@ export function createDeepSeekClient(options: ClientOptions): DeepSeekClient {
     async complete({ system, user, signal }) {
       const response = await fetchImpl(`${base}/chat/completions`, {
         method: 'POST',
+        redirect: 'error',
         signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(45000)]),
         headers: { authorization: `Bearer ${options.apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -47,15 +50,25 @@ export function createDeepSeekClient(options: ClientOptions): DeepSeekClient {
           response_format: { type: 'json_object' },
         }),
       });
-      if (!response.ok) {
+      if (response.redirected || !response.ok) {
         await response.body?.cancel().catch(() => {});
         throw new DeepSeekHttpError(response.status);
       }
-      const data = await response.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: DeepSeekUsage; model?: string };
-      const content = data.choices?.[0]?.message?.content;
-      // A successful HTTP completion settles accounting even if content is unusable.
-      if (typeof content !== 'string') return { content: '', usage: usageFrom(data), model: options.model };
-      return { content, usage: usageFrom(data), model: data.model ?? options.model, finish_reason: data.choices?.[0]?.finish_reason ?? null };
+      return readCompletion(response, options.model);
     },
+  };
+}
+
+export async function readCompletion(response: Response, model: string) {
+  const raw: unknown = await response.json().catch(() => null);
+  const data = raw && typeof raw === 'object' ? raw as {
+    choices?: { message?: { content?: string }; finish_reason?: string }[];
+    usage?: DeepSeekUsage; model?: string;
+  } : {};
+  const choice = data.choices?.[0];
+  return {
+    content: typeof choice?.message?.content === 'string' ? choice.message.content : '',
+    usage: usageFrom(data), model: typeof data.model === 'string' ? data.model : model,
+    finish_reason: choice?.finish_reason ?? null,
   };
 }

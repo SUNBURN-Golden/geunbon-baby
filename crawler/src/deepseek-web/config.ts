@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FACT_FIELDS } from '../../../shared/collection-schema';
+import { isPriceVariant } from '../../../shared/deal-price-evidence';
 import { canonicalUrl } from '../../../shared/privacy-rules';
 import { loadRegistrySeed } from '../source-registry/seed';
 import { registryUrl, staticEntryReason } from '../source-registry/policy';
@@ -10,7 +11,7 @@ import { isProhibitedUrl } from './guards';
 import type { DeepSeekWebConfig, OfficialSourceConfig, ScopedCategory } from './types';
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../deepseek-web');
 const allowed = new Set<ScopedCategory>(['stroller', 'high_chair', 'car_seat', 'play_gym', 'carrier', 'bouncer']);
-const HARD_FORBIDDEN = /(?:^|\.)(?:instagram\.com|threads\.net|facebook\.com|momcalendar\.com)$/i;
+const HARD_FORBIDDEN = /(?:^|\.)(?:instagram\.com|threads\.net|threads\.com|facebook\.com|momcalendar\.com)$/i;
 const SOURCE_ID = /^[\w-]{1,80}$/;
 const BRAND = /^[\p{L}\p{N} .&+_-]{1,80}$/u;
 const MIN_OFFICIAL_RECHECK_MS = 3600000;
@@ -31,6 +32,12 @@ function validateOfficialSources(raw: DeepSeekWebConfig): OfficialSourceConfig[]
     if (typeof source.brand !== 'string' || !BRAND.test(source.brand)) invalid();
     if (!allowed.has(source.category)) invalid();
     if (typeof source.enabled !== 'boolean') invalid();
+    if (source.price_model !== undefined && (typeof source.price_model !== 'string' || !source.price_model.trim() ||
+        source.price_model.length > 100 || !source.fields.includes('official_msrp'))) invalid();
+    if (source.price_variants !== undefined && (!Array.isArray(source.price_variants) || !source.price_variants.length ||
+        !source.price_variants.every(variant => isPriceVariant({ ...variant, brand_aliases: [], model_aliases: [] })) ||
+        new Set(source.price_variants.map(variant => variant.id)).size !== source.price_variants.length ||
+        !source.fields?.includes('official_msrp'))) invalid();
     if (!Array.isArray(source.fields) || source.fields.length < 1 || new Set(source.fields).size !== source.fields.length) invalid();
     if (source.fields.some(f => typeof f !== 'string' || !(FACT_FIELDS as readonly string[]).includes(f))) invalid();
     const recheck = source.recheck_ms ?? raw.selection.official_recheck_ms;

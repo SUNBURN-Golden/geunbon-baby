@@ -35,7 +35,7 @@ export function initialReport(mode: RunReport['mode'], now: number): RunReport {
 export type CycleContext = {
   dir: string; config: DeepSeekWebConfig; memory: RunMemory; report: RunReport;
   client: DeepSeekClient; store?: CollectorStore; checkpoint: () => Promise<void>;
-  complete: (input: { system: string; user: string }, reserve: number, acknowledge?: (completion: Awaited<ReturnType<DeepSeekClient['complete']>>) => PendingResult) => ReturnType<DeepSeekClient['complete']>;
+  complete: (input: { system: string; user: string }, reserve: number, acknowledge?: (completion: Awaited<ReturnType<DeepSeekClient['complete']>>) => PendingResult, provider?: DeepSeekClient, providerKind?: 'deepseek' | 'qwen') => ReturnType<DeepSeekClient['complete']>;
 };
 async function publishTerminal(dir: string, report: RunReport, now: number) {
   await writeHeartbeat(dir, report, 0, now);
@@ -171,9 +171,11 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
     await checkpoint();
     const client = options.client ?? createDeepSeekClient({ apiKey: options.mode === 'dry_run' ? 'mock' : process.env.DEEPSEEK_API_KEY ?? '', model: report.model, thinking: profile.thinking, maxCompletionTokens: config.budget.max_completion_tokens, fetchImpl: options.fetchImpl, fixturePath: process.env.DEEPSEEK_WEB_FIXTURE });
     const ctx: CycleContext = { dir, config, memory, report, store, client, checkpoint,
-      async complete(input, reserve, acknowledge) {
+      async complete(input, reserve, acknowledge, provider = client, providerKind = 'deepseek') {
         options.signal?.throwIfAborted();
         if (memory!.pending_result) throw new Error('pending_result_unavailable');
+        const deepseek = providerKind === 'deepseek';
+        if (deepseek && backoff && Date.parse(backoff.next_attempt_at) > now()) throw new DeepSeekHttpError(backoff.status);
         const priorHit = report.deepseek_prompt_cache_hit_tokens, priorMiss = report.deepseek_prompt_cache_miss_tokens, priorCompletion = report.deepseek_completion_tokens;
         cycleHold(memory!, reserve);
         report.deepseek_calls_attempted++;
@@ -183,9 +185,9 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
         await checkpoint(); // Invocation intent is durable before sending the request.
         options.fault?.('call_intent');
         let completion;
-        try { completion = await client.complete({ ...input, signal: options.signal }); }
+        try { completion = await provider.complete({ ...input, signal: options.signal }); }
         catch (error) {
-          if (error instanceof DeepSeekHttpError && (error.status === 402 || error.status === 429)) {
+          if (deepseek && error instanceof DeepSeekHttpError && (error.status === 402 || error.status === 429)) {
             try { backoff = failBackoff(dir, backoff, error.status, now()); }
             catch {
               // A control-state write failure must not hide the provider reason.
@@ -224,11 +226,11 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
           }
           catch { validationFailed = true; }
         }
-        memory!.active_cycle!.call = 'settled';
+        memory!.active_cycle!.call = deepseek ? 'settled' : 'settled_qwen';
         if (validationFailed) report.reason = 'extraction_result_invalid';
         await checkpoint(); // Acknowledged settlement precedes parsing or queue appends.
         options.fault?.('call_settled');
-        if (backoff) { saveBackoff(dir, null); backoff = null; }
+        if (deepseek && backoff) { saveBackoff(dir, null); backoff = null; }
         await checkpoint();
         if (validationFailed) throw new Error('extraction_result_invalid');
         return { ...completion, usage };
@@ -236,7 +238,10 @@ export async function cycleLifecycle(options: RunnerOptions, execute: (ctx: Cycl
     };
     options.onReady?.();
     await execute(ctx);
-    report.outcome = 'completed';
+    if (backoff && Date.parse(backoff.next_attempt_at) > now()) {
+      report.outcome = 'backoff';
+      report.reason = report.halt_reason = backoff.reason;
+    } else report.outcome = 'completed';
   } catch (error) {
     failure = error;
     report.outcome = options.signal?.aborted ? 'interrupted' : error instanceof DeepSeekHttpError && [402, 429].includes(error.status) ? 'backoff' : 'failed';

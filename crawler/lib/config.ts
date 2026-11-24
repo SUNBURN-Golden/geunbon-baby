@@ -18,7 +18,7 @@ export type Settings = {
   quiet_windows: QuietWindow[];
   poll_interval_minutes: [number, number];
   per_tick: { max_accounts: number; max_posts_per_account: number; max_stories_per_account: number };
-  hourly_caps: { profile_visits: number; post_views: number; story_opens: number; follows: number; hashtag_pages: number };
+  hourly_caps: { profile_visits: number; post_views: number; story_opens: number; follows: number; hashtag_pages: number; price_checks: number; price_provider_calls: number; price_official_fetches: number };
   follow: { daily_cap: number; allow_unverified: boolean; gap_seconds: [number, number] };
   delays_ms: { navigation: [number, number]; action: [number, number]; login: [number, number] };
   discovery: { enabled: boolean; posts_per_tag: number; min_interval_hours: number };
@@ -70,7 +70,7 @@ export function parseSettings(raw: unknown, env: Record<string, string | undefin
     ),
     poll_interval_minutes: pair(v.poll_interval_minutes, 'poll_interval_minutes'),
     per_tick: { max_accounts: limit(perTick.max_accounts, 'per_tick.max_accounts'), max_posts_per_account: limit(perTick.max_posts_per_account, 'per_tick.max_posts_per_account'), max_stories_per_account: limit(perTick.max_stories_per_account, 'per_tick.max_stories_per_account') },
-    hourly_caps: { profile_visits: limit(caps.profile_visits, 'hourly_caps.profile_visits'), post_views: limit(caps.post_views, 'hourly_caps.post_views'), story_opens: limit(caps.story_opens, 'hourly_caps.story_opens'), follows: limit(caps.follows, 'hourly_caps.follows'), hashtag_pages: limit(caps.hashtag_pages, 'hourly_caps.hashtag_pages') },
+    hourly_caps: { profile_visits: limit(caps.profile_visits, 'hourly_caps.profile_visits'), post_views: limit(caps.post_views, 'hourly_caps.post_views'), story_opens: limit(caps.story_opens, 'hourly_caps.story_opens'), follows: limit(caps.follows, 'hourly_caps.follows'), hashtag_pages: limit(caps.hashtag_pages, 'hourly_caps.hashtag_pages'), price_checks: limit(caps.price_checks, 'hourly_caps.price_checks'), price_provider_calls: limit(caps.price_provider_calls, 'hourly_caps.price_provider_calls'), price_official_fetches: limit(caps.price_official_fetches, 'hourly_caps.price_official_fetches') },
     follow: { daily_cap: limit(follow.daily_cap, 'follow.daily_cap'), allow_unverified: flag(follow, 'allow_unverified', 'settings.json: follow.allow_unverified', false), gap_seconds: pair(follow.gap_seconds, 'follow.gap_seconds') },
     delays_ms: { navigation: pair(delays.navigation, 'delays_ms.navigation'), action: pair(delays.action, 'delays_ms.action'), login: pair(delays.login, 'delays_ms.login') },
     discovery: { enabled: flag(discovery, 'enabled', 'settings.json: discovery.enabled'), posts_per_tag: limit(discovery.posts_per_tag, 'discovery.posts_per_tag'), min_interval_hours: positive(discovery.min_interval_hours, 'discovery.min_interval_hours') },

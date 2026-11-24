@@ -608,3 +608,7 @@ footer .logo { font-size: 30px; }
 
 /* Keep the sans count in a stable column while the adjacent title swaps. */
 .active-deals > h2 { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+
+.deal-sort { display: flex; flex-wrap: wrap; gap: var(--s-4); }
+.deal-sort [aria-current="page"] { font-weight: 700; text-decoration: underline; }
+.deal-price-block .deal-tone { display: inline-block; font-weight: 800; }
