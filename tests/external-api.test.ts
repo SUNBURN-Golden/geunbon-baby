@@ -1,3 +1,4 @@
+import { migrationStatements } from './helpers/migrations';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import { memoryD1 } from './helpers/sqlite';
@@ -21,7 +22,7 @@ beforeAll(async () => {
   env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'local-admin-test-only-separation', INGEST_TOKEN: 'local-ingest-test-only-separation' };
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
-    for (const sql of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(s => s.trim())) await env.DB.prepare(sql).run();
+    for (const sql of migrationStatements(await readFile(new URL(file, dir), 'utf8'))) await env.DB.prepare(sql).run();
   }
   await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','test','https://www.stokke.com/')").run();

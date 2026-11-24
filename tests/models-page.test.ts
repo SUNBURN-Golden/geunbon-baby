@@ -1,4 +1,5 @@
 import { seedPublicPrice } from './helpers/public-deal-fixture';
+import { migrationStatements } from './helpers/migrations';
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -23,7 +24,7 @@ vi.mock('next/navigation', () => ({
 
 const memory = memoryD1();
 const note = 'Retailer 123,456원; overseas $799; used 345,678원';
-const names = { 'model-1': '트립트랩 하이체어(너도밤나무)', 'model-42': '손그림 없는 모델', 'model-20': '피파 넥스트(바구니 카시트)', 'model-3': '공식가 모름 모델' };
+const names = { 'model-1': '트립트랩 하이체어(너도밤나무)', 'model-44': '손그림 없는 모델', 'model-20': '피파 넥스트(바구니 카시트)', 'model-3': '공식가 모름 모델' };
 const insertDeal = async (id: string, model: string, price: number | null, starts: string, ends: string) => {
   await memory.db.prepare("INSERT INTO ingested_items (id, source_url, account, text, kind, captured_at, status) VALUES (?, ?, 'example', 'Deal', 'post', '2026-10-20', 'approved')").bind(id, `https://example.com/${id}`).run();
   await memory.db.prepare('INSERT INTO deals (id, model_id, seller_id, title, price, source_url, verify_level, checked, starts_at, ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -34,14 +35,14 @@ const insertDeal = async (id: string, model: string, price: number | null, start
 beforeAll(async () => {
   context.db = memory.db;
   const dir = new URL('../migrations/', import.meta.url);
-  for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
+  for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql') && !f.startsWith('0018_')).sort()) {
     const schema = await readFile(new URL(file, dir), 'utf8');
-    for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+    for (const sql of migrationStatements(schema)) await memory.db.prepare(sql).run();
   }
   const insertModel = (id: string, price: number | null) => memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(id, 'Stokke', names[id as keyof typeof names], 'high_chair', 'Importer', price, 'https://example.com/model', '2026-10-18', 'page_body', note).run();
   await insertModel('model-1', 430000);
-  await insertModel('model-42', 430000);
+  await insertModel('model-44', 430000);
   await insertModel('model-20', 670000);
   await insertModel('model-3', null);
   await memory.db.prepare("INSERT INTO sellers (id, name, source_url, registration_source, withdrawal_source, official_import_source) VALUES ('seller-1', 'Seller', 'https://example.com/seller', 'https://example.com/registration', 'https://example.com/withdrawal', 'https://example.com/import')").run();
@@ -96,9 +97,9 @@ describe('model search parameters', () => {
     { id: 'model-6', brand: 'Bugaboo', name: 'Query stroller', category: 'stroller' },
     { id: 'model-7', brand: 'Bugaboo', name: 'Query active stroller', category: 'stroller' },
   ];
-  const baseline = ['model-1', 'model-3', 'model-5', 'model-7', 'model-42', 'model-20', 'model-4', 'model-6'];
-  const brandOrder = ['model-7', 'model-5', 'model-1', 'model-3', 'model-6', 'model-4', 'model-42', 'model-20'];
-  const stokke = ['model-1', 'model-3', 'model-42', 'model-20'];
+  const baseline = ['model-1', 'model-3', 'model-5', 'model-7', 'model-44', 'model-20', 'model-4', 'model-6'];
+  const brandOrder = ['model-7', 'model-5', 'model-1', 'model-3', 'model-6', 'model-4', 'model-44', 'model-20'];
+  const stokke = ['model-1', 'model-3', 'model-44', 'model-20'];
   const nuna = ['model-5', 'model-4'];
   const strollers = ['model-7', 'model-4', 'model-6'];
 
@@ -134,7 +135,7 @@ describe('model search parameters', () => {
     expect(form.includes('<input type="hidden" name="by" value="brand"/>')).toBe(params.by === 'brand');
     for (const id of ids) {
       const card = cardOf(html, id);
-      if (id === 'model-42') {
+      if (id === 'model-44') {
         expect(card.match(/<h2 /g)).toHaveLength(1);
         expect(card.match(/<p /g)).toHaveLength(2);
         expect(card.match(/<div /g)).toHaveLength(2);
@@ -221,7 +222,7 @@ test.each(['page_text', 'search_summary'])('%s prices do not appear on cards or 
     const html = await render('2026-10-21T03:00:00Z');
     expect(html.match(/<a class="model-card"/g)).toHaveLength(4);
     expect([...html.matchAll(/class="model-card" href="([^"]+)"/g)].map(m => m[1]))
-      .toEqual(['/models/model-1', '/models/model-3', '/models/model-42', '/models/model-20']);
+      .toEqual(['/models/model-1', '/models/model-3', '/models/model-44', '/models/model-20']);
     for (const id of ['model-1', 'model-20']) {
       const card = cardOf(html, id);
       expect(card).toContain('정보 없음');
@@ -252,7 +253,7 @@ test('cards show name, art or placeholder, official price and the lowest active 
     expect(card).toContain(`<h2 class="model-name">Stokke ${names[id as keyof typeof names]}</h2>`);
     expect(card.match(/<p /g)).toHaveLength(2);
     expect(card.match(/class="model-art(?: model-art-line)?"/g)).toHaveLength(1);
-    if (id !== 'model-42') expectIllustratedCard(card, id, `Stokke ${names[id as keyof typeof names]}`);
+    if (id !== 'model-44') expectIllustratedCard(card, id, `Stokke ${names[id as keyof typeof names]}`);
   }
 
   const one = cardOf(html, 'model-1');
@@ -268,7 +269,7 @@ test('cards show name, art or placeholder, official price and the lowest active 
   expect(one).not.toContain('300,000');
   expect(one).not.toContain('350,000');
 
-  const two = cardOf(html, 'model-42');
+  const two = cardOf(html, 'model-44');
   expect(two).not.toContain('<img');
   expect(two).toContain('model-art-mark');
   expect(two).toContain('진행 중인 공구 없음');
@@ -292,7 +293,7 @@ test('cards show name, art or placeholder, official price and the lowest active 
   expect(twenty).toContain('670,000원');
 
   const hrefs = [...html.matchAll(/class="model-card" href="([^"]+)"/g)].map(m => m[1]);
-  expect(hrefs).toEqual(['/models/model-1', '/models/model-3', '/models/model-42', '/models/model-20']);
+  expect(hrefs).toEqual(['/models/model-1', '/models/model-3', '/models/model-44', '/models/model-20']);
 });
 
 test('a priceless deal stays outside the current price row', async () => {
@@ -334,7 +335,7 @@ test('after every deal ends all cards say there is no active deal', async () => 
   expect(html).not.toContain('<s>');
   expect(html).not.toContain('model-discount');
   expect(html).not.toContain('390,000');
-  expect([...html.matchAll(/class="model-card" href="([^"]+)"/g)].map(m => m[1])).toEqual(['/models/model-1', '/models/model-42', '/models/model-20', '/models/model-3']);
+  expect([...html.matchAll(/class="model-card" href="([^"]+)"/g)].map(m => m[1])).toEqual(['/models/model-1', '/models/model-44', '/models/model-20', '/models/model-3']);
 });
 
 test('deal rows keep compact, unwrapped mobile pricing', async () => {

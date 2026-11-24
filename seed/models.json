@@ -3619,6 +3619,28 @@
           }
         }
       }
+    },
+    {
+      "brand": "하베브릭스",
+      "kr_importer": "미확인",
+      "model": "바람개비 아기체육관",
+      "category": "play_gym",
+      "kr_official_price_krw": null,
+      "source_url": "https://m.whittlestore.com/views/shop/shopview?iniCategory=91&pack_content_id=4463&thisCategory=546",
+      "checked": "2026-11-24",
+      "verify_level": "official_unpublished",
+      "note": "제품 페이지로 구성 확인. 국내 공식 정상가는 미확인."
+    },
+    {
+      "brand": "Lovevery",
+      "kr_importer": "미확인",
+      "model": "The Play Gym",
+      "category": "play_gym",
+      "kr_official_price_krw": null,
+      "source_url": "https://lovevery.com/products/the-play-gym",
+      "checked": "2026-11-24",
+      "verify_level": "official_unpublished",
+      "note": "제품 페이지로 구성 확인. 국내 공식 정상가는 미확인."
     }
   ]
 }

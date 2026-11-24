@@ -80,6 +80,9 @@ export async function promoteExternalCandidate(db: D1Database, input: PromoteExt
     const dealId = candidate.promoted_deal_id;
     return dealId ? { ok: true, deal_id: dealId, created: false, promotion_id: 'existing' } : { ok: false, code: 'candidate_already_promoted', status: 409 };
   }
+  const collision = () => db.prepare('SELECT id,verified_offer_id FROM deals WHERE source_url = ? ORDER BY verified_offer_id IS NULL LIMIT 1')
+    .bind(candidate.source_url).first<{ id: string; verified_offer_id: string | null }>();
+  if ((await collision())?.verified_offer_id) return { ok: false, code: 'offer_source_conflict', status: 409 };
   const revision = candidate.price_revision ?? 'legacy';
   const head = await currentReviewEvidence(db, 'candidate', candidate.id, revision);
   const observation = selectedId && selectedId !== head?.id ?
@@ -180,11 +183,17 @@ export async function promoteExternalCandidate(db: D1Database, input: PromoteExt
       SELECT ?,id,?,?,?,?,? FROM deals WHERE id = ?`)
       .bind(crypto.randomUUID(), index, row.brand ?? null, row.product_name.trim(), row.model_id ?? null, row.price ?? null, dealId));
   }
-  const results = await db.batch(statements);
+  let results;
+  try { results = await db.batch(statements); }
+  catch (error) {
+    if (/offer_source_conflict/.test(String(error))) return { ok: false, code: 'offer_source_conflict', status: 409 };
+    throw error;
+  }
   if (!results[0].meta.changes) {
     const concurrent = await replay(await previous());
     if (concurrent) return concurrent;
-    const again = await db.prepare("SELECT id FROM deals WHERE origin = 'external_web' AND source_url = ?").bind(candidate.source_url).first<{ id: string }>();
+    const again = await collision();
+    if (again?.verified_offer_id) return { ok: false, code: 'offer_source_conflict', status: 409 };
     if (again) return { ok: true, deal_id: again.id, created: false, promotion_id: 'existing' };
     return { ok: false, code: 'stale_evidence', status: 409 };
   }

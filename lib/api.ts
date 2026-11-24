@@ -1,3 +1,5 @@
+import { CLOSE_OFFER, INVALIDATE_OFFER, OFFER_KIND, PROMOTE_OFFER } from '../shared/verified-offer';
+import { dismissVerifiedOffer, ingestVerifiedOffer, mutateVerifiedOffer, verifiedOfferReviewPage } from './verified-offers';
 import { normalizeTimestamp, parseDate, publicDealOptions, chronologicalDeals, lifecycleDeals, activeDealCount, endedDealCount, modelDealSummaries, PublicDealPaginationError } from './deals';
 import { receiveStatus, collectionStatus } from './collection-status';
 import { digest, filterOfferCapture, httpsSource, PRICE_TEXT_LIMIT } from '../shared/deal-price-evidence';
@@ -217,7 +219,7 @@ function reviewRequestOptions(params: URLSearchParams, list: ReviewList): Review
 
 // Admin lifecycle reads intentionally include private evidence and audit history.
 const REVISION_COLUMNS = 'id,deal_id,version,action,request_id,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at';
-type DealState = { id: string; status: 'published' | 'withdrawn'; version: number };
+type DealState = { verify_level?: string; id: string; status: 'published' | 'withdrawn'; version: number };
 type DealPageOptions = { status?: string; limit?: number; cursor?: string | null };
 function encodeCursor(checked: string, id: string) {
   return btoa(String.fromCharCode(...new TextEncoder().encode(`${checked}|${id}`))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -295,10 +297,10 @@ async function manageDeal(request: Request, id: string, env: Env) {
   }
   if (b.price_evidence_id !== undefined && (action !== 'correct' || typeof b.price_evidence_id !== 'string' || !/^[a-f0-9]{64}$/.test(b.price_evidence_id))) return json({ error: 'invalid_evidence' }, 400);
   const hash = await requestHash(action === 'correct' ? [action, expected, b.model_id, title, b.price, starts, ends, b.include_image, reason, b.price_evidence_id ?? null] : [action, expected, reason]);
-  const state = () => env.DB.prepare(`SELECT id,status,version,model_id,price,deal_price_krw,starts_at,ends_at,price_verification,price_evidence_version
+  const state = () => env.DB.prepare(`SELECT id,status,version,model_id,price,deal_price_krw,starts_at,ends_at,price_verification,price_evidence_version,verified_offer_id
     FROM deals WHERE id = ?`).bind(id).first<DealState & {
     model_id: string | null; price: number | null; deal_price_krw: number | null; starts_at: string | null; ends_at: string | null;
-    price_verification: string; price_evidence_version: number | null;
+    price_verification: string; price_evidence_version: number | null; verified_offer_id: string | null;
   }>();
   const current = await state();
   if (!current) return json({ error: 'deal_not_found' }, 404);
@@ -313,6 +315,7 @@ async function manageDeal(request: Request, id: string, env: Env) {
   };
   const previous = await replay();
   if (previous) return previous;
+  if (action === 'correct' && current.verified_offer_id !== null) return json({ error: 'verified_revision_required' }, 409);
   const conflict = (row: DealState) => json({ error: row.status === 'withdrawn' ? 'withdrawn' : 'stale_version', current_version: row.version }, 409);
   if (current.status === 'withdrawn' || current.version !== expected) return conflict(current);
   const now = new Date().toISOString();
@@ -560,6 +563,18 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
         return json({ data: await nextExternalPriceTarget(env.DB, cursor, relatedTo) });
       }
     }
+    if (admin && parts.length === 4 && parts[1] === 'candidates' && parts[3] === 'receipt') {
+      const params = new URL(request.url).searchParams;
+      const claim = Object.fromEntries(params);
+      return mutateVerifiedOffer(env.DB, parts[2], { ...claim, revision: Number(claim.revision), expected_version: Number(claim.expected_version) }, true);
+    }
+    if (path === 'admin/candidates' && new URL(request.url).searchParams.get('kind') === OFFER_KIND) {
+      const params = new URL(request.url).searchParams;
+      const limit = params.has('limit') ? Number(params.get('limit')) : 20;
+      if (params.get('state') !== 'review' || !Number.isInteger(limit) || limit < 1 || limit > 100) return json({ error: 'invalid_review_query' }, 400);
+      const page = await verifiedOfferReviewPage(env.DB, limit, params.get('cursor'));
+      return page ? json(page) : json({ error: 'invalid_cursor' }, 400);
+    }
     if (path === 'brands') return json({ data: await all(env.DB, 'SELECT brand AS name, COUNT(*) AS model_count FROM models GROUP BY brand ORDER BY brand') });
     if (path === 'models') {
       const u = new URL(request.url); const brand = u.searchParams.get('brand'); const category = u.searchParams.get('category');
@@ -659,6 +674,9 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     let b;
     try { b = await body(request); } catch { return json({ error: '32KB 이하 JSON 필요' }, 400); }
     if (!b || typeof b !== 'object' || Array.isArray(b) || 'discount_pct' in b) return json({ error: '잘못된 입력' }, 400);
+    if (b.action === PROMOTE_OFFER || b.action === INVALIDATE_OFFER || b.action === CLOSE_OFFER) return mutateVerifiedOffer(env.DB, parts[2], b);
+    if (b.action === 'dismiss_verified_offer_v2') return dismissVerifiedOffer(env.DB, parts[2], b);
+    if (parts[2].startsWith('verified-')) return json({ error: 'typed_candidate' }, 409);
     if (b.action === 'promote') {
       const requestId = typeof b.request_id === 'string' ? b.request_id : '';
       const promotedBy = typeof b.promoted_by === 'string' ? b.promoted_by.trim() : 'admin';
@@ -707,6 +725,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
     try { b = await body(request, path === 'ingest' ? 98304 : 32768); } catch { return json({ error: 'invalid_body' }, 400); }
     if (!b || typeof b !== 'object' || Array.isArray(b) || 'discount_pct' in b) return json({ error: '잘못된 입력' }, 400);
     if (path === 'ingest' && b.kind === 'external_price_observation') return ingestExternalObservation(b, env.DB);
+    if (path === 'ingest' && b.kind === OFFER_KIND) return ingestVerifiedOffer(env.DB, b);
     if (path === 'ingest' && b.kind === 'external_listing') return ingestExternal(b, env);
     if (path === 'ingest') {
       if (!safeUrl(b.source_url) || !text(b.account, 100) || !text(b.text, 20000) || !['post', 'story', 'threads_post'].includes(b.kind) || !date(b.captured_at)) return json({ error: 'source_url, account, text, kind, captured_at 확인 필요' }, 400);
@@ -742,6 +761,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
         ...(observed?.observation_id ? { price_evidence_id: observed.observation_id, revision: observed.revision } : {}),
         ...(observed?.outcome === 'withdrawn' ? { price_target_closed: true } : {}) } : null }, 202);
     }
+    if (parts[2].startsWith('verified-') || parts[2].startsWith('deal-verified-')) return json({ error: 'typed_candidate' }, 409);
     if (!['approve', 'reject'].includes(b.action)) return json({ error: 'approve 또는 reject 필요' }, 400);
     if (b.action === 'approve' && !validReviewSelection(b)) return json({ error: 'invalid_evidence_selection' }, 400);
     if ((b.include_image !== undefined && typeof b.include_image !== 'boolean') || 'image_url' in b) return json({ error: '잘못된 입력' }, 400);
@@ -823,7 +843,12 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
         WHERE d.id = ? AND r.request_id = ? AND r.request_hash = ? ON CONFLICT(deal_id,position) DO NOTHING`)
         .bind(crypto.randomUUID(), position, name, parts[2], key, reviewHash));
     }
-    const results = await env.DB.batch(statements);
+    let results;
+    try { results = await env.DB.batch(statements); }
+    catch (error) {
+      if (/offer_source_conflict/.test(String(error))) return json({ error: 'offer_source_conflict' }, 409);
+      throw error;
+    }
     if (results[0].meta.changes) return json({ data: { status: 'approved' } });
     const concurrentApproval = await approvalReplay();
     if (concurrentApproval) return concurrentApproval;

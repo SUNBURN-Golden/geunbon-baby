@@ -163,3 +163,9 @@ npm run typecheck
 ```
 
 테스트는 주입 시계·sleep·transport·락·결함 지점과 실제 AgamajungPipeline/SQLite를 사용한다. tests/setup.ts의 네트워크·소켓·실제 브라우저 차단을 유지한다. 정상/누락/병합·수동 경합·동일 슬롯 재호출·완료 ID 재반환·retry/lease/cost_wait·자정/역행·중간 종료·receipt 복구·권한·symlink·요약 실패를 확인한다. 실제 운영 네트워크 수집·PM2 전환·배포는 이 오프라인 검증에 포함되지 않는다.
+
+## 공구 수집 실행권
+
+공구 수집의 소유자는 `agamajung-deepseek-web daemon`입니다. 등록된 PM2 슬롯의 공구 작업은 발견 URL을 SQLite frontier에 추가합니다. 데몬은 출처 순서를 섞어 due URL을 claim하고, 여러 상품이 있는 페이지에서는 상품 단위로 cursor를 저장합니다. Instagram v2는 공유 세션 잠금으로 읽기를 조정하며 429와 계정 확인 경보가 있으면 KST 자정 이후 다시 읽습니다.
+
+`status --json`의 `offer_idle_tick_ms`와 상태 디렉터리의 `metrics-hourly.jsonl`로 상주 작업과 시간별 성과를 확인합니다. 사이트의 `/admin`에서 `missing_official_coverage`, `missing_deadline`, `source_unavailable` 및 판독 불일치 등 상품별 보류 이유를 확인합니다. 요건을 통과한 상품은 자동 게시되며 유효성을 잃은 근거는 사이트 공개에서 철회됩니다.

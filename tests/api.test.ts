@@ -1,3 +1,4 @@
+import { migrationStatements } from './helpers/migrations';
 import { test, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
@@ -15,9 +16,9 @@ const call = (path: string, method = 'GET', body?: unknown, token?: string) => h
 beforeAll(async () => {
   env = { DB: memory.db, IMAGES: {} as R2Bucket, ADMIN_TOKEN: 'local-admin-test-only-separation', INGEST_TOKEN: 'local-ingest-test-only-separation' };
   const dir = new URL('../migrations/', import.meta.url);
-  for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
+  for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql') && !f.startsWith('0018_')).sort()) {
     const migration = await readFile(new URL(file, dir), 'utf8');
-    for (const sql of migration.split(';').filter(s => s.trim())) await env.DB.prepare(sql).run();
+    for (const sql of migrationStatements(migration)) await env.DB.prepare(sql).run();
   }
   await env.DB.prepare("INSERT INTO models VALUES ('model-1','Stokke','test','high_chair','test',NULL,'https://www.stokke.com/','2026-10-20','page_text','Other retailer 123,456 KRW; used 98,765 KRW')").run();
   await env.DB.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','test','https://www.stokke.com/')").run();

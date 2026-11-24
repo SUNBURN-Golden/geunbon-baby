@@ -36,6 +36,7 @@ const signalListeners = new Map((['SIGINT', 'SIGTERM'] as const).map(signal => [
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(loadEnvironment).mockImplementation(() => {});
+  vi.stubEnv('COLLECTOR_DB', undefined);
   vi.stubEnv('AGAMAJUNG_IG_USER', undefined);
   vi.stubEnv('AGAMAJUNG_EXTERNAL_DRY_RUN', undefined);
   vi.stubEnv('AGAMAJUNG_IG_PASSWORD', undefined);

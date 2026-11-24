@@ -1,4 +1,5 @@
 import { seedPublicPrice } from './helpers/public-deal-fixture';
+import { migrationStatements } from './helpers/migrations';
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -59,7 +60,7 @@ describe('D1-backed price and evidence rendering', () => {
     const dir = new URL('../migrations/', import.meta.url);
     for (const file of (await readdir(dir)).filter(file => file.endsWith('.sql')).sort()) {
       const schema = await readFile(new URL(file, dir), 'utf8');
-      for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+      for (const sql of migrationStatements(schema)) await memory.db.prepare(sql).run();
     }
     await memory.db.prepare('INSERT INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind('model-1', 'Cybex', 'Test stroller', 'stroller', 'Importer', 430000,

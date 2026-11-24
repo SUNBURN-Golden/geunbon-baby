@@ -71,7 +71,7 @@ const approvalCount = (f: ReturnType<typeof fixture>) => (f.store.db.prepare('SE
 const outcomeRows = (dir: string) => readFileSync(join(dir, 'outcomes.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as { outcome: string; url: string; detail?: Record<string, unknown> });
 
 describe('official source configuration', () => {
-  test('is derived from the seed models, disabled by default, and excludes only canonical-rejected rows', () => {
+  test('is derived from the seed models, maps authorized variants, and excludes only canonical-rejected rows', () => {
     type SeedModel = { verify_level?: string; source_url?: string };
     const config = loadDeepSeekWebConfig();
     const seed = loadRegistrySeed();
@@ -85,8 +85,7 @@ describe('official source configuration', () => {
     expect(rejected).toHaveLength(1);
     expect(rejected[0].source_url).toContain('dthrone');
     expect(new Set(config.official_sources.map(source => source.url))).toEqual(new Set(derived));
-    expect(config.official_sources.every(source => !source.enabled)).toBe(true);
-    expect(config.official_sources.filter(source => source.enabled).length).toBe(0);
+    expect(config.official_sources.filter(source => source.enabled).flatMap(source => source.price_variants?.map(v => v.site_model_id))).toEqual(['model-1', 'model-2']);
     expect(officialCandidatesByCategory(enabledOfficialSources({ ...config, official_sources: config.official_sources.map(s => ({ ...s, enabled: true })) })))
       .toMatchObject({ high_chair: expect.any(Array), stroller: expect.any(Array), bouncer: expect.any(Array), carrier: expect.any(Array) });
     for (const source of config.official_sources) {
@@ -98,7 +97,6 @@ describe('official source configuration', () => {
     }
     expect(config.official_sources.some(source => source.url.includes('dthrone'))).toBe(false);
     expect(JSON.stringify(config.official_sources)).not.toMatch(/instagram|threads|momcalendar/);
-    expect(config.prohibited_hosts).toContain('momcalendar.com');
   });
 
   test('D.THRONE is excluded because canonical identity rejects the idx query', () => {

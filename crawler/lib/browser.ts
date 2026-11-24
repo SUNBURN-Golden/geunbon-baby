@@ -22,7 +22,7 @@ export async function assertHuman(page: Page, { allowLogin = false } = {}) {
   if (!allowLogin && (/\/accounts\/login/.test(url) || await firstVisible(loginInputs(page)))) throw new HaltError('login');
 }
 
-export async function launchBrowser(crawlerDir: string, check: () => void = () => {}): Promise<{ browser: Browser; context: BrowserContext; page: Page; diagnosticPage: Page; sessionFile: string }> {
+export async function launchBrowser(crawlerDir: string, check: () => void = () => {}, mediation?: { launch: typeof import('../src/offers/browser').isolatedBrowser; context: typeof import('../src/offers/browser').isolatedContext; install: (context: BrowserContext) => Promise<void> }): Promise<{ browser: Browser; context: BrowserContext; page: Page; diagnosticPage: Page; sessionFile: string }> {
   check();
   const sessionDir = resolve(crawlerDir, '.session');
   const cacheDir = resolve(crawlerDir, '.cache');
@@ -35,14 +35,15 @@ export async function launchBrowser(crawlerDir: string, check: () => void = () =
   const sessionFile = resolve(sessionDir, 'state.json');
   const storageState = await loadSession(sessionFile);
   check();
-  const browser = await chromium.launch({ headless: process.env.AGAMAJUNG_HEADLESS !== '0' });
+  const browser = await chromium.launch({ headless: process.env.AGAMAJUNG_HEADLESS !== '0', ...mediation?.launch });
   // 한국어 UI·KST 시각을 고정한다(셀렉터의 한글 버튼명·날짜 해석 전제).
   try {
     check();
     let context: BrowserContext;
-    try { context = await browser.newContext({ storageState, locale: 'ko-KR', timezoneId: 'Asia/Seoul' }); }
+    try { context = await browser.newContext({ storageState, locale: 'ko-KR', timezoneId: 'Asia/Seoul', ...mediation?.context }); }
     catch { throw new SessionError(); }
     check();
+    if (mediation) await mediation.install(context);
     const page = await context.newPage();
     check();
     page.setDefaultTimeout(15000);

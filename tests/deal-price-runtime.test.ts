@@ -239,7 +239,7 @@ test('routine web verification binds option prices and refreshes active and arch
     expect((await activeDealPreview(site.db, Date.parse(deadline) + 1)).some(row => row.id === chair)).toBe(false);
     expect(await endedDealCount(site.db, now + 86_400_000)).toBe(0);
 
-    expect((await call('admin/price-sources', { scopes: [], observed_at: new Date(now).toISOString() })).status).toBe(200);
+    expect((await call('admin/price-sources', { scopes: [], observed_at: new Date(now).toISOString(), revoke_at_revision: stamp })).status).toBe(200);
     expect(await activeDealCount(site.db, now)).toBe(0);
     expect(await endedDealCount(site.db, now)).toBe(0);
   } finally {

@@ -537,6 +537,8 @@ for the read-only packet. Collection, fact checking and packet generation never 
 
 ## 검증 가격 수집과 일회성 백필
 
+이 절의 수동 접수와 제한 설정은 기존 가격 백필 도구에 적용됩니다. 운영 공구 데몬 설정은 아래 연속 수집 절을 참고하세요.
+
 가격 검증은 Linux에서 실행합니다. 동일한 필터링 원문을 DeepSeek Flash와 Qwen4-Max Preview가 독립적으로 판독합니다. 공구가·마감일은 원문에서, 정가는 승인된 공식 상품 페이지에서 확인합니다. Instagram은 기존 작성자 및 permalink 확인과 캡션·OCR 필터를 거쳐 이 증거를 pending 검수로 보냅니다. 독립 로컬 수집함은 기존 건수 API를 사용합니다.
 
 가격 검증 모드의 Instagram 수집기는 기존 시간당·회차별 한도 안에서 이미 알고 있는 게시물과 새 게시물을 확인 기한 순으로 다시 엽니다. 같은 캡션이라도 기한이 되면 공식 가격을 다시 확인하며 근거 ID와 revision을 접수한 뒤 캡션 해시를 갱신합니다. 사이트는 게시된 공구의 후속 관찰도 처리합니다.
@@ -550,10 +552,18 @@ for the read-only packet. Collection, fact checking and packet generation never 
 
 ### Threads
 
-등록된 Threads 원점은 각각 최초 미승인입니다. `approveRevision()`으로 robots·약관 근거, 정확한 게시물 경로 및 수집 필드, 승인자, 재검토 시각, 만료를 기록한 뒤 Linux 호스트에서 `npm run collect:threads -- check '<https-post-permalink>'`를 실행합니다. 요청한 게시물 ID와 작성자가 포함된 공개 본문을 비로그인 상태에서 확인한 뒤 `collect`로 같은 permalink를 등록합니다. 기존 `agamajung-deepseek-web` 데몬이 회차당 최대 한 건을 확인하고, 확인 시각과 접수 결과를 같은 Linux 상태 디렉터리에 저장합니다. 한 permalink의 재방문 간격은 최소 한 시간입니다. 로그인 화면, 다른 게시물, 읽을 수 없는 본문은 `source_inaccessible`입니다. 현재 체크아웃의 Threads 처리는 HTML fixture로 검증하며 운영 수집 승인은 별도로 진행합니다. Threads는 관리자 명시 귀속으로 검수합니다. [소스 승인 계약](src/source-registry/README.md)
+`npm run collect:threads -- check '<https-post-permalink>'`와 `collect`는 같은 SQLite frontier에 URL을 등록합니다. 상주 수집기가 정확한 게시물 ID와 작성자의 공개 본문을 확인합니다. 로그인 화면, 다른 게시물, 읽을 수 없는 본문은 보류합니다.
 
 ### 일회성 실행과 복구
 
 운영 사이트에 D1 0016과 공개 필터가 적용되면 먼저 Linux 호스트에서 `npm run sync:price-sources`를 실행해 현재 사이트와 범위가 일치하는 접수 결과를 확인한 뒤 `npm run backfill:prices`를 실행합니다. 사이트 대상은 ID·revision·필터링 본문 해시를 고정합니다. 본문이 달라지거나 비교할 이전 해시가 없으면 새 관찰에 `capture_changed` 또는 `legacy_hash_missing`을 기록합니다. 같은 관리 revision에 있는 관찰을 선택해 적용할 수 있습니다. 적용 가능한 공식 범위가 0개면 가격 백필은 대기합니다. `DEEPSEEK_WEB_STATE_DIR`의 검수 큐는 읽기 스냅샷으로 사용합니다. 본문 해시가 일치하는 결과는 `price-evidence/`에 저장합니다. 달라진 원문은 `price-observations/`에 별도로 보존합니다. 주간 검토에서 관찰 ID를 찾아 `--price-observation=<id>`로 선택할 수 있습니다. 만료된 스토리, 접근 불가, 불일치, 자료 부족, 표시 제외, 이전 revision, 재시도 및 공개 진행/종료 건수가 요약됩니다.
 
 체크포인트는 `DEAL_PRICE_BACKFILL_DIR`(기본 `.local/deal-price-backfill`)에 있습니다. 중단이나 응답 유실 뒤에는 동일한 디렉터리로 재실행하면 동일한 사이트 요청 키로 이어집니다. 이전 manifest 형식(version 1 또는 2)을 사용한 경우 새 디렉터리를 지정합니다. 최신 검수 결정, 가격 충돌, 철회 및 소스별 실패는 관리자에서 확인할 수 있습니다. 사이트 권한, registry 승인, 공급자 상태를 복구한 뒤 재시도 항목을 처리합니다.
+
+## 연속 수집과 사이트 게시
+
+운영 슬롯의 `discover`, `collect`, `discover-sources`는 공구 URL을 SQLite frontier에 추가합니다. `agamajung-deepseek-web`이 lease와 상품 cursor를 소유하며, 즉시 처리할 작업이 없을 때 기본 1초 대기합니다. Instagram은 기존 v2 세션 소유권과 공유 잠금을 사용합니다. 공개 웹은 호스트별로 직렬 실행하고 proxy 연결을 설정할 수 없는 경우에만 직접 연결을 한 번 시도합니다. Instagram, Threads, 모델 공급자는 직접 연결합니다. 실제 접근 제한을 만난 요청은 종료합니다.
+
+`verified_offer_v2`는 관찰, 실패 코드와 재확인 일정, 사이트 요청을 Linux SQLite에서 함께 보존합니다. 사이트의 ingest 확인 응답이 현재 revision과 digest에 맞으면 관리 인증으로 게시를 요청합니다. 게시된 자료의 근거가 바뀌면 공개에서 내리고, 재확인이 성공하면 같은 식별자로 복구할 수 있습니다. 반복 라운드는 KST 시작일에 따라 구분합니다.
+
+`metrics-hourly.jsonl`에 시간별 조회·검증·게시·보류와 모델별 사용량을 기록합니다. 상태 디렉터리는 `DEEPSEEK_WEB_STATE_DIR`입니다. Instagram 429 또는 계정 확인 요청은 다음 KST 자정까지 Instagram 작업만 중단하고 이 파일에 경보를 기록합니다. [데몬과 설정](deepseek-web/README.md#연속-수집과-게시)

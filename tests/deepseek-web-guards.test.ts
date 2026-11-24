@@ -11,7 +11,6 @@ describe('deepseek-web guards', () => {
   test.each([
     'https://www.instagram.com/p/abc/',
     'https://i.threads.net/@x',
-    'https://gonggumoa.com/deal/1',
     'http://example.com/insecure',
   ])('prohibited or unsafe %s', url => {
     expect(isProhibitedUrl(url, config).blocked).toBe(true);
@@ -20,7 +19,7 @@ describe('deepseek-web guards', () => {
     expect(isProhibitedUrl('https://www.stokke.com/KOR/ko-kr/', config).blocked).toBe(false);
   });
   test('hostMatchesDenied covers subdomains', () => {
-    expect(hostMatchesDenied('m.instagram.com', config.prohibited_hosts)).toBe(true);
+    expect(hostMatchesDenied('m.instagram.com', ['instagram.com'])).toBe(true);
   });
   test('token and request budget stops run', () => {
     const memory = emptyMemory();

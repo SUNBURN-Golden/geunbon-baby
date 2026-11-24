@@ -72,7 +72,7 @@ export function DealCard({ deal, nowMs, clockMs = nowMs }: { deal: DealWithConte
   const timing = dealTimingFor(deal, nowMs);
   return (
     <article className="deal-card">
-      <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
+      <DealImage src={deal.image_url} verifiedOffer={deal.verify_level === 'verified_offer_v2'} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
       <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} countdown /></div>
       <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link></h2>
       <p className="deal-period"><DealPeriod deal={deal} timing={timing} external={deal.origin === 'external_web'} /></p>
@@ -161,7 +161,7 @@ export function DealDetail({ deal, nowMs, bundleItems = [] }: { deal: DealWithCo
       <Link className="deal-back" href="/deals">{dealsCopy.back}</Link>
       <article className="deal-detail">
         <DealHeader deal={deal} timing={timing} />
-        <DealImage src={deal.image_url} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
+        <DealImage src={deal.image_url} verifiedOffer={deal.verify_level === 'verified_offer_v2'} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
         <DealComparison deal={deal} />
         {timing.state === 'active' && deal.ends_at && <DealCountdown endsAt={deal.ends_at} nowMs={nowMs} />}
         <DealExternalSource deal={deal} />

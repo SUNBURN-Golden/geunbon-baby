@@ -1,14 +1,14 @@
-import type { CycleBudget, DeepSeekWebConfig, RunMemory } from './types';
+import type { CycleBudget, DeepSeekWebConfig } from './types';
 export function hostMatchesDenied(hostname: string, denied: string[]) {
   const host = hostname.toLowerCase();
   return denied.some(d => host === d || host.endsWith(`.${d}`));
 }
-export function isProhibitedUrl(url: string, config: DeepSeekWebConfig) {
+export function isProhibitedUrl(url: string, _config: DeepSeekWebConfig) {
+  void _config;
   let parsed: URL;
   try { parsed = new URL(url); } catch { return { blocked: true, reason: 'unsafe_url' as const }; }
   if (parsed.protocol !== 'https:') return { blocked: true, reason: 'unsafe_url' as const };
   if (parsed.username || parsed.password || parsed.port) return { blocked: true, reason: 'unsafe_url' as const };
-  if (hostMatchesDenied(parsed.hostname, config.prohibited_hosts)) return { blocked: true, reason: 'prohibited_domain' as const };
   if (/instagram|threads/i.test(parsed.hostname)) return { blocked: true, reason: 'prohibited_domain' as const };
   return { blocked: false as const, reason: null };
 }

@@ -1,3 +1,4 @@
+import { migrationStatements } from './helpers/migrations';
 import { Children, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readdir, readFile } from 'node:fs/promises';
@@ -55,7 +56,7 @@ beforeEach(async () => {
   headers = new Headers(); context.response = new ResponseCookies(headers);
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
-    for (const sql of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(s => s.trim())) await memory.db.prepare(sql).run();
+    for (const sql of migrationStatements(await readFile(new URL(file, dir), 'utf8'))) await memory.db.prepare(sql).run();
   }
   await memory.db.prepare("INSERT INTO models VALUES ('model-1','Stokke','fixture','high_chair','fixture',NULL,'https://www.stokke.com/','2026-10-20','manual','')").run();
   await memory.db.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('seller-1','fixture','https://www.stokke.com/')").run();

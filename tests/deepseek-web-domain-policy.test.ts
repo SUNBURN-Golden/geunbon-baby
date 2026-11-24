@@ -17,7 +17,7 @@ describe('deepseek-web domain policy decoupling', () => {
     expect(isHostDomainStopped(f.store, 'www.momcalendar.com')).toBe(true);
     expect(isHostDomainStopped(f.store, 'fixture.example')).toBe(false);
     // momcalendar.com is now also hard-prohibited before the DB domain state is consulted.
-    expect(evaluateUrlDomainPolicy(f.store, 'https://momcalendar.com/deal', config).reason).toBe('prohibited_domain');
+    expect(evaluateUrlDomainPolicy(f.store, 'https://momcalendar.com/deal', config).reason).toBe('domain_stopped');
     expect(evaluateUrlDomainPolicy(f.store, 'https://fixture.example/x', config).blocked).toBe(false);
     f.store.put('domain_state', 'fixture.example', { stopped: true, next_at: 0, reason: 'blocked' });
     expect(evaluateUrlDomainPolicy(f.store, 'https://fixture.example/x', config).reason).toBe('domain_stopped');

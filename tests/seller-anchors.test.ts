@@ -1,4 +1,5 @@
 import { seedPublicPrice } from './helpers/public-deal-fixture';
+import { migrationStatements } from './helpers/migrations';
 import { readdir, readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -31,7 +32,7 @@ beforeEach(async () => {
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
     const schema = await readFile(new URL(file, dir), 'utf8');
-    for (const sql of schema.split(';').filter(sql => sql.trim())) await memory.db.prepare(sql).run();
+    for (const sql of migrationStatements(schema)) await memory.db.prepare(sql).run();
   }
 });
 afterEach(() => memory.close());

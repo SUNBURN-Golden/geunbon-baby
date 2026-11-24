@@ -326,7 +326,7 @@ test('the site rejects unapproved official URLs, expired approvals, and queued p
     sellerProof.official!.source.url = 'https://seller.example.com/products/test-model';
     expect((await request('ingest', { ...incoming, price_evidence: sellerProof })).status).toBe(409);
     const expired = { ...officialScope, approved_at: '2024-01-01T00:00:00.000Z', expires_at: '2025-01-01T00:00:00.000Z' };
-    await syncScopes(request, [expired], '2026-11-22T00:00:00.001Z');
+    expect((await request('admin/price-sources', { scopes: [expired], observed_at: '2026-11-22T00:00:00.001Z' })).status).toBe(400);
     const expiredProof = structuredClone(evidence);
     expiredProof.official!.source.observed_at = '2024-02-01T00:00:00.000Z';
     expect((await request('ingest', { ...incoming, price_evidence: expiredProof })).status).toBe(409);
@@ -335,7 +335,7 @@ test('the site rejects unapproved official URLs, expired approvals, and queued p
     const { data } = await staged.json<{ data: { id: string; price_evidence_id: string } }>();
     const promote = { action: 'promote', request_id: 'fixture-authority-revoke', model_id: 'model-1', seller_id: 'seller-1',
       starts_at: startsAt, price_evidence_id: data.price_evidence_id };
-    await syncScopes(request, [], '2026-11-22T00:00:00.003Z');
+    expect((await request('admin/price-sources', { scopes: [], observed_at: '2026-11-22T00:00:00.003Z', revoke_at_revision: '2026-11-22T00:00:00.002Z' })).status).toBe(200);
     expect(await (await request(`admin/candidates/${data.id}`, promote)).json()).toEqual({ error: 'official_source_not_approved' });
     expect((await request('admin/price-sources', { observed_at: checkedAt, scopes: [officialScope] })).status).toBe(409);
     expect(await all(db, 'SELECT id FROM deals')).toEqual([]);

@@ -19,7 +19,7 @@
 
 별도 Linux DeepSeek 공개 웹 앱 `agamajung-deepseek-web`은 [전용 supervision·heartbeat·backoff 안내](crawler/deepseek-web/README.md#supervision-heartbeat-and-recovery-linux-only)를 따릅니다. 기본 heartbeat는 `<repository>/.local/deepseek-web/heartbeat.json`이며 `npm run deepseek-web -- status`로 읽기 전용 확인합니다. 로컬 scheduler/watchdog·Instagram service·사이트 Workers와 별개입니다. 이번 복구 범위의 프로세스 신원은 저장소 근거에 따른 가정이며 과거 장애 원인을 확정하지 않습니다.
 
-**Workers Cron은 수집기를 실행하지 않는 로그 stub입니다. Playwright와 OCR은 Linux에서만 실행합니다.** 사이트는 로컬 수집 레코드·URL·원문·셀러·근거를 가져오지 않습니다. 로컬 `seller_candidates`를 사이트 판매자로 자동 등록하지도 않습니다. 수집함의 `ready_to_publish`는 사람의 공개 검토를 마친 로컬 상태이며 실제 게시 동작이 아닙니다. Instagram pending → 사이트 관리자 승인 → deals 경로와 별개입니다.
+**Workers Cron은 수집기를 실행하지 않는 로그 stub입니다. Playwright와 OCR은 Linux에서만 실행합니다.** 기존 건수 동기화는 로컬 수집 레코드를 보내지 않습니다. 공구 데몬은 별도의 인증된 ingest 경로로 상품별 검증 근거를 보냅니다. 로컬 `seller_candidates`를 사이트 판매자로 자동 등록하지도 않습니다. 수집함의 `ready_to_publish`는 사람의 공개 검토를 마친 로컬 상태이며 실제 게시 동작이 아닙니다. Instagram pending → 사이트 관리자 승인 → deals 경로와 별개입니다.
 
 이 운영 호스트의 Linux 수집 예약은 [PM2 cron](docs/collector/scheduling.md)으로 실행합니다. 상주 슬롯 스케줄러와 systemd watchdog은 별도 운영 모델입니다. PM2 online이나 최근 로그 하나는 수집 성공의 증거가 아닙니다.
 
@@ -48,7 +48,7 @@
 
 최초 데이터는 **`seed/models.json`, `seed/tripp_trapp.json`만** 사용합니다. 공식 본문 확인 근거와 확인 불가 사유는 [모델 근거 기록](docs/model-evidence-2026-10-23.md)에 있습니다. 가격이 null이거나 수집되지 않았으면 **정보 없음**입니다. 시드에 공구가·일정이 없으므로 공구와 달력은 빈 화면이 정상입니다.
 
-- 비교·표시하는 가격은 **공식가**와 **공구가** 두 종류뿐입니다. 공식가는 제조사·공식 수입사의 동일 구성 공식 페이지 본문에서 확인한 `verify_level: "page_body"` 가격만 사용하며, 공구가는 관리자가 원문 검수 후 승인한 공구 가격입니다.
+- 비교·표시하는 가격은 **공식가**와 **공구가** 두 종류뿐입니다. 공식가는 제조사·공식 수입사의 동일 구성 공식 페이지 본문에서 확인한 `verify_level: "page_body"` 가격만 사용하며, 공구가는 현재 원문 근거가 확인된 공구 가격입니다.
 - 해외가·당근 중고 시세·직구가·일반 판매처/백화점 행사가는 비교에서 제외합니다(`migrations/0004_official_groupbuy_only.sql`). 검색 요약·블로그·기사·legacy `external_listing`의 가격도 공식가 근거가 아닙니다.
 - **가격을 절대 만들어 내지 않습니다 (never invent prices).** 공식가가 없으면 다른 판매처 가격이나 구성품 가격 합계로 대체하지 않습니다.
 - `kr_retailers`는 판매자 이름과 출처 URL만 보관하며 가격은 포함하지 않습니다.
@@ -485,7 +485,7 @@ Linux 수집 봇의 새 출처 탐색은 [소스 발견기](docs/collector/sourc
 
 ## 검증된 공동구매 가격
 
-사이트 D1 마이그레이션 `0016_verified_deal_prices.sql` 적용 시 기존 가격과 검수 이력은 보존되고 기존 공구의 가격 검증 상태는 미확인으로 시작합니다. 모든 공개 공구 조회는 사람의 승인, 현재 공구 revision에 연결된 검증 근거, 확인된 공구가·정가·마감일·출처·확인 시각을 먼저 확인합니다. 정가는 같은 모델·세대·옵션·수량·구성의 제조사 또는 공식 수입사 제품 페이지에서 확인합니다. 두 판독에서 공구가와 마감일, 공식 페이지의 정가와 구성이 정확히 일치해야 합니다. 명시적으로 전체 상품이 0원인 경우만 공구가 0원을 인정합니다. 날짜만 명시된 마감은 KST 해당 날짜의 마지막 밀리초까지입니다.
+사이트 D1 마이그레이션 `0016_verified_deal_prices.sql` 적용 시 기존 가격과 검수 이력은 보존되고 기존 공구의 가격 검증 상태는 미확인으로 시작합니다. 모든 공개 공구 조회는 승인 상태, 현재 공구 revision에 연결된 검증 근거, 확인된 공구가·정가·마감일·출처·확인 시각을 먼저 확인합니다. 정가는 같은 모델·세대·옵션·수량·구성의 제조사 또는 공식 수입사 제품 페이지에서 확인합니다. 두 판독에서 공구가와 마감일, 공식 페이지의 정가와 구성이 정확히 일치해야 합니다. 명시적으로 전체 상품이 0원인 경우만 공구가 0원을 인정합니다. 날짜만 명시된 마감은 KST 해당 날짜의 마지막 밀리초까지입니다.
 
 할인율은 D1에서 정수로 내림 계산합니다. 390,000원과 430,000원의 할인율은 9%입니다. 할인율이 1% 미만인 경우, 정가와 같은 경우, 정가를 넘는 경우 모두 관리자 화면에만 남습니다. 각각 `discount_below_one_percent`, `equal_price`, `above_list`로 기록하며 관리자 화면에서 확인할 수 있습니다. 공구 카드 및 상세의 가격 비교에는 공구 검증 근거의 정가를 사용합니다. 모델 목록의 공식가는 기존 모델 근거를 쓰며 현재 공구가는 공개 가능한 진행 중 공구의 최저가입니다.
 
@@ -497,3 +497,13 @@ Linux 수집 봇의 새 출처 탐색은 [소스 발견기](docs/collector/sourc
 - 마이그레이션과 검증 필터가 운영에 활성화된 뒤, 사용을 승인받은 Linux 수집 호스트에서 `npm run backfill:prices`를 한 번 실행합니다. 본문이 바뀌거나 이전 해시를 확인할 수 없는 경우 새 관찰을 별도로 보존하고 현재 revision에서 명시적으로 선택해 적용합니다. 중단 시 같은 체크포인트로 이어서 실행할 수 있습니다. [Linux 실행과 복구](crawler/README.md#검증-가격-수집과-일회성-백필)
 
 0016은 기존 Worker의 쓰기와 이력을 유지합니다. 기존 조회 인덱스의 이름과 정렬 키는 보존하며, 구형 Worker의 정정·철회 SQL을 workerd에서 실행할 수 있도록 인덱스 필터를 게시 상태로 단순화했습니다. 기존 `7f8d7d8` Worker는 마이그레이션 뒤에도 기존 공개 조건으로 읽으므로 이 버전으로 돌아가면 가격 미확인 공구가 다시 공개될 수 있습니다. 전환 내내 비공개 조건을 유지하려면 먼저 기존 쓰기 경로를 가진 호환 Worker에서 공구 공개 조회를 빈 결과와 상세 404로 전환하세요. 기존 자동 배포의 홈페이지 HTML·JSON과 공구 JSON 확인을 통과한 호환 버전이 100% 트래픽을 받는 것을 확인한 다음 0016 릴리스를 진행합니다. 자동 배포 한 번의 폴링에서 두 변경이 함께 반영될 수 있으므로 병합 순서만으로는 이 전환이 성립하지 않습니다.
+
+## 공동구매 자동 게시
+
+Linux `agamajung-deepseek-web` 데몬은 공개 출처와 Instagram v2에서 받은 상품별 관찰을 수집합니다. 사이트는 인증된 `verified_offer_v2` 요청의 상품 ID와 공식 가격 승인을 확인하고, DeepSeek Flash와 Qwen4-Max Preview의 독립 판독을 검증합니다. 공구가·정가·마감일·구성·원문을 모두 확인한 상품은 검수자 조작 없이 기존 ingest와 promote 경로를 거쳐 모델 상세 및 공구 화면에 표시됩니다. 사이트 배포 일정과 개별 상품의 게시 시점은 독립적입니다.
+
+보류된 상품은 `/admin`의 자동 게시 보류에서 원문, 확인 시각, 다음 확인 시각, `missing_official_coverage`, `missing_deadline`, `qwen_disagrees`, `source_unavailable` 등 확인이 필요한 조건을 볼 수 있습니다. 같은 상품이 재확인을 통과하면 보류 목록에서 빠집니다. 발행 후 증거가 달라지면 공개 가격 근거를 해제하고, 원문 종료나 마감 시각 경과는 유효한 근거가 있는 상품을 종료로 이동합니다. 공개 화면과 피드는 동일한 D1 공개 조건을 읽습니다.
+
+`0017_verified_offers.sql`은 상품별 게시 이력과 요청 영수증을 추가합니다. `0018_play_gyms.sql`은 하베브릭스 바람개비 아기체육관과 Lovevery The Play Gym을 추가하며 두 모델의 국내 공식가는 확인 전까지 정보 없음으로 표시합니다. [하베브릭스 제품 페이지](https://m.whittlestore.com/views/shop/shopview?iniCategory=91&pack_content_id=4463&thisCategory=546) · [Lovevery 제품 페이지](https://lovevery.com/products/the-play-gym)
+
+시간별 수집 및 비용 집계, Instagram 중단 경보와 재개 시각은 Linux 상태 디렉터리의 `metrics-hourly.jsonl`에서 확인합니다. [Linux 운영](crawler/deepseek-web/README.md#연속-수집과-게시)

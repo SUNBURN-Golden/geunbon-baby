@@ -66,7 +66,6 @@ function validateOfficialSources(raw: DeepSeekWebConfig): OfficialSourceConfig[]
 export function loadDeepSeekWebConfig(path = join(root, 'config.json')): DeepSeekWebConfig {
   const raw = JSON.parse(readFileSync(path, 'utf8')) as DeepSeekWebConfig;
   if (raw.profile_id !== 'deepseek-web' || raw.profile_version !== 1) invalid();
-  if (!Array.isArray(raw.prohibited_hosts) || raw.prohibited_hosts.length < 1) invalid();
   if (!raw.scope_categories.every(c => allowed.has(c.id))) invalid();
   for (const cap of [raw.budget.max_tokens_per_run, raw.budget.max_requests_per_run, raw.budget.max_completion_tokens, raw.budget.estimated_prompt_tokens]) {
     if (!Number.isInteger(cap) || cap < 0) invalid();

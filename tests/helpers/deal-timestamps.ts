@@ -1,9 +1,10 @@
+import { migrationStatements } from './migrations';
 import { readdir, readFile } from 'node:fs/promises';
 import { handleApi } from '../../lib/api';
 import type { Env } from '../../lib/db';
 
 export async function execute(db: D1Database, sql: string) {
-  for (const statement of sql.split(';').filter(s => s.trim())) await db.prepare(statement).run();
+  for (const statement of migrationStatements(sql)) await db.prepare(statement).run();
 }
 export async function migrate(db: D1Database, through = '9999') {
   const dir = new URL('../../migrations/', import.meta.url);

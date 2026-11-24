@@ -1,0 +1,80 @@
+{
+  "limits": {
+    "max_pages": null,
+    "max_depth": null,
+    "max_queue_urls": null,
+    "max_details_per_cycle": null
+  },
+  "source_limits": {},
+  "providers": {
+    "extraction": {
+      "endpoint": "https://api.deepseek.com/chat/completions",
+      "model": "deepseek-flash",
+      "max_output_tokens": 2048,
+      "estimated_input_tokens": 12000,
+      "budget": {
+        "run": {
+          "calls": null,
+          "tokens": null,
+          "cost": null
+        },
+        "cycle": {
+          "calls": null,
+          "tokens": null,
+          "cost": null
+        },
+        "day": {
+          "calls": null,
+          "tokens": null,
+          "cost": null
+        },
+        "cumulative": {
+          "calls": null,
+          "tokens": null,
+          "cost": null
+        }
+      }
+    },
+    "verification": {
+      "endpoint": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+      "model": "qwen4-max-preview",
+      "max_output_tokens": 2048,
+      "estimated_input_tokens": 12000,
+      "budget": {
+        "run": {
+          "calls": null,
+          "tokens": null,
+          "cost": null
+        },
+        "cycle": {
+          "calls": null,
+          "tokens": null,
+          "cost": null
+        },
+        "day": {
+          "calls": null,
+          "tokens": null,
+          "cost": null
+        },
+        "cumulative": {
+          "calls": null,
+          "tokens": null,
+          "cost": null
+        }
+      }
+    }
+  },
+  "seed_urls": [
+    "https://09pangpang.com/",
+    "https://momcalendar.com/",
+    "https://gonggumoa.com/",
+    "https://buyg.kr/",
+    "https://snapup.co.kr/influencer/calendar",
+    "https://www.instagram.com/explore/tags/육아공구/",
+    "https://www.instagram.com/explore/tags/유아용품공구/",
+    "https://www.threads.net/search?q=육아공구",
+    "https://www.threads.net/search?q=트립트랩+공구"
+  ],
+  "press": {},
+  "idle_tick_ms": 1000
+}

@@ -1,3 +1,4 @@
+import { migrationStatements } from './helpers/migrations';
 import { Children, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readdir, readFile } from 'node:fs/promises';
@@ -60,7 +61,7 @@ beforeEach(async () => {
   memory = memoryD1(); context.db = memory.db;
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
-    for (const sql of (await readFile(new URL(file, dir), 'utf8')).split(';').filter(s => s.trim())) await memory.db.prepare(sql).run();
+    for (const sql of migrationStatements(await readFile(new URL(file, dir), 'utf8'))) await memory.db.prepare(sql).run();
   }
 });
 afterEach(() => { vi.useRealTimers(); memory.close(); });

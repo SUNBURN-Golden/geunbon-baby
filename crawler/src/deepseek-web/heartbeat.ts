@@ -1,3 +1,4 @@
+import { offerConfig } from '../offers/config';
 import { join } from 'node:path';
 import { atomicState, readState } from './atomic-state';
 import { cycleInterval } from './config';
@@ -47,6 +48,23 @@ export function validHeartbeat(h: RunReport): boolean {
 export async function heartbeatStatus(dir: string, now = Date.now(), expectedValue = process.env.DEEPSEEK_WEB_DAEMON_MS) {
   let expected: number | null = null;
   try { expected = cycleInterval(expectedValue); } catch { /* Unknown timing is explicit. */ }
+  try {
+    const offer = JSON.parse(readState(join(dir, 'offer-heartbeat.json'))) as { at: number; pid: number; idle_tick_ms: number; missing_official_coverage?: unknown; ready_official_variants?: unknown; official_scope_revision?: unknown };
+    const valid = Number.isSafeInteger(offer.at) && offer.at <= now && Number.isSafeInteger(offer.pid) && offer.pid > 0
+      && Number.isSafeInteger(offer.idle_tick_ms) && offer.idle_tick_ms > 0;
+    const stale = valid ? now - offer.at > 5000 : null;
+    const configured = offerConfig().idle_tick_ms;
+    const mismatch = offer.idle_tick_ms !== configured;
+    const ids = (value: unknown) => Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && /^model-[0-9]{1,8}$/.test(id)) : [];
+    return { missing_official_coverage: ids(offer.missing_official_coverage), ready_official_variants: ids(offer.ready_official_variants),
+      official_scope_revision: typeof offer.official_scope_revision === 'string' && /^[a-f0-9]{64}$/.test(offer.official_scope_revision) ? offer.official_scope_revision : null,
+      freshness: stale === null ? 'unknown' : stale ? 'stale' : 'fresh', stale, interval_mismatch: mismatch,
+      cycle_interval_ms: offer.idle_tick_ms, expected_interval_ms: configured, offer_idle_tick_ms: offer.idle_tick_ms, exit_code: !valid || mismatch ? 2 : stale ? 1 : 0,
+      reason: !valid ? 'heartbeat_invalid' : mismatch ? 'interval_mismatch' : null,
+      ...(valid ? { heartbeat_at: new Date(offer.at).toISOString(), outcome: 'running' } : {}) };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof Error && error.message === 'ENOENT')) return { freshness: 'unknown', reason: 'heartbeat_unreadable', exit_code: 2, expected_interval_ms: expected };
+  }
   let h: RunReport | null;
   try { h = await readHeartbeat(dir); } catch { return { freshness: 'unknown', reason: 'heartbeat_unreadable', exit_code: 2, expected_interval_ms: expected }; }
   if (!h) return { freshness: 'unknown', reason: 'heartbeat_missing', exit_code: 2, expected_interval_ms: expected };

@@ -16,7 +16,7 @@ const migration0015 = new URL('../migrations/0015_restore_dropped_indexes.sql', 
 const indexNames = (db: D1Database) => all<{ name: string }>(db, "SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex_%' ORDER BY name");
 const restoredNames = restored.map(index => index.name);
 
-test('full migration chain restores exactly the three indexes dropped by 0013', async () => {
+test('0015 restores exactly the three indexes dropped by 0013', async () => {
   const memory = memoryD1(), baseline = memoryD1();
   try {
     await migrate(memory.db, '0015');

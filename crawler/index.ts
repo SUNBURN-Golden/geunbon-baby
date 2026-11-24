@@ -1,6 +1,6 @@
 // 아가마중 크롤러 v2 진입점(오케스트레이터).
 // 준실시간 폴링: 알림·스토리 트레이 신호 → 우선순위 큐 → 새 게시물/스토리 수집 →
-// 자동 추출 제안과 함께 /api/v1/ingest 검수 대기열 전송 → 보수적 자동 팔로우 → 해시태그 셀러 발견.
+// 검증된 게시물·스토리를 Linux 공구 수집함에 전달한다.
 // 챌린지·차단·API 실패 시 즉시 중단하며 자동 재시도하지 않는다(종료코드 75/1).
 import { loadConfig, loadEnvironment } from './lib/config';
 import { CrawlerState, statePath } from './lib/state';
@@ -14,12 +14,20 @@ import { syncFollowing } from './lib/following';
 import { discoverSellers } from './lib/discover';
 import { IngestError } from './lib/ingest';
 import { sleep } from './lib/util';
+import { join } from 'node:path';
 import { planScans } from './lib/schedule';
 import { runMainLoop } from './lib/main-loop';
 import { QuietWindowError } from './lib/quiet-window';
 import { captureHalt } from './lib/halt';
 import { pathToFileURL } from 'node:url';
 import { failureDetails } from './lib/failure';
+import { openRuntimeCollectorStore } from './src/deepseek-web/runtime-store';
+import { stateDir } from './src/deepseek-web/config';
+import { isolatedBrowser, isolatedContext, mediateBrowser } from './src/offers/browser';
+import { assertOfficialAccount, recordSocial } from './src/offers/social';
+import { instagramStopped, lockHost, offerTransport, stopInstagram } from './src/offers/transport';
+import { offerConfig } from './src/offers/config';
+import { enqueueSource } from './src/offers/frontier';
 
 // Legacy flag only: dry-run never reaches Instagram. Reject unknown values.
 export function externalDryRun(env: Record<string, string | undefined> = process.env): boolean {
@@ -37,29 +45,46 @@ export async function main() {
   await initHealth(crawlerDir);
   loadEnvironment(crawlerDir);
   if (externalDryRun()) { console.error(DRY_RUN_NOTICE); return; }
-  const endpoint = process.env.AGAMAJUNG_API_URL;
-  const token = process.env.INGEST_TOKEN;
-  if (!endpoint || !token) throw new Error('AGAMAJUNG_API_URL과 INGEST_TOKEN이 필요합니다.');
-  const api = new URL('/api/v1/ingest', endpoint);
-  if (api.username || api.password || (api.protocol !== 'https:' && !(api.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(api.hostname)))) throw new Error('외부 API는 HTTPS가 필요합니다.');
-
+  const enabled = !!process.env.COLLECTOR_DB;
+  const endpoint = process.env.AGAMAJUNG_API_URL, token = process.env.INGEST_TOKEN;
+  if (!enabled && (!endpoint || !token)) throw new Error('AGAMAJUNG_API_URL과 INGEST_TOKEN이 필요합니다.');
+  const api = !enabled ? new URL('/api/v1/ingest', endpoint) : null;
+  if (api && (api.username || api.password || api.protocol !== 'https:' && !(api.protocol === 'http:' &&
+      ['localhost','127.0.0.1','[::1]'].includes(api.hostname)))) throw new Error('외부 API는 HTTPS가 필요합니다.');
   const { settings, accounts } = await loadConfig(crawlerDir);
   const state = await CrawlerState.open(statePath(crawlerDir));
   const username = process.env.AGAMAJUNG_IG_USER ?? 'agamajung';
+  if (enabled && username !== 'agamajung') throw new HaltError('challenge');
+  const store = enabled ? openRuntimeCollectorStore() : null, dir = stateDir();
+  if (store && instagramStopped(store)) { store.close(); return; }
+  const config = store && offerConfig(), transport = store && offerTransport(store, dir);
+  const checkStop = () => { if (store && instagramStopped(store)) throw new HaltError('blocked'); };
 
   let stopped = false;
   process.once('SIGINT', () => { stopped = true; });
   process.once('SIGTERM', () => { stopped = true; });
   health('run_start', { seeds: accounts.seed_accounts.length, ocr: settings.ocr.enabled, follow_daily_cap: settings.follow.daily_cap, poll: settings.poll_interval_minutes.join('-') });
+  let release: Awaited<ReturnType<typeof lockHost>> | undefined;
   try {
+    if (store) release = await lockHost(join(dir, 'host-locks'), 'instagram-session-owner', AbortSignal.timeout(15_000)).catch(() => undefined);
+    if (store && !release) return;
     await runMainLoop({ quietWindows: settings.quiet_windows, pollMinutes: settings.poll_interval_minutes, once: process.env.AGAMAJUNG_ONCE === '1' }, {
       now: Date.now,
       random: Math.random,
       sleep,
       schedule: (callback, ms) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
       stopped: () => stopped,
-      open: check => launchBrowser(crawlerDir, check),
-      login: ({ context, page, sessionFile }, check) => ensureLogin(context, page, settings, username, sessionFile, check),
+      open: check => store && config && transport ? launchBrowser(crawlerDir, () => { check(); checkStop(); }, {
+        launch: isolatedBrowser, context: isolatedContext,
+        install: context => mediateBrowser(context, { store, dir, transport, lane: 'instagram', onRedirect: (parent, destination) => {
+          store.transaction(() => enqueueSource(store, config, { parent, destination, source: 'instagram', category: '',
+            relation: 'redirect', locator: 'location', depth: 1 }));
+        } }),
+      }) : launchBrowser(crawlerDir, check),
+      login: async ({ context, page, sessionFile }, check) => {
+        await ensureLogin(context, page, settings, username, sessionFile, check);
+        if (store) await assertOfficialAccount(page);
+      },
       close: async ({ context, browser }) => { try { await context.close(); } finally { await browser.close(); } },
       save: () => state.save(),
       flush: flushHealth,
@@ -67,12 +92,16 @@ export async function main() {
       isFatal: error => error instanceof HaltError || error instanceof IngestError || error instanceof SessionError,
       onFatal: async (error, session, signal) => {
         if (error instanceof HaltError) {
+          if (store && error.reason === 'challenge') stopInstagram(store, dir, 'checkpoint');
           process.exitCode = 75;
           await captureHalt(crawlerDir, error.reason, session?.diagnosticPage, signal);
         }
       },
       cycle: async ({ context, page, sessionFile }, check) => {
         check();
+        checkStop();
+        if (store) await assertOfficialAccount(page);
+
         await syncFollowing(page, { state, settings, username }, check);
         check();
         const signals = await readSignals(page, settings, username);
@@ -87,7 +116,11 @@ export async function main() {
           check();
           const { account } = job;
           try {
-            const collected = await collectAccount(page, { account, crawlerDir, state, settings, api, token, scanPosts: job.posts, scanStories: job.stories, collectImages: imagePolicy.get(account.toLowerCase()) ?? true });
+            const settingsForAccount = { account, crawlerDir, state, settings, scanPosts: job.posts, scanStories: job.stories,
+              collectImages: imagePolicy.get(account.toLowerCase()) ?? true };
+            const collected = store ? await collectAccount(page, { ...settingsForAccount,
+              handoff: async item => { checkStop(); await assertOfficialAccount(page); recordSocial(store, item); } }) :
+              await collectAccount(page, { ...settingsForAccount, api: api!, token: token! });
             posts += collected.posts;
             stories += collected.stories;
           } catch (error) {
@@ -114,6 +147,8 @@ export async function main() {
       },
     });
   } finally {
+    await release?.();
+    store?.close();
     health('run_stop', {});
     await flushHealth();
   }

@@ -15,6 +15,9 @@ try {
     const status = await heartbeatStatus(stateDir());
     printStatus(status, process.argv.includes('--json'));
     process.exitCode = status.exit_code;
+  } else if (command === 'daemon' || command === 'once') {
+    const { runOfferDaemon } = await import('../src/offers/runner.ts');
+    await runOfferDaemon(command === 'once', process.argv.slice(3));
   } else {
     const { deepSeekWebCli } = await import('../src/deepseek-web/cli.ts');
     const report = await deepSeekWebCli([command, ...process.argv.slice(3)]);

@@ -1,4 +1,5 @@
 import { endsAt, exampleEvidence, officialScope } from './helpers/verified-deal-prices';
+import { migrationStatements } from './helpers/migrations';
 import { readdir, readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { handleApi } from '../lib/api';
@@ -20,7 +21,7 @@ async function migrate(files?: string[]) {
   const dir = new URL('../migrations/', import.meta.url);
   for (const file of files ?? (await readdir(dir)).filter(f => f.endsWith('.sql')).sort()) {
     const sql = await readFile(new URL(file, dir), 'utf8');
-    for (const statement of sql.split(';').filter(s => s.trim())) await env.DB.prepare(statement).run();
+    for (const statement of migrationStatements(sql)) await env.DB.prepare(statement).run();
   }
 }
 beforeEach(async () => {

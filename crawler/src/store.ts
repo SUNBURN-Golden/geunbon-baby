@@ -70,6 +70,7 @@ export class CollectorStore {
       initializeSourceRegistry(this);
       if(uv()<7)this.transaction(()=>{if(uv()<7)this.db.exec(readFileSync(new URL('../migrations/0007_collection_schedule.sql',import.meta.url),'utf8'));});
       if(uv()<8)this.transaction(()=>{if(uv()<8)this.db.exec(readFileSync(new URL('../migrations/0008_collection_observability.sql',import.meta.url),'utf8'));});
+      if(uv()<9)this.transaction(()=>{if(uv()<9)this.db.exec(readFileSync(new URL('../migrations/0009_verified_collection.sql',import.meta.url),'utf8'));});
       requireThat(!this.db.prepare('PRAGMA foreign_key_check').all().length,'database_foreign_key');
       requireThat((this.db.prepare('PRAGMA quick_check').get() as {quick_check:string}).quick_check==='ok','database_corrupt');
       this.secureFiles();
