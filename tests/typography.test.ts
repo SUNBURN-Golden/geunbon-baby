@@ -100,6 +100,6 @@ describe('vendored display typography', () => {
     expect(layout).toContain('<p className="brand-slogan">{siteCopy.tagline}</p>');
     const home = read('app/page.tsx');
     expect(home.match(/<h1>[\s\S]*?<\/h1>/)?.[0]).not.toContain('<br');
-    expect(home.match(/<h2>[\s\S]*?<\/h2>/)?.[0]).not.toContain('<br');
+    expect(read('app/_active-deals.tsx').match(/<h2\b[\s\S]*?<\/h2>/)?.[0]).not.toContain('<br');
   });
 });

@@ -1,3 +1,4 @@
+import { carryClosedRound, evidencedOpening, recordPublishedPrice } from './deal-publication';
 import { assessPriceEvidence, digest, displayExclusion, filterOfferCapture, identityToken, offerSourceClosed, parsePriceEvidence, withoutStandaloneClosure, type PriceEvidence, type PriceResult, type VerifiedPrices } from '../shared/deal-price-evidence';
 import { canonicalUrl } from '../shared/privacy-rules';
 import { normalizeTimestamp } from './deals';
@@ -277,7 +278,7 @@ export async function recordBackfill(db: D1Database, kind: PriceTargetKind, id: 
       db.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at,price_evidence_id)
         SELECT ?,id,?,'verify_prices',?,?,?,?,seller_id,title,price,CASE WHEN ? THEN ? ELSE starts_at END,COALESCE(?,ends_at),image_url,checked,status,?,?
         FROM deals WHERE id = ? AND status = 'published' AND version = ? AND EXISTS (SELECT 1 FROM deal_price_backfill_receipts WHERE request_id = ? AND operation_id = ?)`)
-        .bind(receiptId, version, 'prices-' + key, requestHash, outcome, target.model_id ?? null, application.facts ? 1 : 0, normalizedStart, application.facts?.ends_at ?? null, now, proof.id, id, Number(expected), key, receiptId),
+        .bind(receiptId, version, 'prices-' + key, requestHash, outcome, target.model_id ?? null, application.facts ? 1 : 0, normalizedStart, application.facts?.ends_at ?? null, now, retainPrices ? target.price_evidence_id ?? null : proof.id, id, Number(expected), key, receiptId),
       db.prepare(`UPDATE deals SET ${priceUpdate},
         source_ended = CASE WHEN ? THEN 1 ELSE source_ended END,
         starts_at = CASE WHEN ? THEN ? ELSE starts_at END, ends_at = COALESCE(?,ends_at), version = ?, updated_at = ?
@@ -286,6 +287,17 @@ export async function recordBackfill(db: D1Database, kind: PriceTargetKind, id: 
           application.facts ? 1 : 0, normalizedStart, application.facts?.ends_at ?? null,
           version, now, id, Number(expected), receiptId),
     );
+    if (closed && (retainPrices || application.facts)) {
+      statements.push(carryClosedRound(db, id, version, 'prices-' + key));
+    }
+    if (application.facts) {
+      statements.push(recordPublishedPrice(db, id, 'prices-' + key, evidencedOpening(evidence, normalizedStart), application.facts.configuration));
+    }
+    // Observation takedowns, closures, and corrections only demote the live
+    // projection above. They never erase a previously valid publication: a
+    // normally ended round stays comparable after its proof or approval
+    // expires. Only an explicit INVALIDATE_OFFER operation writes
+    // invalidated_publication_proofs.
   } else if (!stageOnly) {
     // Only the writer of this receipt may advance the head.
     statements.push(db.prepare(`INSERT INTO deal_price_evidence_heads (target_kind,target_id,target_revision,evidence_id)

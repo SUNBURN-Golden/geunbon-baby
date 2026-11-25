@@ -1,3 +1,4 @@
+import { homeCopy } from '../lib/copy/home.ko';
 import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { readdir, readFile } from 'node:fs/promises';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -44,7 +45,8 @@ async function surfaces() {
   return { home: await render(Home), deals: await render(DealsPage), models: await render(models), model: await render(() => model()), calendar: await render(Calendar) };
 }
 function counts(pages: { home: string; deals: string }, count: number) {
-  for (const html of [pages.home, pages.deals]) expect(html).toContain(`aria-label="${count}개 진행 중이에요">${count}</span>`);
+  expect(pages.home).toContain(homeCopy.active(count));
+  expect(pages.deals).toContain(`aria-label="${count}개 진행 중이에요">${count}</span>`);
 }
 beforeEach(async () => {
   memory = memoryD1({ serialize: true }); context.db = memory.db; call = api(memory.db);
@@ -108,7 +110,7 @@ test('public source reads use only the shared published projections', async () =
     return files;
   }
   for (const file of [...await scan(new URL('../app/', import.meta.url)), ...await scan(new URL('../lib/', import.meta.url))]) {
-    if (['promote-external', 'deal-bundles', 'deal-price-review', 'verified-offers'].some(name => file.pathname.endsWith(`/lib/${name}.ts`))) continue;
+    if (['promote-external', 'deal-bundles', 'deal-price-review', 'verified-offers', 'deal-publication', 'deal-reviews', 'home-deals'].some(name => file.pathname.endsWith(`/lib/${name}.ts`))) continue;
     let source = await readFile(file, 'utf8');
     if (file.pathname.endsWith('/lib/api.ts')) {
       source = source.replace(/\/\/ Admin lifecycle reads[\s\S]*?(?=\/\/ ── 크롤러)/, '');

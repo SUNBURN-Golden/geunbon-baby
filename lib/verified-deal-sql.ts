@@ -24,11 +24,21 @@ export const verifiedPriceColumnSql = `verified_price_ready INTEGER GENERATED AL
 
 export const verifiedDealPredicate = (prefix = '') => `${prefix}verified_price_ready = 1`;
 
-export function publicDealEligibility(alias = 'deals', nowMs = Date.now()) {
-  const now = new Date(nowMs).toISOString();
+export const officialProofExpiry = (checked: string) =>
+  `strftime('%Y-%m-%dT%H:%M:%fZ', ${checked}, '+${OFFICIAL_PRICE_MAX_AGE_MS / 1000} seconds')`;
+
+export function publicDealEligibility(alias = 'deals', nowMs: number | string = Date.now()) {
+  const now = typeof nowMs === 'number' ? `'${new Date(nowMs).toISOString()}'` : nowMs;
   return `${verifiedDealPredicate(alias === 'deals' ? '' : alias + '.')}
     AND EXISTS (SELECT 1 FROM ingested_items AS approval WHERE approval.id = ${alias}.id AND approval.status = 'approved')
-    AND EXISTS (SELECT 1 FROM deal_price_evidence AS proof
+    AND EXISTS (${publicDealApprovalQuery(alias, now, '1')})`;
+}
+
+export const publicDealApprovalExpiry = (alias: string, now: string) =>
+  publicDealApprovalQuery(alias, now, "MIN(json_extract(scope.value, '$.expires_at'))");
+
+function publicDealApprovalQuery(alias: string, now: string, select: string) {
+  return `SELECT ${select} FROM deal_price_evidence AS proof
       JOIN official_price_approvals AS authority ON authority.id = 1
       JOIN json_each(authority.scopes) AS scope
       WHERE proof.id = ${alias}.price_evidence_id AND proof.outcome = 'verified'
@@ -49,8 +59,8 @@ export function publicDealEligibility(alias = 'deals', nowMs = Date.now()) {
       AND json_extract(proof.body, '$.official.source.observed_at') = ${alias}.price_checked_at
       AND json_extract(scope.value, '$.approved_at') <= ${alias}.price_checked_at
       AND ${alias}.price_checked_at < json_extract(scope.value, '$.expires_at')
-      AND json_extract(scope.value, '$.expires_at') > '${now}'
-      AND strftime('%Y-%m-%dT%H:%M:%fZ', ${alias}.price_checked_at, '+${OFFICIAL_PRICE_MAX_AGE_MS / 1000} seconds') > '${now}')`;
+      AND json_extract(scope.value, '$.expires_at') > ${now}
+      AND ${officialProofExpiry(alias + '.price_checked_at')} > ${now}`;
 }
 
 export const eligible = verifiedDealPredicate();

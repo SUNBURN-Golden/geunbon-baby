@@ -1,3 +1,4 @@
+import { homeCopy } from '../lib/copy/home.ko';
 import { seedPublicPrice } from './helpers/public-deal-fixture';
 import { migrationStatements } from './helpers/migrations';
 import { readdir, readFile } from 'node:fs/promises';
@@ -58,7 +59,7 @@ test('model list, detail and calendar show only supported prices with explicit l
   for (const html of [detail, calendar]) {
     expect(html).toContain('rel="sponsored noopener noreferrer"');
     expect(html).toContain('class="deal-card"');
-    expect(html).toContain(dealsCopy.groupBuyPrice);
+    expect(html).toContain(homeCopy.offerPrice);
     expect(html).toContain('390,000');
     expect(html).toContain(dealsCopy.disclaimer);
   }
@@ -67,14 +68,14 @@ test('model list, detail and calendar show only supported prices with explicit l
   }
 });
 
-test('home has the verified-products description and no deleted phrases or empty note block', async () => {
+test('home leads with verified counts, maximum discount and the brand slogan', async () => {
   const html = renderToStaticMarkup(await Home());
   expect(html).toContain('class="deal-card"');
   expect(html).toContain(dealsCopy.disclaimer);
   expect(html).toContain('href="/sellers#trust-seller-1"');
-  expect(html).toContain(siteCopy.heroLead);
-  expect(html).toContain(siteCopy.pricePromise);
-  expect(html).toContain('href="/deals"');
+  expect(html).toContain(homeCopy.active(1));
+  expect(html).toContain(homeCopy.maxSaving(9));
+  expect(html).toContain(homeCopy.tagline);
   for (const forbidden of ['모르', '모릅', '해외가', '중고', 'class="note"']) expect(html).not.toContain(forbidden);
 });
 

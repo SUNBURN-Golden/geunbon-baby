@@ -4,11 +4,12 @@ import { ILLUSTRATED_MODEL_IDS, modelIllustration } from '../lib/model-illustrat
 import type { Gap } from '../lib/deals';
 
 const model = (id: string, official: number | null = 430000) => ({ id, name: `name-${id}`, brand: 'Stokke', official_price: official, verify_level: 'page_body' });
+const exactSummary = new Map([['model-1', { model_id: 'model-1', active_count: 2, lowest_price: 400000, confirmed_price: 400000 }]]);
 const summaries = (...rows: [string, number, number | null][]) => new Map(rows.map(([model_id, active_count, lowest_price]) => [model_id, { model_id, active_count, lowest_price }]));
 const gap = (relation: Gap['relation'], percent: number): Gap => ({ relation, won: 1, percent });
 
 test.each(['page_text', 'search_summary'])('gates %s prices before calculating model card discounts', verify_level => {
-  const [card] = buildModelCards([{ ...model('model-1', 500000), verify_level }], summaries(['model-1', 2, 400000]));
+  const [card] = buildModelCards([{ ...model('model-1', 500000), verify_level }], exactSummary);
   expect(card.official_price).toBeNull();
   expect(card.gap).toBeNull();
   expect(card.deal).toEqual({ price: 400000 });
@@ -17,7 +18,7 @@ test.each(['page_text', 'search_summary'])('gates %s prices before calculating m
 });
 
 test('page_body prices retain model card discounts and strikethroughs', () => {
-  const [card] = buildModelCards([model('model-1', 500000)], summaries(['model-1', 2, 400000]));
+  const [card] = buildModelCards([model('model-1', 500000)], exactSummary);
   expect(card.official_price).toBe(500000);
   expect(card.gap).toEqual({ relation: 'below', won: 100000, percent: 20 });
   expect(showStrike(card.gap)).toBe(true);
@@ -27,8 +28,7 @@ test('page_body prices retain model card discounts and strikethroughs', () => {
 test('uses the aggregated minimum without loading deal history', () => {
   const [card] = buildModelCards([model('model-1')], summaries(['model-1', 3, 390000]));
   expect(card.deal).toEqual({ price: 390000 });
-  expect(card.gap?.relation).toBe('below');
-  expect(discountLabel(card.gap)).toBe('-9%');
+  expect(card.gap).toBeNull();
 });
 
 test('an active deal without any price keeps a null-price deal and no gap', () => {

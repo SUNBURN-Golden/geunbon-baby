@@ -72,6 +72,21 @@ test('real correction action converts fields, stores null price, removes and res
   expect(invalid.status).toBe(400);
 });
 
+test('protected evidence forms confirm the published version and reject a stale submission', async () => {
+  const reviews = forms(await page({ deal: id })).filter(form => form.action.name === 'reviewDealEvidence');
+  const round = reviews.find(form => data(form.node).get('kind') === 'round')!;
+  const source_url = 'https://example.com/private-review-source';
+  await submit(round, { action: 'confirm', confirmed: 'on', seller_id: 'seller-1', opened_at: '2026-10-20T09:00:00+09:00', event_key: 'model-1-fall-event', source_url }, `/admin?deal=${id}`);
+  expect((await apiModule.adminDeal(memory.db, id))?.current_review).toMatchObject({
+    event_key: 'model-1-fall-event', opened_at: '2026-10-20T00:00:00.000Z',
+  });
+  await submit((await lifecycle()).correct, { title: 'Updated total' });
+  expect((await apiModule.adminDeal(memory.db, id))?.current_review).toBeNull();
+  await submit(round, { action: 'clear' }, `/admin?error=deal_evidence&deal=${id}`);
+  context.authenticated = false;
+  await submit(round, { action: 'clear' }, '/admin?error=auth');
+});
+
 test('withdrawal requires confirmation, records one revision and leaves no mutation forms', async () => {
   const form = (await lifecycle()).withdraw;
   const before = await snapshot();

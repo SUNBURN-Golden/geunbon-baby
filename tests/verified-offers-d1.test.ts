@@ -1,3 +1,4 @@
+import { homeDeals } from '../lib/home-deals';
 import { readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -125,4 +126,100 @@ test('legacy collision works in both write orders and siblings keep exact URLs',
       expect((await db.prepare('PRAGMA foreign_key_check').all()).results).toEqual([]);
     } finally { close(); }
   }
+});
+
+test('home compares accepted exact configurations across ended, invalidated and withdrawn rounds', async () => {
+  const { db, close } = memoryD1({ serialize: true });
+  const readHome = (at: number) => homeDeals(db, at, { brand: 'Test brand', category: 'high_chair' });
+  const opens = (days: number) => new Date(now - days * 86_400_000).toISOString();
+  const later = new Date(now + 86_400_001).toISOString();
+  const fixtures = {
+    old: await verifiedFixture(390000,430000,'old', opens(4)),
+    current: await verifiedFixture(390000,430000,'current', opens(2), { checked: later }),
+    dupe: await verifiedFixture(390000,430000,'dupe', opens(1), { checked: later, seller: 'https://seller.example.com/shopcurrent' }),
+    conflict: await verifiedFixture(400000,430000,'conflict', opens(0), { checked: later, seller: 'https://seller.example.com/shopcurrent' }),
+    kit: await verifiedFixture(360000,430000,'kit', opens(1), { checked: later, configuration: { bundle: '의자 1개, 키트 1개' } }),
+    generation: await verifiedFixture(360000,430000,'gen', opens(1), { checked: later, configuration: { generation: '3세대' } }),
+    option: await verifiedFixture(360000,430000,'option', opens(1), { checked: later, configuration: { option: 'White' } }),
+    quantity: await verifiedFixture(360000,430000,'qty', opens(1), { checked: later, configuration: { quantity: '2개' } }),
+    cheaper: await verifiedFixture(380000,430000,'cheaper', opens(1), { checked: later }),
+  };
+  async function publish(fixture: typeof fixtures.old, offer = fixture.offer) {
+    const instant = Date.parse(offer.checked_at);
+    const accepted = await ingestVerifiedOffer(db,offer,instant);
+    expect(accepted.status, await accepted.text()).toBe(202);
+    const committed = await mutateVerifiedOffer(db,fixture.id,await requestClaim(offer),false,instant);
+    expect(committed.status, await committed.text()).toBe(200);
+    return 'deal-' + fixture.id;
+  }
+  async function round(id: string, event_key: string, opened_at: string, expected_version = 1) {
+    const seller = await db.prepare('SELECT seller_id FROM deals WHERE id=?').bind(id).first<{ seller_id: string }>();
+    expect((await api(db)(`admin/deals/${id}/round`, { action: 'confirm', confirmed: true, expected_version, event_key, opened_at,
+      seller_id: seller!.seller_id, source_url: 'https://seller.example.com/round-evidence' })).status).toBe(200);
+  }
+  const section = (inventory: Awaited<ReturnType<typeof readHome>>, key: 'low' | 'new') => inventory.sections.find(s => s.key === key)!.deals;
+  const voidOffer = async (fixture: typeof fixtures.old, expected_version = 1) => {
+    const { facts: _, metadata: __, price_evidence: ___, liveness: ____, ...base } = fixture.offer;
+    void [_, __, ___, ____];
+    const failure: FailedOffer = await seal({ ...base, revision: 2, expected_version, previous_digest: fixture.offer.digest, checked_at: later,
+      failure: { title: 'Changed', source_url: fixture.offer.facts.source_url, gates: ['source_changed'], retry_at: null, evidence: '공구 정보 변경' } });
+    expect((await ingestVerifiedOffer(db, failure, Date.parse(later))).status).toBe(202);
+  };
+  try {
+    await migrate(db);
+    await db.prepare('INSERT INTO official_price_approvals VALUES(1,?,?)').bind(checkedAt,
+      JSON.stringify(Object.values(fixtures).map(f => f.scope))).run();
+    const old = await publish(fixtures.old);
+    await round(old, 'earlier', opens(4));
+    expect(section(await readHome(now), 'low')).toEqual([]);
+    expect(section(await readHome(now), 'new').map(d => d.id)).toEqual([old]);
+
+    const captured = '공구 종료';
+    const { offer } = fixtures.old;
+    const region = { url: offer.facts.source_url, seller_url: offer.facts.seller_url, locator: offer.locator,
+      availability_badge: { value: 'closed' as const, locator: 'product:closed' } };
+    const content_digest = await offerRegionDigest(captured, region, offer.facts.image_url);
+    const closed = await seal({ ...offer, revision: 2, expected_version: 1, content_digest, facts: { ...offer.facts, availability: 'closed' as const },
+      closure: { text: captured, hash: await digest(captured) },
+      liveness: { ...region, checked_at: checkedAt, product_digest: content_digest } });
+    expect((await ingestVerifiedOffer(db, closed, now)).status).toBe(202);
+    expect((await mutateVerifiedOffer(db,fixtures.old.id,await requestClaim(closed,CLOSE_OFFER),false,now)).status).toBe(200);
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM deal_price_history').first()).toEqual({ count: 1 });
+
+    await db.prepare('UPDATE official_price_approvals SET scopes=?').bind(
+      JSON.stringify(Object.values(fixtures).slice(1).map(f => f.scope))).run();
+    const current = await publish(fixtures.current);
+    await round(current, 'current-event', opens(2));
+    const instant = Date.parse(later);
+    expect(section(await readHome(instant), 'low').map(d => d.id)).toEqual([current]);
+    const dupe = await publish(fixtures.dupe);
+    await round(dupe, 'current-event', opens(2));
+    const lows = section(await readHome(instant), 'low');
+    expect(lows.map(d => d.id)).toEqual([current, dupe].sort());
+    expect(lows.map(d => d.seller_round_number)).toEqual([1, 1]);
+
+    const conflict = await publish(fixtures.conflict);
+    await round(conflict, 'current-event', opens(2));
+    expect(section(await readHome(instant), 'low')).toEqual([]);
+    await voidOffer(fixtures.conflict);
+    expect(section(await readHome(instant), 'low').map(d => d.id)).toEqual([current, dupe].sort());
+
+    for (const variant of [fixtures.kit, fixtures.generation, fixtures.option, fixtures.quantity]) await publish(variant);
+    expect(section(await readHome(instant), 'low').map(d => d.id)).toEqual([current, dupe].sort());
+
+    const cheaper = await publish(fixtures.cheaper);
+    expect(section(await readHome(instant), 'low')).toEqual([]);
+    await voidOffer(fixtures.cheaper);
+    const updated = await seal({ ...fixtures.cheaper.offer, revision: 3, expected_version: 2 });
+    expect(await db.prepare('SELECT price_evidence_id FROM invalidated_publication_proofs WHERE deal_id=?').bind(cheaper).first()).toEqual({
+      price_evidence_id: (await requestClaim(fixtures.cheaper.offer)).request_id,
+    });
+    expect(section(await readHome(instant), 'low').map(d => d.id)).toEqual([current, dupe].sort());
+    await publish(fixtures.cheaper, updated);
+    expect(section(await readHome(instant), 'low')).toEqual([]);
+    expect((await api(db)(`admin/deals/${cheaper}`, { action: 'withdraw', expected_version: 3, request_id: 'history-withdraw-lower', reason: 'Verified withdrawal evidence' })).status).toBe(200);
+    expect(section(await readHome(instant), 'low').map(d => d.id)).toEqual([current, dupe].sort());
+    expect((await api(db)(`admin/deals/${old}`, { action: 'withdraw', expected_version: 2, request_id: 'history-withdraw-early', reason: 'Verified withdrawal evidence' })).status).toBe(200);
+    expect(section(await readHome(instant), 'low')).toEqual([]);
+  } finally { close(); }
 });

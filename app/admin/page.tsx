@@ -1,6 +1,8 @@
 import { verifiedOfferReviewPage } from '../../lib/verified-offers';
 import { PriceEvidenceReview } from './_price-evidence';
 import { verifiedDealsCopy } from '../../lib/copy/deals.ko';
+import { homeCopy } from '../../lib/copy/home.ko';
+import { isPlaceholderSeller } from '../../lib/alert-target';
 import { collectionStatus } from '../../lib/collection-status';
 import { STATUSES, LABELS } from '../../shared/collection-schema';
 import { DealImage } from '../deals/_image';
@@ -32,7 +34,7 @@ async function login(form: FormData) {
   redirect('/admin');
 }
 async function logout() { 'use server'; await (await cookies()).set(ADMIN_COOKIE, '', { ...adminCookie(), maxAge: 0, expires: new Date(0) }); redirect('/admin'); }
-async function adminAction(parts: string[], body: Record<string, unknown>, errorCode: 'review' | 'seller' | 'deal' | 'deal_conflict', form: FormData, conflictCode?: 'deal_conflict' | 'review_conflict') {
+async function adminAction(parts: string[], body: Record<string, unknown>, errorCode: 'review' | 'seller' | 'deal' | 'deal_conflict' | 'deal_evidence', form: FormData, conflictCode?: 'deal_conflict' | 'review_conflict') {
   if (!await authenticated()) redirect('/admin?error=auth');
   const token = adminToken();
   if (!token) redirect('/admin?error=config');
@@ -66,6 +68,17 @@ async function withdrawDeal(form: FormData) {
   await adminAction(['admin', 'deals', String(form.get('deal_id'))], {
     action: 'withdraw', expected_version: Number(form.get('expected_version')), request_id: form.get('request_id'), reason: form.get('reason'),
   }, 'deal', form, 'deal_conflict');
+}
+async function reviewDealEvidence(form: FormData) {
+  'use server';
+  const kind = form.get('kind');
+  if (kind !== 'round') redirect(adminUrl(adminNavigationFromForm(form), {}, 'deal_evidence'));
+  await adminAction(['admin', 'deals', String(form.get('deal_id')), kind], {
+    action: form.get('action'), expected_version: Number(form.get('expected_version')),
+    confirmed: form.get('confirmed') === 'on', source_url: form.get('source_url'),
+    seller_id: form.get('seller_id'),
+    event_key: form.get('event_key'), opened_at: form.get('opened_at'),
+  }, 'deal_evidence', form);
 }
 async function dismissCandidate(form: FormData) {
   'use server';
@@ -165,7 +178,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Ad
     dealPage = await adminDealsPage(db, { status: dealStatus, limit: 20, cursor: deal_cursor });
   }
   const percent = (c: number) => `${Math.round(c * 100)}%`;
-  return <main className="page"><h1>게시 전 검수</h1><section><h2>로컬 수집함 현황</h2>{collector.kind === 'failed' ? <p role="alert">수집 현황을 불러오지 못했습니다. 잠시 후 새로고침해 주세요. 문제가 계속되면 운영자에게 문의하세요.</p> : !collector.data.synced ? <p>미동기화</p> : collector.data.workers.map(w => <article key={w.snapshot.worker_id}><p>{w.snapshot.worker_id} · {w.stale ? '동기화 지연' : '동기화됨'}</p><ul>{STATUSES.map(s => <li key={s}>{LABELS[s]}: {w.snapshot.counts[s]}</li>)}</ul><p>생성 {w.snapshot.generated_at} · 수신 {w.received_at}</p><p>공개 대기는 실제 게시를 실행하지 않습니다.</p></article>)}</section><form action={logout}><button>로그아웃</button></form>{error && <p role="alert">{error === 'review_conflict' ? '검수 상태가 변경되었습니다. 다른 요청에서 이미 승인 또는 반려했습니다. 새로고침 후 현재 상태를 확인하세요.' : error === 'deal' ? '공구 정정·철회에 실패했습니다. 입력값을 확인하세요.' : error === 'deal_conflict' ? '다른 관리자가 먼저 변경했거나 이미 처리된 요청입니다. 새로고침 후 다시 확인하세요.' : error === 'seller' ? '판매자 등록·증빙 처리에 실패했습니다. 입력값·계정 검수 확인·기존 연결을 확인하세요.' : '검수 처리에 실패했습니다. 입력값 및 이미 처리된 항목인지 확인하세요.'}</p>}<p>수집 원문을 직접 확인한 뒤 모델·판매자·정확한 가격·일정을 지정하세요. 불명확한 가격은 비워 두세요. 판매자가 등록되어 있지 않으면 게시할 수 없습니다.</p><section aria-label="자동 게시 보류"><h2>자동 게시 보류</h2>
+  return <main className="page"><h1>게시 전 검수</h1><section><h2>로컬 수집함 현황</h2>{collector.kind === 'failed' ? <p role="alert">수집 현황을 불러오지 못했습니다. 잠시 후 새로고침해 주세요. 문제가 계속되면 운영자에게 문의하세요.</p> : !collector.data.synced ? <p>미동기화</p> : collector.data.workers.map(w => <article key={w.snapshot.worker_id}><p>{w.snapshot.worker_id} · {w.stale ? '동기화 지연' : '동기화됨'}</p><ul>{STATUSES.map(s => <li key={s}>{LABELS[s]}: {w.snapshot.counts[s]}</li>)}</ul><p>생성 {w.snapshot.generated_at} · 수신 {w.received_at}</p><p>공개 대기는 실제 게시를 실행하지 않습니다.</p></article>)}</section><form action={logout}><button>로그아웃</button></form>{error && <p role="alert">{error === 'review_conflict' ? '검수 상태가 변경되었습니다. 다른 요청에서 이미 승인 또는 반려했습니다. 새로고침 후 현재 상태를 확인하세요.' : error === 'deal' ? '공구 정정·철회에 실패했습니다. 입력값을 확인하세요.' : error === 'deal_conflict' ? '다른 관리자가 먼저 변경했거나 이미 처리된 요청입니다. 새로고침 후 다시 확인하세요.' : error === 'deal_evidence' ? homeCopy.review.failed : error === 'seller' ? '판매자 등록·증빙 처리에 실패했습니다. 입력값·계정 검수 확인·기존 연결을 확인하세요.' : '검수 처리에 실패했습니다. 입력값 및 이미 처리된 항목인지 확인하세요.'}</p>}<p>수집 원문을 직접 확인한 뒤 모델·판매자·정확한 가격·일정을 지정하세요. 불명확한 가격은 비워 두세요. 판매자가 등록되어 있지 않으면 게시할 수 없습니다.</p><section aria-label="자동 게시 보류"><h2>자동 게시 보류</h2>
     {offerReview?.data.length ? offerReview.data.map(row => <article className="seller" key={row.id}>
       <h3>{row.title}</h3><p><a href={row.source_url} rel="noopener noreferrer">원문 확인</a></p>
       <ul>{row.gates.map(gate => <li key={gate}>{gate}</li>)}</ul>
@@ -216,6 +229,25 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Ad
             {item.evidence?.image_url && <label><input type="checkbox" name="include_image" defaultChecked={!!item.image_url}/>이미지 포함</label>}
             <label>정정 사유<textarea name="reason" required minLength={10} maxLength={300}/></label><button>정정</button>
           </form>
+          {!isPlaceholderSeller(item.seller_id) && <details>
+            <summary>{homeCopy.review.roundTitle}</summary>
+            <form action={reviewDealEvidence}>
+              {navigationFields(state)}
+              <input type="hidden" name="deal_id" value={item.id}/>
+              <input type="hidden" name="expected_version" value={item.version}/>
+              <input type="hidden" name="kind" value="round"/>
+              <label>{homeCopy.review.seller}<select name="seller_id" required defaultValue={item.current_review?.round_seller_id ?? (isPlaceholderSeller(item.seller_id) ? '' : item.seller_id)}>
+                <option value="" disabled>{homeCopy.review.select}</option>
+                {sellers.filter(seller => seller.id === item.seller_id && !isPlaceholderSeller(seller.id)).map(seller => <option key={seller.id} value={seller.id}>{seller.name} · {seller.id}</option>)}
+              </select></label>
+              <label>{homeCopy.review.eventKey}<input name="event_key" required maxLength={160} defaultValue={item.current_review?.event_key ?? ''}/></label>
+              <label>{homeCopy.review.opening}<input name="opened_at" required defaultValue={item.current_review?.opened_at ?? ''}/></label>
+              <label>{homeCopy.review.source}<input name="source_url" type="url" required maxLength={2048} defaultValue={item.current_review?.round_source ?? ''}/></label>
+              <label><input type="checkbox" name="confirmed" required/>{homeCopy.review.roundCheck}</label>
+              <button name="action" value="confirm">{homeCopy.review.save}</button>
+              {item.current_review?.round_id && <button name="action" value="clear" formNoValidate>{homeCopy.review.roundClear}</button>}
+            </form>
+          </details>}
           <form action={withdrawDeal}>{navigationFields(state)}
             <input type="hidden" name="deal_id" value={item.id}/><input type="hidden" name="expected_version" value={item.version}/><input type="hidden" name="request_id" value={crypto.randomUUID()}/>
             <label>철회 사유<textarea name="reason" required minLength={10} maxLength={300}/></label>

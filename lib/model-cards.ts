@@ -20,13 +20,12 @@ export function buildModelCards(
     const official = displayableOfficialPrice(m);
     return {
       id: m.id, name: m.name, brand: m.brand, official_price: official, deal,
-      gap: deal && deal.price !== null ? priceGap(deal.price, official) : null,
+      gap: deal && deal.price !== null && summary?.confirmed_price === deal.price ? priceGap(deal.price, official) : null,
     };
   });
   return [...cards.filter(c => c.deal !== null), ...cards.filter(c => c.deal === null)];
 }
 
-// The pill and the strikethrough share one condition so they never disagree.
 export function discountLabel(gap: Gap | null): string | null {
   if (!gap || gap.relation !== 'below') return null;
   const percent = Math.round(gap.percent);

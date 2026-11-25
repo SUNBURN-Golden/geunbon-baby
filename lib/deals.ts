@@ -1,3 +1,4 @@
+import { ROUND_LINK, sellerOrdinal, validPublicationProof } from './deal-evidence-sql';
 import type { Deal } from './data';
 import { dealsCopy } from './deals-copy';
 import { activeStart, publicDealEligibility, verifiedActive, verifiedInterval, verifiedEndOnly, verifiedClosed, verifiedUnknown, verifiedStart } from './verified-deal-sql';
@@ -25,6 +26,7 @@ export type DealWithContext = Deal & {
   model_verify_level: string | null;
   seller_joined_id: string | null;
   seller_name: string | null;
+  seller_round_number?: number | null;
   seller_registration_source: string | null;
   seller_withdrawal_source: string | null;
   seller_official_import_source: string | null;
@@ -35,23 +37,38 @@ export const PUBLIC_DEAL_COLUMNS = `id, model_id, seller_id, title, deal_price_k
   origin, source_host, orders_open, COALESCE(source_ended, 0) AS source_ended, brand_label, category_label`;
 const publishedDeals = (nowMs: number) => `SELECT ${PUBLIC_DEAL_COLUMNS} FROM deals WHERE ${publicDealEligibility('deals', nowMs)}`;
 
+// A shared placeholder seller may supply the /sellers trust anchor, but its
+// name and evidence are not listing-specific and it cannot earn a round count.
+export const placeholderSeller = "d.seller_id GLOB 'ext-*-unknown'";
+
 // Joined IDs distinguish missing rows from rows whose price is unknown.
-export const dealSelect = (nowMs = Date.now()) => `
-  SELECT d.id, d.model_id, d.seller_id, d.title, d.deal_price_krw AS price, d.deal_price_krw, d.list_price_krw, d.discount_pct,
-         d.price_source_url, d.list_price_source_url, d.price_checked_at, d.source_url, d.image_url,
-         d.verify_level, d.checked, d.starts_at, d.ends_at,
-         d.origin, d.source_host, d.orders_open, COALESCE(d.source_ended, 0) AS source_ended,
-         d.brand_label, d.category_label,
-         m.id AS model_joined_id, m.name AS model_name,
-         m.official_price AS model_official_price, m.checked AS model_checked,
-         m.verify_level AS model_verify_level,
-         s.id AS seller_joined_id, s.name AS seller_name,
-         s.registration_source AS seller_registration_source,
-         s.withdrawal_source AS seller_withdrawal_source,
-         s.official_import_source AS seller_official_import_source
-  FROM deals AS d
+export const dealFields = (asOf: string) => ({
+  id: 'd.id', model_id: 'd.model_id', seller_id: 'd.seller_id', title: 'd.title',
+  price: 'd.deal_price_krw', deal_price_krw: 'd.deal_price_krw', list_price_krw: 'd.list_price_krw',
+  discount_pct: 'd.discount_pct', price_source_url: 'd.price_source_url',
+  list_price_source_url: 'd.list_price_source_url', price_checked_at: 'd.price_checked_at',
+  source_url: 'd.source_url', image_url: 'd.image_url', verify_level: 'd.verify_level', checked: 'd.checked',
+  starts_at: 'd.starts_at', ends_at: 'd.ends_at', origin: 'd.origin', source_host: 'd.source_host',
+  orders_open: 'd.orders_open', source_ended: 'COALESCE(d.source_ended,0)',
+  brand_label: 'd.brand_label', category_label: 'd.category_label',
+  model_joined_id: 'm.id', model_name: 'm.name', model_official_price: 'm.official_price',
+  model_checked: 'm.checked', model_verify_level: 'm.verify_level',
+  seller_joined_id: 's.id',
+  seller_name: `CASE WHEN ${placeholderSeller} THEN d.published_seller_label ELSE COALESCE(s.name,d.published_seller_label) END`,
+  seller_registration_source: `CASE WHEN ${placeholderSeller} THEN NULL ELSE s.registration_source END`,
+  seller_withdrawal_source: `CASE WHEN ${placeholderSeller} THEN NULL ELSE s.withdrawal_source END`,
+  seller_official_import_source: `CASE WHEN ${placeholderSeller} THEN NULL ELSE s.official_import_source END`,
+  seller_round_number: `CASE WHEN ${placeholderSeller} THEN NULL ELSE NULLIF(${sellerOrdinal(asOf)},0) END`,
+});
+
+export const dealContextJoins = `
   LEFT JOIN models AS m ON m.id = d.model_id
   LEFT JOIN sellers AS s ON s.id = d.seller_id
+  ${ROUND_LINK}`;
+
+export const dealSelect = (nowMs = Date.now()) => `
+  SELECT ${Object.entries(dealFields(`'${new Date(nowMs).toISOString()}'`)).map(([key, expression]) => `${expression} AS ${key}`).join(', ')}
+  FROM deals AS d ${dealContextJoins}
   WHERE ${publicDealEligibility('d', nowMs)}`;
 
 export function priceGap(price: number | null, official: number | null): Gap | null {
@@ -325,15 +342,35 @@ export async function activeDealCount(db: D1Database, nowMs: number, eligibility
   if (!result) throw new Error('active count unavailable');
   return result.count;
 }
-export type ModelDealSummary = { model_id: string; active_count: number; lowest_price: number | null };
-export async function modelDealSummaries(db: D1Database, modelIds: readonly string[], nowMs: number): Promise<Map<string, ModelDealSummary>> {
+export type ModelDealSummary = { model_id: string; active_count: number; lowest_price: number | null; confirmed_price?: number | null };
+// `confirmed_price` needs a configuration match recorded in
+// model_official_configurations. No production writer exists yet because
+// catalog evidence cannot distinguish variants, so /models deliberately keeps
+// its 공식가 as plain text until such evidence is available.
+export async function modelDealSummaries(db: D1Database, modelIds: readonly string[], nowMs: number, compareCatalog = false): Promise<Map<string, ModelDealSummary>> {
   const summaries = new Map([...new Set(modelIds)].map(model_id => [model_id, { model_id, active_count: 0, lowest_price: null } as ModelDealSummary]));
   const ids = [...summaries.keys()];
   const time = new Date(nowMs).toISOString();
   // <= 82 bound values, below D1's 100-parameter limit. One result per model.
   for (let offset = 0; offset < ids.length; offset += 80) {
     const batch = ids.slice(offset, offset + 80);
-    const rows = await publicRows<ModelDealSummary>(db, `SELECT model_id, COUNT(*) AS active_count, MIN(deal_price_krw) AS lowest_price FROM deals INDEXED BY verified_deal_model_active WHERE ${verifiedActive} AND ${publicDealEligibility('deals', nowMs)} AND model_id IN (${batch.map(() => '?').join(',')}) AND ends_at >= ? AND ${activeStart} <= ? GROUP BY model_id`, ...batch, time, time);
+    const active = `SELECT id, model_id, deal_price_krw FROM deals INDEXED BY verified_deal_model_active
+      WHERE ${verifiedActive} AND ${publicDealEligibility('deals', nowMs)}
+      AND model_id IN (${batch.map(() => '?').join(',')}) AND ends_at >= ? AND ${activeStart} <= ?`;
+    const totals = 'SELECT model_id, COUNT(*) AS active_count, MIN(deal_price_krw) AS lowest_price FROM active GROUP BY model_id';
+    const query = `WITH active AS (${active}), totals AS (${totals})
+      SELECT totals.*${compareCatalog ? `, (SELECT picked.deal_price_krw
+        FROM active AS picked JOIN deals d ON d.id=picked.id
+        JOIN models model ON model.id=picked.model_id AND model.verify_level='page_body'
+        JOIN model_official_configurations config ON config.model_id=model.id
+          AND config.source_url=model.source_url AND config.checked=model.checked
+        JOIN deal_price_history h ON h.deal_id=d.id AND h.deal_version=d.version AND h.price_evidence_id=d.price_evidence_id
+          AND h.configuration_key=config.configuration_key
+        WHERE picked.id=(SELECT a.id FROM active a WHERE a.model_id=totals.model_id AND a.deal_price_krw=totals.lowest_price ORDER BY a.id LIMIT 1)
+          AND d.list_price_source_url=model.source_url AND d.list_price_krw=model.official_price
+          AND ${validPublicationProof('h')}) AS confirmed_price` : ''}
+      FROM totals`;
+    const rows = await publicRows<ModelDealSummary>(db, query, ...batch, time, time);
     for (const row of rows) summaries.set(row.model_id, row);
   }
   return summaries;

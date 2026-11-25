@@ -1,3 +1,4 @@
+import { evidencedOpening, recordPublishedPrice } from './deal-publication';
 import { EXTERNAL_SOURCES, type ExternalCandidate, type ExternalSourceId, externalSourceIds } from './data';
 import { digest, offerSourceClosed } from '../shared/deal-price-evidence';
 import { bundleComponents, configurationMatches, currentReviewEvidence, pendingPriceObservation, reviewEvidenceGuard, priceBindings, priceColumns } from './deal-price-review';
@@ -152,6 +153,8 @@ export async function promoteExternalCandidate(db: D1Database, input: PromoteExt
   const brandLabel = input.brand_label ?? null;
   const categoryLabel = input.category_label ?? candidate.category ?? null;
   const proofId = proof?.id ?? null;
+  const handle = candidate.seller_handle?.trim().replace(/^@+/, '').toLowerCase();
+  const publishedSellerLabel = candidate.seller_name?.trim() || (handle ? `@${handle}` : null);
   const guard = reviewEvidenceGuard('candidate', candidate.id, revision, proof, !!observation);
   const statements = [
     db.prepare(`INSERT INTO ingested_items (id,source_url,account,text,kind,captured_at,status,reviewed_at,attribution,attribution_note)
@@ -159,10 +162,11 @@ export async function promoteExternalCandidate(db: D1Database, input: PromoteExt
       ON CONFLICT(source_url) DO NOTHING`)
       .bind(dealId, candidate.source_url, candidate.seller_handle ?? host ?? candidate.source, candidate.text, 'external_web', candidate.captured_at, 'approved', now, 'explicit',
         input.reason?.trim()?.slice(0, 300) ?? 'external_web_promote', ...guard.values, input.request_id),
-    db.prepare(`INSERT INTO deals (id,model_id,seller_id,title,price,source_url,verify_level,checked,starts_at,ends_at,image_url,status,version,updated_at,origin,external_candidate_id,source_host,source_ended,brand_label,category_label,promoted_by,promoted_at,${priceColumns})
-      SELECT id,?,?,?, ?,source_url,'manual',?,?,?,NULL,'published',1,?,'external_web',?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?
+    db.prepare(`INSERT INTO deals (id,model_id,seller_id,title,price,source_url,verify_level,checked,starts_at,ends_at,image_url,status,version,updated_at,origin,external_candidate_id,source_host,source_ended,brand_label,category_label,promoted_by,promoted_at,published_seller_label,${priceColumns})
+      SELECT id,?,?,?,?,source_url,'manual',?,?,?,NULL,'published',1,?,'external_web',
+        ?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?
       FROM ingested_items WHERE id = ?`)
-      .bind(modelId, sellerId, title, price ?? null, now, startsAt, endsAt, now, candidate.id, host, sourceEnded ? 1 : 0, brandLabel, categoryLabel, input.promoted_by, now,
+      .bind(modelId, sellerId, title, price ?? null, now, startsAt, endsAt, now, candidate.id, host, sourceEnded ? 1 : 0, brandLabel, categoryLabel, input.promoted_by, now, publishedSellerLabel,
         ...priceBindings(proof?.result ?? null, proofId, 1), dealId),
     db.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,reason,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,created_at,price_evidence_id)
       SELECT ?,id,1,'promote_external',?,?,?,model_id,seller_id,title,price,starts_at,ends_at,image_url,checked,status,?,price_evidence_id FROM deals WHERE id = ?`)
@@ -183,6 +187,7 @@ export async function promoteExternalCandidate(db: D1Database, input: PromoteExt
       SELECT ?,id,?,?,?,?,? FROM deals WHERE id = ?`)
       .bind(crypto.randomUUID(), index, row.brand ?? null, row.product_name.trim(), row.model_id ?? null, row.price ?? null, dealId));
   }
+  if (proof) statements.push(recordPublishedPrice(db, dealId, input.request_id, evidencedOpening(proof.evidence, startsAt), proof.result.facts?.configuration));
   let results;
   try { results = await db.batch(statements); }
   catch (error) {
