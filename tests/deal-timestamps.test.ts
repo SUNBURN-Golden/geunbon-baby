@@ -132,7 +132,7 @@ test('API and rendered lists order normalized instants and break ties by ID desp
   }
   for (const node of [await Calendar(), await ModelDetail({ params: Promise.resolve({ id: 'model-1' }) })]) {
     const html = renderToStaticMarkup(node);
-    expect([...html.matchAll(/<a class="deal-title-link"[^>]*>(Title [^<]+)<\/a>/g)].map(m => m[1])).toEqual(['Title A', 'Title A-tie', 'Title B']);
+    expect([...html.matchAll(/<a class="deal-title-link"[^>]*><span>(Title [^<]+)<\/span><\/a>/g)].map(m => m[1])).toEqual(['Title A', 'Title A-tie', 'Title B']);
   }
 });
 

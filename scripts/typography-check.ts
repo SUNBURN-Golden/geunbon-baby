@@ -10,7 +10,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { chromium } from 'playwright';
 import { DealDetail } from '../app/deals/_components';
-import { ActiveDeals } from '../app/_active-deals';
+import { HomeOfferSections, HomeQuickFilters } from '../app/_active-deals';
+import { homeCopy } from '../lib/copy/home.ko';
+import type { HomeInventory } from '../lib/home-deals';
 import type { DealWithContext } from '../lib/deals';
 import { authCopy } from '../lib/auth-copy';
 
@@ -50,11 +52,26 @@ const deal: DealWithContext = {
   starts_at: '2026-10-20T00:00:00Z', ends_at: '2026-10-22T14:59:59Z',
   model_joined_id: 'model-1', model_name: 'Example model', model_official_price: 430000,
   model_checked: '2026-10-18', model_verify_level: 'page_body',
+  deal_price_krw: 390000, list_price_krw: 430000, discount_pct: 9,
+  list_price_source_url: 'https://example.test/official',
   seller_joined_id: 'seller-1', seller_name: 'Example seller',
   seller_registration_source: null, seller_withdrawal_source: null, seller_official_import_source: null,
 }; // Same isolated fixture values as tests/deals.test.ts; never persisted.
 corpus.push({ name: 'deal-detail-fixture', html: corpus[0].html.replace(/<main\b[\s\S]*?<\/main>/, renderToStaticMarkup(createElement(DealDetail, { deal, nowMs }))) });
-corpus.push({ name: 'home-populated-fixture', html: corpus[0].html.replace(/<section class="active-deals"[\s\S]*?<\/section>/, renderToStaticMarkup(createElement(ActiveDeals, { deals: [deal, { ...deal, id: 'deal-2' }, { ...deal, id: 'deal-3' }], totalCount: 3, nowMs }))) });
+const brands = [...new Set(seed.models.map(model => model.brand))];
+const inventory: HomeInventory = {
+  count: 3, maximum: 9, nextRefreshAt: deal.ends_at!,
+  categories: Object.entries(homeCopy.categories).map(([value, label]) => ({ value, label, count: value === 'high_chair' ? 3 : 0 })),
+  brands: brands.map(label => ({ value: label, label, count: 0 })),
+  sections: [
+    { key: 'discount', deals: [deal, { ...deal, id: 'deal-2' }, { ...deal, id: 'deal-3' }] },
+    { key: 'closing', deals: [] }, { key: 'low', deals: [] }, { key: 'new', deals: [] },
+  ],
+};
+const filters = renderToStaticMarkup(createElement(HomeQuickFilters, { inventory, filters: { brand: null, category: null } }));
+const sections = renderToStaticMarkup(createElement(HomeOfferSections, { inventory, asOf: nowMs }));
+const hero = `<section class="home-hero"><h1>${homeCopy.active(inventory.count)}</h1><p class="home-saving">${homeCopy.maxSaving(9)}</p><p class="home-tagline">${homeCopy.tagline}</p></section>`;
+corpus.push({ name: 'home-populated-fixture', html: corpus[0].html.replace(/<main\b[\s\S]*?<\/main>/, `<main class="home">${hero}${filters}${sections}</main>`) });
 let css = '';
 for (const path of styles) css += await (await fetch(new URL(path, baseUrl))).text();
 // Verify captured Worker font URLs, including the exact preload CORS attributes.
@@ -138,7 +155,7 @@ try {
               for (const center of centers.sort((a, b) => a - b)) if (!rows.some(y => Math.abs(y - center) < parseFloat(style.lineHeight) / 2)) rows.push(center);
               return { text: el.textContent, lines: rows.length, x: box.x, y: box.y, width: box.width, height: box.height };
             });
-            const sans = [...document.querySelectorAll<HTMLElement>('.lead,.model-prices,.deal-price,.deal-context,.deal-ad,.deal-disclaimer,.deal-facts,.notice,.active-deal-count,.comparison>section>h2,.comparison>section>h3,.comparison>section>.eyebrow,footer>p:not(.brand-slogan),label,table')].map(el => ({ tag: el.className || el.tagName, family: getComputedStyle(el).fontFamily }));
+            const sans = [...document.querySelectorAll<HTMLElement>('.home-hero h1,.home .deal-card > h2,.lead,.model-prices,.deal-price,.deal-context,.deal-ad,.deal-disclaimer,.deal-facts,.notice,.active-deal-count,.comparison>section>h2,.comparison>section>h3,.comparison>section>.eyebrow,footer>p:not(.brand-slogan),label,table')].map(el => ({ tag: el.className || el.tagName, family: getComputedStyle(el).fontFamily }));
             const badSize = handwritten.filter(el => parseFloat(getComputedStyle(el).fontSize) < 18).map(el => el.className || el.tagName);
             const clipped = handwritten.filter(el => el.scrollHeight > el.clientHeight + 2 && ['hidden','clip'].includes(getComputedStyle(el).overflowY)).map(el => el.className || el.tagName);
             const contrast = handwritten.map(el => {
@@ -152,14 +169,22 @@ try {
               });
               return { element: el.className || el.tagName, ratio: (Math.max(...luminance) + 0.05) / (Math.min(...luminance) + 0.05) };
             });
-            const carousel = document.querySelector('.active-deal-row');
-            let carouselUsable = true;
-            if (carousel && innerWidth < 768) { carousel.scrollLeft = carousel.scrollWidth; carouselUsable = carousel.scrollLeft > 0; carousel.scrollLeft = 0; }
+            const firstCards = [...document.querySelectorAll('.home-section .deal-list:first-of-type > .deal-card')].slice(0, 3).map(el => el.getBoundingClientRect());
+            const cardLayout = firstCards.length < 2 || (innerWidth < 768
+              ? firstCards.every((box, index) => !index || (box.x === firstCards[0].x && box.top >= firstCards[index - 1].bottom))
+              : firstCards.every(box => box.top === firstCards[0].top));
+            const filterUsable = [...document.querySelectorAll('.home-facet-row')].every(row => {
+              if (row.scrollWidth <= row.clientWidth) return true;
+              row.scrollLeft = row.scrollWidth;
+              const usable = row.scrollLeft > 0;
+              row.scrollLeft = 0;
+              return usable;
+            });
             const entries = (window as unknown as { shifts: { value: number; time: number; nodes: string[] }[] }).shifts;
             let cls = 0, score = 0, start = 0, previous = 0;
             for (const entry of entries) { if (entry.time - previous > 1000 || entry.time - start > 5000) { score = 0; start = entry.time; } score += entry.value; cls = Math.max(cls, score); previous = entry.time; }
             const resources = performance.getEntriesByType('resource').filter(e => e.name.includes('/fonts/')).map(e => { const r = e as PerformanceResourceTiming; return { url: new URL(e.name).pathname, bytes: r.encodedBodySize, transfer: r.transferSize }; });
-            return { headings, sans, badSize, clipped, contrast, carouselUsable, overflow: document.documentElement.scrollWidth > innerWidth, cls, entries, resources, loaded: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family) };
+            return { headings, sans, badSize, clipped, contrast, cardLayout, filterUsable, overflow: document.documentElement.scrollWidth > innerWidth, cls, entries, resources, loaded: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family) };
           });
           await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
           const doc = await cdp.send('DOM.getDocument');
@@ -174,7 +199,8 @@ try {
             if (measure.overflow || measure.clipped.length || measure.badSize.length) failures.push(`${key}: overflow/clipped/small ${JSON.stringify([measure.overflow, measure.clipped, measure.badSize])}`);
             if (measure.sans.some(s => s.family.includes('Excalifont'))) failures.push(`${key}: sans scope leaked`);
             if (measure.contrast.some(c => c.ratio < 4.5)) failures.push(`${key}: accent contrast below AA`);
-            if (!measure.carouselUsable) failures.push(`${key}: mobile carousel does not scroll`);
+            if (!measure.cardLayout) failures.push(`${key}: shared card column layout`);
+            if (!measure.filterUsable) failures.push(`${key}: filter row overflow cannot scroll`);
             if (width !== 320 && measure.headings.some(h => h.lines > (width === 390 ? 3 : 2))) failures.push(`${key}: H1 lines ${JSON.stringify(measure.headings)}`);
             if (mode !== 'blocked' && (!measure.loaded.includes(HANGUL_FAMILY) || !measure.loaded.includes(LATIN_FAMILY))) failures.push(`${key}: expected font not loaded`);
             // CDP reports the name stored in the font file, not the CSS @font-face family.

@@ -1,12 +1,12 @@
 import { migrationStatements } from './helpers/migrations';
 import { readFile, readdir } from 'node:fs/promises';
-import { Children, createElement, isValidElement, type ReactNode } from 'react';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, afterEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, test } from 'vitest';
 import { handleApi } from '../lib/api';
 import { detectSourceEnded, promoteExternalCandidate } from '../lib/promote-external';
 import { dealTimingFor, isDealPubliclyActive } from '../lib/deals';
-import { DealBundleList, DealDetail } from '../app/deals/_components';
+import { DealDetail } from '../app/deals/_components';
 import { dealsCopy } from '../lib/deals-copy';
 import { memoryD1 } from './helpers/sqlite';
 import type { DealWithContext } from '../lib/deals';
@@ -54,6 +54,22 @@ describe('promoteExternalCandidate', () => {
     expect(bundle?.n).toBe(2);
     const audit = await memory.db.prepare('SELECT promoted_by FROM external_promotions WHERE candidate_id = ?').bind('cand-1').first<{ promoted_by: string }>();
     expect(audit?.promoted_by).toBe('test-admin');
+  });
+
+  test('promoted listings preserve separate source attribution under a shared placeholder seller', async () => {
+    await memory.db.prepare("UPDATE external_candidates SET seller_handle=NULL, seller_name='Seller A' WHERE id='cand-1'").run();
+    await memory.db.prepare(`INSERT INTO external_candidates (id,source,source_url,title,text,seller_name,captured_at,last_seen_at)
+      SELECT 'cand-2',source,'https://09pangpang.com/post/1002',title,text,'Seller B',captured_at,last_seen_at
+      FROM external_candidates WHERE id='cand-1'`).run();
+    for (const candidate_id of ['cand-1', 'cand-2']) {
+      const published = await promoteExternalCandidate(memory.db, { candidate_id, promoted_by: 'qa', request_id: candidate_id });
+      expect(published.ok).toBe(true);
+    }
+    const rows = await memory.db.prepare('SELECT seller_id,published_seller_label FROM deals ORDER BY published_seller_label').all();
+    expect(rows.results).toEqual([
+      { seller_id: 'ext-pangpang-unknown', published_seller_label: 'Seller A' },
+      { seller_id: 'ext-pangpang-unknown', published_seller_label: 'Seller B' },
+    ]);
   });
 
   test('idempotent on duplicate promote', async () => {
@@ -145,4 +161,23 @@ test('clearing a stale candidate end also clears date-derived source_ended',asyn
   const result=await promoteExternalCandidate(memory.db,{candidate_id:'cand-1',promoted_by:'test',request_id:'clear-stale-end',price:null,starts_at:null,ends_at:null});
   expect(result.ok).toBe(true);if(!result.ok)return;
   expect(await memory.db.prepare('SELECT price,starts_at,ends_at,source_ended FROM deals WHERE id=?').bind(result.deal_id).first()).toMatchObject({price:null,starts_at:null,ends_at:null,source_ended:0});
+});
+
+test('0019 backfills only each linked listing’s seller attribution', async () => {
+  const prior = memoryD1();
+  const { execute, legacy, migrate } = await import('./helpers/deal-timestamps');
+  try {
+    await migrate(prior.db, '0018');
+    await prior.db.prepare("INSERT INTO sellers (id,name,source_url) VALUES ('ext-pangpang-unknown','Shared','https://09pangpang.com/')").run();
+    for (const [id, name, handle] of [['name', ' Individual shop ', '@ignored'], ['handle', ' ', '@@Known.Shop']]) {
+      await legacy(prior.db, id, '2026-11-01T00:00:00Z', '2026-11-24T00:00:00Z');
+      await prior.db.prepare(`INSERT INTO external_candidates(id,source,source_url,title,text,seller_name,seller_handle,captured_at,last_seen_at)
+        VALUES(?,'pangpang',?,'Listing','Source',?,?,'2026-11-20','2026-11-20')`).bind(id, `https://09pangpang.com/${id}`, name, handle).run();
+      await prior.db.prepare("UPDATE deals SET external_candidate_id=id, origin='external_web',seller_id='ext-pangpang-unknown' WHERE id=?").bind(id).run();
+    }
+    await execute(prior.db, await readFile(new URL('../migrations/0019_hook_ux.sql', import.meta.url), 'utf8'));
+    expect((await prior.db.prepare('SELECT id,published_seller_label FROM deals ORDER BY id').all()).results).toEqual([
+      { id: 'handle', published_seller_label: '@known.shop' }, { id: 'name', published_seller_label: 'Individual shop' },
+    ]);
+  } finally { prior.close(); }
 });

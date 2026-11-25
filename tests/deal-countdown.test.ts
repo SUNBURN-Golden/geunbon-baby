@@ -9,11 +9,13 @@ const end = Date.parse(endsAt);
 test('countdown renders 500 ms before expiry and shows the clamped state two seconds later', () => {
   // Server render 500 ms before the deadline: still D-day with one hour left.
   const initial = renderToStaticMarkup(createElement(DealCountdown, { endsAt, nowMs: end - 500 }));
-  expect(initial).toBe('<time dateTime="2026-10-21T03:00:00.000Z">D-day · 1시간 남음</time>');
+  expect(initial).toContain('data-remaining="1"');
+  expect(initial).toContain('title="D-day · 1시간 남음"');
   // Hydration reads the absolute clock on mount, two seconds after expiry, and
   // must never show a negative remainder.
   const hydrated = renderToStaticMarkup(createElement(DealCountdown, { endsAt, nowMs: end + 2000 }));
-  expect(hydrated).toBe('<time dateTime="2026-10-21T03:00:00.000Z">D-day · 0시간 남음</time>');
+  expect(hydrated).toContain('data-remaining="0"');
+  expect(hydrated).toContain('title="D-day · 0시간 남음"');
   expect(countdownLabel(endsAt, end + 2000)).toBe('D-day · 0시간 남음');
 });
 

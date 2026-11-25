@@ -1,3 +1,5 @@
+import { homeDeals } from '../lib/home-deals';
+import { homeCopy } from '../lib/copy/home.ko';
 import { fixtureProofBody, seedFixtureAuthority } from './helpers/public-deal-fixture';
 import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -189,6 +191,24 @@ describe('large offline public D1 history', { timeout: 120000 }, () => {
     for (const name of ['chronology', 'model_chronology', 'discount', 'ending', 'model_active', 'upcoming', 'ended', 'end_only_ended', 'end_only_unknown', 'closed', 'unknown']) expect(indexes.has(`verified_deal_${name}`)).toBe(true);
   });
 
+  test('home ranges over the actual 10,201-deal fixture and hydrates each selected ID once', async () => {
+    const filters = { category: null, brand: null };
+    const inventory = await homeDeals(db, NOW, filters);
+    expect(fixture).toHaveLength(10_201);
+    const [read] = reads;
+    expect(reads).toHaveLength(1);
+    const cards = inventory.sections.flatMap(section => section.deals);
+    expect(cards.length).toBeLessThanOrEqual(12);
+    expect(read.count).toBe(1 + new Set(cards.map(card => card.id)).size);
+    expect(inventory.count).toBe(reference(fixture).filter(d => dealTimingFor(d, NOW).state === 'active').length);
+    expect(inventory.maximum).toBe(100);
+    const plan = await all<{ detail: string }>(db, `EXPLAIN QUERY PLAN ${read.sql}`, ...read.values as (string | number)[]);
+    const detail = plan.map(row => row.detail).join('\n');
+    expect(detail).toMatch(/SEARCH d USING INDEX verified_deal_ending \(ends_at>\?\)/);
+    expect(detail).toMatch(/SEARCH d USING INDEX verified_deal_upcoming \(verified_start_utc>\?\)/);
+    expect(detail).toMatch(/SCAN picked[\s\S]+SEARCH d USING INDEX sqlite_autoindex_deals_1 \(id=\?\)/);
+  });
+
   test('actual next links retain their ranking clock and count', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
     const html = renderToStaticMarkup(await DealsPage({ searchParams: Promise.resolve({ limit: '1' }) }));
@@ -208,7 +228,7 @@ describe('large offline public D1 history', { timeout: 120000 }, () => {
     expect(restarted).toContain(`aria-label="${await activeDealCount(db, NOW + 2)}개 진행 중이에요"`);
     const home = renderToStaticMarkup(await Home());
     expect((home.match(/class="deal-card"/g) ?? []).length).toBeLessThanOrEqual(12);
-    expect(home).toContain(`aria-label="${await activeDealCount(db, NOW + 2)}개 진행 중이에요"`);
+    expect(home).toContain(homeCopy.active(await activeDealCount(db, NOW + 2)));
     for (const render of [
       () => Calendar({ searchParams: Promise.resolve({ limit: '1' }) }),
       () => ModelDetail({ params: Promise.resolve({ id: 'm1' }), searchParams: Promise.resolve({ limit: '1' }) }),

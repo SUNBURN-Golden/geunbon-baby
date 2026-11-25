@@ -188,7 +188,7 @@ describe('server rendered deals UI', () => {
     expect(html).toContain(dealsCopy.active);
     expect(html).toContain(fixture.title);
     expect(html).toContain('390,000');
-    expect(html).toContain(dealsCopy.groupBuyPrice);
+    expect(html).toContain('공구가');
     expect(html).toContain('<del>430,000원</del>');
     expect(html.match(/정가보다 9% 싸요/g)).toHaveLength(1);
     expect(html).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer"`);
@@ -203,7 +203,7 @@ describe('server rendered deals UI', () => {
     const html = card({ seller_joined_id: null, seller_name: null });
     expect(html).not.toContain('/sellers#');
     expect(html).toContain(`href="${fixture.source_url}" target="_blank" rel="sponsored noopener noreferrer"`);
-    expect(html).toContain(dealsCopy.newTab);
+    expect(html).toContain('공구 바로가기');
     expect(html.match(/class="deal-disclaimer"/g)).toHaveLength(1);
   });
 
@@ -235,7 +235,7 @@ describe('server rendered deals UI', () => {
     expect(html).toContain(`id="deal-new-tab">${dealsCopy.newTab}`);
     expect(html.match(/class="deal-actions"/g)).toHaveLength(1);
     expect(html.match(/class="deal-primary"/g)).toHaveLength(1);
-    expect(html).toContain(dealsCopy.primary);
+    expect(html).toContain('공구 바로가기');
     expect(html).toContain('href="/models/model-1"');
     expect(html).toContain(fixture.seller_name);
     expect(html).toContain('2026.10.20 09:00');
@@ -509,7 +509,8 @@ describe('deal images', () => {
       expect(html).toContain(dealsCopy.ad);
       expect(html).toContain('390,000');
       expect(html).toContain(fixture.title);
-      expect(html.replace(/<img[^>]*>/g, '')).toBe(render());
+      const withoutMedia = (markup: string) => markup.replace(/<img[^>]*>/g, '').replace(/<div class="deal-detail-media"[^>]*><\/div>/g, '');
+      expect(withoutMedia(html)).toBe(withoutMedia(render()));
     }
     expect(detail({ image_url })).toContain(dealsCopy.disclaimer);
   });

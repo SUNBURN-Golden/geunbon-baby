@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
+import { homeCopy } from '../../lib/copy/home.ko';
+import { formatDealDate } from '../../lib/deals';
 import { verifiedDealsCopy } from '../../lib/copy/deals.ko';
 
 const hour = 3_600_000;
@@ -14,27 +16,52 @@ export function countdownLabel(endsAt: string, clockMs: number) {
   return `${days > 0 ? `D-${days}` : 'D-day'}${end - clockMs < day ? ` · ${verifiedDealsCopy.hours.replace('{n}', String(hours))}` : ''}`;
 }
 
-export function DealCountdown({ endsAt, nowMs }: { endsAt: string; nowMs: number }) {
-  const [clock, setClock] = useState(nowMs);
-  useEffect(() => {
-    // The absolute deadline replaces the server-rendered clock immediately on
-    // hydration and on tab resume; the interval keeps the label current after.
-    const update = () => setClock(Date.now());
-    update();
-    document.addEventListener('visibilitychange', update);
-    const timer = window.setInterval(update, 1000);
-    return () => {
+let clock: number | null = null;
+let timer: number;
+const listeners = new Set<() => void>();
+
+function tick() {
+  clock = Date.now();
+  for (const notify of listeners) notify();
+}
+
+function subscribe(notify: () => void) {
+  listeners.add(notify);
+  if (listeners.size === 1) {
+    tick();
+    document.addEventListener('visibilitychange', tick);
+    timer = window.setInterval(tick, 1000);
+  }
+  return () => {
+    listeners.delete(notify);
+    if (listeners.size === 0) {
+      document.removeEventListener('visibilitychange', tick);
       window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', update);
-    };
-  }, [nowMs]);
-  return <time dateTime={endsAt}>{countdownLabel(endsAt, clock)}</time>;
+      clock = null;
+    }
+  };
+}
+
+export function DealCountdown({ endsAt, nowMs }: { endsAt: string; nowMs: number }) {
+  const observed = useSyncExternalStore(subscribe, () => clock, () => nowMs);
+  const current = Math.max(nowMs, observed ?? nowMs);
+  const seconds = Math.max(0, Math.ceil((Date.parse(endsAt) - current) / 1000));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const time = [Math.floor(seconds / 3600) % 24, Math.floor(seconds / 60) % 60, seconds % 60].map(pad).join(':');
+  return <p className="deal-countdown">
+    <span className="deal-timer" data-remaining={seconds}>{homeCopy.duration(pad(Math.floor(seconds / 86400)), time)}</span>
+    <time dateTime={endsAt} title={countdownLabel(endsAt, current)}>{homeCopy.closesAt(formatDealDate(endsAt, true)!)}</time>
+  </p>;
 }
 
 export function RefreshAtDeadline({ nowMs, deadline }: { nowMs: number; deadline: string | null }) {
+  return <RefreshAtInstant nowMs={nowMs} instant={deadline ? new Date(Date.parse(deadline) + 1).toISOString() : null} resetCursor />;
+}
+
+export function RefreshAtInstant({ nowMs, instant, resetCursor = false }: { nowMs: number; instant: string | null; resetCursor?: boolean }) {
   useEffect(() => {
-    if (!deadline) return;
-    const expiry = Date.parse(deadline) + 1;
+    if (!instant) return;
+    const expiry = Date.parse(instant);
     let refreshed = false;
     let timer: number;
     const refresh = () => {
@@ -44,15 +71,23 @@ export function RefreshAtDeadline({ nowMs, deadline }: { nowMs: number; deadline
       if (delay > 0) { timer = window.setTimeout(refresh, Math.min(delay, 2_147_483_647)); return; }
       refreshed = true;
       const url = new URL(window.location.href);
-      url.searchParams.delete('cursor');
+      if (resetCursor) url.searchParams.delete('cursor');
       window.location.replace(url);
     };
     refresh();
-    document.addEventListener('visibilitychange', refresh);
+    const resume = () => {
+      if (document.visibilityState !== 'visible' || refreshed) return;
+      if (resetCursor) refresh();
+      else {
+        refreshed = true;
+        window.location.reload();
+      }
+    };
+    document.addEventListener('visibilitychange', resume);
     return () => {
       window.clearTimeout(timer);
-      document.removeEventListener('visibilitychange', refresh);
+      document.removeEventListener('visibilitychange', resume);
     };
-  }, [deadline, nowMs]);
+  }, [instant, nowMs, resetCursor]);
   return null;
 }

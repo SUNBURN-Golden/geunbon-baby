@@ -264,7 +264,8 @@ test('cards show name, art or placeholder, official price and the lowest active 
   expect(one).toContain('width="1080" height="1080"');
   expect(one).toContain('390,000');
   expect(one).not.toContain('%');
-  expect(one).toContain('<s>430,000원</s>');
+  expect(one).toContain('<span>430,000원</span>');
+  expect(one).not.toContain('<s>');
   expect(one).not.toContain('410,000');
   expect(one).not.toContain('300,000');
   expect(one).not.toContain('350,000');
@@ -342,4 +343,27 @@ test('deal rows keep compact, unwrapped mobile pricing', async () => {
   const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
   expect(css.match(/\.model-deal \{([^}]+)\}/)?.[1]).toContain('flex-wrap: nowrap');
   expect(css.match(/\.model-deal-price \{([^}]+)\}/)?.[1]).toContain('clamp(20px, 5vw, 28px)');
+});
+
+test('catalog strikethrough requires the full configuration of the displayed lowest offer', async () => {
+  await memory.db.prepare('SAVEPOINT catalog_config').run();
+  try {
+    const key = JSON.stringify(['stokke', 'fixture', 'second generation', 'natural', '1', 'base']);
+    await memory.db.prepare(`INSERT INTO model_official_configurations
+      SELECT id,?,source_url,checked FROM models WHERE id='model-1'`).bind(key).run();
+    await memory.db.prepare("UPDATE models SET source_url='https://fixture.example/official' WHERE id='model-1'").run();
+    await memory.db.prepare("UPDATE model_official_configurations SET source_url='https://fixture.example/official'").run();
+    await memory.db.prepare(`INSERT INTO deal_revisions (id,deal_id,version,action,request_id,request_hash,seller_id,title,status,checked,created_at,price_evidence_id)
+      SELECT 'catalog-'||id,id,version,'publish','catalog-'||id,'fixture',seller_id,title,status,checked,'2026-10-21T02:00:00.000Z',price_evidence_id
+      FROM deals WHERE id IN ('d-active-1','d-active-2')`).run();
+    const observation = (id: string) => memory.db.prepare(`INSERT INTO deal_price_history
+      SELECT id,version,price_evidence_id,deal_price_krw,?,'{}',price_checked_at,'2026-10-21T02:00:00.000Z',NULL FROM deals WHERE id=?`).bind(key, id).run();
+    await observation('d-active-2');
+    expect(cardOf(await render('2026-10-21T03:00:00Z'), 'model-1')).not.toContain('<s>');
+    await observation('d-active-1');
+    expect(cardOf(await render('2026-10-21T03:00:00Z'), 'model-1')).toContain('<s>430,000원</s>');
+  } finally {
+    await memory.db.prepare('ROLLBACK TO catalog_config').run();
+    await memory.db.prepare('RELEASE catalog_config').run();
+  }
 });

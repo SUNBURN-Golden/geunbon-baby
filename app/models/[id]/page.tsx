@@ -1,3 +1,5 @@
+import { AlertForm } from '../../_alert-form';
+import { alertStatus, type AlertSearch } from '../../../lib/alert-target';
 import { chronologicalDeals, modelDealSummaries, publicDealOptions, publicPageParams, PublicDealPaginationError, type DealWithContext } from '../../../lib/deals';
 import { notFound } from 'next/navigation';
 import { environment } from '../../../lib/db';
@@ -7,13 +9,14 @@ import { dealsCopy } from '../../../lib/deals-copy';
 import { DealList } from '../../deals/_components';
 import { DealPagination, InvalidDealPage, type DealPageSearch } from '../../deals/_pagination';
 export const dynamic = 'force-dynamic';
-export default async function Detail({ params, searchParams = Promise.resolve({}) }: { params: Promise<{ id: string }>; searchParams?: Promise<DealPageSearch> }) {
+export default async function Detail({ params, searchParams = Promise.resolve({}) }: { params: Promise<{ id: string }>; searchParams?: Promise<DealPageSearch & AlertSearch> }) {
   // eslint-disable-next-line react-hooks/purity -- Dynamic Server Component captures request time once for all deal statuses.
   const nowMs = Date.now();
   const { id } = await params; const db = environment().DB;
   let options;
   const path = `/models/${encodeURIComponent(id)}`;
-  try { options = publicDealOptions(publicPageParams(await searchParams), 'page-model', id); }
+  const search = await searchParams;
+  try { options = publicDealOptions(publicPageParams(search), 'page-model', id); }
   catch (error) { if (error instanceof PublicDealPaginationError) return <main className="page public-page"><InvalidDealPage path={path} /></main>; throw error; }
   const m = await db.prepare('SELECT * FROM models WHERE id = ?').bind(id).first<Model>();
   if (!m) notFound();
@@ -30,8 +33,7 @@ export default async function Detail({ params, searchParams = Promise.resolve({}
           <p className="eyebrow">01 / GROUP BUY</p>
           <h2>{dealsCopy.groupBuyPrice}</h2>
           <p>{dealsCopy.currentPrice}: {current.active_count ? money(current.lowest_price) : dealsCopy.noActive}</p>
-          {page.data.length ? <DealList deals={page.data} nowMs={nowMs} /> : <p>{options.cursor ? dealsCopy.emptyPosition : dealsCopy.modelEmpty}</p>}
-          <DealPagination path={path} limit={options.limit} nextCursor={page.next_cursor} continued={!!options.cursor} />
+          <AlertForm type="model" id={id} initialStatus={alertStatus(search.alert)} />
         </section>
         <section>
           <p className="eyebrow">02 / OFFICIAL</p>
@@ -43,6 +45,10 @@ export default async function Detail({ params, searchParams = Promise.resolve({}
           <p className="muted">{siteCopy.officialSourceNotice}</p>
         </section>
       </div>
+      <section className="model-offers" aria-label={dealsCopy.groupBuyPrice}>
+        {page.data.length ? <DealList deals={page.data} nowMs={nowMs} /> : <p>{options.cursor ? dealsCopy.emptyPosition : dealsCopy.modelEmpty}</p>}
+        <DealPagination path={path} limit={options.limit} nextCursor={page.next_cursor} continued={!!options.cursor} />
+      </section>
     </main>
   );
 }

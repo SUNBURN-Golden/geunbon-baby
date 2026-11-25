@@ -1,17 +1,31 @@
-import { RefreshAtDeadline } from './deals/_countdown';
 import Link from 'next/link';
-import { siteCopy } from '../lib/site-copy';
-import { dealsCopy } from '../lib/deals-copy';
+import { homeCopy } from '../lib/copy/home.ko';
 import { environment } from '../lib/db';
-import { activeDealPreview, activeDealCount, nextDealDeadline } from '../lib/deals';
-import { ActiveDeals } from './_active-deals';
+import { homeDeals } from '../lib/home-deals';
+import { HomeOfferSections, HomeQuickFilters } from './_active-deals';
+import { RefreshAtInstant } from './deals/_countdown';
 
 export const dynamic = 'force-dynamic';
+type Search = { category?: string | string[]; brand?: string | string[] };
+const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) || null;
 
-export default async function Home() {
-  // eslint-disable-next-line react-hooks/purity -- Capture request time once for consistent deal states.
-  const nowMs = Date.now();
-  const db = environment().DB;
-  const [deals, totalCount, deadline] = await Promise.all([activeDealPreview(db, nowMs), activeDealCount(db, nowMs), nextDealDeadline(db, nowMs)]);
-  return <main><RefreshAtDeadline nowMs={nowMs} deadline={deadline} /><ActiveDeals deals={deals} totalCount={totalCount} nowMs={nowMs} /><section className="hero"><div><p className="eyebrow">A THOUGHTFUL BEGINNING</p><h1>너는 건강하게만 와 주렴. 좋은 것은 <em>우리가 골라 둘게.</em></h1><p className="lead">{siteCopy.heroLead}</p><Link className="button" href="/deals">{dealsCopy.homeLink} <span>↗</span></Link></div><div className="hero-art" aria-hidden="true"><div className="sun"/><div className="arch"><div className="chair"><i/><b/><span/></div></div><p>작은 시작, 오래 곁에 둘 것들.</p><span className="art-label">THE FIRST COLLECTION / 01</span></div></section><section className="manifesto"><span className="eyebrow">OUR PROMISE</span><h2>많이 고르기보다, 제대로 고르는 일.</h2><div><p>유모차부터 첫 의자까지. 브랜드의 이름보다<br/>아이와 함께할 시간을 먼저 생각합니다.</p><p>{siteCopy.pricePromise}</p></div></section><section className="entry-grid"><Link href="/models?category=stroller"><span>01 / OUT & ABOUT</span><h3>함께 걷는 첫 길</h3><p>유모차 살펴보기 →</p></Link><Link href="/models?category=high_chair"><span>02 / AT THE TABLE</span><h3>식탁의 작은 자리</h3><p>하이체어 살펴보기 →</p></Link><Link href="/models?category=car_seat"><span>03 / SAFE JOURNEY</span><h3>안심을 싣는 시간</h3><p>카시트 살펴보기 →</p></Link></section></main>;
+export default async function Home({ searchParams = Promise.resolve({}) }: { searchParams?: Promise<Search> } = {}) {
+  // eslint-disable-next-line react-hooks/purity -- The whole response uses this request instant.
+  const asOf = Date.now();
+  const { category, brand } = await searchParams;
+  const filters = { category: first(category), brand: first(brand) };
+  const inventory = await homeDeals(environment().DB, asOf, filters);
+  return (
+    <main className="home">
+      <section className="home-hero">
+        <h1>{homeCopy.active(inventory.count)}</h1>
+        {inventory.maximum !== null && <p className="home-saving">{homeCopy.maxSaving(inventory.maximum)}</p>}
+        <p className="home-tagline">{homeCopy.tagline}</p>
+        {inventory.count === 0 && <Link className="home-catalog" href="/models">{homeCopy.catalog}</Link>}
+      </section>
+      <HomeQuickFilters inventory={inventory} filters={filters} />
+      <RefreshAtInstant nowMs={asOf} instant={inventory.nextRefreshAt} />
+      <HomeOfferSections inventory={inventory} asOf={asOf} />
+    </main>
+  );
 }

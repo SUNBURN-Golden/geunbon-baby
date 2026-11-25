@@ -20,7 +20,8 @@
     "sync:price-sources": "node --import tsx crawler/src/deal-prices/sync-sources.ts",
     "collect:threads": "node --import tsx crawler/src/deal-prices/threads-cli.ts",
     "promote-external": "node scripts/promote-external.mjs",
-    "build:clipper": "node scripts/build-clipper.mjs"
+    "build:clipper": "node scripts/build-clipper.mjs",
+    "check:hook-ux": "tsx scripts/check-hook-ux.ts"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.20.12",

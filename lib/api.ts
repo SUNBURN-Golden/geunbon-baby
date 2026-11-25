@@ -1,3 +1,7 @@
+import { captureAlert } from './alerts';
+import { dealRoundReview, updateDealRound } from './deal-reviews';
+import { evidencedOpening, recordPublishedPrice } from './deal-publication';
+import { jsonBody as body } from './request-body';
 import { CLOSE_OFFER, INVALIDATE_OFFER, OFFER_KIND, PROMOTE_OFFER } from '../shared/verified-offer';
 import { dismissVerifiedOffer, ingestVerifiedOffer, mutateVerifiedOffer, verifiedOfferReviewPage } from './verified-offers';
 import { normalizeTimestamp, parseDate, publicDealOptions, chronologicalDeals, lifecycleDeals, activeDealCount, endedDealCount, modelDealSummaries, PublicDealPaginationError } from './deals';
@@ -263,7 +267,7 @@ export async function adminDeal(db: D1Database, id: string): Promise<AdminDeal |
   const row = await db.prepare('SELECT * FROM deals WHERE id = ?').bind(id).first<Omit<AdminDeal, 'evidence' | 'revisions'>>();
   if (!row) return null;
   const [deal] = await hydrateAdminDeals(db, [row]);
-  return { ...deal, previous_price_reviews: await previousDealPrices(db, id) };
+  return { ...deal, previous_price_reviews: await previousDealPrices(db, id), current_review: await dealRoundReview(db, id, row.version) };
 }
 async function requestHash(tuple: unknown[]) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(tuple)));
@@ -357,6 +361,7 @@ async function manageDeal(request: Request, id: string, env: Env) {
       .bind(key, ...priceBindings(applied?.result ?? null, applied?.id ?? null, expected + 1).slice(0, 5).flatMap(value => [applied ? 1 : 0, value]),
         applied?.id ?? null, applied ? (applied.result.facts?.orders_open ? 1 : 0) : null,
         applied || retainProof ? 'verified' : 'unverified', applied || retainProof ? 1 : 0, now, action, now, id, expected, id, key, hash, action, expected),
+    ...(applied || retainProof ? [recordPublishedPrice(env.DB, id, key, evidencedOpening(applied?.evidence, starts), applied?.result.facts?.configuration)] : []),
   ]);
   if (results[1].meta.changes === 1) return json({ data: { id, status: correct ? 'published' : 'withdrawn', version: expected + 1 } });
   if (applied && !await officialPriceAllowed(env.DB, applied.evidence)) return json({ error: 'official_source_not_approved' }, 409);
@@ -528,17 +533,9 @@ async function ingestExternal(b: Record<string, unknown>, env: Env) {
   const staged = item && evidence ? await stageIngestEvidence(env.DB, 'candidate', item.id, evidence, revision) : null;
   return json({ data: item ? { id: item.id, status: item.status, ...(staged ? { price_evidence_id: staged.id } : {}), revision: item.price_revision } : null }, 202);
 }
-async function body(request: Request, maxBytes = 32768) {
-  const reader = request.body?.getReader();
-  if (!reader) throw new Error('body');
-  const chunks: Uint8Array[] = []; let size = 0;
-  while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > maxBytes) { await reader.cancel(); throw new Error('body'); } chunks.push(value); }
-  const bytes = new Uint8Array(size); let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-  return JSON.parse(new TextDecoder().decode(bytes));
-}
 export async function handleApi(request: Request, parts: string[], env: Env): Promise<Response> {
   const path = parts.join('/');
+  if (path === 'alerts') return captureAlert(request, env.DB);
   const admin = parts[0] === 'admin' || path === 'collector-status';
   if (path === 'collector/status') {
     if (request.method !== 'POST') return json({ error: 'method' }, 405);
@@ -667,6 +664,19 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
         payload.capture_reason !== undefined && !['capture_changed','legacy_hash_missing'].includes(payload.capture_reason)) return json({ error: 'invalid_target' }, 400);
     const result = await recordBackfill(env.DB, payload.kind, payload.id, payload.expected_revision, payload.request_id, payload.price_evidence, false, payload.capture_reason);
     return result.error ? json({ error: result.error }, result.error === 'target_not_found' ? 404 : result.error === 'invalid_evidence' ? 400 : 409) : json({ data: result });
+  }
+  if (request.method === 'POST' && admin && parts[1] === 'deals' && parts.length === 4 && parts[3] === 'round') {
+    let value: Record<string, unknown>;
+    let source: string | null;
+    try {
+      value = await body(request);
+      if (!value || !Number.isSafeInteger(value.expected_version) || Number(value.expected_version) < 1) throw new Error('version');
+      source = evidenceUrl(value.source_url);
+    } catch {
+      return json({ error: 'invalid_round' }, 400);
+    }
+    const status = await updateDealRound(env.DB, parts[2], Number(value.expected_version), value, source);
+    return json(status === 200 ? { data: { status: 'saved' } } : { error: 'round_review' }, status);
   }
   if (request.method === 'POST' && admin && parts[1] === 'deals' && parts.length === 3) return manageDeal(request, parts[2], env);
   if (request.method === 'POST' && admin && parts[1] === 'sellers' && (parts.length === 2 || parts.length === 3)) return manageSeller(request, parts, env);
@@ -843,6 +853,7 @@ export async function handleApi(request: Request, parts: string[], env: Env): Pr
         WHERE d.id = ? AND r.request_id = ? AND r.request_hash = ? ON CONFLICT(deal_id,position) DO NOTHING`)
         .bind(crypto.randomUUID(), position, name, parts[2], key, reviewHash));
     }
+    if (proof) statements.push(recordPublishedPrice(env.DB, parts[2], key, evidencedOpening(proof.evidence, startsAt), proof.result.facts?.configuration));
     let results;
     try { results = await env.DB.batch(statements); }
     catch (error) {

@@ -1,3 +1,4 @@
+import { homeCopy } from '../../lib/copy/home.ko';
 import { sellerTrustHref, type Deal, type DealBundleItem } from '../../lib/data';
 import { DealImage } from './_image';
 import Link from 'next/link';
@@ -26,15 +27,27 @@ export function DealComparison({ deal }: { deal: DealWithContext }) {
   const { deal_price_krw, list_price_krw, discount_pct } = deal;
   if (deal_price_krw == null || list_price_krw == null || discount_pct == null || discount_pct <= 0) return null;
   return <div className="deal-price-block">
-    <p className="deal-context">{dealsCopy.groupBuyPrice}</p>
+    <p className="deal-context">{homeCopy.offerPrice}</p>
     <p className="deal-price">{deal_price_krw.toLocaleString('ko-KR')}<span>{dealsCopy.won}</span></p>
     <p className="deal-context">{verifiedDealsCopy.listPrice} <del>{list_price_krw.toLocaleString('ko-KR')}{dealsCopy.won}</del></p>
-    <strong className="deal-tone deal-tone-good">{verifiedDealsCopy.discount.replace('{n}', String(discount_pct))}</strong>
+    <strong className="deal-discount">{verifiedDealsCopy.discount.replace('{n}', String(discount_pct))}</strong>
   </div>;
 }
 
 export function DealDisclaimer({ external = false }: { external?: boolean }) {
   return <p className="deal-disclaimer">{external ? dealsCopy.externalDisclaimer : dealsCopy.disclaimer}</p>;
+}
+
+function OfficialPriceLink({ deal }: { deal: DealWithContext }) {
+  return deal.list_price_source_url && <a className="deal-official-badge" href={deal.list_price_source_url}
+    target="_blank" rel="noopener noreferrer">{homeCopy.officialVerified}</a>;
+}
+
+function SellerAttribution({ deal }: { deal: DealWithContext }) {
+  return <span className="deal-seller">
+    {deal.seller_name || dealsCopy.unknownSeller}
+    {deal.seller_round_number != null && <> · {homeCopy.rounds(deal.seller_round_number)}<small>{homeCopy.roundsBasis}</small></>}
+  </span>;
 }
 
 export function DealExternalSource({ deal }: { deal: DealWithContext }) {
@@ -43,7 +56,6 @@ export function DealExternalSource({ deal }: { deal: DealWithContext }) {
   return (
     <p className="deal-context">
       {dealsCopy.externalSource} · {host}
-      {deal.seller_name ? ` · ${deal.seller_name}` : ''}
     </p>
   );
 }
@@ -72,30 +84,36 @@ export function DealCard({ deal, nowMs, clockMs = nowMs }: { deal: DealWithConte
   const timing = dealTimingFor(deal, nowMs);
   return (
     <article className="deal-card">
-      <DealImage src={deal.image_url} verifiedOffer={deal.verify_level === 'verified_offer_v2'} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
-      <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} countdown /></div>
-      <h2><Link className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}>{deal.title}</Link></h2>
-      <p className="deal-period"><DealPeriod deal={deal} timing={timing} external={deal.origin === 'external_web'} /></p>
-      <DealComparison deal={deal} />
+      <h2><Link prefetch={false} className="deal-title-link" href={`/deals/${encodeURIComponent(deal.id)}`}><span>{deal.title}</span></Link></h2>
+      <div className="deal-summary">
+        <div><DealComparison deal={deal} /></div>
+        <div className="deal-card-media">
+          <DealImage src={deal.image_url} verifiedOffer={deal.verify_level === 'verified_offer_v2'}
+            alt={homeCopy.productImage((deal.model_joined_id && deal.model_name) || deal.title)} />
+        </div>
+      </div>
       {timing.state === 'active' && deal.ends_at && <DealCountdown endsAt={deal.ends_at} nowMs={clockMs} />}
+      <DealCardLinks deal={deal} />
+      <SellerAttribution deal={deal} />
+      <div className="deal-labels"><span className="deal-ad">{dealsCopy.ad}</span><DealStateChip timing={timing} countdown /><OfficialPriceLink deal={deal} /></div>
+      {(timing.state !== 'active' || deal.starts_at) && <p className="deal-period"><DealPeriod deal={deal} timing={timing} external={deal.origin === 'external_web'} /></p>}
       <DealExternalSource deal={deal} />
       <SellerTrustBadges registration_source={deal.seller_registration_source} withdrawal_source={deal.seller_withdrawal_source} official_import_source={deal.seller_official_import_source} />
-      <DealCardLinks deal={deal} />
       <DealDisclaimer external={deal.origin === 'external_web'} />
     </article>
   );
 }
 
 export function DealCardLinks({ deal }: { deal: DealWithContext }) {
-  return (
-    <div className="deal-card-links">
-      <a className="deal-secondary" href={deal.source_url} target="_blank" rel="sponsored noopener noreferrer">
-        {dealsCopy.primary}<span className="deal-new-tab"> · {dealsCopy.newTab}</span>
-      </a>
-      {/* Native navigation hands fragment focus to the seller so Tab continues at its evidence. */}
-      {deal.seller_joined_id && <a className="deal-secondary" href={sellerTrustHref(deal.seller_joined_id)}>{dealsCopy.sellerTrust}</a>}
-    </div>
-  );
+  return <div className="deal-card-links">
+    <SourceLink deal={deal} />
+    {deal.seller_joined_id && <a className="deal-secondary" href={sellerTrustHref(deal.seller_joined_id)}>{dealsCopy.sellerTrust}</a>}
+  </div>;
+}
+
+function SourceLink({ deal, describedBy }: { deal: DealWithContext; describedBy?: string }) {
+  return <a className="deal-primary" href={deal.source_url} target="_blank" rel="sponsored noopener noreferrer"
+    aria-describedby={describedBy}>{homeCopy.openOffer}</a>;
 }
 
 export function DealList({ deals, nowMs, clockMs = nowMs }: { deals: readonly DealWithContext[]; nowMs: number; clockMs?: number }) {
@@ -128,7 +146,7 @@ export function DealPeriod({ deal, timing, external = false }: { deal: Pick<Deal
 export function DealFacts({ deal, timing }: { deal: DealWithContext; timing: Timing }) {
   return (
     <dl className="deal-facts">
-      <div><dt>{dealsCopy.seller}</dt><dd>{deal.seller_name || dealsCopy.unknownSeller}</dd></div>
+      <div><dt>{dealsCopy.seller}</dt><dd><SellerAttribution deal={deal} /></dd></div>
       {deal.model_joined_id && <div><dt>{dealsCopy.model}</dt><dd>{deal.model_name}</dd></div>}
       {!deal.model_joined_id && deal.brand_label && <div><dt>{dealsCopy.model}</dt><dd>{deal.brand_label}{deal.category_label ? ` · ${deal.category_label}` : ''}</dd></div>}
       <div><dt>{dealsCopy.period}</dt><dd><DealPeriod deal={deal} timing={timing} external={deal.origin === 'external_web'} /></dd></div>
@@ -143,11 +161,10 @@ export function DealActions({ deal }: { deal: DealWithContext }) {
   return (
     <div className="deal-actions">
       <div className="deal-source-action">
-        <a className="deal-primary" href={deal.source_url} target="_blank" rel="sponsored noopener noreferrer" aria-describedby="deal-new-tab">{dealsCopy.primary}</a>
+        <SourceLink deal={deal} describedBy="deal-new-tab" />
         <small id="deal-new-tab">{dealsCopy.newTab}</small>
       </div>
       {deal.model_joined_id && deal.model_id && <Link className="deal-secondary" href={`/models/${encodeURIComponent(deal.model_id)}`}>{dealsCopy.secondary}</Link>}
-      {/* Native navigation hands fragment focus to the seller so Tab continues at its evidence. */}
       {deal.seller_joined_id && <a className="deal-secondary" href={sellerTrustHref(deal.seller_joined_id)}>{dealsCopy.sellerTrust}</a>}
     </div>
   );
@@ -161,14 +178,15 @@ export function DealDetail({ deal, nowMs, bundleItems = [] }: { deal: DealWithCo
       <Link className="deal-back" href="/deals">{dealsCopy.back}</Link>
       <article className="deal-detail">
         <DealHeader deal={deal} timing={timing} />
-        <DealImage src={deal.image_url} verifiedOffer={deal.verify_level === 'verified_offer_v2'} alt={`${(deal.model_joined_id && deal.model_name) || deal.title} 상품 이미지`} />
         <DealComparison deal={deal} />
         {timing.state === 'active' && deal.ends_at && <DealCountdown endsAt={deal.ends_at} nowMs={nowMs} />}
+        <DealActions deal={deal} />
+        <OfficialPriceLink deal={deal} />
+        <div className="deal-detail-media" hidden={!deal.image_url}><DealImage src={deal.image_url} verifiedOffer={deal.verify_level === 'verified_offer_v2'} alt={homeCopy.productImage((deal.model_joined_id && deal.model_name) || deal.title)} /></div>
         <DealExternalSource deal={deal} />
         <DealFacts deal={deal} timing={timing} />
         <DealBundleList items={bundleItems} />
         <SellerTrustBadges registration_source={deal.seller_registration_source} withdrawal_source={deal.seller_withdrawal_source} official_import_source={deal.seller_official_import_source} />
-        <DealActions deal={deal} />
         <DealDisclaimer external={external} />
       </article>
     </main>

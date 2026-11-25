@@ -1,3 +1,4 @@
+import type { DealReview } from './deal-reviews';
 import type { PriceReview } from './deal-price-review';
 import { dealsCopy } from './deals-copy';
 
@@ -99,6 +100,7 @@ export type AdminDeal = Deal & {
   price_review?: PriceReview | null;
   price_evidence_version?: number | null;
   previous_price_reviews?: PriceReview[];
+  current_review?: DealReview | null;
   evidence: { source_url: string; account: string; text: string; captured_at: string; image_url: string | null;
     attribution: string | null; attribution_note: string | null; reviewed_at: string | null } | null;
 };

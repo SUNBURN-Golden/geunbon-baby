@@ -8,6 +8,8 @@ import { GET as sitemap } from '../app/sitemap.xml/route';
 import { handleApi, adminDeal } from '../lib/api';
 import { all, environment, type Env } from '../lib/db';
 import { activeDealCount, activeDealPreview, dealSelect, endedDealCount, lifecycleDeals, modelDealSummaries, publicDealOptions, type DealWithContext } from '../lib/deals';
+import { recordBackfill } from '../lib/deal-price-review';
+import { homeDeals } from '../lib/home-deals';
 import { digest } from '../shared/deal-price-evidence';
 import { closureEvidence, unavailablePriceEvidence } from '../crawler/src/deal-prices/verify';
 import { detectSourceEnded } from '../lib/promote-external';
@@ -54,6 +56,9 @@ test('0016 preserves historical rows, child identities, foreign keys, and indexe
     expect(await indexes()).toEqual(expect.arrayContaining(oldIndexes.map(index => expect.objectContaining({ name: index.name }))));
     expect(await indexKeys()).toEqual(priorIndexKeys);
     expect(await all(db, 'PRAGMA foreign_key_check')).toEqual([]);
+    for (const name of ['0017_verified_offers.sql','0018_play_gyms.sql','0019_hook_ux.sql']) {
+      await execute(db, await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8'));
+    }
     expect(await adminDeal(db, 'older')).toMatchObject({ price: 400000, deal_price_krw: null, price_verification: 'unverified' });
     expect(await activeDealCount(db, Date.parse(checkedAt))).toBe(0);
 
@@ -374,6 +379,7 @@ test.each(['social', 'external'] as const)('%s approval cannot select evidence t
 });
 
 test('edited pending posts accept successful retries and changed live prices return to review', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(checkedAt));
   const memory = memoryD1();
   try {
     const { db } = memory;
@@ -418,6 +424,7 @@ test('edited pending posts accept successful retries and changed live prices ret
     expect((await request(`admin/deals/${data.id}`, { ...correction, request_id: 'apply-changed-price-fixture', expected_version: reviewed.version,
       price: 400000, price_evidence_id: reviewed.price_review!.id })).status).toBe(200);
     expect(await db.prepare(`${dealSelect(Date.parse(checkedAt))} AND d.id = ?`).bind(data.id).first()).toMatchObject({ price: 400000 });
+    clock.mockRestore();
   } finally { memory.close(); }
 });
 
@@ -450,11 +457,75 @@ test('backfill applies once, demotes a later disagreement, and cannot revive a w
     expect(await disputed.json()).toMatchObject({ data: { outcome: 'offer_price_disagreement' } });
     expect(await activeDealCount(db, Date.parse(checkedAt))).toBe(0);
     expect((await adminDeal(db, id))?.price_review?.reason).toBe('offer_price_disagreement');
+    // A demoted observation is not an explicit invalidation of the earlier publication.
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM invalidated_publication_proofs WHERE deal_id = ?').bind(id).first()).toEqual({ n: 0 });
     expect(await (await request(`admin/deals/${id}`, { action: 'withdraw', expected_version: 3, request_id: 'fixture-withdraw-prices', reason: 'Reviewed terminal withdrawal' })).json())
       .toMatchObject({ data: { status: 'withdrawn', version: 4 } });
     expect((await submit({ ...target, request_id: '3'.repeat(64), expected_revision: '3' })).status).toBe(409);
     expect(await db.prepare('SELECT COUNT(*) AS n FROM deal_price_evidence WHERE target_id = ?').bind(id).first()).toEqual({ n: 2 });
   } finally { memory.close(); }
+});
+
+test('a closure observed after the proof window keeps its published round comparable', async () => {
+  const memory = memoryD1({ serialize: true });
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const { db } = memory;
+    await migrate(db);
+    const env = envFor(db);
+    vi.mocked(environment).mockReturnValue(env);
+    const request = requests(env);
+    const day = 86_400_000;
+    const T0 = Date.parse(checkedAt);
+    const T1 = T0 + 25 * 3_600_000;
+    const T2 = T1 + 3_600_000;
+    const publish = async (id: string, requestId: string, at: number, handle: string) => {
+      vi.setSystemTime(new Date(at));
+      await legacy(db, id, startsAt, endsAt);
+      await db.prepare("UPDATE ingested_items SET status = 'approved' WHERE id = ?").bind(id).run();
+      const proof = await exampleEvidence(`https://www.instagram.com/p/${handle}/`);
+      for (const kind of ['offer', 'official'] as const) proof[kind]!.source.observed_at = new Date(at).toISOString();
+      await db.prepare('UPDATE ingested_items SET text = ? WHERE id = ?').bind(proof.offer!.source.text, id).run();
+      const response = await request('admin/price-backfill', {
+        kind: 'deal', id, expected_revision: '1', request_id: requestId, price_evidence: proof,
+      });
+      expect(response.status, await response.clone().text()).toBe(200);
+      return proof;
+    };
+    const confirmRound = (id: string, event_key: string, opened_at: string) =>
+      request(`admin/deals/${id}/round`, { action: 'confirm', confirmed: true, expected_version: 2, event_key, opened_at,
+        seller_id: 'seller-1', source_url: 'https://seller.example.com/' + event_key });
+
+    vi.setSystemTime(new Date(T0));
+    expect((await request('admin/price-sources', { observed_at: checkedAt, scopes: [officialScope] })).status).toBe(200);
+    const oldProof = await publish('round-old', '1'.repeat(64), T0, 'round-old');
+    expect((await confirmRound('round-old', 'old-event', new Date(T0 - 4 * day).toISOString())).status).toBe(200);
+    await publish('round-current', '2'.repeat(64), T1, 'round-current');
+    expect((await confirmRound('round-current', 'current-event', new Date(T1 - 2 * day).toISOString())).status).toBe(200);
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM deal_price_history').first()).toEqual({ n: 2 });
+    const filters = { category: 'high_chair' as const, brand: 'Test brand' };
+    expect((await homeDeals(db, T1, filters)).sections.find(section => section.key === 'low')!.deals.map(deal => deal.id))
+      .toEqual(['round-current']);
+
+    // The source closes after the old proof's 24-hour window has lapsed.
+    vi.setSystemTime(new Date(T2));
+    const captured = oldProof.offer!.source.text + '\n공구 마감됨';
+    const closure = await closureEvidence(oldProof.offer!.source.url, captured, new Date(T2).toISOString());
+    const closed = await recordBackfill(db, 'deal', 'round-old', '2', '3'.repeat(64), closure, true);
+    expect(closed.error).toBeUndefined();
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM invalidated_publication_proofs WHERE deal_id = ?').bind('round-old').first())
+      .toEqual({ n: 0 });
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM deal_price_history WHERE deal_id = ?').bind('round-old').first())
+      .toEqual({ n: 1 });
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM deal_round_reviews WHERE deal_id = ?').bind('round-old').first())
+      .toEqual({ n: 1 });
+    expect(await db.prepare('SELECT source_ended,price_verification FROM deals WHERE id = ?').bind('round-old').first())
+      .toEqual({ source_ended: 1, price_verification: 'unverified' });
+
+    // The normally ended round stays comparable, so the current round keeps its low claim.
+    expect((await homeDeals(db, T2, filters)).sections.find(section => section.key === 'low')!.deals.map(deal => deal.id))
+      .toEqual(['round-current']);
+  } finally { vi.useRealTimers(); memory.close(); }
 });
 
 test('a concurrent withdrawal wins over stale backfill without storing a receipt or changing history', async () => {

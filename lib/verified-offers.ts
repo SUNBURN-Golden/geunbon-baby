@@ -1,3 +1,4 @@
+import { carryClosedRound, recordPublishedPrice } from './deal-publication';
 import {
   assessPriceEvidence, digest, displayExclusion, identityToken, instant, metadataStart,
   OFFICIAL_PRICE_MAX_AGE_MS, offerDeadlinePrecision, offerSourceClosed, parsePriceEvidence, type PriceResult,
@@ -170,6 +171,9 @@ export async function ingestVerifiedOffer(db: D1Database, value: Record<string, 
       WHERE c.id=? AND c.revision=? AND c.digest=? AND c.state='review'
       ON CONFLICT(request_id) DO NOTHING`)
       .bind(request, await claimHash(candidate, claim), INVALIDATE_OFFER, offer.expected_version, new Date(now).toISOString(), candidate, revision, hash));
+    commands.push(db.prepare(`INSERT INTO invalidated_publication_proofs(deal_id,price_evidence_id)
+      SELECT deal_id,price_evidence_id FROM hook_invalidated_price_proofs WHERE request_id=?
+      ON CONFLICT DO NOTHING`).bind(request));
   }
   await db.batch(commands);
   const row = await head();
@@ -223,7 +227,7 @@ export async function mutateVerifiedOffer(db: D1Database, id: string, value: Rec
   const sellerId = 'offer-seller-' + await offerHash(f.seller_url);
   const priceValues = makePriceValues(result, request_id, expected_version + 1, sellerId, f);
   try {
-    await db.prepare(`INSERT INTO verified_offer_operations(request_id,action,request_hash,candidate_id,offer_key,revision,digest,deal_id,expected_version,committed_at,price_values)
+    const operation = db.prepare(`INSERT INTO verified_offer_operations(request_id,action,request_hash,candidate_id,offer_key,revision,digest,deal_id,expected_version,committed_at,price_values)
       SELECT ?,?,?,c.id,e.offer_key,c.revision,c.digest,COALESCE(c.deal_id,'deal-'||c.id),?,?,?
       FROM verified_offer_candidates c
       JOIN verified_offer_evidence e ON e.candidate_id=c.id AND e.revision=c.revision AND e.digest=c.digest
@@ -244,7 +248,11 @@ export async function mutateVerifiedOffer(db: D1Database, id: string, value: Rec
         AND NOT EXISTS (SELECT 1 FROM verified_offer_aliases a WHERE a.offer_key IN (e.offer_key,e.campaign_key) AND a.candidate_id<>c.id)
         AND ${authority.sql}`)
       .bind(request_id, action, requestHash, expected_version, time, priceValues, f.model_id,f.brand,f.model,f.category,
-        id, revision, hash, offer_key, cutoff, time, expected_version, expected_version, sellerId, closed ? 1 : 0, ...authority.values).run();
+        id, revision, hash, offer_key, cutoff, time, expected_version, expected_version, sellerId, closed ? 1 : 0, ...authority.values);
+    const dealId = 'deal-' + id;
+    await db.batch([operation, closed
+      ? carryClosedRound(db, dealId, expected_version + 1, request_id)
+      : recordPublishedPrice(db, dealId, request_id)]);
   } catch (error) {
     const reconciled = await receipt(db, id, request_id, requestHash);
     if (reconciled) return reconciled;

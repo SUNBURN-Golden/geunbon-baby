@@ -11,7 +11,7 @@ import Calendar from '../app/calendar/page';
 import { NavLinks } from '../app/nav';
 import { DealCard } from '../app/deals/_components';
 import { dealSelect, type DealWithContext } from '../lib/deals';
-import { dealsCopy } from '../lib/deals-copy';
+import { homeCopy } from '../lib/copy/home.ko';
 import { siteCopy } from '../lib/site-copy';
 import { verification, verificationLabel, type Deal } from '../lib/data';
 import { memoryD1 } from './helpers/sqlite';
@@ -65,7 +65,7 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   const joinedDeal = (await memory.db.prepare(dealSelect()).first<DealWithContext>())!;
   const card = renderToStaticMarkup(createElement(DealCard, { deal: joinedDeal, nowMs: Date.now() }));
   for (const html of [home, models, detail, calendar, card]) excludesOtherPrices(html);
-  expect(home).toContain(siteCopy.pricePromise);
+  expect(home).toContain('최대 11% 할인');
   expect(models).toContain(siteCopy.officialLabel);
   expect(models).toContain('430,000원');
   expect(models).toContain('390,000<span>원</span>');
@@ -79,7 +79,7 @@ test('home, models, model detail, calendar and shared cards expose only the allo
   expect(detail).toContain('390,000<span>원</span>');
   expect(detail.match(/<section>/g)).toHaveLength(2);
   for (const html of [calendar, card]) {
-    expect(html).toContain(dealsCopy.groupBuyPrice);
+    expect(html).toContain(homeCopy.offerPrice);
     expect(html).toContain('390,000<span>원</span>');
     expect(html).toContain('440,000원');
   }
